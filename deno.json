@@ -1,0 +1,38 @@
+{
+  "nodeModulesDir": "auto",
+  "minimumDependencyAge": 0,
+  "imports": {
+    "@tanstack/react-router": "npm:@tanstack/react-router@1.170.17",
+    "@vitejs/plugin-react": "npm:@vitejs/plugin-react@6.0.3",
+    "hono": "npm:hono@4.12.29",
+    "hono/deno": "npm:hono@4.12.29/deno",
+    "react": "npm:react@19.2.7",
+    "react/jsx-runtime": "npm:react@19.2.7/jsx-runtime",
+    "react/jsx-dev-runtime": "npm:react@19.2.7/jsx-dev-runtime",
+    "react-dom/client": "npm:react-dom@19.2.7/client",
+    "vite": "npm:vite@8.1.4",
+    "zod": "npm:zod@4.4.3"
+  },
+  "compilerOptions": {
+    "lib": ["deno.ns", "DOM", "DOM.Iterable", "ESNext"],
+    "jsx": "react-jsx",
+    "jsxImportSource": "react",
+    "strict": true,
+    "types": [
+      "npm:@types/react@19.2.17",
+      "npm:@types/react-dom@19.2.3"
+    ]
+  },
+  "fmt": {
+    "include": ["src/", "deno.json", "vite.config.ts", "index.html"]
+  },
+  "tasks": {
+    "dev": "deno run -A npm:concurrently@10.0.3 --kill-others-on-fail --names api,web 'deno task dev:server' 'deno task dev:client'",
+    "dev:server": "deno run --allow-env=HOME,OPENCODE_DB_PATH,PORT --allow-read --allow-net --watch=src/server,src/shared src/server/main.ts",
+    "dev:client": "deno run -A npm:vite@8.1.4",
+    "build": "deno run -A npm:vite@8.1.4 build",
+    "start": "deno run --allow-env=HOME,OPENCODE_DB_PATH,PORT --allow-read --allow-net src/server/main.ts",
+    "check": "deno check src/server/main.ts src/client/main.tsx vite.config.ts",
+    "test": "deno test --allow-env --allow-read --allow-write"
+  }
+}
