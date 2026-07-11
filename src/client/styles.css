@@ -311,6 +311,15 @@ table.data-table {
   height: 14px;
 }
 
+.harness-icon.harness-pi,
+.harness-icon.harness-codex {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
 .chevron {
   color: var(--accent);
   font-size: 16px;

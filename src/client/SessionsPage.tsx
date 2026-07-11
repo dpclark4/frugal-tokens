@@ -258,11 +258,21 @@ function CostCell({
 }
 
 function harnessTitle(harness: SessionSummary["harness"]) {
-  return harness === "claude-code" ? "Claude Code" : "OpenCode";
+  if (harness === "claude-code") return "Claude Code";
+  if (harness === "pi") return "PI";
+  if (harness === "codex") return "Codex";
+  return "OpenCode";
 }
 
 function HarnessIcon({ harness }: { harness: SessionSummary["harness"] }) {
   const title = harnessTitle(harness);
+  if (harness === "pi" || harness === "codex") {
+    return (
+      <span className={`harness-icon harness-${harness}`} title={title} aria-label={title}>
+        {harness === "pi" ? "PI" : "CX"}
+      </span>
+    );
+  }
   const src = harness === "claude-code" ? claudeCodeIcon : openCodeIcon;
   return (
     <span className={`harness-icon harness-${harness}`} title={title}>
@@ -798,7 +808,7 @@ export function SessionsPage() {
     <main>
       <header className="page-header">
         <div>
-          <p className="eyebrow">Local OpenCode economics</p>
+          <p className="eyebrow">Local agent economics</p>
           <h1>Frugal Tokens</h1>
         </div>
         <p className="intro">
@@ -833,6 +843,8 @@ export function SessionsPage() {
                 <option value="all">All</option>
                 <option value="claude-code">Claude Code</option>
                 <option value="opencode">OpenCode</option>
+                <option value="pi">PI</option>
+                <option value="codex">Codex</option>
               </select>
             </label>
           </div>

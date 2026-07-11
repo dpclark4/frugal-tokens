@@ -2,6 +2,8 @@ import { Hono } from "hono";
 import { serveStatic } from "hono/deno";
 import { OpenCodeRepository } from "./opencodeRepository.ts";
 import { ClaudeCodeRepository } from "./claudeCodeRepository.ts";
+import { PiRepository } from "./piRepository.ts";
+import { CodexRepository } from "./codexRepository.ts";
 import { priceSessionDetail } from "./pricing.ts";
 import {
   analyzeSessionCache,
@@ -21,13 +23,28 @@ if (!claudeCodeProjectPath) {
 const claudeRepository = new ClaudeCodeRepository(
   claudeCodeProjectPath,
 );
+const piSessionDirectory = Deno.env.get("PI_SESSION_DIR");
+if (!piSessionDirectory) {
+  throw new Error("PI_SESSION_DIR must be set");
+}
+const piRepository = new PiRepository(piSessionDirectory);
+const codexSessionDirectory = Deno.env.get("CODEX_SESSION_DIR");
+if (!codexSessionDirectory) {
+  throw new Error("CODEX_SESSION_DIR must be set");
+}
+const codexRepository = new CodexRepository(codexSessionDirectory);
 const app = new Hono();
+
+function repositoryForHarness(harness: SessionSummary["harness"]) {
+  if (harness === "claude-code") return claudeRepository;
+  if (harness === "pi") return piRepository;
+  if (harness === "codex") return codexRepository;
+  return repository;
+}
 
 function priceSummaries(items: SessionSummary[]) {
   return items.map((item) => {
-    const detail = item.harness === "claude-code"
-      ? claudeRepository.getSession(item.id)
-      : repository.getSession(item.id);
+    const detail = repositoryForHarness(item.harness).getSession(item.id);
     if (!detail) return item;
     const priced = priceSessionDetail(detail);
     const analyzed = analyzeSessionCache(priced);
@@ -56,11 +73,22 @@ app.get("/api/sessions", (context) => {
     const result = claudeRepository.listSessions(page, pageSize);
     return context.json({ ...result, items: priceSummaries(result.items) });
   }
+  if (harness === "pi") {
+    const result = piRepository.listSessions(page, pageSize);
+    return context.json({ ...result, items: priceSummaries(result.items) });
+  }
+  if (harness === "codex") {
+    const result = codexRepository.listSessions(page, pageSize);
+    return context.json({ ...result, items: priceSummaries(result.items) });
+  }
   const openCode = repository.listSessions(1, page * pageSize);
   const claude = claudeRepository.listSessions(1, page * pageSize);
+  const pi = piRepository.listSessions(1, page * pageSize);
+  const codex = codexRepository.listSessions(1, page * pageSize);
   const totalItems = openCode.pagination.totalItems +
-    claude.pagination.totalItems;
-  const items = [...openCode.items, ...claude.items]
+    claude.pagination.totalItems + pi.pagination.totalItems +
+    codex.pagination.totalItems;
+  const items = [...openCode.items, ...claude.items, ...pi.items, ...codex.items]
     .sort((a, b) => b.updatedAt - a.updatedAt || b.id.localeCompare(a.id))
     .slice((page - 1) * pageSize, page * pageSize);
   return context.json({
@@ -75,8 +103,13 @@ app.get("/api/sessions", (context) => {
 });
 
 app.get("/api/sessions/:id", (context) => {
-  const session = context.req.query("harness") === "claude-code"
+  const harness = context.req.query("harness");
+  const session = harness === "claude-code"
     ? claudeRepository.getSession(context.req.param("id"))
+    : harness === "pi"
+    ? piRepository.getSession(context.req.param("id"))
+    : harness === "codex"
+    ? codexRepository.getSession(context.req.param("id"))
     : repository.getSession(context.req.param("id"));
   return session
     ? context.json(analyzeSessionCache(priceSessionDetail(session)))
