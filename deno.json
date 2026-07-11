@@ -28,10 +28,10 @@
   },
   "tasks": {
     "dev": "deno run -A npm:concurrently@10.0.3 --kill-others-on-fail --names api,web 'deno task dev:server' 'deno task dev:client'",
-    "dev:server": "deno run --allow-env=HOME,OPENCODE_DB_PATH,PORT --allow-read --allow-net --watch=src/server,src/shared src/server/main.ts",
+    "dev:server": "deno run --env-file=.env --allow-env=HOME,OPENCODE_DB_PATH,CLAUDE_CODE_PROJECT_PATH,PORT --allow-read --allow-net --watch=src/server,src/shared src/server/main.ts",
     "dev:client": "deno run -A npm:vite@8.1.4",
     "build": "deno run -A npm:vite@8.1.4 build",
-    "start": "deno run --allow-env=HOME,OPENCODE_DB_PATH,PORT --allow-read --allow-net src/server/main.ts",
+    "start": "deno run --env-file=.env --allow-env=HOME,OPENCODE_DB_PATH,CLAUDE_CODE_PROJECT_PATH,PORT --allow-read --allow-net src/server/main.ts",
     "check": "deno check src/server/main.ts src/client/main.tsx vite.config.ts",
     "test": "deno test --allow-env --allow-read --allow-write"
   }

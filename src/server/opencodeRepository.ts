@@ -70,6 +70,8 @@ const emptyTokens = (): TokenUsage => ({
   uncachedInput: 0,
   cacheRead: 0,
   cacheWrite: undefined,
+  cacheWrite5m: undefined,
+  cacheWrite1h: undefined,
   freshPrompt: 0,
   output: 0,
   reasoning: 0,
@@ -85,6 +87,12 @@ function addTokens(total: TokenUsage, usage: TokenUsage) {
   total.processed += usage.processed;
   if (usage.cacheWrite !== undefined) {
     total.cacheWrite = (total.cacheWrite ?? 0) + usage.cacheWrite;
+  }
+  if (usage.cacheWrite5m !== undefined) {
+    total.cacheWrite5m = (total.cacheWrite5m ?? 0) + usage.cacheWrite5m;
+  }
+  if (usage.cacheWrite1h !== undefined) {
+    total.cacheWrite1h = (total.cacheWrite1h ?? 0) + usage.cacheWrite1h;
   }
 }
 
@@ -162,6 +170,8 @@ function decodeMessages(
       uncachedInput: source.input,
       cacheRead: source.cache.read,
       cacheWrite,
+      cacheWrite5m: undefined,
+      cacheWrite1h: undefined,
       freshPrompt: source.input + (cacheWrite ?? 0),
       output: source.output,
       reasoning: source.reasoning,
@@ -310,6 +320,7 @@ export class OpenCodeRepository {
     if (decoded.models.size === 0 && fallback) decoded.models.add(fallback.id);
     return {
       id: row.id,
+      harness: "opencode",
       title: row.title,
       updatedAt: row.time_updated,
       providers: [...decoded.providers],

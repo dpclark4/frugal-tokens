@@ -32,6 +32,12 @@ function TokenValue({ value }: { value: number }) {
   return <span title={integer.format(value)}>{compact.format(value)}</span>;
 }
 
+function cacheHitRate(tokens: SessionDetail["tokens"]) {
+  const input = tokens.uncachedInput + tokens.cacheRead +
+    (tokens.cacheWrite ?? 0);
+  return input === 0 ? undefined : tokens.cacheRead / input;
+}
+
 function duration(startedAt?: number, completedAt?: number) {
   if (startedAt === undefined || completedAt === undefined) return undefined;
   const milliseconds = completedAt - startedAt;
@@ -84,17 +90,23 @@ function SessionBreakdown({
                 {session.userTurns} {session.userTurns === 1 ? "turn" : "turns"}
               </span>
               <span>{session.modelCalls} calls</span>
-              <span>{dollars.format(session.reportedCost)}</span>
+              <span>
+                {session.reportedCost === undefined
+                  ? "-"
+                  : dollars.format(session.reportedCost)}
+              </span>
             </div>
           </div>
         )
         : (
           <div className="definition-note">
-            <strong>Fresh prompt</strong>{" "}
+            <strong>New input</strong>{" "}
             is uncached input plus reported cache writes.{" "}
-            <strong>Processed tokens</strong>{" "}
-            include fresh prompt, cache reads, output, and reasoning. A dash
-            means no cache write was reported.
+            <strong>Total activity</strong>{" "}
+            includes new input, cache reads, output, and reasoning. A dash means
+            no cache write was reported. <strong>Computed cost</strong>{" "}
+            uses the bundled rate card; a dash means pricing is unavailable or
+            the source token categories are incomplete.
           </div>
         )}
       {session.turns.map((turn) => (
@@ -117,13 +129,14 @@ function SessionBreakdown({
                       <th>Started</th>
                       <th>Activity</th>
                       <th>Model</th>
-                      <th>Fresh prompt</th>
+                      <th>New input</th>
                       <th>Cache read</th>
                       <th>Reported write</th>
                       <th>Output</th>
                       <th>Reasoning</th>
-                      <th>Processed</th>
+                      <th>Total activity</th>
                       <th>Cost</th>
+                      <th>Computed cost</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -184,11 +197,20 @@ function SessionBreakdown({
                             <td>
                               <TokenValue value={call.tokens.processed} />
                             </td>
-                            <td>{dollars.format(call.reportedCost)}</td>
+                            <td>
+                              {call.reportedCost === undefined
+                                ? "-"
+                                : dollars.format(call.reportedCost)}
+                            </td>
+                            <td>
+                              {call.computedCost === undefined
+                                ? "-"
+                                : dollars.format(call.computedCost)}
+                            </td>
                           </tr>
                           {expanded && (
                             <tr className="activity-detail-row">
-                              <td colSpan={11}>
+                              <td colSpan={12}>
                                 <div className="activity-detail">
                                   <div className="activity-meta">
                                     <span className="activity-label">
@@ -329,7 +351,7 @@ function SessionBreakdown({
 }
 
 export function SessionsPage() {
-  const { page } = route.useSearch();
+  const { page, harness } = route.useSearch();
   const navigate = route.useNavigate();
   const [data, setData] = useState<SessionListResponse>();
   const [expandedID, setExpandedID] = useState<string>();
@@ -340,21 +362,22 @@ export function SessionsPage() {
     let active = true;
     setData(undefined);
     setError(undefined);
-    getSessions(page).then((result) => active && setData(result)).catch(
-      (reason) => {
-        if (active) {
-          setError(
-            reason instanceof Error
-              ? reason.message
-              : "Unable to load sessions",
-          );
-        }
-      },
-    );
+    getSessions(page, harness).then((result) => active && setData(result))
+      .catch(
+        (reason) => {
+          if (active) {
+            setError(
+              reason instanceof Error
+                ? reason.message
+                : "Unable to load sessions",
+            );
+          }
+        },
+      );
     return () => {
       active = false;
     };
-  }, [page]);
+  }, [page, harness]);
 
   async function toggleSession(id: string) {
     if (expandedID === id) {
@@ -364,7 +387,9 @@ export function SessionsPage() {
     setExpandedID(id);
     if (details[id]) return;
     try {
-      const detail = await getSession(id);
+      const summary = data?.items.find((session) => session.id === id);
+      if (!summary) return;
+      const detail = await getSession(id, summary.harness);
       setDetails((current) => ({ ...current, [id]: detail }));
     } catch (reason) {
       setExpandedID(undefined);
@@ -392,11 +417,30 @@ export function SessionsPage() {
             <h2>Recent sessions</h2>
             <p>Ordered by latest activity</p>
           </div>
-          {data && (
-            <span className="session-count">
-              {integer.format(data.pagination.totalItems)} sessions
-            </span>
-          )}
+          <div className="session-filters">
+            {data && (
+              <span className="session-count">
+                {integer.format(data.pagination.totalItems)} sessions
+              </span>
+            )}
+            <label>
+              <span>Harness</span>
+              <select
+                value={harness}
+                onChange={(event) =>
+                  navigate({
+                    search: {
+                      page: 1,
+                      harness: event.target.value as typeof harness,
+                    },
+                  })}
+              >
+                <option value="all">All</option>
+                <option value="claude-code">Claude Code</option>
+                <option value="opencode">OpenCode</option>
+              </select>
+            </label>
+          </div>
         </div>
         {error && <div className="error">{error}</div>}
         {!data && !error && (
@@ -412,9 +456,14 @@ export function SessionsPage() {
                     <th>Provider / model</th>
                     <th>Turns</th>
                     <th>Calls</th>
-                    <th>Fresh prompt</th>
-                    <th>Processed</th>
+                    <th>New input</th>
+                    <th title="Cache reads divided by all input-side tokens">
+                      Cache hit
+                    </th>
+                    <th>Generated</th>
+                    <th>Total activity</th>
                     <th>Reported cost</th>
+                    <th>Computed cost</th>
                     <th aria-label="Expand" />
                   </tr>
                 </thead>
@@ -431,6 +480,11 @@ export function SessionsPage() {
                         >
                           <td>
                             <strong>{session.title}</strong>
+                            <small className="activity-label">
+                              {session.harness === "claude-code"
+                                ? "CLAUDE CODE"
+                                : "OPENCODE"}
+                            </small>
                             <small className="session-id" title={session.id}>
                               {session.id}
                             </small>
@@ -450,9 +504,29 @@ export function SessionsPage() {
                             <TokenValue value={session.tokens.freshPrompt} />
                           </td>
                           <td>
+                            {cacheHitRate(session.tokens) === undefined
+                              ? "-"
+                              : `${(cacheHitRate(session.tokens)! * 100).toFixed(1)}%`}
+                          </td>
+                          <td>
+                            <TokenValue
+                              value={session.tokens.output +
+                                session.tokens.reasoning}
+                            />
+                          </td>
+                          <td>
                             <TokenValue value={session.tokens.processed} />
                           </td>
-                          <td>{dollars.format(session.reportedCost)}</td>
+                          <td>
+                            {session.reportedCost === undefined
+                              ? "-"
+                              : dollars.format(session.reportedCost)}
+                          </td>
+                          <td>
+                            {session.computedCost === undefined
+                              ? "-"
+                              : dollars.format(session.computedCost)}
+                          </td>
                           <td className="chevron">{expanded ? "−" : "+"}</td>
                         </tr>
                         {expanded && (
@@ -460,7 +534,7 @@ export function SessionsPage() {
                             className="detail-row"
                             key={`${session.id}-detail`}
                           >
-                            <td colSpan={8}>
+                            <td colSpan={11}>
                               {details[session.id]
                                 ? (
                                   <SessionBreakdown
@@ -485,7 +559,8 @@ export function SessionsPage() {
               <button
                 type="button"
                 disabled={page <= 1}
-                onClick={() => navigate({ search: { page: page - 1 } })}
+                onClick={() =>
+                  navigate({ search: { page: page - 1, harness } })}
               >
                 Previous
               </button>
@@ -493,7 +568,8 @@ export function SessionsPage() {
               <button
                 type="button"
                 disabled={page >= data.pagination.totalPages}
-                onClick={() => navigate({ search: { page: page + 1 } })}
+                onClick={() =>
+                  navigate({ search: { page: page + 1, harness } })}
               >
                 Next
               </button>
