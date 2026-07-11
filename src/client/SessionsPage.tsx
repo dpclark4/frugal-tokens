@@ -282,16 +282,19 @@ function HarnessIcon({ harness }: { harness: SessionSummary["harness"] }) {
 }
 
 function activitySummary(call: ModelCall) {
+  const imageLabel = call.activity.images === undefined
+    ? ""
+    : `${call.activity.images} image${call.activity.images === 1 ? "" : "s"} + `;
   const names = [...new Set(call.activity.tools.map((tool) => tool.name))];
   if (call.activity.tools.length > 0) {
-    return `${call.activity.tools.length} ${
+    return `${imageLabel}${call.activity.tools.length} ${
       call.activity.tools.length === 1 ? "tool" : "tools"
     } | ${names.join(", ")}`;
   }
-  if (call.activity.finishReason === "stop") return "Final response";
-  if (call.activity.hasText) return "Text response";
-  if (call.activity.hasReasoning) return "Reasoning";
-  return call.activity.finishReason ?? "Model call";
+  if (call.activity.finishReason === "stop") return `${imageLabel}Final response`;
+  if (call.activity.hasText) return `${imageLabel}Text response`;
+  if (call.activity.hasReasoning) return `${imageLabel}Reasoning`;
+  return imageLabel + (call.activity.finishReason ?? "Model call");
 }
 
 function callSubagents(call: ModelCall, session: SessionDetail) {
@@ -892,7 +895,12 @@ export function SessionsPage() {
                             <div className="session-identity">
                               <HarnessIcon harness={session.harness} />
                               <div className="session-copy">
-                                <strong>{session.title}</strong>
+                                <strong
+                                  className="session-title"
+                                  title={session.title}
+                                >
+                                  {session.title}
+                                </strong>
                                 <small className="session-id" title={session.id}>
                                   {session.id}
                                 </small>

@@ -68,6 +68,7 @@ console.log("");
 const columns = [
   ["T.C", 5, true],
   ["MODEL", 18, true],
+  ["IMG", 3, false],
   ["NEW", 9, false],
   ["READ", 9, false],
   ["WRITE", 9, false],
@@ -97,6 +98,7 @@ for (const [turnIndex, turn] of session.turns.entries()) {
     const values = [
       `${turn.number}.${call.callWithinTurn}`,
       model,
+      call.activity.images === undefined ? "-" : "Y",
       integer(tokens.uncachedInput),
       integer(tokens.cacheRead),
       integer(tokens.cacheWrite),

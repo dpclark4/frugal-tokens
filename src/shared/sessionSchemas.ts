@@ -24,6 +24,7 @@ export const toolEventSchema = z.object({
 
 export const callActivitySchema = z.object({
   finishReason: z.string().optional(),
+  images: z.number().int().positive().optional(),
   hasText: z.boolean(),
   hasReasoning: z.boolean(),
   tools: z.array(toolEventSchema),
