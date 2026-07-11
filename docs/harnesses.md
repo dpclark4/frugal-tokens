@@ -18,8 +18,8 @@ separate from derived metrics and provider-specific inferences.
 ### Source
 
 - Format: SQLite
-- Default path on macOS: `~/.local/share/opencode/opencode.db`
-- Override in Frugal Tokens: `OPENCODE_DB_PATH`
+- Normal path on macOS: `~/.local/share/opencode/opencode.db`
+- Frugal Tokens path: required `OPENCODE_DB_PATH` environment variable
 - Access: read-only; never mutate the OpenCode database
 - Schema observed on July 10, 2026 with OpenCode 1.17.x
 

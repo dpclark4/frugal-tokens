@@ -5,12 +5,11 @@ import { ClaudeCodeRepository } from "./claudeCodeRepository.ts";
 import { priceSessionDetail } from "./pricing.ts";
 import type { SessionSummary } from "../shared/sessionSchemas.ts";
 
-const defaultDatabasePath = `${
-  Deno.env.get("HOME")
-}/.local/share/opencode/opencode.db`;
-const repository = new OpenCodeRepository(
-  Deno.env.get("OPENCODE_DB_PATH") ?? defaultDatabasePath,
-);
+const openCodeDatabasePath = Deno.env.get("OPENCODE_DB_PATH");
+if (!openCodeDatabasePath) {
+  throw new Error("OPENCODE_DB_PATH must be set");
+}
+const repository = new OpenCodeRepository(openCodeDatabasePath);
 const claudeCodeProjectPath = Deno.env.get("CLAUDE_CODE_PROJECT_PATH");
 if (!claudeCodeProjectPath) {
   throw new Error("CLAUDE_CODE_PROJECT_PATH must be set");
