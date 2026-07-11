@@ -232,6 +232,12 @@ table.data-table {
   color: var(--ink);
 }
 
+.session-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .session-cell small {
   display: block;
   color: var(--muted-2);

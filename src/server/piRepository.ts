@@ -102,6 +102,22 @@ function userText(record: Record) {
   return record.message?.content?.find((block) => block.type === "text")?.text;
 }
 
+function userImages(record: Record) {
+  const content = record.message?.content ?? [];
+  const blocks = content.filter((block) =>
+    block.type === "image" || block.type === "input_image"
+  ).length;
+  if (blocks > 0) return blocks;
+  // Pi may persist a clipboard attachment as its temporary image path in a
+  // text block rather than as an image content block.
+  return content.filter((block) =>
+    block.type === "text" &&
+    /(?:^|[\s"'(])[^\s"')]+\.(?:png|jpe?g|gif|webp|bmp)(?:$|[\s"')])/i.test(
+      block.text ?? "",
+    )
+  ).length;
+}
+
 function basename(path: string | undefined) {
   if (!path) return undefined;
   return path.split("/").filter(Boolean).at(-1);
@@ -123,7 +139,7 @@ function sessionBounds(
 
 function decodeRecords(records: Record[]) {
   const turns: Array<
-    { number: number; startedAt: number; calls: ModelCall[] }
+    { number: number; startedAt: number; calls: ModelCall[]; images?: number }
   > = [];
   const tokens = emptyTokens();
   const providers = new Set<string>();
@@ -146,6 +162,7 @@ function decodeRecords(records: Record[]) {
           number: turns.length + 1,
           startedAt: timestamp,
           calls: [],
+          images: userImages(record),
         });
       }
       continue;
@@ -200,6 +217,9 @@ function decodeRecords(records: Record[]) {
       tokens: callTokens,
       activity: {
         finishReason: message.stopReason,
+        ...(turn.images && turn.calls.length === 0
+          ? { images: turn.images }
+          : {}),
         hasText: false,
         hasReasoning: source.reasoning > 0,
         tools: [],

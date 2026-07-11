@@ -31,6 +31,7 @@ const messageDataSchema = z.object({
 
 const partDataSchema = z.object({
   type: z.string(),
+  mime: z.string().optional(),
   tool: z.string().optional(),
   state: z.object({
     status: z.string().optional(),
@@ -115,6 +116,9 @@ function decodeParts(rows: PartRow[]) {
     };
     if (part.type === "text") current.hasText = true;
     if (part.type === "reasoning") current.hasReasoning = true;
+    if (part.type === "file" && part.mime?.startsWith("image/")) {
+      current.images = (current.images ?? 0) + 1;
+    }
     if (part.type === "tool" && part.tool) {
       current.tools.push({
         name: part.tool,
@@ -140,6 +144,7 @@ function decodeMessages(
   const models = new Set<string>();
   const tokens = emptyTokens();
   let reportedCost = 0;
+  let pendingImages = 0;
 
   for (const row of rows) {
     let raw: unknown;
@@ -153,6 +158,7 @@ function decodeMessages(
     const message = result.data;
 
     if (message.role === "user") {
+      pendingImages = activityByMessage.get(row.id)?.images ?? 0;
       turns.push({
         number: turns.length + 1,
         startedAt: row.time_created,
@@ -189,6 +195,10 @@ function decodeMessages(
       hasReasoning: source.reasoning > 0,
       tools: [],
     };
+    if (pendingImages > 0) {
+      activity.images = pendingImages;
+      pendingImages = 0;
+    }
     activity.finishReason = message.finish;
     providers.add(provider);
     models.add(model);
