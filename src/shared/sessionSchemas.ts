@@ -1,9 +1,13 @@
 import { z } from "zod";
 
+export const harnessSchema = z.enum(["opencode", "claude-code"]);
+
 export const tokenUsageSchema = z.object({
   uncachedInput: z.number().int().nonnegative(),
   cacheRead: z.number().int().nonnegative(),
   cacheWrite: z.number().int().positive().optional(),
+  cacheWrite5m: z.number().int().nonnegative().optional(),
+  cacheWrite1h: z.number().int().nonnegative().optional(),
   freshPrompt: z.number().int().nonnegative(),
   output: z.number().int().nonnegative(),
   reasoning: z.number().int().nonnegative(),
@@ -27,13 +31,15 @@ export const callActivitySchema = z.object({
 
 export const sessionSummarySchema = z.object({
   id: z.string(),
+  harness: harnessSchema,
   title: z.string(),
   updatedAt: z.number(),
   providers: z.array(z.string()),
   models: z.array(z.string()),
   userTurns: z.number().int().nonnegative(),
   modelCalls: z.number().int().nonnegative(),
-  reportedCost: z.number().nonnegative(),
+  reportedCost: z.number().nonnegative().optional(),
+  computedCost: z.number().nonnegative().optional(),
   tokens: tokenUsageSchema,
 });
 
@@ -44,7 +50,8 @@ export const modelCallSchema = z.object({
   model: z.string(),
   startedAt: z.number(),
   completedAt: z.number().optional(),
-  reportedCost: z.number().nonnegative(),
+  reportedCost: z.number().nonnegative().optional(),
+  computedCost: z.number().nonnegative().optional(),
   tokens: tokenUsageSchema,
   activity: callActivitySchema,
 });

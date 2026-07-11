@@ -88,6 +88,28 @@ h1 {
   border: 1px solid #aab9a7;
   padding: 6px 9px;
 }
+.session-filters {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.session-filters label {
+  display: grid;
+  gap: 4px;
+  color: #767970;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.session-filters select {
+  border: 1px solid #aab9a7;
+  border-radius: 0;
+  background: #fffdf8;
+  color: #263126;
+  padding: 6px 28px 6px 9px;
+  font: 12px "SFMono-Regular", Consolas, monospace;
+}
 .session-table-wrap,
 .call-table-wrap {
   overflow-x: auto;
