@@ -114,6 +114,20 @@ function startsTurn(record: Record, hasTurns: boolean) {
     text.startsWith("❯ ") || (record.isSidechain === true && !hasTurns);
 }
 
+function sessionBounds(
+  turns: Array<{ startedAt: number; calls: Array<{ startedAt: number; completedAt?: number }> }>,
+) {
+  if (turns.length === 0) return {};
+  const startedAt = Math.min(...turns.map((turn) => turn.startedAt));
+  const ends = turns.flatMap((turn) =>
+    turn.calls.map((call) => call.completedAt ?? call.startedAt)
+  );
+  const endedAt = ends.length > 0
+    ? Math.max(...ends)
+    : Math.max(...turns.map((turn) => turn.startedAt));
+  return { startedAt, endedAt };
+}
+
 function decodeRecords(records: Record[]) {
   const turns: Array<
     { number: number; startedAt: number; calls: ModelCall[] }
@@ -307,11 +321,14 @@ export class ClaudeCodeRepository {
     const title = this.#index.get(id)?.summary ?? generatedTitle ??
       this.#index.get(id)?.firstPrompt ??
       promptTitle ?? `Claude Code session ${id.slice(0, 8)}`;
+    const bounds = sessionBounds(decoded.turns);
     return {
       id,
       harness: "claude-code",
       title,
       updatedAt: transcriptUpdatedAt ? Date.parse(transcriptUpdatedAt) : updatedAt,
+      startedAt: bounds.startedAt,
+      endedAt: bounds.endedAt,
       providers: [...decoded.providers],
       models: [...decoded.models],
       userTurns: decoded.turns.length,

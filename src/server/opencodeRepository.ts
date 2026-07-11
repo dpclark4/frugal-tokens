@@ -221,6 +221,20 @@ function fallbackModel(modelJson: string | null) {
   }
 }
 
+function sessionBounds(
+  turns: Array<{ startedAt: number; calls: Array<{ startedAt: number; completedAt?: number }> }>,
+) {
+  if (turns.length === 0) return {};
+  const startedAt = Math.min(...turns.map((turn) => turn.startedAt));
+  const ends = turns.flatMap((turn) =>
+    turn.calls.map((call) => call.completedAt ?? call.startedAt)
+  );
+  const endedAt = ends.length > 0
+    ? Math.max(...ends)
+    : Math.max(...turns.map((turn) => turn.startedAt));
+  return { startedAt, endedAt };
+}
+
 export class OpenCodeRepository {
   #db: DatabaseSync;
 
@@ -234,13 +248,16 @@ export class OpenCodeRepository {
 
   listSessions(page: number, pageSize: number) {
     const totalItems = Number(
-      (this.#db.prepare("SELECT COUNT(*) AS count FROM session").get() as {
-        count: number;
-      }).count,
+      (this.#db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM session WHERE parent_id IS NULL",
+        )
+        .get() as { count: number }).count,
     );
     const rows = this.#db.prepare(`
       SELECT id, parent_id, title, model, agent, time_updated
       FROM session
+      WHERE parent_id IS NULL
       ORDER BY time_updated DESC, id DESC
       LIMIT ? OFFSET ?
     `).all(pageSize, (page - 1) * pageSize) as SessionRow[];
@@ -318,11 +335,14 @@ export class OpenCodeRepository {
       decoded.providers.add(fallback.providerID);
     }
     if (decoded.models.size === 0 && fallback) decoded.models.add(fallback.id);
+    const bounds = sessionBounds(decoded.turns);
     return {
       id: row.id,
       harness: "opencode",
       title: row.title,
       updatedAt: row.time_updated,
+      startedAt: bounds.startedAt,
+      endedAt: bounds.endedAt,
       providers: [...decoded.providers],
       models: [...decoded.models],
       userTurns: decoded.turns.length,

@@ -34,6 +34,8 @@ export const sessionSummarySchema = z.object({
   harness: harnessSchema,
   title: z.string(),
   updatedAt: z.number(),
+  startedAt: z.number().optional(),
+  endedAt: z.number().optional(),
   providers: z.array(z.string()),
   models: z.array(z.string()),
   userTurns: z.number().int().nonnegative(),
