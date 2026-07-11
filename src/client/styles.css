@@ -311,7 +311,8 @@ table.data-table {
   height: 14px;
 }
 
-.harness-icon.harness-pi {
+.harness-icon.harness-pi,
+.harness-icon.harness-codex {
   color: var(--accent);
   font-family: var(--mono);
   font-size: 10px;

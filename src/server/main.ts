@@ -3,6 +3,7 @@ import { serveStatic } from "hono/deno";
 import { OpenCodeRepository } from "./opencodeRepository.ts";
 import { ClaudeCodeRepository } from "./claudeCodeRepository.ts";
 import { PiRepository } from "./piRepository.ts";
+import { CodexRepository } from "./codexRepository.ts";
 import { priceSessionDetail } from "./pricing.ts";
 import {
   analyzeSessionCache,
@@ -27,11 +28,17 @@ if (!piSessionDirectory) {
   throw new Error("PI_SESSION_DIR must be set");
 }
 const piRepository = new PiRepository(piSessionDirectory);
+const codexSessionDirectory = Deno.env.get("CODEX_SESSION_DIR");
+if (!codexSessionDirectory) {
+  throw new Error("CODEX_SESSION_DIR must be set");
+}
+const codexRepository = new CodexRepository(codexSessionDirectory);
 const app = new Hono();
 
 function repositoryForHarness(harness: SessionSummary["harness"]) {
   if (harness === "claude-code") return claudeRepository;
   if (harness === "pi") return piRepository;
+  if (harness === "codex") return codexRepository;
   return repository;
 }
 
@@ -70,12 +77,18 @@ app.get("/api/sessions", (context) => {
     const result = piRepository.listSessions(page, pageSize);
     return context.json({ ...result, items: priceSummaries(result.items) });
   }
+  if (harness === "codex") {
+    const result = codexRepository.listSessions(page, pageSize);
+    return context.json({ ...result, items: priceSummaries(result.items) });
+  }
   const openCode = repository.listSessions(1, page * pageSize);
   const claude = claudeRepository.listSessions(1, page * pageSize);
   const pi = piRepository.listSessions(1, page * pageSize);
+  const codex = codexRepository.listSessions(1, page * pageSize);
   const totalItems = openCode.pagination.totalItems +
-    claude.pagination.totalItems + pi.pagination.totalItems;
-  const items = [...openCode.items, ...claude.items, ...pi.items]
+    claude.pagination.totalItems + pi.pagination.totalItems +
+    codex.pagination.totalItems;
+  const items = [...openCode.items, ...claude.items, ...pi.items, ...codex.items]
     .sort((a, b) => b.updatedAt - a.updatedAt || b.id.localeCompare(a.id))
     .slice((page - 1) * pageSize, page * pageSize);
   return context.json({
@@ -95,6 +108,8 @@ app.get("/api/sessions/:id", (context) => {
     ? claudeRepository.getSession(context.req.param("id"))
     : harness === "pi"
     ? piRepository.getSession(context.req.param("id"))
+    : harness === "codex"
+    ? codexRepository.getSession(context.req.param("id"))
     : repository.getSession(context.req.param("id"));
   return session
     ? context.json(analyzeSessionCache(priceSessionDetail(session)))
