@@ -1,11 +1,14 @@
 import { Fragment, useEffect, useState } from "react";
 import { getRouteApi } from "@tanstack/react-router";
 import type {
+  CacheAssessment,
+  CacheSummary,
   ModelCall,
   SessionDetail,
   SessionListResponse,
   SessionSummary,
   TokenUsage,
+  TurnCacheSummary,
 } from "../shared/sessionSchemas.ts";
 import { getSession, getSessions } from "./api.ts";
 import claudeCodeIcon from "./assets/icons/claudecode-color.svg";
@@ -32,6 +35,10 @@ const timeOnly = new Intl.DateTimeFormat(undefined, {
   minute: "2-digit",
   second: "2-digit",
 });
+const dateOnly = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+});
 
 const COST_EPSILON = 0.0001;
 
@@ -48,6 +55,87 @@ function cacheHitRate(tokens: TokenUsage) {
 function formatCacheHit(tokens: TokenUsage) {
   const rate = cacheHitRate(tokens);
   return rate === undefined ? "-" : `${(rate * 100).toFixed(1)}%`;
+}
+
+const cacheStatusLabels: Record<CacheAssessment["status"], string> = {
+  hit: "Hit",
+  "partial-miss": "Partial miss",
+  "full-miss": "Full miss",
+  unknown: "Unknown",
+};
+
+function CacheAssessmentBadge({ assessment }: { assessment?: CacheAssessment }) {
+  if (!assessment) return null;
+  const title = assessment.retainedRatio === undefined ||
+      assessment.previousReusableTokens === undefined
+    ? "No comparable preceding call"
+    : `Retained ${(assessment.retainedRatio * 100).toFixed(1)}% · Read ${
+      integer.format(
+        Math.round(
+          assessment.retainedRatio * assessment.previousReusableTokens,
+        ),
+      )
+    } of ${integer.format(assessment.previousReusableTokens)} previously reusable tokens`;
+  return (
+    <span
+      className={`cache-assessment cache-assessment-${assessment.status}`}
+      title={title}
+    >
+      {cacheStatusLabels[assessment.status]}
+    </span>
+  );
+}
+
+function CacheSummaryBadge({ summary }: { summary?: CacheSummary }) {
+  if (!summary) return <span className="muted">—</span>;
+  const comparable = summary.hits + summary.partialMisses + summary.fullMisses;
+  const title = `${summary.hits} hits · ${summary.partialMisses} partial misses · ${summary.fullMisses} full misses · ${summary.unknown} unknown`;
+  if (comparable === 0) {
+    return <span className="cache-summary cache-summary-unknown" title={title}>Unknown</span>;
+  }
+  if (summary.fullMisses > 0) {
+    return (
+      <span className="cache-summary cache-summary-full" title={title}>
+        {summary.fullMisses} full
+        {summary.partialMisses > 0 && ` · ${summary.partialMisses} partial`}
+      </span>
+    );
+  }
+  if (summary.partialMisses > 0) {
+    return (
+      <span className="cache-summary cache-summary-partial" title={title}>
+        {summary.partialMisses} partial
+      </span>
+    );
+  }
+  return <span className="cache-summary cache-summary-hit" title={title}>No misses</span>;
+}
+
+function TurnCacheSummaryBadge({ summary }: { summary?: TurnCacheSummary }) {
+  if (!summary) return <span className="muted">—</span>;
+  const title = `${summary.hits} hits · ${summary.partialMisses} partial misses · ${summary.fullMisses} full misses · ${summary.unknown} unknown`;
+  const parts = [
+    summary.fullMisses > 0 ? `${summary.fullMisses} full` : undefined,
+    summary.partialMisses > 0
+      ? `${summary.partialMisses} partial`
+      : undefined,
+    summary.hits > 0 ? `${summary.hits} hit` : undefined,
+  ].filter(Boolean);
+  const status = summary.fullMisses > 0
+    ? "full-miss"
+    : summary.partialMisses > 0
+    ? "partial-miss"
+    : summary.hits > 0
+    ? "hit"
+    : "unknown";
+  return (
+    <span
+      className={`cache-assessment cache-assessment-${status}`}
+      title={title}
+    >
+      {parts.join(" · ") || "Unknown"}
+    </span>
+  );
 }
 
 function duration(startedAt?: number, completedAt?: number) {
@@ -320,18 +408,28 @@ function CallTable({
                     <TokenValue value={call.tokens.freshPrompt} />
                   </td>
                   <td
-                    className={call.tokens.cacheRead > 0 ? "cache-hit" : "muted"}
                     title={`Read ${integer.format(call.tokens.cacheRead)}${
                       call.tokens.cacheWrite === undefined
                         ? ""
                         : ` · Write ${integer.format(call.tokens.cacheWrite)}`
                     }`}
                   >
-                    <TokenValue value={call.tokens.cacheRead} />
-                    <span className="cache-sep">/</span>
-                    {call.tokens.cacheWrite === undefined
-                      ? <span className="muted">—</span>
-                      : <TokenValue value={call.tokens.cacheWrite} />}
+                    <span className="cache-cell-content">
+                      <span
+                        className={call.tokens.cacheRead > 0
+                          ? "cache-hit"
+                          : "muted"}
+                      >
+                        <TokenValue value={call.tokens.cacheRead} />
+                        <span className="cache-sep">/</span>
+                        {call.tokens.cacheWrite === undefined
+                          ? <span className="muted">—</span>
+                          : <TokenValue value={call.tokens.cacheWrite} />}
+                      </span>
+                      <CacheAssessmentBadge
+                        assessment={call.cacheAssessment}
+                      />
+                    </span>
                   </td>
                   <td>
                     <TokenValue
@@ -469,15 +567,20 @@ function SessionBreakdown({
   session: SessionDetail;
   nested?: boolean;
 }) {
-  const [expandedTurn, setExpandedTurn] = useState<number>();
+  const [expandedTurns, setExpandedTurns] = useState<Set<number>>(
+    () => new Set(),
+  );
   const [expandedCallID, setExpandedCallID] = useState<string>();
   const [expandedSubagentID, setExpandedSubagentID] = useState<string>();
   const span = sessionSpan(session);
 
   function toggleTurn(number: number) {
-    setExpandedTurn((current) => current === number ? undefined : number);
-    setExpandedCallID(undefined);
-    setExpandedSubagentID(undefined);
+    setExpandedTurns((current) => {
+      const next = new Set(current);
+      if (next.has(number)) next.delete(number);
+      else next.add(number);
+      return next;
+    });
   }
 
   return (
@@ -515,7 +618,12 @@ function SessionBreakdown({
               <th>Dur</th>
               <th>Calls</th>
               <th>New input</th>
-              <th>Cache hit</th>
+              <th title="Cumulative cache reads and largest single cache read">
+                Cache reads
+              </th>
+              <th title="Cache reads divided by cumulative input-side tokens">
+                Cached input
+              </th>
               <th>Generated</th>
               <th>Activity</th>
               <th>Cost</th>
@@ -525,20 +633,8 @@ function SessionBreakdown({
           <tbody>
             {session.turns.map((turn) => {
               const metrics = turnMetrics(turn.calls);
-              const open = expandedTurn === turn.number;
+              const open = expandedTurns.has(turn.number);
               const subs = turnSubagents(turn, session);
-              const cacheTokens = {
-                uncachedInput: Math.max(
-                  0,
-                  metrics.freshPrompt - (metrics.cacheWrite ?? 0),
-                ),
-                cacheRead: metrics.cacheRead,
-                cacheWrite: metrics.cacheWrite,
-                freshPrompt: metrics.freshPrompt,
-                output: metrics.output,
-                reasoning: metrics.reasoning,
-                processed: metrics.processed,
-              };
               return (
                 <Fragment key={turn.number}>
                   <tr
@@ -553,7 +649,10 @@ function SessionBreakdown({
                       </span>
                     </td>
                     <td title={fullTimestamp.format(turn.startedAt)}>
-                      {timeOnly.format(turn.startedAt)}
+                      <span className="metric-stack timestamp-stack">
+                        <span>{dateOnly.format(turn.startedAt)}</span>
+                        <small>{timeOnly.format(turn.startedAt)}</small>
+                      </span>
                     </td>
                     <td className={metrics.duration ? undefined : "muted"}>
                       {metrics.duration ?? "—"}
@@ -562,7 +661,40 @@ function SessionBreakdown({
                     <td>
                       <TokenValue value={metrics.freshPrompt} />
                     </td>
-                    <td>{formatCacheHit(cacheTokens)}</td>
+                    <td>
+                      <span
+                        className="metric-stack"
+                        title={turn.cacheSummary
+                          ? `${integer.format(turn.cacheSummary.totalCacheRead)} cached tokens read across ${turn.calls.length} calls; largest single read was ${integer.format(turn.cacheSummary.peakCacheRead)}`
+                          : undefined}
+                      >
+                        <TokenValue
+                          value={turn.cacheSummary?.peakCacheRead ??
+                            metrics.cacheRead}
+                        />
+                        {turn.cacheSummary && turn.calls.length > 1 && (
+                          <small>
+                            <TokenValue
+                              value={turn.cacheSummary.totalCacheRead}
+                            /> total
+                          </small>
+                        )}
+                      </span>
+                    </td>
+                    <td>
+                      <span className="cache-cell-content">
+                        <span>
+                          {turn.cacheSummary?.cachedInputShare === undefined
+                            ? "—"
+                            : `${
+                              (turn.cacheSummary.cachedInputShare * 100).toFixed(1)
+                            }%`}
+                        </span>
+                        <TurnCacheSummaryBadge
+                          summary={turn.cacheSummary}
+                        />
+                      </span>
+                    </td>
                     <td>
                       <TokenValue
                         value={metrics.output + metrics.reasoning}
@@ -581,7 +713,7 @@ function SessionBreakdown({
                   </tr>
                   {open && (
                     <tr className="turn-detail-row">
-                      <td colSpan={10}>
+                      <td colSpan={11}>
                         <CallTable
                           calls={turn.calls}
                           session={session}
@@ -607,7 +739,9 @@ export function SessionsPage() {
   const { page, harness } = route.useSearch();
   const navigate = route.useNavigate();
   const [data, setData] = useState<SessionListResponse>();
-  const [expandedID, setExpandedID] = useState<string>();
+  const [expandedIDs, setExpandedIDs] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [details, setDetails] = useState<Record<string, SessionDetail>>({});
   const [error, setError] = useState<string>();
 
@@ -633,11 +767,15 @@ export function SessionsPage() {
   }, [page, harness]);
 
   async function toggleSession(id: string) {
-    if (expandedID === id) {
-      setExpandedID(undefined);
+    if (expandedIDs.has(id)) {
+      setExpandedIDs((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
       return;
     }
-    setExpandedID(id);
+    setExpandedIDs((current) => new Set(current).add(id));
     if (details[id]) return;
     try {
       const summary = data?.items.find((session) => session.id === id);
@@ -645,7 +783,11 @@ export function SessionsPage() {
       const detail = await getSession(id, summary.harness);
       setDetails((current) => ({ ...current, [id]: detail }));
     } catch (reason) {
-      setExpandedID(undefined);
+      setExpandedIDs((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
       setError(
         reason instanceof Error ? reason.message : "Unable to load session",
       );
@@ -711,9 +853,10 @@ export function SessionsPage() {
                     <th>Turns</th>
                     <th>Calls</th>
                     <th>New input</th>
-                    <th title="Cache reads divided by all input-side tokens">
-                      Cache hit
+                    <th title="Cache reads divided by cumulative input-side tokens">
+                      Cached input
                     </th>
+                    <th>Cache misses</th>
                     <th>Total activity</th>
                     <th title="Computed cost; ! if reported is non-zero and differs">
                       Cost
@@ -723,7 +866,7 @@ export function SessionsPage() {
                 </thead>
                 <tbody>
                   {data.items.map((session) => {
-                    const expanded = expandedID === session.id;
+                    const expanded = expandedIDs.has(session.id);
                     const detail = details[session.id];
                     const span = sessionSpan(detail ?? session);
                     return (
@@ -768,6 +911,9 @@ export function SessionsPage() {
                           </td>
                           <td>{formatCacheHit(session.tokens)}</td>
                           <td>
+                            <CacheSummaryBadge summary={session.cacheSummary} />
+                          </td>
+                          <td>
                             <TokenValue value={session.tokens.processed} />
                           </td>
                           <td>
@@ -780,7 +926,7 @@ export function SessionsPage() {
                         </tr>
                         {expanded && (
                           <tr className="detail-row">
-                            <td colSpan={10}>
+                            <td colSpan={11}>
                               {detail
                                 ? <SessionBreakdown session={detail} />
                                 : (
