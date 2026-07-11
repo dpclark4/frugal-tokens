@@ -3,6 +3,10 @@ import { serveStatic } from "hono/deno";
 import { OpenCodeRepository } from "./opencodeRepository.ts";
 import { ClaudeCodeRepository } from "./claudeCodeRepository.ts";
 import { priceSessionDetail } from "./pricing.ts";
+import {
+  analyzeSessionCache,
+  summarizeSessionCache,
+} from "./cacheAnalysis.ts";
 import type { SessionSummary } from "../shared/sessionSchemas.ts";
 
 const openCodeDatabasePath = Deno.env.get("OPENCODE_DB_PATH");
@@ -24,9 +28,14 @@ function priceSummaries(items: SessionSummary[]) {
     const detail = item.harness === "claude-code"
       ? claudeRepository.getSession(item.id)
       : repository.getSession(item.id);
-    return detail
-      ? { ...item, computedCost: priceSessionDetail(detail).computedCost }
-      : item;
+    if (!detail) return item;
+    const priced = priceSessionDetail(detail);
+    const analyzed = analyzeSessionCache(priced);
+    return {
+      ...item,
+      computedCost: priced.computedCost,
+      cacheSummary: summarizeSessionCache(analyzed),
+    };
   });
 }
 
@@ -70,7 +79,7 @@ app.get("/api/sessions/:id", (context) => {
     ? claudeRepository.getSession(context.req.param("id"))
     : repository.getSession(context.req.param("id"));
   return session
-    ? context.json(priceSessionDetail(session))
+    ? context.json(analyzeSessionCache(priceSessionDetail(session)))
     : context.json({ error: "Session not found" }, 404);
 });
 

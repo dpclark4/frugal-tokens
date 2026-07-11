@@ -238,7 +238,10 @@ function decodeRecords(records: Record[]) {
       }
     }
   }
-  return { turns, tokens, providers, models };
+  const nonEmptyTurns = turns
+    .filter((turn) => turn.calls.length > 0)
+    .map((turn, index) => ({ ...turn, number: index + 1 }));
+  return { turns: nonEmptyTurns, tokens, providers, models };
 }
 
 export class ClaudeCodeRepository {

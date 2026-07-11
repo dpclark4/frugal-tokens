@@ -178,12 +178,12 @@ function decodeMessages(
       processed: source.input + source.cache.read + source.cache.write +
         source.output + source.reasoning,
     };
-    if (callTokens.processed === 0) continue;
+    const cost = message.cost ?? 0;
+    if (callTokens.processed === 0 && cost === 0) continue;
 
     const turn = turns.at(-1)!;
     const provider = message.providerID ?? "unknown";
     const model = message.modelID ?? "unknown";
-    const cost = message.cost ?? 0;
     const activity = activityByMessage.get(row.id) ?? {
       hasText: false,
       hasReasoning: source.reasoning > 0,
@@ -207,7 +207,16 @@ function decodeMessages(
     });
   }
 
-  return { turns, providers, models, tokens, reportedCost };
+  const nonEmptyTurns = turns
+    .filter((turn) => turn.calls.length > 0)
+    .map((turn, index) => ({ ...turn, number: index + 1 }));
+  return {
+    turns: nonEmptyTurns,
+    providers,
+    models,
+    tokens,
+    reportedCost,
+  };
 }
 
 function fallbackModel(modelJson: string | null) {

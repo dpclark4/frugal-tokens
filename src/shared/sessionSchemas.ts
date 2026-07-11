@@ -29,6 +29,33 @@ export const callActivitySchema = z.object({
   tools: z.array(toolEventSchema),
 });
 
+export const cacheStatusSchema = z.enum([
+  "hit",
+  "partial-miss",
+  "full-miss",
+  "unknown",
+]);
+
+export const cacheAssessmentSchema = z.object({
+  status: cacheStatusSchema,
+  retainedRatio: z.number().nonnegative().optional(),
+  previousReusableTokens: z.number().int().positive().optional(),
+});
+
+export const cacheSummarySchema = z.object({
+  hits: z.number().int().nonnegative(),
+  partialMisses: z.number().int().nonnegative(),
+  fullMisses: z.number().int().nonnegative(),
+  unknown: z.number().int().nonnegative(),
+});
+
+export const turnCacheSummarySchema = cacheSummarySchema.extend({
+  totalCacheRead: z.number().int().nonnegative(),
+  peakCacheRead: z.number().int().nonnegative(),
+  totalNewInput: z.number().int().nonnegative(),
+  cachedInputShare: z.number().min(0).max(1).optional(),
+});
+
 export const sessionSummarySchema = z.object({
   id: z.string(),
   harness: harnessSchema,
@@ -42,6 +69,7 @@ export const sessionSummarySchema = z.object({
   modelCalls: z.number().int().nonnegative(),
   reportedCost: z.number().nonnegative().optional(),
   computedCost: z.number().nonnegative().optional(),
+  cacheSummary: cacheSummarySchema.optional(),
   tokens: tokenUsageSchema,
 });
 
@@ -56,12 +84,15 @@ export const modelCallSchema = z.object({
   computedCost: z.number().nonnegative().optional(),
   tokens: tokenUsageSchema,
   activity: callActivitySchema,
+  cacheAssessment: cacheAssessmentSchema.optional(),
 });
 
 export const userTurnSchema = z.object({
   number: z.number().int().positive(),
   startedAt: z.number(),
   calls: z.array(modelCallSchema),
+  cacheAssessment: cacheAssessmentSchema.optional(),
+  cacheSummary: turnCacheSummarySchema.optional(),
 });
 
 const sessionDetailBaseSchema = sessionSummarySchema.extend({
@@ -90,6 +121,9 @@ export const sessionListResponseSchema = z.object({
 });
 
 export type ModelCall = z.infer<typeof modelCallSchema>;
+export type CacheAssessment = z.infer<typeof cacheAssessmentSchema>;
+export type CacheSummary = z.infer<typeof cacheSummarySchema>;
+export type TurnCacheSummary = z.infer<typeof turnCacheSummarySchema>;
 export type SessionListResponse = z.infer<typeof sessionListResponseSchema>;
 export type SessionSummary = z.infer<typeof sessionSummarySchema>;
 export type TokenUsage = z.infer<typeof tokenUsageSchema>;
