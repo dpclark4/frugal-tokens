@@ -15,6 +15,7 @@ export const toolEventSchema = z.object({
   status: z.string(),
   startedAt: z.number().optional(),
   completedAt: z.number().optional(),
+  childSessionID: z.string().optional(),
 });
 
 export const callActivitySchema = z.object({
@@ -54,9 +55,20 @@ export const userTurnSchema = z.object({
   calls: z.array(modelCallSchema),
 });
 
-export const sessionDetailSchema = sessionSummarySchema.extend({
+const sessionDetailBaseSchema = sessionSummarySchema.extend({
+  parentID: z.string().optional(),
+  agent: z.string().optional(),
   turns: z.array(userTurnSchema),
 });
+
+export type SessionDetail = z.infer<typeof sessionDetailBaseSchema> & {
+  subagents: SessionDetail[];
+};
+
+export const sessionDetailSchema: z.ZodType<SessionDetail> =
+  sessionDetailBaseSchema.extend({
+    subagents: z.lazy(() => z.array(sessionDetailSchema)),
+  });
 
 export const sessionListResponseSchema = z.object({
   items: z.array(sessionSummarySchema),
@@ -69,7 +81,6 @@ export const sessionListResponseSchema = z.object({
 });
 
 export type ModelCall = z.infer<typeof modelCallSchema>;
-export type SessionDetail = z.infer<typeof sessionDetailSchema>;
 export type SessionListResponse = z.infer<typeof sessionListResponseSchema>;
 export type SessionSummary = z.infer<typeof sessionSummarySchema>;
 export type TokenUsage = z.infer<typeof tokenUsageSchema>;

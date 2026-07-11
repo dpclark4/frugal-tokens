@@ -34,6 +34,9 @@ const partDataSchema = z.object({
   tool: z.string().optional(),
   state: z.object({
     status: z.string().optional(),
+    metadata: z.object({
+      sessionId: z.string().optional(),
+    }).optional(),
     time: z.object({
       start: z.number().optional(),
       end: z.number().optional(),
@@ -43,8 +46,10 @@ const partDataSchema = z.object({
 
 type SessionRow = {
   id: string;
+  parent_id: string | null;
   title: string;
   model: string | null;
+  agent: string | null;
   time_updated: number;
 };
 
@@ -108,6 +113,7 @@ function decodeParts(rows: PartRow[]) {
         status: part.state?.status ?? "unknown",
         startedAt: part.state?.time?.start,
         completedAt: part.state?.time?.end,
+        childSessionID: part.state?.metadata?.sessionId,
       });
     }
     activity.set(row.message_id, current);
@@ -223,7 +229,7 @@ export class OpenCodeRepository {
       }).count,
     );
     const rows = this.#db.prepare(`
-      SELECT id, title, model, time_updated
+      SELECT id, parent_id, title, model, agent, time_updated
       FROM session
       ORDER BY time_updated DESC, id DESC
       LIMIT ? OFFSET ?
@@ -243,21 +249,37 @@ export class OpenCodeRepository {
 
   getSession(id: string) {
     const row = this.#db.prepare(`
-      SELECT id, title, model, time_updated
+      SELECT id, parent_id, title, model, agent, time_updated
       FROM session
       WHERE id = ?
     `).get(id) as SessionRow | undefined;
     if (!row) return undefined;
 
-    const decoded = this.#decodeSession(id, true);
-    return sessionDetailSchema.parse({
-      ...this.#toSummary(row, decoded),
-      turns: decoded.turns,
-    });
+    return sessionDetailSchema.parse(this.#detail(row, new Set()));
   }
 
   #summary(row: SessionRow): SessionSummary {
     return this.#toSummary(row, this.#decodeSession(row.id));
+  }
+
+  #detail(row: SessionRow, visited: Set<string>): unknown {
+    visited.add(row.id);
+    const decoded = this.#decodeSession(row.id, true);
+    const children = this.#db.prepare(`
+      SELECT id, parent_id, title, model, agent, time_updated
+      FROM session
+      WHERE parent_id = ?
+      ORDER BY time_created, id
+    `).all(row.id) as SessionRow[];
+    return {
+      ...this.#toSummary(row, decoded),
+      parentID: row.parent_id ?? undefined,
+      agent: row.agent ?? undefined,
+      turns: decoded.turns,
+      subagents: children
+        .filter((child) => !visited.has(child.id))
+        .map((child) => this.#detail(child, new Set(visited))),
+    };
   }
 
   #decodeSession(id: string, includeActivity = false) {

@@ -285,6 +285,9 @@ td {
   background: #272c26;
   font-size: 10px;
 }
+.tool-event.has-subagent {
+  grid-column: 1 / -1;
+}
 .tool-event > span:last-child {
   grid-column: 1 / -1;
   color: #838d81;
@@ -297,6 +300,69 @@ td {
 }
 .tool-status-error {
   color: #ef9a7e;
+}
+.subagent-toggle {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  margin-top: 6px;
+  padding: 12px;
+  border: 1px solid #647760;
+  color: #e2e4db;
+  background: #30372f;
+  cursor: pointer;
+  text-align: left;
+}
+.subagent-toggle span,
+.subagent-toggle small {
+  display: block;
+}
+.subagent-toggle small {
+  margin-top: 4px;
+  color: #9ba598;
+  font-size: 9px;
+}
+.subagent-toggle b {
+  color: #f1b48e;
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.nested-breakdown {
+  grid-column: 1 / -1;
+  margin-top: 4px;
+  padding: 14px;
+  border: 1px solid #586256;
+  background: #1b1f1a;
+}
+.subagent-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: start;
+  gap: 20px;
+  margin-bottom: 14px;
+  padding: 4px 2px 14px;
+  border-bottom: 1px solid #3f473e;
+}
+.subagent-heading h3 {
+  margin: 8px 0 4px;
+  color: #eeeee7;
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  font-size: 14px;
+}
+.subagent-heading code {
+  color: #7f8b7d;
+  font-size: 9px;
+}
+.subagent-stats {
+  display: flex;
+  gap: 12px;
+  color: #bdc5b9;
+  font-size: 10px;
+  white-space: nowrap;
 }
 .call-table .provider {
   color: #dd8c62;

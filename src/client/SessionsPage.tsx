@@ -57,17 +57,46 @@ function activitySummary(
   return call.activity.finishReason ?? "Model call";
 }
 
-function SessionBreakdown({ session }: { session: SessionDetail }) {
+function SessionBreakdown({
+  session,
+  nested = false,
+}: {
+  session: SessionDetail;
+  nested?: boolean;
+}) {
   const [expandedCallID, setExpandedCallID] = useState<string>();
+  const [expandedSubagentID, setExpandedSubagentID] = useState<string>();
   return (
-    <div className="breakdown">
-      <div className="definition-note">
-        <strong>Fresh prompt</strong>{" "}
-        is uncached input plus reported cache writes.{" "}
-        <strong>Processed tokens</strong>{" "}
-        include fresh prompt, cache reads, output, and reasoning. A dash means
-        no cache write was reported.
-      </div>
+    <div className={nested ? "breakdown nested-breakdown" : "breakdown"}>
+      {nested
+        ? (
+          <div className="subagent-heading">
+            <div>
+              <span className="activity-label">SUBAGENT</span>
+              {session.agent && (
+                <span className="activity-label">{session.agent}</span>
+              )}
+              <h3>{session.title}</h3>
+              <code>{session.id}</code>
+            </div>
+            <div className="subagent-stats">
+              <span>
+                {session.userTurns} {session.userTurns === 1 ? "turn" : "turns"}
+              </span>
+              <span>{session.modelCalls} calls</span>
+              <span>{dollars.format(session.reportedCost)}</span>
+            </div>
+          </div>
+        )
+        : (
+          <div className="definition-note">
+            <strong>Fresh prompt</strong>{" "}
+            is uncached input plus reported cache writes.{" "}
+            <strong>Processed tokens</strong>{" "}
+            include fresh prompt, cache reads, output, and reasoning. A dash
+            means no cache write was reported.
+          </div>
+        )}
       {session.turns.map((turn) => (
         <section className="turn" key={turn.number}>
           <header>
@@ -205,25 +234,81 @@ function SessionBreakdown({ session }: { session: SessionDetail }) {
                                         {call.activity.tools.map((
                                           tool,
                                           index,
-                                        ) => (
-                                          <div
-                                            className="tool-event"
-                                            key={`${tool.name}-${index}`}
-                                          >
-                                            <strong>{tool.name}</strong>
-                                            <span
-                                              className={`tool-status tool-status-${tool.status}`}
+                                        ) => {
+                                          const child = tool.childSessionID
+                                            ? session.subagents.find((
+                                              subagent,
+                                            ) =>
+                                              subagent.id ===
+                                                tool.childSessionID
+                                            )
+                                            : undefined;
+                                          const childExpanded = child &&
+                                            expandedSubagentID === child.id;
+                                          return (
+                                            <div
+                                              className={child
+                                                ? "tool-event has-subagent"
+                                                : "tool-event"}
+                                              key={`${tool.name}-${index}`}
                                             >
-                                              {tool.status}
-                                            </span>
-                                            <span>
-                                              {duration(
-                                                tool.startedAt,
-                                                tool.completedAt,
-                                              ) ?? "duration unavailable"}
-                                            </span>
-                                          </div>
-                                        ))}
+                                              <strong>{tool.name}</strong>
+                                              <span
+                                                className={`tool-status tool-status-${tool.status}`}
+                                              >
+                                                {tool.status}
+                                              </span>
+                                              <span>
+                                                {duration(
+                                                  tool.startedAt,
+                                                  tool.completedAt,
+                                                ) ?? "duration unavailable"}
+                                              </span>
+                                              {child && (
+                                                <>
+                                                  <button
+                                                    type="button"
+                                                    className="subagent-toggle"
+                                                    aria-expanded={childExpanded}
+                                                    onClick={() =>
+                                                      setExpandedSubagentID(
+                                                        childExpanded
+                                                          ? undefined
+                                                          : child.id,
+                                                      )}
+                                                  >
+                                                    <span>
+                                                      <strong>
+                                                        {child.title}
+                                                      </strong>
+                                                      <small>
+                                                        {child.agent ??
+                                                          "subagent"} |{" "}
+                                                        {child.userTurns}{" "}
+                                                        turns |{" "}
+                                                        {child.modelCalls}{" "}
+                                                        calls | {dollars.format(
+                                                          child.reportedCost,
+                                                        )}
+                                                      </small>
+                                                    </span>
+                                                    <b>
+                                                      {childExpanded
+                                                        ? "Hide subagent"
+                                                        : "Expand subagent"}
+                                                    </b>
+                                                  </button>
+                                                  {childExpanded && (
+                                                    <SessionBreakdown
+                                                      session={child}
+                                                      nested
+                                                    />
+                                                  )}
+                                                </>
+                                              )}
+                                            </div>
+                                          );
+                                        })}
                                       </div>
                                     )}
                                 </div>
