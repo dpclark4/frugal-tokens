@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const harnessSchema = z.enum(["opencode", "claude-code"]);
+export const harnessSchema = z.enum(["opencode", "claude-code", "pi"]);
 
 export const tokenUsageSchema = z.object({
   uncachedInput: z.number().int().nonnegative(),

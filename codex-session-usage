@@ -44,9 +44,10 @@ jq -nr '
   foreach inputs as $e (
     {
       turn: 0,
-      call: 0,
-      action: "model",
-      prev_input: null,
+       call: 0,
+       action: "model",
+       images: 0,
+       prev_input: null,
       prev_cached: null,
       row: null
     };
@@ -55,10 +56,16 @@ jq -nr '
 
     | if $e.type == "event_msg"
          and $e.payload.type == "task_started"
+       then
+         .turn += 1
+         | .call = 0
+         | .action = "model"
+
+      elif $e.type == "response_item"
+           and $e.payload.type == "message"
+           and $e.payload.role == "user"
       then
-        .turn += 1
-        | .call = 0
-        | .action = "model"
+        .images += ([ $e.payload.content[]? | select(.type == "input_image") ] | length)
 
       elif $e.type == "response_item"
            and $e.payload.type == "custom_tool_call"
@@ -127,10 +134,17 @@ jq -nr '
             end
           ) as $flag
 
-        | .row = [
-            .turn,
-            .call,
-            .action,
+         | .row = [
+             .turn,
+             .call,
+             (
+               if .images == 0
+                 then .action
+                 elif .images == 1
+                 then "image + " + .action
+                 else (.images | tostring) + " images + " + .action
+                 end
+             ),
             $input,
             $cached,
             ($input - $cached),
@@ -149,8 +163,9 @@ jq -nr '
           ]
 
         | .prev_input = $input
-        | .prev_cached = $cached
-        | .action = "model"
+         | .prev_cached = $cached
+         | .action = "model"
+         | .images = 0
 
       else .
       end;
