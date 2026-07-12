@@ -44,22 +44,28 @@ function call(
 Deno.test("assesses cache retention from the preceding comparable call", () => {
   const baseline = call("baseline", 80_000, 20_000);
 
-  deepStrictEqual(assessCache(undefined, baseline), { status: "unknown" });
+  deepStrictEqual(assessCache(undefined, baseline), {
+    status: "baseline",
+    reason: "no-predecessor",
+  });
   strictEqual(assessCache(baseline, call("hit", 95_000)).status, "hit");
   strictEqual(
     assessCache(baseline, call("partial", 50_000)).status,
-    "partial-miss",
+    "partial-hit",
   );
   deepStrictEqual(assessCache(baseline, call("miss", 5_000, 96_000)), {
     status: "full-miss",
     retainedRatio: 0.05,
     previousReusableTokens: 100_000,
   });
-  strictEqual(
-    assessCache(baseline, call("changed", 0, 100_000, "claude-opus-4-7"))
-      .status,
-    "unknown",
+  deepStrictEqual(
+    assessCache(baseline, call("changed", 0, 100_000, "claude-opus-4-7")),
+    { status: "not-comparable", reason: "model-change" },
   );
+  deepStrictEqual(assessCache(call("empty", 0), call("next", 0)), {
+    status: "not-comparable",
+    reason: "no-reusable-cache",
+  });
 });
 
 Deno.test("tracks an OpenAI miss and implicit cache recovery across turns", () => {
@@ -93,12 +99,14 @@ Deno.test("tracks an OpenAI miss and implicit cache recovery across turns", () =
     actual.turns.flatMap((turn) =>
       turn.calls.map((item) => item.cacheAssessment?.status)
     ),
-    ["unknown", "full-miss", "hit", "hit"],
+    ["baseline", "full-miss", "hit", "hit"],
   );
   deepStrictEqual(actual.turns[1].cacheSummary, {
+    baseline: 0,
     hits: 2,
-    partialMisses: 0,
+    partialHits: 0,
     fullMisses: 1,
+    notComparable: 0,
     unknown: 0,
     totalCacheRead: 107_520,
     peakCacheRead: 54_272,
@@ -145,18 +153,20 @@ Deno.test("summarizes turns and analyzes subagents independently", () => {
   strictEqual(actual.turns[0].cacheAssessment?.status, "full-miss");
   deepStrictEqual(
     actual.turns[0].calls.map((item) => item.cacheAssessment?.status),
-    ["unknown", "partial-miss", "full-miss"],
+    ["baseline", "partial-hit", "full-miss"],
   );
   deepStrictEqual(
     actual.subagents[0].turns[0].calls.map((item) =>
       item.cacheAssessment?.status
     ),
-    ["unknown", "full-miss"],
+    ["baseline", "full-miss"],
   );
   deepStrictEqual(summarizeSessionCache(actual), {
+    baseline: 1,
     hits: 0,
-    partialMisses: 1,
+    partialHits: 1,
     fullMisses: 1,
-    unknown: 1,
+    notComparable: 0,
+    unknown: 0,
   });
 });

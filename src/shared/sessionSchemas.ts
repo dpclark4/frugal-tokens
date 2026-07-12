@@ -31,22 +31,33 @@ export const callActivitySchema = z.object({
 });
 
 export const cacheStatusSchema = z.enum([
+  "baseline",
   "hit",
-  "partial-miss",
+  "partial-hit",
   "full-miss",
+  "not-comparable",
   "unknown",
+]);
+
+export const cacheAssessmentReasonSchema = z.enum([
+  "no-predecessor",
+  "model-change",
+  "no-reusable-cache",
 ]);
 
 export const cacheAssessmentSchema = z.object({
   status: cacheStatusSchema,
+  reason: cacheAssessmentReasonSchema.optional(),
   retainedRatio: z.number().nonnegative().optional(),
   previousReusableTokens: z.number().int().positive().optional(),
 });
 
 export const cacheSummarySchema = z.object({
+  baseline: z.number().int().nonnegative(),
   hits: z.number().int().nonnegative(),
-  partialMisses: z.number().int().nonnegative(),
+  partialHits: z.number().int().nonnegative(),
   fullMisses: z.number().int().nonnegative(),
+  notComparable: z.number().int().nonnegative(),
   unknown: z.number().int().nonnegative(),
 });
 

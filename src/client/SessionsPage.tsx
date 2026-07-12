@@ -8,7 +8,6 @@ import type {
   SessionListResponse,
   SessionSummary,
   TokenUsage,
-  TurnCacheSummary,
 } from "../shared/sessionSchemas.ts";
 import { getSession, getSessions } from "./api.ts";
 import claudeCodeIcon from "./assets/icons/claudecode-color.svg";
@@ -52,22 +51,29 @@ function cacheHitRate(tokens: TokenUsage) {
   return input === 0 ? undefined : tokens.cacheRead / input;
 }
 
-function formatCacheHit(tokens: TokenUsage) {
-  const rate = cacheHitRate(tokens);
-  return rate === undefined ? "-" : `${(rate * 100).toFixed(1)}%`;
-}
-
 const cacheStatusLabels: Record<CacheAssessment["status"], string> = {
+  baseline: "Baseline",
   hit: "Hit",
-  "partial-miss": "Partial miss",
+  "partial-hit": "Partial hit",
   "full-miss": "Full miss",
-  unknown: "Unknown",
+  "not-comparable": "Not comparable",
+  unknown: "Unavailable",
 };
 
-function CacheAssessmentBadge({ assessment }: { assessment?: CacheAssessment }) {
-  if (!assessment) return null;
-  const title = assessment.retainedRatio === undefined ||
-      assessment.previousReusableTokens === undefined
+const cacheAssessmentReasonLabels = {
+  "no-predecessor": "No preceding comparable call",
+  "model-change": "New cache chain: provider or model changed",
+  "no-reusable-cache": "No reusable cache in the preceding call",
+} as const;
+
+function CacheAssessmentBadge(
+  { assessment }: { assessment?: CacheAssessment },
+) {
+  if (!assessment || assessment.status === "baseline") return null;
+  const title = assessment.reason !== undefined
+    ? cacheAssessmentReasonLabels[assessment.reason]
+    : assessment.retainedRatio === undefined ||
+        assessment.previousReusableTokens === undefined
     ? "No comparable preceding call"
     : `Retained ${(assessment.retainedRatio * 100).toFixed(1)}% · Read ${
       integer.format(
@@ -75,65 +81,111 @@ function CacheAssessmentBadge({ assessment }: { assessment?: CacheAssessment }) 
           assessment.retainedRatio * assessment.previousReusableTokens,
         ),
       )
-    } of ${integer.format(assessment.previousReusableTokens)} previously reusable tokens`;
+    } of ${
+      integer.format(assessment.previousReusableTokens)
+    } previously reusable tokens`;
+  const label = assessment.status === "not-comparable"
+    ? assessment.reason === "model-change"
+      ? "New cache chain"
+      : "No prior cache"
+    : cacheStatusLabels[assessment.status];
   return (
     <span
       className={`cache-assessment cache-assessment-${assessment.status}`}
       title={title}
     >
-      {cacheStatusLabels[assessment.status]}
+      {label}
     </span>
   );
 }
 
-function CacheSummaryBadge({ summary }: { summary?: CacheSummary }) {
-  if (!summary) return <span className="muted">—</span>;
-  const comparable = summary.hits + summary.partialMisses + summary.fullMisses;
-  const title = `${summary.hits} hits · ${summary.partialMisses} partial misses · ${summary.fullMisses} full misses · ${summary.unknown} unknown`;
-  if (comparable === 0) {
-    return <span className="cache-summary cache-summary-unknown" title={title}>Unknown</span>;
-  }
-  if (summary.fullMisses > 0) {
-    return (
-      <span className="cache-summary cache-summary-full" title={title}>
-        {summary.fullMisses} full
-        {summary.partialMisses > 0 && ` · ${summary.partialMisses} partial`}
-      </span>
-    );
-  }
-  if (summary.partialMisses > 0) {
-    return (
-      <span className="cache-summary cache-summary-partial" title={title}>
-        {summary.partialMisses} partial
-      </span>
-    );
-  }
-  return <span className="cache-summary cache-summary-hit" title={title}>No misses</span>;
+function cacheSummaryTitle(summary: CacheSummary) {
+  return `${summary.hits} hits · ${summary.partialHits} partial hits · ${summary.fullMisses} full misses · ${summary.baseline} baseline · ${summary.notComparable} not comparable · ${summary.unknown} unavailable`;
 }
 
-function TurnCacheSummaryBadge({ summary }: { summary?: TurnCacheSummary }) {
-  if (!summary) return <span className="muted">—</span>;
-  const title = `${summary.hits} hits · ${summary.partialMisses} partial misses · ${summary.fullMisses} full misses · ${summary.unknown} unknown`;
+function hasCacheOutcome(summary?: CacheSummary) {
+  return summary !== undefined &&
+    summary.hits + summary.partialHits + summary.fullMisses + summary.unknown >
+      0;
+}
+
+function CacheSummaryBadge({ summary }: { summary?: CacheSummary }) {
+  if (!summary || !hasCacheOutcome(summary)) return null;
+  const comparable = summary.hits + summary.partialHits + summary.fullMisses;
+  const title = cacheSummaryTitle(summary);
   const parts = [
-    summary.fullMisses > 0 ? `${summary.fullMisses} full` : undefined,
-    summary.partialMisses > 0
-      ? `${summary.partialMisses} partial`
+    summary.fullMisses > 0
+      ? `${summary.fullMisses} full miss${summary.fullMisses === 1 ? "" : "es"}`
       : undefined,
-    summary.hits > 0 ? `${summary.hits} hit` : undefined,
+    summary.partialHits > 0
+      ? `${summary.partialHits} partial hit${
+        summary.partialHits === 1 ? "" : "s"
+      }`
+      : undefined,
+    summary.hits > 0
+      ? `${summary.hits} hit${summary.hits === 1 ? "" : "s"}`
+      : undefined,
+    summary.unknown > 0 ? `${summary.unknown} unavailable` : undefined,
   ].filter(Boolean);
-  const status = summary.fullMisses > 0
+  const status = comparable === 0
+    ? "unknown"
+    : summary.fullMisses > 0
     ? "full-miss"
-    : summary.partialMisses > 0
-    ? "partial-miss"
+    : summary.partialHits > 0
+    ? "partial"
     : summary.hits > 0
     ? "hit"
     : "unknown";
   return (
     <span
-      className={`cache-assessment cache-assessment-${status}`}
+      className={`cache-summary cache-summary-${status}`}
       title={title}
     >
-      {parts.join(" · ") || "Unknown"}
+      {parts.join(" · ") || "Unavailable"}
+    </span>
+  );
+}
+
+function CacheMetric({
+  read,
+  share,
+  summary,
+  peak,
+}: {
+  read: number;
+  share?: number;
+  summary?: CacheSummary;
+  peak?: number;
+}) {
+  const title = [
+    `${integer.format(read)} cached tokens read`,
+    share === undefined ? undefined : `${(share * 100).toFixed(1)}% cached`,
+    summary === undefined ? undefined : cacheSummaryTitle(summary),
+    peak === undefined || peak === read
+      ? undefined
+      : `${integer.format(peak)} peak cached tokens read`,
+  ].filter(Boolean).join(" · ");
+  return (
+    <span className="metric-stack cache-metric" title={title}>
+      <span>
+        <TokenValue value={read} /> <span className="cache-unit">cached</span>
+      </span>
+      <small>
+        {share === undefined
+          ? "Coverage unavailable"
+          : `${(share * 100).toFixed(1)}% cached`}
+        {hasCacheOutcome(summary) && (
+          <>
+            <span className="cache-meta-sep">·</span>
+            <CacheSummaryBadge summary={summary} />
+          </>
+        )}
+      </small>
+      {peak !== undefined && peak !== read && (
+        <small>
+          Peak <TokenValue value={peak} />
+        </small>
+      )}
     </span>
   );
 }
@@ -250,9 +302,14 @@ function CostCell({
     : `${computedLabel} · ${reportedLabel}`;
 
   return (
-    <span className={`cost-cell${mismatch ? " cost-mismatch" : ""}`} title={title}>
+    <span
+      className={`cost-cell${mismatch ? " cost-mismatch" : ""}`}
+      title={title}
+    >
       <span>{primary}</span>
-      {mismatch && <span className="cost-mismatch-icon" aria-label="Cost mismatch">!</span>}
+      {mismatch && (
+        <span className="cost-mismatch-icon" aria-label="Cost mismatch">!</span>
+      )}
     </span>
   );
 }
@@ -268,7 +325,11 @@ function HarnessIcon({ harness }: { harness: SessionSummary["harness"] }) {
   const title = harnessTitle(harness);
   if (harness === "pi" || harness === "codex") {
     return (
-      <span className={`harness-icon harness-${harness}`} title={title} aria-label={title}>
+      <span
+        className={`harness-icon harness-${harness}`}
+        title={title}
+        aria-label={title}
+      >
         {harness === "pi" ? "PI" : "CX"}
       </span>
     );
@@ -284,14 +345,18 @@ function HarnessIcon({ harness }: { harness: SessionSummary["harness"] }) {
 function activitySummary(call: ModelCall) {
   const imageLabel = call.activity.images === undefined
     ? ""
-    : `${call.activity.images} image${call.activity.images === 1 ? "" : "s"} + `;
+    : `${call.activity.images} image${
+      call.activity.images === 1 ? "" : "s"
+    } + `;
   const names = [...new Set(call.activity.tools.map((tool) => tool.name))];
   if (call.activity.tools.length > 0) {
     return `${imageLabel}${call.activity.tools.length} ${
       call.activity.tools.length === 1 ? "tool" : "tools"
     } | ${names.join(", ")}`;
   }
-  if (call.activity.finishReason === "stop") return `${imageLabel}Final response`;
+  if (call.activity.finishReason === "stop") {
+    return `${imageLabel}Final response`;
+  }
   if (call.activity.hasText) return `${imageLabel}Text response`;
   if (call.activity.hasReasoning) return `${imageLabel}Reasoning`;
   return imageLabel + (call.activity.finishReason ?? "Model call");
@@ -421,23 +486,30 @@ function CallTable({
                     <TokenValue value={call.tokens.freshPrompt} />
                   </td>
                   <td
-                    title={`Read ${integer.format(call.tokens.cacheRead)}${
+                    title={`Cache read ${
+                      integer.format(call.tokens.cacheRead)
+                    }${
                       call.tokens.cacheWrite === undefined
-                        ? ""
-                        : ` · Write ${integer.format(call.tokens.cacheWrite)}`
+                        ? " · Cache write not reported"
+                        : ` · Cache write ${
+                          integer.format(call.tokens.cacheWrite)
+                        }`
                     }`}
                   >
-                    <span className="cache-cell-content">
+                    <span className="cache-cell-content cache-call">
                       <span
-                        className={call.tokens.cacheRead > 0
-                          ? "cache-hit"
-                          : "muted"}
+                        className={`metric-stack${
+                          call.tokens.cacheRead > 0 ? " cache-hit" : " muted"
+                        }`}
                       >
-                        <TokenValue value={call.tokens.cacheRead} />
-                        <span className="cache-sep">/</span>
-                        {call.tokens.cacheWrite === undefined
-                          ? <span className="muted">—</span>
-                          : <TokenValue value={call.tokens.cacheWrite} />}
+                        <span>
+                          <TokenValue value={call.tokens.cacheRead} /> read
+                        </span>
+                        {call.tokens.cacheWrite !== undefined && (
+                          <small>
+                            <TokenValue value={call.tokens.cacheWrite} /> write
+                          </small>
+                        )}
                       </span>
                       <CacheAssessmentBadge
                         assessment={call.cacheAssessment}
@@ -631,11 +703,8 @@ function SessionBreakdown({
               <th>Dur</th>
               <th>Calls</th>
               <th>New input</th>
-              <th title="Cumulative cache reads and largest single cache read">
-                Cache reads
-              </th>
-              <th title="Cache reads divided by cumulative input-side tokens">
-                Cached input
+              <th title="Cumulative cache reads, coverage, and cache outcome">
+                Cache
               </th>
               <th>Generated</th>
               <th>Activity</th>
@@ -675,38 +744,15 @@ function SessionBreakdown({
                       <TokenValue value={metrics.freshPrompt} />
                     </td>
                     <td>
-                      <span
-                        className="metric-stack"
-                        title={turn.cacheSummary
-                          ? `${integer.format(turn.cacheSummary.totalCacheRead)} cached tokens read across ${turn.calls.length} calls; largest single read was ${integer.format(turn.cacheSummary.peakCacheRead)}`
+                      <CacheMetric
+                        read={turn.cacheSummary?.totalCacheRead ??
+                          metrics.cacheRead}
+                        share={turn.cacheSummary?.cachedInputShare}
+                        summary={turn.cacheSummary}
+                        peak={turn.cacheSummary && turn.calls.length > 1
+                          ? turn.cacheSummary.peakCacheRead
                           : undefined}
-                      >
-                        <TokenValue
-                          value={turn.cacheSummary?.peakCacheRead ??
-                            metrics.cacheRead}
-                        />
-                        {turn.cacheSummary && turn.calls.length > 1 && (
-                          <small>
-                            <TokenValue
-                              value={turn.cacheSummary.totalCacheRead}
-                            /> total
-                          </small>
-                        )}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="cache-cell-content">
-                        <span>
-                          {turn.cacheSummary?.cachedInputShare === undefined
-                            ? "—"
-                            : `${
-                              (turn.cacheSummary.cachedInputShare * 100).toFixed(1)
-                            }%`}
-                        </span>
-                        <TurnCacheSummaryBadge
-                          summary={turn.cacheSummary}
-                        />
-                      </span>
+                      />
                     </td>
                     <td>
                       <TokenValue
@@ -726,7 +772,7 @@ function SessionBreakdown({
                   </tr>
                   {open && (
                     <tr className="turn-detail-row">
-                      <td colSpan={11}>
+                      <td colSpan={10}>
                         <CallTable
                           calls={turn.calls}
                           session={session}
@@ -868,10 +914,9 @@ export function SessionsPage() {
                     <th>Turns</th>
                     <th>Calls</th>
                     <th>New input</th>
-                    <th title="Cache reads divided by cumulative input-side tokens">
-                      Cached input
+                    <th title="Cached tokens, coverage, and cache outcome">
+                      Cache
                     </th>
-                    <th>Cache misses</th>
                     <th>Total activity</th>
                     <th title="Computed cost; ! if reported is non-zero and differs">
                       Cost
@@ -887,7 +932,9 @@ export function SessionsPage() {
                     return (
                       <Fragment key={session.id}>
                         <tr
-                          className={`session-row${expanded ? " row-open" : ""}`}
+                          className={`session-row${
+                            expanded ? " row-open" : ""
+                          }`}
                           onClick={() => toggleSession(session.id)}
                           aria-expanded={expanded}
                         >
@@ -901,7 +948,10 @@ export function SessionsPage() {
                                 >
                                   {session.title}
                                 </strong>
-                                <small className="session-id" title={session.id}>
+                                <small
+                                  className="session-id"
+                                  title={session.id}
+                                >
                                   {session.id}
                                 </small>
                                 <small className="updated-at">
@@ -919,7 +969,9 @@ export function SessionsPage() {
                           <td
                             className={span?.label ? undefined : "muted"}
                             title={span
-                              ? `${fullTimestamp.format(span.start)} → ${fullTimestamp.format(span.end)}`
+                              ? `${fullTimestamp.format(span.start)} → ${
+                                fullTimestamp.format(span.end)
+                              }`
                               : undefined}
                           >
                             {span?.label ?? "—"}
@@ -929,9 +981,12 @@ export function SessionsPage() {
                           <td>
                             <TokenValue value={session.tokens.freshPrompt} />
                           </td>
-                          <td>{formatCacheHit(session.tokens)}</td>
                           <td>
-                            <CacheSummaryBadge summary={session.cacheSummary} />
+                            <CacheMetric
+                              read={session.tokens.cacheRead}
+                              share={cacheHitRate(session.tokens)}
+                              summary={session.cacheSummary}
+                            />
                           </td>
                           <td>
                             <TokenValue value={session.tokens.processed} />
@@ -946,7 +1001,7 @@ export function SessionsPage() {
                         </tr>
                         {expanded && (
                           <tr className="detail-row">
-                            <td colSpan={11}>
+                            <td colSpan={10}>
                               {detail
                                 ? <SessionBreakdown session={detail} />
                                 : (

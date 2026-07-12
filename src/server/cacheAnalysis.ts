@@ -13,39 +13,43 @@ export function assessCache(
   previous: ModelCall | undefined,
   current: ModelCall,
 ): CacheAssessment {
+  if (!previous) return { status: "baseline", reason: "no-predecessor" };
   if (
-    !previous || previous.provider !== current.provider ||
-    previous.model !== current.model
-  ) {
-    return { status: "unknown" };
-  }
+    previous.provider !== current.provider || previous.model !== current.model
+  ) return { status: "not-comparable", reason: "model-change" };
 
   const previousReusableTokens = previous.tokens.cacheRead +
     (previous.tokens.cacheWrite ??
       (previous.provider === "openai" ? previous.tokens.uncachedInput : 0));
-  if (previousReusableTokens === 0) return { status: "unknown" };
+  if (previousReusableTokens === 0) {
+    return { status: "not-comparable", reason: "no-reusable-cache" };
+  }
 
   const retainedRatio = current.tokens.cacheRead / previousReusableTokens;
   const status = retainedRatio >= CACHE_HIT_RATIO
     ? "hit"
     : retainedRatio <= CACHE_FULL_MISS_RATIO
     ? "full-miss"
-    : "partial-miss";
+    : "partial-hit";
   return { status, retainedRatio, previousReusableTokens };
 }
 
 const severity: Record<CacheAssessment["status"], number> = {
+  baseline: 0,
   unknown: 0,
+  "not-comparable": 0,
   hit: 1,
-  "partial-miss": 2,
+  "partial-hit": 2,
   "full-miss": 3,
 };
 
 export function summarizeTurnCache(calls: ModelCall[]): TurnCacheSummary {
   const summary: TurnCacheSummary = {
+    baseline: 0,
     hits: 0,
-    partialMisses: 0,
+    partialHits: 0,
     fullMisses: 0,
+    notComparable: 0,
     unknown: 0,
     totalCacheRead: 0,
     peakCacheRead: 0,
@@ -59,14 +63,20 @@ export function summarizeTurnCache(calls: ModelCall[]): TurnCacheSummary {
     );
     summary.totalNewInput += call.tokens.freshPrompt;
     switch (call.cacheAssessment?.status) {
+      case "baseline":
+        summary.baseline++;
+        break;
       case "hit":
         summary.hits++;
         break;
-      case "partial-miss":
-        summary.partialMisses++;
+      case "partial-hit":
+        summary.partialHits++;
         break;
       case "full-miss":
         summary.fullMisses++;
+        break;
+      case "not-comparable":
+        summary.notComparable++;
         break;
       default:
         summary.unknown++;
@@ -113,22 +123,30 @@ export function analyzeSessionCache(session: SessionDetail): SessionDetail {
 
 export function summarizeSessionCache(session: SessionDetail): CacheSummary {
   const summary: CacheSummary = {
+    baseline: 0,
     hits: 0,
-    partialMisses: 0,
+    partialHits: 0,
     fullMisses: 0,
+    notComparable: 0,
     unknown: 0,
   };
   for (const turn of session.turns) {
     for (const call of turn.calls) {
       switch (call.cacheAssessment?.status) {
+        case "baseline":
+          summary.baseline++;
+          break;
         case "hit":
           summary.hits++;
           break;
-        case "partial-miss":
-          summary.partialMisses++;
+        case "partial-hit":
+          summary.partialHits++;
           break;
         case "full-miss":
           summary.fullMisses++;
+          break;
+        case "not-comparable":
+          summary.notComparable++;
           break;
         default:
           summary.unknown++;
