@@ -239,7 +239,12 @@ function decodeMessages(
 
 function decodeUsageMessage(
   row: MessageRow,
-  session: { rootID: string; rootStartedAt: number },
+  session: {
+    id: string;
+    rootID: string;
+    parentID?: string;
+    rootStartedAt: number;
+  },
 ) {
   let raw: unknown;
   try {
@@ -274,13 +279,17 @@ function decodeUsageMessage(
   }
   return {
     role: message.role,
-      call: {
-        harness: "opencode",
-        sourceSessionID: session.rootID,
-        cacheChainID: (row as UsageMessageRow).session_id,
-        sessionStartedAt: session.rootStartedAt,
-        provider: message.providerID ?? "unknown",
-        model: message.modelID ?? "unknown",
+    call: {
+      harness: "opencode",
+      session: {
+        id: session.id,
+        rootID: session.rootID,
+        parentID: session.parentID,
+      },
+      cacheChainID: (row as UsageMessageRow).session_id,
+      sessionStartedAt: session.rootStartedAt,
+      provider: message.providerID ?? "unknown",
+      model: message.modelID ?? "unknown",
       startedAt: message.time?.created ?? row.time_created,
       reportedCost,
       tokens,
@@ -300,7 +309,12 @@ function fallbackModel(modelJson: string | null) {
 }
 
 function sessionBounds(
-  turns: Array<{ startedAt: number; calls: Array<{ startedAt: number; completedAt?: number }> }>,
+  turns: Array<
+    {
+      startedAt: number;
+      calls: Array<{ startedAt: number; completedAt?: number }>;
+    }
+  >,
 ) {
   if (turns.length === 0) return {};
   const startedAt = Math.min(...turns.map((turn) => turn.startedAt));
@@ -371,7 +385,7 @@ export class OpenCodeRepository {
     const rowsByID = new Map(sessionRows.map((row) => [row.id, row]));
     const sessionRoots = new Map<
       string,
-      { rootID: string; rootStartedAt: number }
+      { id: string; rootID: string; parentID?: string; rootStartedAt: number }
     >();
     for (const row of sessionRows) {
       let root = row;
@@ -383,7 +397,9 @@ export class OpenCodeRepository {
         visited.add(root.id);
       }
       sessionRoots.set(row.id, {
+        id: row.id,
         rootID: root.id,
+        parentID: row.parent_id ?? undefined,
         rootStartedAt: root.time_created,
       });
     }
@@ -396,7 +412,9 @@ export class OpenCodeRepository {
           AND json_valid(data)
           AND json_extract(data, '$.role') = 'user'
       `).all(startedAt) as Array<{ session_id: string }>;
-      priorSessions.forEach(({ session_id }) => sessionsWithUserTurn.add(session_id));
+      priorSessions.forEach(({ session_id }) =>
+        sessionsWithUserTurn.add(session_id)
+      );
     }
     const rows = startedAt === undefined
       ? this.#db.prepare(`

@@ -178,6 +178,37 @@ h1 {
   letter-spacing: .05em;
 }
 
+.subagent-summary {
+  display: grid;
+  grid-template-columns: max-content auto;
+  gap: 4px 16px;
+  width: fit-content;
+  margin: 10px 0 5px;
+  font: 11px var(--mono);
+}
+
+.subagent-summary > div {
+  display: contents;
+}
+
+.subagent-summary dt {
+  color: var(--muted);
+}
+
+.subagent-summary dd {
+  margin: 0;
+  color: var(--ink);
+  font-weight: 600;
+  text-align: right;
+}
+
+.usage-chart-heading .subagent-summary-range {
+  color: var(--muted);
+  font: 10px var(--mono);
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
 .segmented {
   display: inline-flex;
   border: 1px solid #bbb8af;
@@ -243,6 +274,11 @@ h1 {
   display: block;
   margin-bottom: 11px;
   font-size: 14px;
+}
+
+.subagent-tooltip {
+  min-width: 310px;
+  user-select: text;
 }
 
 .usage-tooltip-models {

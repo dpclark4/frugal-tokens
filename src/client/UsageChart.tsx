@@ -4,8 +4,9 @@ import { getUsage } from "./api.ts";
 import { CacheMissChart } from "./analytics/CacheMissChart.tsx";
 import { SessionInputChart } from "./analytics/SessionInputChart.tsx";
 import { SpendInputChart } from "./analytics/SpendInputChart.tsx";
+import { SubagentChart } from "./analytics/SubagentChart.tsx";
 
-type View = "spend" | "input" | "session-input" | "cache";
+type View = "spend" | "input" | "session-input" | "cache" | "subagents";
 type Range = 7 | 30 | "all";
 
 const views: Array<{ value: View; label: string }> = [
@@ -13,6 +14,7 @@ const views: Array<{ value: View; label: string }> = [
   { value: "input", label: "Input" },
   { value: "session-input", label: "Session size" },
   { value: "cache", label: "Cache misses" },
+  { value: "subagents", label: "Subagents" },
 ];
 
 export function UsageChart({ harness }: { harness: string }) {
@@ -92,6 +94,9 @@ export function UsageChart({ harness }: { harness: string }) {
       )}
       {usage && view === "cache" && (
         <CacheMissChart usage={usage} range={range} />
+      )}
+      {usage && view === "subagents" && (
+        <SubagentChart usage={usage} range={range} />
       )}
     </section>
   );

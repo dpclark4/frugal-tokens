@@ -9,7 +9,7 @@ function usageCall(
 ): UsageCall {
   return {
     harness: "opencode",
-    sourceSessionID: session,
+    session: { id: session, rootID: session },
     cacheChainID: session,
     sessionStartedAt,
     provider: "anthropic",
@@ -64,4 +64,55 @@ Deno.test("aggregates daily and weekly session input percentiles", () => {
       sessions: 4,
     },
   ]);
+});
+
+Deno.test("aggregates subagent adoption, calls, and cost share", () => {
+  const startedAt = new Date(2026, 6, 10).getTime();
+  const sessionStartedAt = new Date(2026, 6, 1).getTime();
+  const rootCall = usageCall("with-child", startedAt, 100);
+  rootCall.sessionStartedAt = sessionStartedAt;
+  rootCall.computedCost = 2;
+  const childCall = usageCall("child", startedAt, 100);
+  childCall.session = {
+    id: "child",
+    rootID: "with-child",
+    parentID: "with-child",
+  };
+  childCall.cacheChainID = "child";
+  childCall.sessionStartedAt = sessionStartedAt;
+  childCall.computedCost = 3;
+  const rootOnlyCall = usageCall("root-only", startedAt, 100);
+  rootOnlyCall.sessionStartedAt = sessionStartedAt;
+  rootOnlyCall.computedCost = 5;
+
+  const response = aggregateUsage([rootCall, childCall, rootOnlyCall]).response;
+  deepStrictEqual(response.subagentDays, [{
+    date: "2026-07-10",
+    rootOnly: 1,
+    withSubagents: 1,
+    withMultipleSubagents: 0,
+    subagents: 1,
+    calls: 3,
+    subagentCalls: 1,
+    totalInput: 300,
+    subagentInput: 100,
+    totalCost: 10,
+    subagentCost: 3,
+    hasUnpricedCost: false,
+  }]);
+  deepStrictEqual(response.subagentWeeks, [{
+    date: "2026-07-06",
+    endDate: "2026-07-12",
+    rootOnly: 1,
+    withSubagents: 1,
+    withMultipleSubagents: 0,
+    subagents: 1,
+    calls: 3,
+    subagentCalls: 1,
+    totalInput: 300,
+    subagentInput: 100,
+    totalCost: 10,
+    subagentCost: 3,
+    hasUnpricedCost: false,
+  }]);
 });

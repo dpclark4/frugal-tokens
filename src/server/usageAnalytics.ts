@@ -39,9 +39,115 @@ function summarizeSessionInputs(inputs: Map<string, number[]>) {
   );
 }
 
+type SubagentBucket = {
+  rootOnly: number;
+  withSubagents: number;
+  withMultipleSubagents: number;
+  subagents: number;
+  calls: number;
+  subagentCalls: number;
+  totalInput: number;
+  subagentInput: number;
+  totalCost: number;
+  subagentCost: number;
+  hasUnpricedCost: boolean;
+};
+
+function emptySubagentBucket(): SubagentBucket {
+  return {
+    rootOnly: 0,
+    withSubagents: 0,
+    withMultipleSubagents: 0,
+    subagents: 0,
+    calls: 0,
+    subagentCalls: 0,
+    totalInput: 0,
+    subagentInput: 0,
+    totalCost: 0,
+    subagentCost: 0,
+    hasUnpricedCost: false,
+  };
+}
+
+function summarizeSubagents(inputs: Map<string, SubagentBucket>) {
+  return [...inputs.entries()].sort(([a], [b]) => a.localeCompare(b)).map(
+    ([date, bucket]) => ({
+      date,
+      rootOnly: bucket.rootOnly,
+      withSubagents: bucket.withSubagents,
+      withMultipleSubagents: bucket.withMultipleSubagents,
+      subagents: bucket.subagents,
+      calls: bucket.calls,
+      subagentCalls: bucket.subagentCalls,
+      totalInput: bucket.totalInput,
+      subagentInput: bucket.subagentInput,
+      totalCost: bucket.totalCost,
+      subagentCost: bucket.subagentCost,
+      hasUnpricedCost: bucket.hasUnpricedCost,
+    }),
+  );
+}
+
+function aggregateSubagentBucket(calls: UsageCall[]) {
+  const bucket = emptySubagentBucket();
+  const sessions = Map.groupBy(
+    calls,
+    (call) => `${call.harness}:${call.session.rootID}`,
+  );
+  for (const sessionCalls of sessions.values()) {
+    const subagentCalls = sessionCalls.filter((call) =>
+      call.session.id !== call.session.rootID
+    );
+    const subagentIDs = new Set(subagentCalls.map((call) => call.session.id));
+    bucket.rootOnly += subagentIDs.size === 0 ? 1 : 0;
+    bucket.withSubagents += subagentIDs.size > 0 ? 1 : 0;
+    bucket.withMultipleSubagents += subagentIDs.size > 1 ? 1 : 0;
+    bucket.subagents += subagentIDs.size;
+    bucket.calls += sessionCalls.length;
+    bucket.subagentCalls += subagentCalls.length;
+    bucket.totalInput += sessionCalls.reduce(
+      (sum, call) =>
+        sum + call.tokens.uncachedInput + call.tokens.cacheRead +
+        (call.tokens.cacheWrite ?? 0),
+      0,
+    );
+    bucket.subagentInput += subagentCalls.reduce(
+      (sum, call) =>
+        sum + call.tokens.uncachedInput + call.tokens.cacheRead +
+        (call.tokens.cacheWrite ?? 0),
+      0,
+    );
+    bucket.totalCost += sessionCalls.reduce(
+      (sum, call) => sum + (call.computedCost ?? 0),
+      0,
+    );
+    bucket.subagentCost += subagentCalls.reduce(
+      (sum, call) => sum + (call.computedCost ?? 0),
+      0,
+    );
+    bucket.hasUnpricedCost ||= sessionCalls.some((call) =>
+      call.computedCost === undefined
+    );
+  }
+  return bucket;
+}
+
+function aggregateSubagentsBy(
+  calls: UsageCall[],
+  bucketKey: (call: UsageCall) => string,
+) {
+  return new Map(
+    [...Map.groupBy(calls, bucketKey).entries()].map(([date, bucketCalls]) => [
+      date,
+      aggregateSubagentBucket(bucketCalls),
+    ]),
+  );
+}
+
 export function aggregateUsage(
   usageCalls: UsageCall[],
   start?: number,
+  subagentCoverage: UsageResponse["subagentCoverage"] = "full",
 ): { response: UsageResponse; callCount: number; dayCount: number } {
   const days = new Map<
     string,
@@ -49,9 +155,11 @@ export function aggregateUsage(
   >();
   let hasUnpricedCost = false;
   let callCount = 0;
+  const rangedCalls = usageCalls.filter((call) =>
+    start === undefined || call.startedAt >= start
+  );
 
-  for (const call of usageCalls) {
-    if (start !== undefined && call.startedAt < start) continue;
+  for (const call of rangedCalls) {
     callCount++;
     const date = dateKey(call.startedAt);
     const models = days.get(date) ?? new Map();
@@ -73,7 +181,7 @@ export function aggregateUsage(
     usageCalls.filter((call) =>
       start === undefined || call.sessionStartedAt >= start
     ),
-    (call) => `${call.harness}:${call.sourceSessionID}`,
+    (call) => `${call.harness}:${call.session.rootID}`,
   );
   const cacheDays = new Map<
     string,
@@ -121,12 +229,27 @@ export function aggregateUsage(
     inputs.push(...values);
     sessionInputWeeks.set(week, inputs);
   }
+  const subagentDays = aggregateSubagentsBy(
+    rangedCalls,
+    (call) => dateKey(call.startedAt),
+  );
+  const subagentWeeks = aggregateSubagentsBy(
+    rangedCalls,
+    (call) => weekKey(dateKey(call.startedAt)),
+  );
 
   return {
     callCount,
     dayCount: days.size,
     response: {
       hasUnpricedCost,
+      subagentCoverage,
+      subagentDays: summarizeSubagents(subagentDays),
+      subagentWeeks: summarizeSubagents(subagentWeeks).map((entry) => ({
+        ...entry,
+        endDate: Temporal.PlainDate.from(entry.date).add({ days: 6 })
+          .toString(),
+      })),
       sessionInputDays: summarizeSessionInputs(sessionInputs),
       sessionInputWeeks: summarizeSessionInputs(sessionInputWeeks).map(
         (entry) => ({

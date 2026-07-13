@@ -6,7 +6,11 @@ import type {
 
 export type UsageCall = {
   harness: SessionSummary["harness"];
-  sourceSessionID: string;
+  session: {
+    id: string;
+    rootID: string;
+    parentID?: string;
+  };
   cacheChainID: string;
   sessionStartedAt: number;
   provider: string;
@@ -25,7 +29,11 @@ export function usageCallsFromSession(
     ...session.turns.flatMap((turn) =>
       turn.calls.map((call) => ({
         harness: session.harness,
-        sourceSessionID: root.id,
+        session: {
+          id: session.id,
+          rootID: root.id,
+          parentID: session.parentID,
+        },
         cacheChainID: session.id,
         sessionStartedAt: root.startedAt ?? root.updatedAt,
         provider: call.provider,

@@ -4,15 +4,12 @@ import { OpenCodeRepository } from "./opencodeRepository.ts";
 import { ClaudeCodeRepository } from "./claudeCodeRepository.ts";
 import { PiRepository } from "./piRepository.ts";
 import { CodexRepository } from "./codexRepository.ts";
-import {
-  computeModelCallCost,
-  priceSessionDetail,
-} from "./pricing.ts";
-import {
-  analyzeSessionCache,
-  summarizeSessionCache,
-} from "./cacheAnalysis.ts";
-import type { SessionDetail, SessionSummary } from "../shared/sessionSchemas.ts";
+import { computeModelCallCost, priceSessionDetail } from "./pricing.ts";
+import { analyzeSessionCache, summarizeSessionCache } from "./cacheAnalysis.ts";
+import type {
+  SessionDetail,
+  SessionSummary,
+} from "../shared/sessionSchemas.ts";
 import type { UsageCall } from "./usage.ts";
 import { aggregateUsage } from "./usageAnalytics.ts";
 
@@ -121,7 +118,12 @@ app.get("/api/usage", (context) => {
     detailDurations.set(name, performance.now() - detailStartedAt);
   }
 
-  const aggregated = aggregateUsage(usageCalls, start);
+  const subagentCoverage = harness === "pi" || harness === "codex"
+    ? "none"
+    : harness === "all"
+    ? "partial"
+    : "full";
+  const aggregated = aggregateUsage(usageCalls, start, subagentCoverage);
   const totalDuration = performance.now() - requestStartedAt;
   const detailDuration = [...detailDurations.values()].reduce(
     (total, duration) => total + duration,
@@ -132,10 +134,14 @@ app.get("/api/usage", (context) => {
   ).join(" ");
   context.header(
     "Server-Timing",
-    `sources;dur=${detailDuration.toFixed(1)}, total;dur=${totalDuration.toFixed(1)}`,
+    `sources;dur=${detailDuration.toFixed(1)}, total;dur=${
+      totalDuration.toFixed(1)
+    }`,
   );
   console.info(
-    `[usage] harness=${harness} range=${rangeParam} calls=${aggregated.callCount} days=${aggregated.dayCount} sources=${detailDuration.toFixed(1)}ms ${harnessTimings} total=${totalDuration.toFixed(1)}ms`,
+    `[usage] harness=${harness} range=${rangeParam} calls=${aggregated.callCount} days=${aggregated.dayCount} sources=${
+      detailDuration.toFixed(1)
+    }ms ${harnessTimings} total=${totalDuration.toFixed(1)}ms`,
   );
   return context.json(aggregated.response);
 });
@@ -172,7 +178,12 @@ app.get("/api/sessions", (context) => {
   const totalItems = openCode.pagination.totalItems +
     claude.pagination.totalItems + pi.pagination.totalItems +
     codex.pagination.totalItems;
-  const items = [...openCode.items, ...claude.items, ...pi.items, ...codex.items]
+  const items = [
+    ...openCode.items,
+    ...claude.items,
+    ...pi.items,
+    ...codex.items,
+  ]
     .sort((a, b) => b.updatedAt - a.updatedAt || b.id.localeCompare(a.id))
     .slice((page - 1) * pageSize, page * pageSize);
   return context.json({
@@ -200,7 +211,10 @@ app.get("/api/sessions/:id", (context) => {
     : context.json({ error: "Session not found" }, 404);
 });
 
-app.get("/api/*", (context) => context.json({ error: "API route not found" }, 404));
+app.get(
+  "/api/*",
+  (context) => context.json({ error: "API route not found" }, 404),
+);
 
 app.use("/assets/*", serveStatic({ root: "./dist" }));
 app.get("*", serveStatic({ root: "./dist", path: "index.html" }));

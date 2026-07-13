@@ -94,7 +94,16 @@ Deno.test("removes empty turns without dropping reported cost", () => {
     strictEqual(session.turns[0].calls.length, 1);
     strictEqual(session.turns[0].calls[0].reportedCost, 0.25);
     const detailCalls = session.turns.flatMap((turn) => turn.calls).map(
-      ({ model, startedAt, reportedCost, tokens }) => ({
+      ({ provider, model, startedAt, reportedCost, tokens }) => ({
+        harness: "opencode",
+        session: {
+          id: "session",
+          rootID: "session",
+          parentID: undefined,
+        },
+        cacheChainID: "session",
+        sessionStartedAt: 1,
+        provider,
         model,
         startedAt,
         reportedCost,
