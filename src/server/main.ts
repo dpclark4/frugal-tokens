@@ -9,7 +9,7 @@ import {
   analyzeSessionCache,
   summarizeSessionCache,
 } from "./cacheAnalysis.ts";
-import type { SessionSummary } from "../shared/sessionSchemas.ts";
+import type { SessionDetail, SessionSummary } from "../shared/sessionSchemas.ts";
 
 const openCodeDatabasePath = Deno.env.get("OPENCODE_DB_PATH");
 if (!openCodeDatabasePath) {
@@ -42,19 +42,156 @@ function repositoryForHarness(harness: SessionSummary["harness"]) {
   return repository;
 }
 
+type SubagentTotals = { count: number; modelCalls: number };
+
+function subagentTotals(
+  subagents: SessionDetail["subagents"],
+): SubagentTotals {
+  return subagents.reduce<SubagentTotals>(
+    (total, subagent) => {
+      const nested = subagentTotals(subagent.subagents);
+      return {
+        count: total.count + 1 + nested.count,
+        modelCalls: total.modelCalls + subagent.modelCalls + nested.modelCalls,
+      };
+    },
+    { count: 0, modelCalls: 0 },
+  );
+}
+
 function priceSummaries(items: SessionSummary[]) {
   return items.map((item) => {
     const detail = repositoryForHarness(item.harness).getSession(item.id);
     if (!detail) return item;
     const priced = priceSessionDetail(detail);
     const analyzed = analyzeSessionCache(priced);
+    const subagents = subagentTotals(priced.subagents);
     return {
       ...item,
       computedCost: priced.computedCost,
       cacheSummary: summarizeSessionCache(analyzed),
+      subagentCount: subagents.count,
+      subagentModelCalls: subagents.modelCalls,
     };
   });
 }
+
+function allSessionsForHarness(harness: string) {
+  const repositories = harness === "all"
+    ? [repository, claudeRepository, piRepository, codexRepository]
+    : [repositoryForHarness(harness as SessionSummary["harness"])];
+  return repositories.flatMap((source) => {
+    const firstPage = source.listSessions(1, 1);
+    return firstPage.pagination.totalItems === 0
+      ? []
+      : source.listSessions(1, firstPage.pagination.totalItems).items;
+  });
+}
+
+app.get("/api/usage", (context) => {
+  const requestStartedAt = performance.now();
+  const harness = context.req.query("harness") ?? "all";
+  if (!["all", "opencode", "claude-code", "pi", "codex"].includes(harness)) {
+    return context.json({ error: "Invalid harness" }, 400);
+  }
+  const rangeParam = context.req.query("range") ?? "30";
+  const range = rangeParam === "all"
+    ? undefined
+    : Math.min(365, Math.max(1, Number.parseInt(rangeParam, 10) || 30));
+  const start = range === undefined
+    ? undefined
+    : new Date(new Date().setHours(0, 0, 0, 0) - (range - 1) * 86_400_000)
+      .getTime();
+  const days = new Map<
+    string,
+    Map<string, { tokens: number; cost: number; priced: boolean }>
+  >();
+  let hasUnpricedCost = false;
+  let callCount = 0;
+
+  function addSession(session: SessionDetail) {
+    for (const turn of session.turns) {
+      for (const call of turn.calls) {
+        if (start !== undefined && call.startedAt < start) continue;
+        callCount++;
+        const timestamp = new Date(call.startedAt);
+        const date = [
+          timestamp.getFullYear(),
+          String(timestamp.getMonth() + 1).padStart(2, "0"),
+          String(timestamp.getDate()).padStart(2, "0"),
+        ].join("-");
+        const models = days.get(date) ?? new Map();
+        const bucket = models.get(call.model) ?? {
+          tokens: 0,
+          cost: 0,
+          priced: true,
+        };
+        bucket.tokens += call.tokens.processed;
+        bucket.priced &&= call.computedCost !== undefined;
+        hasUnpricedCost ||= call.computedCost === undefined;
+        bucket.cost += call.computedCost ?? 0;
+        models.set(call.model, bucket);
+        days.set(date, models);
+      }
+    }
+    session.subagents.forEach(addSession);
+  }
+
+  const listStartedAt = performance.now();
+  const summaries = allSessionsForHarness(harness);
+  const listDuration = performance.now() - listStartedAt;
+  const detailDurations = new Map<string, number>();
+  let includedSessions = 0;
+  for (const summary of summaries) {
+    if (start !== undefined && summary.updatedAt < start) continue;
+    const detailStartedAt = performance.now();
+    const detail = repositoryForHarness(summary.harness).getSession(summary.id);
+    if (detail) {
+      addSession(priceSessionDetail(detail));
+      includedSessions++;
+    }
+    const duration = performance.now() - detailStartedAt;
+    detailDurations.set(
+      summary.harness,
+      (detailDurations.get(summary.harness) ?? 0) + duration,
+    );
+    if (duration >= 100) {
+      console.warn(
+        `[usage] slow session harness=${summary.harness} id=${summary.id} duration=${duration.toFixed(1)}ms`,
+      );
+    }
+  }
+
+  const totalDuration = performance.now() - requestStartedAt;
+  const detailDuration = [...detailDurations.values()].reduce(
+    (total, duration) => total + duration,
+    0,
+  );
+  const harnessTimings = [...detailDurations.entries()].map(
+    ([name, duration]) => `${name}=${duration.toFixed(1)}ms`,
+  ).join(" ");
+  context.header(
+    "Server-Timing",
+    `list;dur=${listDuration.toFixed(1)}, details;dur=${detailDuration.toFixed(1)}, total;dur=${totalDuration.toFixed(1)}`,
+  );
+  console.info(
+    `[usage] harness=${harness} range=${rangeParam} sessions=${includedSessions}/${summaries.length} calls=${callCount} days=${days.size} list=${listDuration.toFixed(1)}ms details=${detailDuration.toFixed(1)}ms ${harnessTimings} total=${totalDuration.toFixed(1)}ms`,
+  );
+
+  return context.json({
+    hasUnpricedCost,
+    days: [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(
+      ([date, models]) => ({
+        date,
+        models: [...models.entries()].map(([model, bucket]) => ({
+          model,
+          tokens: bucket.tokens,
+          cost: bucket.priced ? bucket.cost : undefined,
+        })),
+      }),
+    ),
+  });
+});
 
 app.get("/api/sessions", (context) => {
   const page = Math.max(

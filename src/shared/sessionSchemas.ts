@@ -79,6 +79,8 @@ export const sessionSummarySchema = z.object({
   models: z.array(z.string()),
   userTurns: z.number().int().nonnegative(),
   modelCalls: z.number().int().nonnegative(),
+  subagentCount: z.number().int().nonnegative().optional(),
+  subagentModelCalls: z.number().int().nonnegative().optional(),
   reportedCost: z.number().nonnegative().optional(),
   computedCost: z.number().nonnegative().optional(),
   cacheSummary: cacheSummarySchema.optional(),
@@ -132,6 +134,18 @@ export const sessionListResponseSchema = z.object({
   }),
 });
 
+export const usageResponseSchema = z.object({
+  hasUnpricedCost: z.boolean(),
+  days: z.array(z.object({
+    date: z.string(),
+    models: z.array(z.object({
+      model: z.string(),
+      tokens: z.number().int().nonnegative(),
+      cost: z.number().nonnegative().optional(),
+    })),
+  })),
+});
+
 export type ModelCall = z.infer<typeof modelCallSchema>;
 export type CacheAssessment = z.infer<typeof cacheAssessmentSchema>;
 export type CacheSummary = z.infer<typeof cacheSummarySchema>;
@@ -139,3 +153,4 @@ export type TurnCacheSummary = z.infer<typeof turnCacheSummarySchema>;
 export type SessionListResponse = z.infer<typeof sessionListResponseSchema>;
 export type SessionSummary = z.infer<typeof sessionSummarySchema>;
 export type TokenUsage = z.infer<typeof tokenUsageSchema>;
+export type UsageResponse = z.infer<typeof usageResponseSchema>;

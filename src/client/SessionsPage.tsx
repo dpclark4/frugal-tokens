@@ -11,7 +11,10 @@ import type {
 } from "../shared/sessionSchemas.ts";
 import { getSession, getSessions } from "./api.ts";
 import claudeCodeIcon from "./assets/icons/claudecode-color.svg";
+import codexIcon from "./assets/icons/codex-logo-light.svg";
 import openCodeIcon from "./assets/icons/opencode-logo-light.svg";
+import piIcon from "./assets/icons/pi-logo.svg";
+import { UsageChart } from "./UsageChart.tsx";
 
 const route = getRouteApi("/");
 const integer = new Intl.NumberFormat("en-US");
@@ -148,18 +151,25 @@ function CacheSummaryBadge({ summary }: { summary?: CacheSummary }) {
 
 function CacheMetric({
   read,
+  write,
   share,
   summary,
   peak,
 }: {
   read: number;
+  write?: number;
   share?: number;
   summary?: CacheSummary;
   peak?: number;
 }) {
   const title = [
     `${integer.format(read)} cached tokens read`,
-    share === undefined ? undefined : `${(share * 100).toFixed(1)}% cached`,
+    write === undefined
+      ? "Cache write not reported"
+      : `${integer.format(write)} cache write tokens`,
+    share === undefined
+      ? undefined
+      : `${(share * 100).toFixed(1)}% cached input`,
     summary === undefined ? undefined : cacheSummaryTitle(summary),
     peak === undefined || peak === read
       ? undefined
@@ -168,19 +178,23 @@ function CacheMetric({
   return (
     <span className="metric-stack cache-metric" title={title}>
       <span>
-        <TokenValue value={read} /> <span className="cache-unit">cached</span>
+        <TokenValue value={read} /> <span className="cache-unit">read</span>
       </span>
+      {write !== undefined && (
+        <small>
+          <TokenValue value={write} /> write
+        </small>
+      )}
       <small>
         {share === undefined
           ? "Coverage unavailable"
-          : `${(share * 100).toFixed(1)}% cached`}
-        {hasCacheOutcome(summary) && (
-          <>
-            <span className="cache-meta-sep">·</span>
-            <CacheSummaryBadge summary={summary} />
-          </>
-        )}
+          : `${(share * 100).toFixed(1)}% cached input`}
       </small>
+      {hasCacheOutcome(summary) && (
+        <small>
+          <CacheSummaryBadge summary={summary} />
+        </small>
+      )}
       {peak !== undefined && peak !== read && (
         <small>
           Peak <TokenValue value={peak} />
@@ -226,7 +240,7 @@ function sessionSpan(
 }
 
 function turnMetrics(calls: ModelCall[]) {
-  let freshPrompt = 0;
+  let uncachedInput = 0;
   let cacheRead = 0;
   let cacheWrite = 0;
   let hasWrite = false;
@@ -241,7 +255,7 @@ function turnMetrics(calls: ModelCall[]) {
   let end: number | undefined;
 
   for (const call of calls) {
-    freshPrompt += call.tokens.freshPrompt;
+    uncachedInput += call.tokens.uncachedInput;
     cacheRead += call.tokens.cacheRead;
     if (call.tokens.cacheWrite !== undefined) {
       cacheWrite += call.tokens.cacheWrite;
@@ -264,7 +278,7 @@ function turnMetrics(calls: ModelCall[]) {
   }
 
   return {
-    freshPrompt,
+    uncachedInput,
     cacheRead,
     cacheWrite: hasWrite ? cacheWrite : undefined,
     output,
@@ -323,18 +337,13 @@ function harnessTitle(harness: SessionSummary["harness"]) {
 
 function HarnessIcon({ harness }: { harness: SessionSummary["harness"] }) {
   const title = harnessTitle(harness);
-  if (harness === "pi" || harness === "codex") {
-    return (
-      <span
-        className={`harness-icon harness-${harness}`}
-        title={title}
-        aria-label={title}
-      >
-        {harness === "pi" ? "PI" : "CX"}
-      </span>
-    );
-  }
-  const src = harness === "claude-code" ? claudeCodeIcon : openCodeIcon;
+  const src = harness === "claude-code"
+    ? claudeCodeIcon
+    : harness === "codex"
+    ? codexIcon
+    : harness === "pi"
+    ? piIcon
+    : openCodeIcon;
   return (
     <span className={`harness-icon harness-${harness}`} title={title}>
       <img src={src} alt={title} width={16} height={16} />
@@ -431,13 +440,13 @@ function CallTable({
           <tr>
             <th>#</th>
             <th>Started</th>
-            <th>Dur</th>
-            <th>Activity</th>
+            <th>Model time</th>
+            <th>Outcome</th>
             <th>Model</th>
-            <th>New input</th>
+            <th>Uncached input</th>
             <th>Cache</th>
-            <th>Generated</th>
-            <th>Activity</th>
+            <th>Completion</th>
+            <th>Processed</th>
             <th>Cost</th>
           </tr>
         </thead>
@@ -483,7 +492,7 @@ function CallTable({
                     {call.model}
                   </td>
                   <td>
-                    <TokenValue value={call.tokens.freshPrompt} />
+                    <TokenValue value={call.tokens.uncachedInput} />
                   </td>
                   <td
                     title={`Cache read ${
@@ -698,16 +707,16 @@ function SessionBreakdown({
         <table className="data-table turn-table">
           <thead>
             <tr>
-              <th>Turn</th>
+              <th>User turn</th>
               <th>Started</th>
-              <th>Dur</th>
-              <th>Calls</th>
-              <th>New input</th>
-              <th title="Cumulative cache reads, coverage, and cache outcome">
+              <th>Model span</th>
+              <th>Model calls</th>
+              <th>Uncached input</th>
+              <th title="Cache reads, writes, coverage, and cache outcome">
                 Cache
               </th>
-              <th>Generated</th>
-              <th>Activity</th>
+              <th>Completion</th>
+              <th>Processed</th>
               <th>Cost</th>
               <th aria-label="Expand" />
             </tr>
@@ -741,12 +750,13 @@ function SessionBreakdown({
                     </td>
                     <td>{turn.calls.length}</td>
                     <td>
-                      <TokenValue value={metrics.freshPrompt} />
+                      <TokenValue value={metrics.uncachedInput} />
                     </td>
                     <td>
                       <CacheMetric
                         read={turn.cacheSummary?.totalCacheRead ??
                           metrics.cacheRead}
+                        write={metrics.cacheWrite}
                         share={turn.cacheSummary?.cachedInputShare}
                         summary={turn.cacheSummary}
                         peak={turn.cacheSummary && turn.calls.length > 1
@@ -865,6 +875,8 @@ export function SessionsPage() {
         </p>
       </header>
 
+      <UsageChart harness={harness} />
+
       <section className="sessions-panel">
         <div className="panel-heading">
           <div>
@@ -910,14 +922,18 @@ export function SessionsPage() {
                   <tr>
                     <th>Session</th>
                     <th>Provider / model</th>
-                    <th>Duration</th>
-                    <th>Turns</th>
-                    <th>Calls</th>
-                    <th>New input</th>
-                    <th title="Cached tokens, coverage, and cache outcome">
+                    <th>Elapsed</th>
+                    <th title="User turns and model calls in the main session">
+                      Turns / calls
+                    </th>
+                    <th title="Child sessions and model calls inside them">
+                      Subagents / calls
+                    </th>
+                    <th>Uncached input</th>
+                    <th title="Cache reads, writes, coverage, and cache outcome">
                       Cache
                     </th>
-                    <th>Total activity</th>
+                    <th>Processed</th>
                     <th title="Computed cost; ! if reported is non-zero and differs">
                       Cost
                     </th>
@@ -976,14 +992,37 @@ export function SessionsPage() {
                           >
                             {span?.label ?? "—"}
                           </td>
-                          <td>{session.userTurns}</td>
-                          <td>{session.modelCalls}</td>
                           <td>
-                            <TokenValue value={session.tokens.freshPrompt} />
+                            <span className="metric-stack">
+                              <span>{session.userTurns} turns</span>
+                              <small>{session.modelCalls} calls</small>
+                            </span>
+                          </td>
+                          <td>
+                            <span className="metric-stack">
+                              <span
+                                className={session.subagentCount
+                                    ? undefined
+                                    : "muted"}
+                              >
+                                {session.subagentCount ?? 0} subagents
+                              </span>
+                              <small
+                                className={session.subagentModelCalls
+                                    ? undefined
+                                    : "muted"}
+                              >
+                                {session.subagentModelCalls ?? 0} calls
+                              </small>
+                            </span>
+                          </td>
+                          <td>
+                            <TokenValue value={session.tokens.uncachedInput} />
                           </td>
                           <td>
                             <CacheMetric
                               read={session.tokens.cacheRead}
+                              write={session.tokens.cacheWrite}
                               share={cacheHitRate(session.tokens)}
                               summary={session.cacheSummary}
                             />
@@ -1001,7 +1040,7 @@ export function SessionsPage() {
                         </tr>
                         {expanded && (
                           <tr className="detail-row">
-                            <td colSpan={10}>
+                            <td colSpan={12}>
                               {detail
                                 ? <SessionBreakdown session={detail} />
                                 : (

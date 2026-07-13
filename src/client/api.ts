@@ -1,6 +1,7 @@
 import {
   sessionDetailSchema,
   sessionListResponseSchema,
+  usageResponseSchema,
 } from "../shared/sessionSchemas.ts";
 
 async function getJson(path: string) {
@@ -11,6 +12,12 @@ async function getJson(path: string) {
     throw new Error(`API returned ${contentType ?? "unknown content"} for ${path}`);
   }
   return response.json();
+}
+
+export async function getUsage(range: number | "all", harness: string) {
+  return usageResponseSchema.parse(
+    await getJson(`/api/usage?range=${range}&harness=${harness}`),
+  );
 }
 
 export async function getSessions(page: number, harness: string) {

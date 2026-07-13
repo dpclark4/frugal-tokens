@@ -10,6 +10,7 @@
     "react/jsx-runtime": "npm:react@19.2.7/jsx-runtime",
     "react/jsx-dev-runtime": "npm:react@19.2.7/jsx-dev-runtime",
     "react-dom/client": "npm:react-dom@19.2.7/client",
+    "recharts": "npm:recharts@3.3.0",
     "vite": "npm:vite@8.1.4",
     "zod": "npm:zod@4.4.3"
   },
