@@ -56,7 +56,11 @@ function rateCard(model: string, timestamp: number) {
   return standard[normalized];
 }
 
-function compute(tokens: TokenUsage, model: string, timestamp: number) {
+export function computeModelCallCost(
+  tokens: TokenUsage,
+  model: string,
+  timestamp: number,
+) {
   const rates = rateCard(model, timestamp);
   if (!rates) return undefined;
   const inputSideTokens = tokens.uncachedInput + tokens.cacheRead +
@@ -91,7 +95,11 @@ export function priceSessionDetail(session: SessionDetail): SessionDetail {
     ...turn,
     calls: turn.calls.map((call) => ({
       ...call,
-      computedCost: compute(call.tokens, call.model, call.startedAt),
+      computedCost: computeModelCallCost(
+        call.tokens,
+        call.model,
+        call.startedAt,
+      ),
     })),
   }));
   const costs = turns.flatMap((turn) => turn.calls.map((call) => call.computedCost));

@@ -1,4 +1,4 @@
-import { strictEqual } from "node:assert/strict";
+import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { OpenCodeRepository } from "../src/server/opencodeRepository.ts";
 
@@ -34,6 +34,22 @@ Deno.test("removes empty turns without dropping reported cost", () => {
   ).run("session", "Session", 1, 4);
   const insertMessage = database.prepare(
     "INSERT INTO message VALUES (?, 'session', ?, ?)",
+  );
+  insertMessage.run(
+    "orphan-assistant",
+    0,
+    JSON.stringify({
+      role: "assistant",
+      providerID: "test",
+      modelID: "orphan-model",
+      cost: 0.5,
+      tokens: {
+        input: 100,
+        output: 10,
+        reasoning: 0,
+        cache: { read: 0, write: 0 },
+      },
+    }),
   );
   insertMessage.run("aborted-user", 1, JSON.stringify({ role: "user" }));
   insertMessage.run(
@@ -77,6 +93,16 @@ Deno.test("removes empty turns without dropping reported cost", () => {
     strictEqual(session.turns[0].number, 1);
     strictEqual(session.turns[0].calls.length, 1);
     strictEqual(session.turns[0].calls[0].reportedCost, 0.25);
+    const detailCalls = session.turns.flatMap((turn) => turn.calls).map(
+      ({ model, startedAt, reportedCost, tokens }) => ({
+        model,
+        startedAt,
+        reportedCost,
+        tokens,
+      }),
+    );
+    deepStrictEqual(repository.listUsageCalls(), detailCalls);
+    deepStrictEqual(repository.listUsageCalls(4), detailCalls);
   } finally {
     repository.close();
     Deno.removeSync(path);

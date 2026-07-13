@@ -136,11 +136,18 @@ export const sessionListResponseSchema = z.object({
 
 export const usageResponseSchema = z.object({
   hasUnpricedCost: z.boolean(),
+  cacheDays: z.array(z.object({
+    date: z.string(),
+    clean: z.number().int().nonnegative(),
+    partial: z.number().int().nonnegative(),
+    fullMiss: z.number().int().nonnegative(),
+    notComparable: z.number().int().nonnegative(),
+  })),
   days: z.array(z.object({
     date: z.string(),
     models: z.array(z.object({
       model: z.string(),
-      tokens: z.number().int().nonnegative(),
+      input: z.number().int().nonnegative(),
       cost: z.number().nonnegative().optional(),
     })),
   })),

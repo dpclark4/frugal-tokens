@@ -6,6 +6,7 @@ import {
   type SessionSummary,
   type TokenUsage,
 } from "../shared/sessionSchemas.ts";
+import { usageCallsFromSession } from "./usage.ts";
 
 const contentBlockSchema = z.object({
   type: z.string(),
@@ -297,6 +298,14 @@ export class PiRepository {
     const file = this.#files().find((entry) => entry.id === id);
     if (!file) return undefined;
     return sessionDetailSchema.parse(this.#detail(file));
+  }
+
+  listUsageCalls(startedAt?: number) {
+    return this.#files().filter((file) =>
+      startedAt === undefined || file.updatedAt >= startedAt
+    ).flatMap((file) =>
+      usageCallsFromSession(sessionDetailSchema.parse(this.#detail(file)))
+    ).filter((call) => startedAt === undefined || call.startedAt >= startedAt);
   }
 
   #summary(id: string, path: string, updatedAt: number): SessionSummary {

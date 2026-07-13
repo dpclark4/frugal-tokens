@@ -4,12 +4,17 @@ import { OpenCodeRepository } from "./opencodeRepository.ts";
 import { ClaudeCodeRepository } from "./claudeCodeRepository.ts";
 import { PiRepository } from "./piRepository.ts";
 import { CodexRepository } from "./codexRepository.ts";
-import { priceSessionDetail } from "./pricing.ts";
+import {
+  computeModelCallCost,
+  priceSessionDetail,
+} from "./pricing.ts";
 import {
   analyzeSessionCache,
   summarizeSessionCache,
 } from "./cacheAnalysis.ts";
 import type { SessionDetail, SessionSummary } from "../shared/sessionSchemas.ts";
+import type { UsageCall } from "./usage.ts";
+import { aggregateUsage } from "./usageAnalytics.ts";
 
 const openCodeDatabasePath = Deno.env.get("OPENCODE_DB_PATH");
 if (!openCodeDatabasePath) {
@@ -76,18 +81,6 @@ function priceSummaries(items: SessionSummary[]) {
   });
 }
 
-function allSessionsForHarness(harness: string) {
-  const repositories = harness === "all"
-    ? [repository, claudeRepository, piRepository, codexRepository]
-    : [repositoryForHarness(harness as SessionSummary["harness"])];
-  return repositories.flatMap((source) => {
-    const firstPage = source.listSessions(1, 1);
-    return firstPage.pagination.totalItems === 0
-      ? []
-      : source.listSessions(1, firstPage.pagination.totalItems).items;
-  });
-}
-
 app.get("/api/usage", (context) => {
   const requestStartedAt = performance.now();
   const harness = context.req.query("harness") ?? "all";
@@ -102,66 +95,33 @@ app.get("/api/usage", (context) => {
     ? undefined
     : new Date(new Date().setHours(0, 0, 0, 0) - (range - 1) * 86_400_000)
       .getTime();
-  const days = new Map<
-    string,
-    Map<string, { tokens: number; cost: number; priced: boolean }>
-  >();
-  let hasUnpricedCost = false;
-  let callCount = 0;
+  const usageCalls: UsageCall[] = [];
 
-  function addSession(session: SessionDetail) {
-    for (const turn of session.turns) {
-      for (const call of turn.calls) {
-        if (start !== undefined && call.startedAt < start) continue;
-        callCount++;
-        const timestamp = new Date(call.startedAt);
-        const date = [
-          timestamp.getFullYear(),
-          String(timestamp.getMonth() + 1).padStart(2, "0"),
-          String(timestamp.getDate()).padStart(2, "0"),
-        ].join("-");
-        const models = days.get(date) ?? new Map();
-        const bucket = models.get(call.model) ?? {
-          tokens: 0,
-          cost: 0,
-          priced: true,
-        };
-        bucket.tokens += call.tokens.processed;
-        bucket.priced &&= call.computedCost !== undefined;
-        hasUnpricedCost ||= call.computedCost === undefined;
-        bucket.cost += call.computedCost ?? 0;
-        models.set(call.model, bucket);
-        days.set(date, models);
-      }
-    }
-    session.subagents.forEach(addSession);
-  }
-
-  const listStartedAt = performance.now();
-  const summaries = allSessionsForHarness(harness);
-  const listDuration = performance.now() - listStartedAt;
   const detailDurations = new Map<string, number>();
-  let includedSessions = 0;
-  for (const summary of summaries) {
-    if (start !== undefined && summary.updatedAt < start) continue;
+  const sources = [
+    ["opencode", repository],
+    ["claude-code", claudeRepository],
+    ["pi", piRepository],
+    ["codex", codexRepository],
+  ] as const;
+  for (const [name, source] of sources) {
+    if (harness !== "all" && harness !== name) continue;
     const detailStartedAt = performance.now();
-    const detail = repositoryForHarness(summary.harness).getSession(summary.id);
-    if (detail) {
-      addSession(priceSessionDetail(detail));
-      includedSessions++;
+    for (const call of source.listUsageCalls(start)) {
+      const pricedCall = {
+        ...call,
+        computedCost: call.computedCost ?? computeModelCallCost(
+          call.tokens,
+          call.model,
+          call.startedAt,
+        ),
+      };
+      usageCalls.push(pricedCall);
     }
-    const duration = performance.now() - detailStartedAt;
-    detailDurations.set(
-      summary.harness,
-      (detailDurations.get(summary.harness) ?? 0) + duration,
-    );
-    if (duration >= 100) {
-      console.warn(
-        `[usage] slow session harness=${summary.harness} id=${summary.id} duration=${duration.toFixed(1)}ms`,
-      );
-    }
+    detailDurations.set(name, performance.now() - detailStartedAt);
   }
 
+  const aggregated = aggregateUsage(usageCalls, start);
   const totalDuration = performance.now() - requestStartedAt;
   const detailDuration = [...detailDurations.values()].reduce(
     (total, duration) => total + duration,
@@ -172,25 +132,12 @@ app.get("/api/usage", (context) => {
   ).join(" ");
   context.header(
     "Server-Timing",
-    `list;dur=${listDuration.toFixed(1)}, details;dur=${detailDuration.toFixed(1)}, total;dur=${totalDuration.toFixed(1)}`,
+    `sources;dur=${detailDuration.toFixed(1)}, total;dur=${totalDuration.toFixed(1)}`,
   );
   console.info(
-    `[usage] harness=${harness} range=${rangeParam} sessions=${includedSessions}/${summaries.length} calls=${callCount} days=${days.size} list=${listDuration.toFixed(1)}ms details=${detailDuration.toFixed(1)}ms ${harnessTimings} total=${totalDuration.toFixed(1)}ms`,
+    `[usage] harness=${harness} range=${rangeParam} calls=${aggregated.callCount} days=${aggregated.dayCount} sources=${detailDuration.toFixed(1)}ms ${harnessTimings} total=${totalDuration.toFixed(1)}ms`,
   );
-
-  return context.json({
-    hasUnpricedCost,
-    days: [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(
-      ([date, models]) => ({
-        date,
-        models: [...models.entries()].map(([model, bucket]) => ({
-          model,
-          tokens: bucket.tokens,
-          cost: bucket.priced ? bucket.cost : undefined,
-        })),
-      }),
-    ),
-  });
+  return context.json(aggregated.response);
 });
 
 app.get("/api/sessions", (context) => {

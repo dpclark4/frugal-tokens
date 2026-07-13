@@ -10,8 +10,8 @@ export const CACHE_HIT_RATIO = 0.9;
 export const CACHE_FULL_MISS_RATIO = 0.1;
 
 export function assessCache(
-  previous: ModelCall | undefined,
-  current: ModelCall,
+  previous: Pick<ModelCall, "provider" | "model" | "tokens"> | undefined,
+  current: Pick<ModelCall, "provider" | "model" | "tokens">,
 ): CacheAssessment {
   if (!previous) return { status: "baseline", reason: "no-predecessor" };
   if (

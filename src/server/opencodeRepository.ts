@@ -7,6 +7,7 @@ import {
   type SessionSummary,
   type TokenUsage,
 } from "../shared/sessionSchemas.ts";
+import type { UsageCall } from "./usage.ts";
 
 const messageDataSchema = z.object({
   role: z.string(),
@@ -58,6 +59,13 @@ type MessageRow = {
   id: string;
   time_created: number;
   data: string;
+};
+
+type UsageMessageRow = MessageRow & { session_id: string };
+type UsageSessionRow = {
+  id: string;
+  parent_id: string | null;
+  time_created: number;
 };
 
 type PartRow = {
@@ -229,6 +237,57 @@ function decodeMessages(
   };
 }
 
+function decodeUsageMessage(
+  row: MessageRow,
+  session: { rootID: string; rootStartedAt: number },
+) {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(row.data);
+  } catch {
+    return undefined;
+  }
+  const result = messageDataSchema.safeParse(raw);
+  if (!result.success) return undefined;
+  const message = result.data;
+  if (message.role !== "assistant" || !message.tokens) {
+    return { role: message.role };
+  }
+
+  const source = message.tokens;
+  const cacheWrite = source.cache.write > 0 ? source.cache.write : undefined;
+  const tokens: TokenUsage = {
+    uncachedInput: source.input,
+    cacheRead: source.cache.read,
+    cacheWrite,
+    cacheWrite5m: undefined,
+    cacheWrite1h: undefined,
+    freshPrompt: source.input + (cacheWrite ?? 0),
+    output: source.output,
+    reasoning: source.reasoning,
+    processed: source.input + source.cache.read + source.cache.write +
+      source.output + source.reasoning,
+  };
+  const reportedCost = message.cost ?? 0;
+  if (tokens.processed === 0 && reportedCost === 0) {
+    return { role: message.role };
+  }
+  return {
+    role: message.role,
+      call: {
+        harness: "opencode",
+        sourceSessionID: session.rootID,
+        cacheChainID: (row as UsageMessageRow).session_id,
+        sessionStartedAt: session.rootStartedAt,
+        provider: message.providerID ?? "unknown",
+        model: message.modelID ?? "unknown",
+      startedAt: message.time?.created ?? row.time_created,
+      reportedCost,
+      tokens,
+    } satisfies UsageCall,
+  };
+}
+
 function fallbackModel(modelJson: string | null) {
   if (!modelJson) return undefined;
   try {
@@ -302,6 +361,70 @@ export class OpenCodeRepository {
     if (!row) return undefined;
 
     return sessionDetailSchema.parse(this.#detail(row, new Set()));
+  }
+
+  listUsageCalls(startedAt?: number) {
+    const sessionRows = this.#db.prepare(`
+      SELECT id, parent_id, time_created
+      FROM session
+    `).all() as UsageSessionRow[];
+    const rowsByID = new Map(sessionRows.map((row) => [row.id, row]));
+    const sessionRoots = new Map<
+      string,
+      { rootID: string; rootStartedAt: number }
+    >();
+    for (const row of sessionRows) {
+      let root = row;
+      const visited = new Set([row.id]);
+      while (root.parent_id && !visited.has(root.parent_id)) {
+        const parent = rowsByID.get(root.parent_id);
+        if (!parent) break;
+        root = parent;
+        visited.add(root.id);
+      }
+      sessionRoots.set(row.id, {
+        rootID: root.id,
+        rootStartedAt: root.time_created,
+      });
+    }
+    const sessionsWithUserTurn = new Set<string>();
+    if (startedAt !== undefined) {
+      const priorSessions = this.#db.prepare(`
+        SELECT DISTINCT session_id
+        FROM message
+        WHERE time_created < ?
+          AND json_valid(data)
+          AND json_extract(data, '$.role') = 'user'
+      `).all(startedAt) as Array<{ session_id: string }>;
+      priorSessions.forEach(({ session_id }) => sessionsWithUserTurn.add(session_id));
+    }
+    const rows = startedAt === undefined
+      ? this.#db.prepare(`
+        SELECT id, session_id, time_created, data
+        FROM message
+        ORDER BY time_created, id
+      `).all() as UsageMessageRow[]
+      : this.#db.prepare(`
+        SELECT id, session_id, time_created, data
+        FROM message
+        WHERE time_created >= ?
+        ORDER BY time_created, id
+      `).all(startedAt) as UsageMessageRow[];
+    const calls: UsageCall[] = [];
+    for (const row of rows) {
+      const session = sessionRoots.get(row.session_id);
+      if (!session) continue;
+      const decoded = decodeUsageMessage(row, session);
+      if (!decoded) continue;
+      if (decoded.role === "user") {
+        sessionsWithUserTurn.add(row.session_id);
+        continue;
+      }
+      if (decoded.call && sessionsWithUserTurn.has(row.session_id)) {
+        calls.push(decoded.call);
+      }
+    }
+    return calls;
   }
 
   #summary(row: SessionRow): SessionSummary {

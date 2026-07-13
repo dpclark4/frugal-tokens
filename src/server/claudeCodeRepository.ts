@@ -6,6 +6,7 @@ import {
   type SessionSummary,
   type TokenUsage,
 } from "../shared/sessionSchemas.ts";
+import { usageCallsFromSession } from "./usage.ts";
 
 const contentBlockSchema = z.object({
   type: z.string(),
@@ -307,6 +308,18 @@ export class ClaudeCodeRepository {
       if (error instanceof Deno.errors.NotFound) return undefined;
       throw error;
     }
+  }
+
+  listUsageCalls(startedAt?: number) {
+    return this.#files().filter((file) =>
+      startedAt === undefined || file.updatedAt >= startedAt
+    ).flatMap((file) =>
+      usageCallsFromSession(
+        sessionDetailSchema.parse(
+          this.#detail(file.id, file.path, file.updatedAt),
+        ),
+      )
+    ).filter((call) => startedAt === undefined || call.startedAt >= startedAt);
   }
 
   #summary(id: string, path: string, updatedAt: number): SessionSummary {
