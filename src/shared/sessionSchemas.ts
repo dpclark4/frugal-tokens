@@ -136,6 +136,21 @@ export const sessionListResponseSchema = z.object({
 
 export const usageResponseSchema = z.object({
   hasUnpricedCost: z.boolean(),
+  sessionInputDays: z.array(z.object({
+    date: z.string(),
+    median: z.number().nonnegative(),
+    p90: z.number().nonnegative(),
+    average: z.number().nonnegative(),
+    sessions: z.number().int().positive(),
+  })),
+  sessionInputWeeks: z.array(z.object({
+    date: z.string(),
+    endDate: z.string(),
+    median: z.number().nonnegative(),
+    p90: z.number().nonnegative(),
+    average: z.number().nonnegative(),
+    sessions: z.number().int().positive(),
+  })),
   cacheDays: z.array(z.object({
     date: z.string(),
     clean: z.number().int().nonnegative(),

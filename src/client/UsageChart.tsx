@@ -2,14 +2,16 @@ import { useEffect, useState } from "react";
 import type { UsageResponse } from "../shared/sessionSchemas.ts";
 import { getUsage } from "./api.ts";
 import { CacheMissChart } from "./analytics/CacheMissChart.tsx";
+import { SessionInputChart } from "./analytics/SessionInputChart.tsx";
 import { SpendInputChart } from "./analytics/SpendInputChart.tsx";
 
-type View = "spend" | "input" | "cache";
+type View = "spend" | "input" | "session-input" | "cache";
 type Range = 7 | 30 | "all";
 
 const views: Array<{ value: View; label: string }> = [
   { value: "spend", label: "Spend" },
   { value: "input", label: "Input" },
+  { value: "session-input", label: "Session size" },
   { value: "cache", label: "Cache misses" },
 ];
 
@@ -26,7 +28,9 @@ export function UsageChart({ harness }: { harness: string }) {
     getUsage(range, harness).then((result) => active && setUsage(result)).catch(
       (reason) => {
         if (active) {
-          setError(reason instanceof Error ? reason.message : "Unable to load usage");
+          setError(
+            reason instanceof Error ? reason.message : "Unable to load usage",
+          );
         }
       },
     );
@@ -76,10 +80,19 @@ export function UsageChart({ harness }: { harness: string }) {
           <div className="chart-message chart-error">{error}</div>
         </div>
       )}
-      {usage && view !== "cache" && (
-        <SpendInputChart usage={usage} metric={view === "spend" ? "cost" : "input"} range={range} />
+      {usage && (view === "spend" || view === "input") && (
+        <SpendInputChart
+          usage={usage}
+          metric={view === "spend" ? "cost" : "input"}
+          range={range}
+        />
       )}
-      {usage && view === "cache" && <CacheMissChart usage={usage} range={range} />}
+      {usage && view === "session-input" && (
+        <SessionInputChart usage={usage} range={range} />
+      )}
+      {usage && view === "cache" && (
+        <CacheMissChart usage={usage} range={range} />
+      )}
     </section>
   );
 }

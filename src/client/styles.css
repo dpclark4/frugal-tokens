@@ -350,6 +350,10 @@ h1 {
   font: 10px var(--mono);
 }
 
+.session-input-note {
+  color: var(--muted);
+}
+
 .sessions-panel {
   background: var(--panel);
   border: 1px solid var(--panel-border);
@@ -585,7 +589,6 @@ table.data-table {
 .harness-icon.harness-pi img {
   filter: brightness(0);
 }
-
 
 .chevron {
   color: var(--accent);

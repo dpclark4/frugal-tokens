@@ -11,6 +11,34 @@ function dateKey(value: number) {
   ].join("-");
 }
 
+function percentile(values: number[], quantile: number) {
+  const index = (values.length - 1) * quantile;
+  const lower = Math.floor(index);
+  const remainder = index - lower;
+  return values[lower] + (values[lower + 1] - values[lower]) * remainder ||
+    values[lower];
+}
+
+function weekKey(date: string) {
+  const day = Temporal.PlainDate.from(date);
+  return day.subtract({ days: day.dayOfWeek - 1 }).toString();
+}
+
+function summarizeSessionInputs(inputs: Map<string, number[]>) {
+  return [...inputs.entries()].sort(([a], [b]) => a.localeCompare(b)).map(
+    ([date, values]) => {
+      values.sort((a, b) => a - b);
+      return {
+        date,
+        median: percentile(values, 0.5),
+        p90: percentile(values, 0.9),
+        average: values.reduce((sum, value) => sum + value, 0) / values.length,
+        sessions: values.length,
+      };
+    },
+  );
+}
+
 export function aggregateUsage(
   usageCalls: UsageCall[],
   start?: number,
@@ -51,8 +79,11 @@ export function aggregateUsage(
     string,
     { clean: number; partial: number; fullMiss: number; notComparable: number }
   >();
+  const sessionInputs = new Map<string, number[]>();
   for (const calls of sessionCalls.values()) {
-    const statuses = [...Map.groupBy(calls, (call) => call.cacheChainID).values()]
+    const statuses = [
+      ...Map.groupBy(calls, (call) => call.cacheChainID).values(),
+    ]
       .flatMap((chain) => {
         let previous: UsageCall | undefined;
         return chain.sort((a, b) => a.startedAt - b.startedAt).map((call) => {
@@ -62,6 +93,14 @@ export function aggregateUsage(
         });
       });
     const date = dateKey(calls[0].sessionStartedAt);
+    const inputs = sessionInputs.get(date) ?? [];
+    inputs.push(calls.reduce(
+      (sum, call) =>
+        sum + call.tokens.uncachedInput + call.tokens.cacheRead +
+        (call.tokens.cacheWrite ?? 0),
+      0,
+    ));
+    sessionInputs.set(date, inputs);
     const bucket = cacheDays.get(date) ?? {
       clean: 0,
       partial: 0,
@@ -75,11 +114,27 @@ export function aggregateUsage(
     cacheDays.set(date, bucket);
   }
 
+  const sessionInputWeeks = new Map<string, number[]>();
+  for (const [date, values] of sessionInputs) {
+    const week = weekKey(date);
+    const inputs = sessionInputWeeks.get(week) ?? [];
+    inputs.push(...values);
+    sessionInputWeeks.set(week, inputs);
+  }
+
   return {
     callCount,
     dayCount: days.size,
     response: {
       hasUnpricedCost,
+      sessionInputDays: summarizeSessionInputs(sessionInputs),
+      sessionInputWeeks: summarizeSessionInputs(sessionInputWeeks).map(
+        (entry) => ({
+          ...entry,
+          endDate: Temporal.PlainDate.from(entry.date).add({ days: 6 })
+            .toString(),
+        }),
+      ),
       cacheDays: [...cacheDays.entries()].sort(([a], [b]) => a.localeCompare(b))
         .map(([date, bucket]) => ({ date, ...bucket })),
       days: [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(
