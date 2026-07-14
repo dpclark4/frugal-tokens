@@ -13,28 +13,57 @@ import type {
 import type { UsageCall } from "./usage.ts";
 import { aggregateUsage } from "./usageAnalytics.ts";
 
-const openCodeDatabasePath = Deno.env.get("OPENCODE_DB_PATH");
-if (!openCodeDatabasePath) {
-  throw new Error("OPENCODE_DB_PATH must be set");
+function configuredPath<T>(
+  harness: string,
+  variable: string,
+  type: "file" | "directory",
+  create: (path: string) => T,
+): T | undefined {
+  const path = Deno.env.get(variable);
+  if (!path) {
+    console.warn(`[config] ${harness} disabled: ${variable} is not set`);
+    return undefined;
+  }
+  try {
+    const stat = Deno.statSync(path);
+    if (type === "file" ? !stat.isFile : !stat.isDirectory) {
+      console.warn(`[config] ${harness} disabled: ${path} is not a ${type}`);
+      return undefined;
+    }
+  } catch (error) {
+    console.warn(
+      `[config] ${harness} disabled: cannot access ${path} (${
+        error instanceof Error ? error.message : String(error)
+      })`,
+    );
+    return undefined;
+  }
+  return create(path);
 }
-const repository = new OpenCodeRepository(openCodeDatabasePath);
-const claudeCodeProjectPath = Deno.env.get("CLAUDE_CODE_PROJECT_PATH");
-if (!claudeCodeProjectPath) {
-  throw new Error("CLAUDE_CODE_PROJECT_PATH must be set");
-}
-const claudeRepository = new ClaudeCodeRepository(
-  claudeCodeProjectPath,
+const repository = configuredPath(
+  "opencode",
+  "OPENCODE_DB_PATH",
+  "file",
+  (path) => new OpenCodeRepository(path),
 );
-const piSessionDirectory = Deno.env.get("PI_SESSION_DIR");
-if (!piSessionDirectory) {
-  throw new Error("PI_SESSION_DIR must be set");
-}
-const piRepository = new PiRepository(piSessionDirectory);
-const codexSessionDirectory = Deno.env.get("CODEX_SESSION_DIR");
-if (!codexSessionDirectory) {
-  throw new Error("CODEX_SESSION_DIR must be set");
-}
-const codexRepository = new CodexRepository(codexSessionDirectory);
+const claudeRepository = configuredPath(
+  "claude-code",
+  "CLAUDE_CODE_PROJECT_PATH",
+  "directory",
+  (path) => new ClaudeCodeRepository(path),
+);
+const piRepository = configuredPath(
+  "pi",
+  "PI_SESSION_DIR",
+  "directory",
+  (path) => new PiRepository(path),
+);
+const codexRepository = configuredPath(
+  "codex",
+  "CODEX_SESSION_DIR",
+  "directory",
+  (path) => new CodexRepository(path),
+);
 const app = new Hono();
 
 function repositoryForHarness(harness: SessionSummary["harness"]) {
@@ -63,7 +92,7 @@ function subagentTotals(
 
 function priceSummaries(items: SessionSummary[]) {
   return items.map((item) => {
-    const detail = repositoryForHarness(item.harness).getSession(item.id);
+    const detail = repositoryForHarness(item.harness)?.getSession(item.id);
     if (!detail) return item;
     const priced = priceSessionDetail(detail);
     const analyzed = analyzeSessionCache(priced);
@@ -76,6 +105,17 @@ function priceSummaries(items: SessionSummary[]) {
       subagentModelCalls: subagents.modelCalls,
     };
   });
+}
+
+function listSessions(
+  source: ReturnType<typeof repositoryForHarness>,
+  page: number,
+  pageSize: number,
+) {
+  return source?.listSessions(page, pageSize) ?? {
+    items: [],
+    pagination: { page, pageSize, totalItems: 0, totalPages: 0 },
+  };
 }
 
 app.get("/api/usage", (context) => {
@@ -103,6 +143,7 @@ app.get("/api/usage", (context) => {
   ] as const;
   for (const [name, source] of sources) {
     if (harness !== "all" && harness !== name) continue;
+    if (!source) continue;
     const detailStartedAt = performance.now();
     for (const call of source.listUsageCalls(start)) {
       const pricedCall = {
@@ -156,25 +197,25 @@ app.get("/api/sessions", (context) => {
   const pageSize = Math.min(100, Math.max(1, requestedPageSize));
   const harness = context.req.query("harness") ?? "all";
   if (harness === "opencode") {
-    const result = repository.listSessions(page, pageSize);
+    const result = listSessions(repository, page, pageSize);
     return context.json({ ...result, items: priceSummaries(result.items) });
   }
   if (harness === "claude-code") {
-    const result = claudeRepository.listSessions(page, pageSize);
+    const result = listSessions(claudeRepository, page, pageSize);
     return context.json({ ...result, items: priceSummaries(result.items) });
   }
   if (harness === "pi") {
-    const result = piRepository.listSessions(page, pageSize);
+    const result = listSessions(piRepository, page, pageSize);
     return context.json({ ...result, items: priceSummaries(result.items) });
   }
   if (harness === "codex") {
-    const result = codexRepository.listSessions(page, pageSize);
+    const result = listSessions(codexRepository, page, pageSize);
     return context.json({ ...result, items: priceSummaries(result.items) });
   }
-  const openCode = repository.listSessions(1, page * pageSize);
-  const claude = claudeRepository.listSessions(1, page * pageSize);
-  const pi = piRepository.listSessions(1, page * pageSize);
-  const codex = codexRepository.listSessions(1, page * pageSize);
+  const openCode = listSessions(repository, 1, page * pageSize);
+  const claude = listSessions(claudeRepository, 1, page * pageSize);
+  const pi = listSessions(piRepository, 1, page * pageSize);
+  const codex = listSessions(codexRepository, 1, page * pageSize);
   const totalItems = openCode.pagination.totalItems +
     claude.pagination.totalItems + pi.pagination.totalItems +
     codex.pagination.totalItems;
@@ -200,12 +241,12 @@ app.get("/api/sessions", (context) => {
 app.get("/api/sessions/:id", (context) => {
   const harness = context.req.query("harness");
   const session = harness === "claude-code"
-    ? claudeRepository.getSession(context.req.param("id"))
+    ? claudeRepository?.getSession(context.req.param("id"))
     : harness === "pi"
-    ? piRepository.getSession(context.req.param("id"))
+    ? piRepository?.getSession(context.req.param("id"))
     : harness === "codex"
-    ? codexRepository.getSession(context.req.param("id"))
-    : repository.getSession(context.req.param("id"));
+    ? codexRepository?.getSession(context.req.param("id"))
+    : repository?.getSession(context.req.param("id"));
   return session
     ? context.json(analyzeSessionCache(priceSessionDetail(session)))
     : context.json({ error: "Session not found" }, 404);

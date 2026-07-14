@@ -12,12 +12,12 @@ cp .env.example .env
 deno task dev
 ```
 
-Set `OPENCODE_DB_PATH` to the OpenCode SQLite database and
-`CLAUDE_CODE_PROJECT_PATH` to a Claude Code project directory containing its
-session JSONL files. Set `PI_SESSION_DIR` to the PI session root, usually
-`~/.pi/agent/sessions`, and `CODEX_SESSION_DIR` to the Codex session root,
-usually `~/.codex/sessions`. Local development loads these values from the
-ignored `.env` file.
+Configure any session sources you use: `OPENCODE_DB_PATH` for the OpenCode
+SQLite database, `CLAUDE_CODE_PROJECT_PATH` for the Claude Code projects directory,
+`PI_SESSION_DIR` for the PI session root (usually `~/.pi/agent/sessions`), and
+`CODEX_SESSION_DIR` for the Codex session root (usually `~/.codex/sessions`).
+Missing or inaccessible sources are disabled with a startup warning. Local
+development loads these values from the ignored `.env` file.
 
 Open `http://localhost:5273`. The API listens on port 9000. Set `PORT` to change
 the API port; if it changes during development, update the proxy target in

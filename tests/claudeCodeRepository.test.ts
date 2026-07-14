@@ -343,3 +343,29 @@ Deno.test("normalizes a linked subagent without folding child usage into parent"
 
   deepStrictEqual(actual, expected);
 });
+
+Deno.test("lists sessions from every Claude Code project directory", () => {
+  const transcript = (prompt: string, timestamp: string) => `
+{"type":"user","uuid":"user","timestamp":"${timestamp}","promptSource":"typed","origin":{"kind":"human"},"message":{"role":"user","content":"${prompt}"}}
+{"type":"assistant","uuid":"assistant","timestamp":"${timestamp}","message":{"id":"call","role":"assistant","model":"claude-sonnet-4-5","stop_reason":"end_turn","content":[{"type":"text","text":"Done"}],"usage":{"input_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"output_tokens":1}}}
+`;
+  const actual = repository({
+    "project-a/shared.jsonl": transcript("Project A", "2026-07-01T00:00:00Z"),
+    "project-a/sessions-index.json": JSON.stringify({
+      entries: [{ sessionId: "shared", summary: "Indexed A" }],
+    }),
+    "project-b/shared.jsonl": transcript("Project B", "2026-07-02T00:00:00Z"),
+    "project-b/sessions-index.json": JSON.stringify({
+      entries: [{ sessionId: "shared", summary: "Indexed B" }],
+    }),
+  });
+
+  deepStrictEqual(
+    actual.listSessions(1, 10).items.map(({ id, title }) => ({ id, title })),
+    [
+      { id: "project-b/shared", title: "Indexed B" },
+      { id: "project-a/shared", title: "Indexed A" },
+    ],
+  );
+  deepStrictEqual(actual.getSession("project-a/shared")?.title, "Indexed A");
+});

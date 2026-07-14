@@ -249,6 +249,14 @@ export class ClaudeCodeRepository {
   #index = new Map<string, IndexEntry>();
 
   constructor(private directory: string) {
+    this.#loadIndex(directory);
+    for (const entry of Deno.readDirSync(directory)) {
+      if (!entry.isDirectory) continue;
+      this.#loadIndex(`${directory}/${entry.name}`, `${entry.name}/`);
+    }
+  }
+
+  #loadIndex(directory: string, idPrefix = "") {
     try {
       const parsed = z.object({
         entries: z.array(z.object({
@@ -260,7 +268,7 @@ export class ClaudeCodeRepository {
         JSON.parse(Deno.readTextFileSync(`${directory}/sessions-index.json`)),
       );
       for (const entry of parsed.entries) {
-        this.#index.set(entry.sessionId, entry);
+        this.#index.set(`${idPrefix}${entry.sessionId}`, entry);
       }
     } catch {
       // The transcript is authoritative; the optional index only improves titles.
@@ -268,16 +276,32 @@ export class ClaudeCodeRepository {
   }
 
   #files() {
-    return [...Deno.readDirSync(this.directory)]
-      .filter((entry) => entry.isFile && entry.name.endsWith(".jsonl"))
-      .map((entry) => {
+    const files: Array<{ id: string; path: string; updatedAt: number }> = [];
+    for (const entry of Deno.readDirSync(this.directory)) {
+      if (entry.isFile && entry.name.endsWith(".jsonl")) {
         const path = `${this.directory}/${entry.name}`;
-        return {
+        files.push({
           id: entry.name.slice(0, -6),
           path,
           updatedAt: Deno.statSync(path).mtime?.getTime() ?? 0,
-        };
-      }).sort((a, b) => b.updatedAt - a.updatedAt || b.id.localeCompare(a.id));
+        });
+        continue;
+      }
+      if (!entry.isDirectory) continue;
+      const projectPath = `${this.directory}/${entry.name}`;
+      for (const session of Deno.readDirSync(projectPath)) {
+        if (!session.isFile || !session.name.endsWith(".jsonl")) continue;
+        const path = `${projectPath}/${session.name}`;
+        files.push({
+          id: `${entry.name}/${session.name.slice(0, -6)}`,
+          path,
+          updatedAt: Deno.statSync(path).mtime?.getTime() ?? 0,
+        });
+      }
+    }
+    return files.sort((a, b) =>
+      b.updatedAt - a.updatedAt || b.id.localeCompare(a.id)
+    );
   }
 
   listSessions(page: number, pageSize: number) {
@@ -298,16 +322,11 @@ export class ClaudeCodeRepository {
   }
 
   getSession(id: string) {
-    const path = `${this.directory}/${id}.jsonl`;
-    try {
-      const stat = Deno.statSync(path);
-      return sessionDetailSchema.parse(
-        this.#detail(id, path, stat.mtime?.getTime() ?? 0),
-      );
-    } catch (error) {
-      if (error instanceof Deno.errors.NotFound) return undefined;
-      throw error;
-    }
+    const file = this.#files().find((entry) => entry.id === id);
+    if (!file) return undefined;
+    return sessionDetailSchema.parse(
+      this.#detail(file.id, file.path, file.updatedAt),
+    );
   }
 
   listUsageCalls(startedAt?: number) {
