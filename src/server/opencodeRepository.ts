@@ -209,6 +209,7 @@ function decodeMessages(
     }
     activity.finishReason = message.finish;
     providers.add(provider);
+    models.delete(model);
     models.add(model);
     addTokens(tokens, callTokens);
     reportedCost += cost;

@@ -211,6 +211,7 @@ function decodeRecords(records: Record[]) {
       decoded = { call, blocks: [] };
       calls.set(id, decoded);
       providers.add("anthropic");
+      models.delete(model);
       models.add(model);
       addTokens(tokens, callTokens);
     }

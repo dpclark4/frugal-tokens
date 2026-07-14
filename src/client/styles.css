@@ -571,6 +571,26 @@ table.data-table {
   margin-bottom: 3px;
 }
 
+.model-summary {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+
+.model-overflow {
+  color: var(--green-soft);
+  cursor: help;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.model-overflow:focus-visible {
+  outline: 1px solid currentColor;
+  outline-offset: 2px;
+}
+
 .chip {
   display: inline-flex;
   align-items: center;

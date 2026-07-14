@@ -233,6 +233,7 @@ function decodeRecords(records: Record[]) {
     };
 
     providers.add("openai");
+    models.delete(currentModel);
     models.add(currentModel);
     addTokens(tokens, callTokens);
     turn.calls.push(call);

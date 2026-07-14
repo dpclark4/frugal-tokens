@@ -48,6 +48,26 @@ function TokenValue({ value }: { value: number }) {
   return <span title={integer.format(value)}>{compact.format(value)}</span>;
 }
 
+function ModelSummary({ models }: { models: string[] }) {
+  const primary = models.at(-1) ?? "unknown";
+  const others = models.slice(0, -1);
+  return (
+    <span className="model-summary">
+      <span>{primary}</span>
+      {others.length > 0 && (
+        <span
+          className="model-overflow"
+          title={others.join(", ")}
+          aria-label={`Other models: ${others.join(", ")}`}
+          tabIndex={0}
+        >
+          +{others.length}
+        </span>
+      )}
+    </span>
+  );
+}
+
 function cacheHitRate(tokens: TokenUsage) {
   const input = tokens.uncachedInput + tokens.cacheRead +
     (tokens.cacheWrite ?? 0);
@@ -980,7 +1000,7 @@ export function SessionsPage() {
                             <span className="provider">
                               {session.providers.join(", ") || "unknown"}
                             </span>
-                            {session.models.join(", ") || "unknown"}
+                            <ModelSummary models={session.models} />
                           </td>
                           <td
                             className={span?.label ? undefined : "muted"}
@@ -1002,15 +1022,15 @@ export function SessionsPage() {
                             <span className="metric-stack">
                               <span
                                 className={session.subagentCount
-                                    ? undefined
-                                    : "muted"}
+                                  ? undefined
+                                  : "muted"}
                               >
                                 {session.subagentCount ?? 0} subagents
                               </span>
                               <small
                                 className={session.subagentModelCalls
-                                    ? undefined
-                                    : "muted"}
+                                  ? undefined
+                                  : "muted"}
                               >
                                 {session.subagentModelCalls ?? 0} calls
                               </small>

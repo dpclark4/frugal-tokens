@@ -116,6 +116,21 @@ Deno.test("normalizes model changes without creating command turns", () => {
   deepStrictEqual(actual, expected);
 });
 
+Deno.test("orders models by their most recent call", () => {
+  const actual = repository({
+    "model-return.jsonl": `
+{"type":"user","uuid":"user-1","timestamp":"2026-06-25T19:51:53.000Z","promptSource":"typed","origin":{"kind":"human"},"message":{"role":"user","content":"First"}}
+{"type":"assistant","uuid":"assistant-1","timestamp":"2026-06-25T19:51:54.000Z","message":{"id":"call-1","role":"assistant","model":"model-a","content":[],"usage":{"input_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"output_tokens":1}}}
+{"type":"user","uuid":"user-2","timestamp":"2026-06-25T19:51:55.000Z","promptSource":"typed","origin":{"kind":"human"},"message":{"role":"user","content":"Second"}}
+{"type":"assistant","uuid":"assistant-2","timestamp":"2026-06-25T19:51:56.000Z","message":{"id":"call-2","role":"assistant","model":"model-b","content":[],"usage":{"input_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"output_tokens":1}}}
+{"type":"user","uuid":"user-3","timestamp":"2026-06-25T19:51:57.000Z","promptSource":"typed","origin":{"kind":"human"},"message":{"role":"user","content":"Third"}}
+{"type":"assistant","uuid":"assistant-3","timestamp":"2026-06-25T19:51:58.000Z","message":{"id":"call-3","role":"assistant","model":"model-a","content":[],"usage":{"input_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"output_tokens":1}}}
+`,
+  }).getSession("model-return");
+
+  deepStrictEqual(actual?.models, ["model-b", "model-a"]);
+});
+
 Deno.test("normalizes an SDK prompt and deduplicates streamed usage", () => {
   const actual = repository({
     "sdk-session.jsonl": `
