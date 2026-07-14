@@ -23,6 +23,7 @@ const recordSchema = z.object({
   uuid: z.string().optional(),
   timestamp: z.string().optional(),
   aiTitle: z.string().optional(),
+  customTitle: z.string().optional(),
   isMeta: z.boolean().optional(),
   isSidechain: z.boolean().optional(),
   promptSource: z.string().optional(),
@@ -345,6 +346,9 @@ export class ClaudeCodeRepository {
   #summary(id: string, path: string, updatedAt: number): SessionSummary {
     const records = readRecords(path);
     const decoded = decodeRecords(records);
+    const customTitle = [...records].reverse().find((record) =>
+      record.customTitle
+    )?.customTitle;
     const generatedTitle = [...records].reverse().find((record) =>
       record.aiTitle
     )?.aiTitle;
@@ -354,8 +358,8 @@ export class ClaudeCodeRepository {
     const transcriptUpdatedAt = [...records].reverse().find((record) =>
       record.timestamp && Number.isFinite(Date.parse(record.timestamp))
     )?.timestamp;
-    const title = this.#index.get(id)?.summary ?? generatedTitle ??
-      this.#index.get(id)?.firstPrompt ??
+    const title = customTitle ?? this.#index.get(id)?.summary ??
+      generatedTitle ?? this.#index.get(id)?.firstPrompt ??
       promptTitle ?? `Claude Code session ${id.slice(0, 8)}`;
     const bounds = sessionBounds(decoded.turns);
     return {

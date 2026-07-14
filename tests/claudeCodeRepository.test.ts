@@ -359,6 +359,25 @@ Deno.test("normalizes a linked subagent without folding child usage into parent"
   deepStrictEqual(actual, expected);
 });
 
+Deno.test("prefers a user custom title over the generated ai-title", () => {
+  const actual = repository({
+    "custom.jsonl": `
+{"type":"user","uuid":"user","timestamp":"2026-07-05T00:00:00Z","promptSource":"typed","origin":{"kind":"human"},"message":{"role":"user","content":"fix it now"}}
+{"type":"assistant","uuid":"assistant","timestamp":"2026-07-05T00:00:01Z","message":{"id":"call","role":"assistant","model":"claude-sonnet-4-5","stop_reason":"end_turn","content":[{"type":"text","text":"Done"}],"usage":{"input_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"output_tokens":1}}}
+{"type":"ai-title","aiTitle":"Fix the leak","timestamp":"2026-07-05T00:00:02Z"}
+{"type":"custom-title","customTitle":"PR 141273","timestamp":"2026-07-05T00:00:03Z"}
+`,
+    "generated.jsonl": `
+{"type":"user","uuid":"user","timestamp":"2026-07-05T00:00:00Z","promptSource":"typed","origin":{"kind":"human"},"message":{"role":"user","content":"fix it now"}}
+{"type":"assistant","uuid":"assistant","timestamp":"2026-07-05T00:00:01Z","message":{"id":"call","role":"assistant","model":"claude-sonnet-4-5","stop_reason":"end_turn","content":[{"type":"text","text":"Done"}],"usage":{"input_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"output_tokens":1}}}
+{"type":"ai-title","aiTitle":"Fix the leak","timestamp":"2026-07-05T00:00:02Z"}
+`,
+  });
+
+  deepStrictEqual(actual.getSession("custom")?.title, "PR 141273");
+  deepStrictEqual(actual.getSession("generated")?.title, "Fix the leak");
+});
+
 Deno.test("lists sessions from every Claude Code project directory", () => {
   const transcript = (prompt: string, timestamp: string) => `
 {"type":"user","uuid":"user","timestamp":"${timestamp}","promptSource":"typed","origin":{"kind":"human"},"message":{"role":"user","content":"${prompt}"}}
