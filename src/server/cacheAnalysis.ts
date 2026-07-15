@@ -1,5 +1,6 @@
 import type {
   CacheAssessment,
+  CacheIssue,
   CacheSummary,
   ModelCall,
   SessionDetail,
@@ -153,5 +154,36 @@ export function summarizeSessionCache(session: SessionDetail): CacheSummary {
       }
     }
   }
+  for (const subagent of session.subagents) {
+    const nested = summarizeSessionCache(subagent);
+    summary.baseline += nested.baseline;
+    summary.hits += nested.hits;
+    summary.partialHits += nested.partialHits;
+    summary.fullMisses += nested.fullMisses;
+    summary.notComparable += nested.notComparable;
+    summary.unknown += nested.unknown;
+  }
   return summary;
+}
+
+export function sessionCacheIssues(
+  session: SessionDetail,
+  nested = false,
+): CacheIssue[] {
+  const scope = nested
+    ? session.agent
+      ? `${session.agent}: ${session.title}`
+      : session.title
+    : undefined;
+  return [
+    ...session.turns.flatMap((turn) =>
+      turn.cacheAssessment?.status === "full-miss" ||
+        turn.cacheAssessment?.status === "partial-hit"
+        ? [{ status: turn.cacheAssessment.status, turn: turn.number, scope }]
+        : []
+    ),
+    ...session.subagents.flatMap((subagent) =>
+      sessionCacheIssues(subagent, true)
+    ),
+  ];
 }

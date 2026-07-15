@@ -5,7 +5,11 @@ import { ClaudeCodeRepository } from "./claudeCodeRepository.ts";
 import { PiRepository } from "./piRepository.ts";
 import { CodexRepository } from "./codexRepository.ts";
 import { computeModelCallCost, priceSessionDetail } from "./pricing.ts";
-import { analyzeSessionCache, summarizeSessionCache } from "./cacheAnalysis.ts";
+import {
+  analyzeSessionCache,
+  sessionCacheIssues,
+  summarizeSessionCache,
+} from "./cacheAnalysis.ts";
 import type {
   SessionDetail,
   SessionListResponse,
@@ -14,6 +18,7 @@ import type {
 } from "../shared/sessionSchemas.ts";
 import type { UsageCall } from "./usage.ts";
 import { aggregateUsage } from "./usageAnalytics.ts";
+import { contextRange } from "../shared/contextMetrics.ts";
 import { openArchiveDatabase, sqlitePath } from "./database.ts";
 import { SessionRepository } from "./sessionRepository.ts";
 import { syncPiSessions } from "./piImporter.ts";
@@ -283,10 +288,23 @@ function priceSummaries(items: SessionSummary[]) {
     const analyzed = analyzeSessionCache(priced);
     const subagents = subagentTotals(priced.subagents);
     const inclusive = sessionTreeMetrics(priced);
+    const context = contextRange(priced.turns.flatMap((turn) =>
+      turn.calls.map((call) => ({
+        startedAt: call.startedAt,
+        tokens: call.tokens,
+        turn: turn.number,
+        call: call.callWithinTurn,
+      }))
+    ));
     return {
       ...item,
       computedCost: priced.computedCost,
       cacheSummary: summarizeSessionCache(analyzed),
+      cacheIssues: sessionCacheIssues(analyzed),
+      contextLatest: context.latest?.size,
+      contextPeak: context.peak?.size,
+      contextPeakTurn: context.peak?.call.turn,
+      contextPeakCall: context.peak?.call.call,
       subagentCount: subagents.count,
       subagentModelCalls: subagents.modelCalls,
       inclusiveUserTurns: inclusive.userTurns,

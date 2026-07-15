@@ -2,6 +2,7 @@ import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import {
   analyzeSessionCache,
   assessCache,
+  sessionCacheIssues,
   summarizeSessionCache,
   summarizeTurnCache,
 } from "./cacheAnalysis.ts";
@@ -139,7 +140,7 @@ function session(
   };
 }
 
-Deno.test("summarizes turns and analyzes subagents independently", () => {
+Deno.test("summarizes turns and includes independently analyzed subagents", () => {
   const child = session("child", [
     call("child-first", 0, 10_000),
     call("child-second", 0, 10_100),
@@ -162,11 +163,15 @@ Deno.test("summarizes turns and analyzes subagents independently", () => {
     ["baseline", "full-miss"],
   );
   deepStrictEqual(summarizeSessionCache(actual), {
-    baseline: 1,
+    baseline: 2,
     hits: 0,
     partialHits: 1,
-    fullMisses: 1,
+    fullMisses: 2,
     notComparable: 0,
     unknown: 0,
   });
+  deepStrictEqual(sessionCacheIssues(actual), [
+    { status: "full-miss", turn: 1, scope: undefined },
+    { status: "full-miss", turn: 1, scope: "child" },
+  ]);
 });

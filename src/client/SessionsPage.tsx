@@ -1,7 +1,8 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { getRouteApi } from "@tanstack/react-router";
 import type {
   CacheAssessment,
+  CacheIssue,
   CacheSummary,
   ModelCall,
   SessionDetail,
@@ -9,6 +10,7 @@ import type {
   SessionSummary,
   TokenUsage,
 } from "../shared/sessionSchemas.ts";
+import { contextRange, contextSize } from "../shared/contextMetrics.ts";
 import { getSession, getSessions } from "./api.ts";
 import claudeCodeIcon from "./assets/icons/claudecode-color.svg";
 import codexIcon from "./assets/icons/codex-logo-light.svg";
@@ -27,14 +29,14 @@ const dollars = new Intl.NumberFormat("en-US", {
 const sessionDollars = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
-  minimumFractionDigits: 3,
-  maximumFractionDigits: 3,
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 });
 const turnDollars = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
-  minimumFractionDigits: 4,
-  maximumFractionDigits: 4,
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 });
 const compact = new Intl.NumberFormat("en-US", {
   notation: "compact",
@@ -62,12 +64,38 @@ function TokenValue({ value }: { value: number }) {
   return <span title={integer.format(value)}>{compact.format(value)}</span>;
 }
 
+function ContextMetric({
+  value,
+  secondary,
+  secondaryLabel,
+  title,
+}: {
+  value?: number;
+  secondary?: number;
+  secondaryLabel?: string;
+  title?: string;
+}) {
+  if (value === undefined) return <span className="muted">-</span>;
+  return (
+    <span className="metric-stack context-metric" title={title}>
+      <strong><TokenValue value={value} /></strong>
+      {secondary !== undefined && secondary !== value && secondaryLabel && (
+        <small>
+          <TokenValue value={secondary} /> {secondaryLabel}
+        </small>
+      )}
+    </span>
+  );
+}
+
 function ModelSummary({ models }: { models: string[] }) {
   const primary = models.at(-1) ?? "unknown";
   const others = models.slice(0, -1);
   return (
     <span className="session-model-summary">
-      <span title={primary}>{modelDisplayName(primary)}</span>
+      <span className="session-model-name" title={primary}>
+        {modelDisplayName(primary)}
+      </span>
       {others.length > 0 && (
         <span
           className="model-overflow"
@@ -101,15 +129,17 @@ function modelDisplayName(model: string) {
     o3: "O3",
     o4: "O4",
   };
-  return model.split(/[-_]/).map((part) =>
+  const displayModel = model.toLowerCase().includes("claude")
+    ? model.replace(/[-_]20\d{6}$/, "")
+    : model;
+  return displayModel.split(/[-_]/).map((part) =>
     names[part.toLowerCase()] ??
       (part.length === 0 ? part : part[0].toUpperCase() + part.slice(1))
   ).join(" ");
 }
 
 function cacheHitRate(tokens: TokenUsage) {
-  const input = tokens.uncachedInput + tokens.cacheRead +
-    (tokens.cacheWrite ?? 0);
+  const input = contextSize(tokens);
   return input === 0 ? undefined : tokens.cacheRead / input;
 }
 
@@ -117,10 +147,19 @@ function SessionInputMetric({
   tokens,
   anthropic,
   label = "input processed",
+  showWriteTtl = false,
 }: {
-  tokens: Pick<TokenUsage, "uncachedInput" | "cacheRead" | "cacheWrite">;
+  tokens: Pick<
+    TokenUsage,
+    | "uncachedInput"
+    | "cacheRead"
+    | "cacheWrite"
+    | "cacheWrite5m"
+    | "cacheWrite1h"
+  >;
   anthropic: boolean;
   label?: string;
+  showWriteTtl?: boolean;
 }) {
   const cacheWrite = tokens.cacheWrite ?? 0;
   const totalInput = tokens.uncachedInput + tokens.cacheRead + cacheWrite;
@@ -143,6 +182,14 @@ function SessionInputMetric({
           </>
         )}
       </small>
+      {showWriteTtl &&
+        (tokens.cacheWrite5m !== undefined ||
+          tokens.cacheWrite1h !== undefined) && (
+        <small>
+          writes: <TokenValue value={tokens.cacheWrite5m ?? 0} /> at 5m ·{"  "}
+          <TokenValue value={tokens.cacheWrite1h ?? 0} /> at 1h
+        </small>
+      )}
       <small className={reused === undefined ? "muted" : undefined}>
         {reused === undefined
           ? "Reuse unavailable"
@@ -152,15 +199,6 @@ function SessionInputMetric({
   );
 }
 
-const cacheStatusLabels: Record<CacheAssessment["status"], string> = {
-  baseline: "Baseline",
-  hit: "Hit",
-  "partial-hit": "Partial hit",
-  "full-miss": "Full miss",
-  "not-comparable": "Not comparable",
-  unknown: "Unavailable",
-};
-
 const cacheAssessmentReasonLabels = {
   "no-predecessor": "No preceding comparable call",
   "model-change": "New cache chain: provider or model changed",
@@ -168,10 +206,16 @@ const cacheAssessmentReasonLabels = {
 } as const;
 
 function CacheAssessmentBadge(
-  { assessment }: { assessment?: CacheAssessment },
+  { assessment, title: providedTitle }: {
+    assessment?: CacheAssessment;
+    title?: string;
+  },
 ) {
-  if (!assessment || assessment.status === "baseline") return null;
-  const title = assessment.reason !== undefined
+  if (
+    !assessment ||
+    (assessment.status !== "partial-hit" && assessment.status !== "full-miss")
+  ) return null;
+  const title = providedTitle ?? (assessment.reason !== undefined
     ? cacheAssessmentReasonLabels[assessment.reason]
     : assessment.retainedRatio === undefined ||
         assessment.previousReusableTokens === undefined
@@ -184,15 +228,13 @@ function CacheAssessmentBadge(
       )
     } of ${
       integer.format(assessment.previousReusableTokens)
-    } previously reusable tokens`;
-  const label = assessment.status === "not-comparable"
-    ? assessment.reason === "model-change"
-      ? "New cache chain"
-      : "No prior cache"
-    : cacheStatusLabels[assessment.status];
+    } previously reusable tokens`);
+  const label = assessment.status === "full-miss"
+    ? "Full miss"
+    : "Partial miss";
   return (
     <span
-      className={`cache-assessment cache-assessment-${assessment.status}`}
+      className={`cache-assessment cache-issue-badge cache-assessment-${assessment.status}`}
       title={title}
     >
       {label}
@@ -243,6 +285,97 @@ function CacheSummaryBadge({ summary }: { summary?: CacheSummary }) {
       title={title}
     >
       {parts.join(" · ") || "Unavailable"}
+    </span>
+  );
+}
+
+function cacheIssueLabel(issue: CacheIssue) {
+  return issue.scope
+    ? `${issue.scope}, turn ${issue.turn}`
+    : `Turn ${issue.turn}`;
+}
+
+function SessionCacheStatus({
+  summary,
+  issues,
+}: {
+  summary?: CacheSummary;
+  issues?: CacheIssue[];
+}) {
+  const full = issues?.filter((issue) => issue.status === "full-miss") ?? [];
+  const partial = issues?.filter((issue) => issue.status === "partial-hit") ??
+    [];
+  if (!summary || (full.length === 0 && partial.length === 0)) {
+    return null;
+  }
+  const title = [
+    full.length > 0
+      ? `Full miss turns:\n${full.map(cacheIssueLabel).join("\n")}`
+      : undefined,
+    partial.length > 0
+      ? `Partial hit turns:\n${partial.map(cacheIssueLabel).join("\n")}`
+      : undefined,
+    `Call totals: ${cacheSummaryTitle(summary)}`,
+  ].filter(Boolean).join("\n\n");
+  return (
+    <span className="session-cache-status" title={title}>
+      {full.length > 0 && (
+        <>
+          <span className="cache-issue-badge session-cache-full">
+            Full miss
+          </span>
+          <span className="session-cache-count">x{full.length}</span>
+        </>
+      )}
+      {partial.length > 0 && (
+        <>
+          <span className="cache-issue-badge session-cache-partial">
+            Partial miss
+          </span>
+          <span className="session-cache-count">x{partial.length}</span>
+        </>
+      )}
+    </span>
+  );
+}
+
+function TurnCacheStatus({ turn }: { turn: SessionDetail["turns"][number] }) {
+  const full = turn.calls.filter((call) =>
+    call.cacheAssessment?.status === "full-miss"
+  );
+  const partial = turn.calls.filter((call) =>
+    call.cacheAssessment?.status === "partial-hit"
+  );
+  const title = [
+    full.length > 0
+      ? `Full miss calls: ${
+        full.map((call) => `#${call.callWithinTurn}`).join(", ")
+      }`
+      : undefined,
+    partial.length > 0
+      ? `Partial hit calls: ${
+        partial.map((call) => `#${call.callWithinTurn}`).join(", ")
+      }`
+      : undefined,
+    turn.cacheSummary === undefined
+      ? undefined
+      : `Call totals: ${cacheSummaryTitle(turn.cacheSummary)}`,
+  ].filter(Boolean).join("\n");
+  if (full.length === 0 && partial.length === 0) return null;
+  return (
+    <span className="cache-issue-group">
+      {full.length > 0 && (
+        <CacheAssessmentBadge
+          assessment={full[0].cacheAssessment}
+          title={title}
+        />
+      )}
+      {partial.length > 0 && (
+        <CacheAssessmentBadge
+          assessment={partial[0].cacheAssessment}
+          title={title}
+        />
+      )}
     </span>
   );
 }
@@ -354,6 +487,10 @@ function turnMetrics(calls: ModelCall[]) {
   let cacheRead = 0;
   let cacheWrite = 0;
   let hasWrite = false;
+  let cacheWrite5m = 0;
+  let hasWrite5m = false;
+  let cacheWrite1h = 0;
+  let hasWrite1h = false;
   let output = 0;
   let reasoning = 0;
   let processed = 0;
@@ -370,6 +507,14 @@ function turnMetrics(calls: ModelCall[]) {
     if (call.tokens.cacheWrite !== undefined) {
       cacheWrite += call.tokens.cacheWrite;
       hasWrite = true;
+    }
+    if (call.tokens.cacheWrite5m !== undefined) {
+      cacheWrite5m += call.tokens.cacheWrite5m;
+      hasWrite5m = true;
+    }
+    if (call.tokens.cacheWrite1h !== undefined) {
+      cacheWrite1h += call.tokens.cacheWrite1h;
+      hasWrite1h = true;
     }
     output += call.tokens.output;
     reasoning += call.tokens.reasoning;
@@ -391,6 +536,8 @@ function turnMetrics(calls: ModelCall[]) {
     uncachedInput,
     cacheRead,
     cacheWrite: hasWrite ? cacheWrite : undefined,
+    cacheWrite5m: hasWrite5m ? cacheWrite5m : undefined,
+    cacheWrite1h: hasWrite1h ? cacheWrite1h : undefined,
     output,
     reasoning,
     processed,
@@ -407,6 +554,7 @@ function sessionTree(session: SessionDetail): SessionDetail[] {
 function aggregateSessionTrees(sessions: SessionDetail[]) {
   const tree = sessions.flatMap(sessionTree);
   const computedCosts = tree.map((session) => session.computedCost);
+  const reportedCosts = tree.map((session) => session.reportedCost);
   return {
     userTurns: tree.reduce((total, session) => total + session.userTurns, 0),
     modelCalls: tree.reduce((total, session) => total + session.modelCalls, 0),
@@ -434,6 +582,9 @@ function aggregateSessionTrees(sessions: SessionDetail[]) {
     computedCost: computedCosts.every((cost) => cost !== undefined)
       ? computedCosts.reduce((total, cost) => total + cost!, 0)
       : undefined,
+    reportedCost: reportedCosts.every((cost) => cost !== undefined)
+      ? reportedCosts.reduce((total, cost) => total + cost!, 0)
+      : undefined,
     end: tree.reduce<number | undefined>((latest, session) => {
       const end = sessionSpan(session)?.end;
       if (end === undefined) return latest;
@@ -455,16 +606,25 @@ function formattedTurnCost(value?: number) {
   return value === undefined ? "unpriced" : turnDollars.format(value);
 }
 
-function SessionCostSummary({ session }: { session: SessionDetail }) {
-  const total = aggregateSessionTrees([session]);
-  const nested = aggregateSessionTrees(session.subagents);
+function formattedSessionCost(value?: number) {
+  return value === undefined ? "-" : sessionDollars.format(value);
+}
+
+function SubagentCostBreakdown({
+  total,
+  subagents,
+  format,
+}: {
+  total?: number;
+  subagents?: number;
+  format: (value?: number) => string;
+}) {
   return (
-    <div className="session-cost-summary">
-      <span className="session-cost-label">Cost</span>
-      <strong>{formattedCost(total.computedCost)} actual</strong>
-      <span>{formattedCost(session.computedCost)} direct session calls</span>
-      <span>{formattedCost(nested.computedCost)} subagent calls</span>
-    </div>
+    <span className="subagent-cost-breakdown">
+      <strong className="subagent-cost-total">{format(total)}</strong>
+      <small className="subagent-cost-label">subagents</small>
+      <small className="subagent-cost-amount">{format(subagents)}</small>
+    </span>
   );
 }
 
@@ -480,15 +640,16 @@ function TurnCost({
     : direct + nested;
   return (
     <span
-      className="metric-stack turn-cost"
+      className="turn-cost"
       title={`Total ${formattedCost(total)} · Direct ${
         formattedCost(direct)
-      } · Nested ${formattedCost(nested)}`}
+      } · Subagents ${formattedCost(nested)}`}
     >
-      <strong>{formattedTurnCost(total)} total</strong>
-      <small>
-        {formattedTurnCost(direct)} direct · {formattedTurnCost(nested)} nested
-      </small>
+      <SubagentCostBreakdown
+        total={total}
+        subagents={nested}
+        format={formattedTurnCost}
+      />
     </span>
   );
 }
@@ -540,14 +701,23 @@ function SubagentSummary({
               : `${(reused * 100).toFixed(1)}% reused`}
           </small>
         </span>
-        <span className="subagent-summary-cost">
-          <strong>{formattedTurnCost(total.computedCost)}</strong>
-          {hasDescendants && (
-            <small>
-              {formattedTurnCost(session.computedCost)} direct ·{"  "}
-              {formattedTurnCost(nested.computedCost)} nested
-            </small>
-          )}
+        <span
+          className="subagent-summary-cost"
+          title={hasDescendants
+            ? `Total ${formattedCost(total.computedCost)} · Direct ${
+              formattedCost(session.computedCost)
+            } · Subagents ${formattedCost(nested.computedCost)}`
+            : undefined}
+        >
+          {hasDescendants
+            ? (
+              <SubagentCostBreakdown
+                total={total.computedCost}
+                subagents={nested.computedCost}
+                format={formattedTurnCost}
+              />
+            )
+            : <strong>{formattedTurnCost(total.computedCost)}</strong>}
         </span>
       </button>
       {expanded && <SessionBreakdown session={session} nested hideHeading />}
@@ -564,11 +734,15 @@ function costsMismatch(reported?: number, computed?: number) {
 function CostCell({
   reported,
   computed,
+  direct,
+  subagents,
   session = false,
   turn = false,
 }: {
   reported?: number;
   computed?: number;
+  direct?: number;
+  subagents?: number;
   session?: boolean;
   turn?: boolean;
 }) {
@@ -584,9 +758,14 @@ function CostCell({
   const computedLabel = computed === undefined
     ? "Computed: n/a"
     : `Computed: ${dollars.format(computed)}`;
+  const costBreakdown = direct === undefined
+    ? computedLabel
+    : `Total: ${formattedCost(computed)} · Direct: ${formattedCost(direct)} · Subagents: ${
+      formattedCost(subagents)
+    }`;
   const title = mismatch
-    ? `${computedLabel} · ${reportedLabel} (mismatch)`
-    : `${computedLabel} · ${reportedLabel}`;
+    ? `${costBreakdown} · ${reportedLabel} (mismatch)`
+    : `${costBreakdown} · ${reportedLabel}`;
 
   return (
     <span
@@ -595,7 +774,17 @@ function CostCell({
       }`}
       title={title}
     >
-      <span>{primary}</span>
+      {subagents !== undefined
+        ? (
+          <SubagentCostBreakdown
+            total={computed}
+            subagents={subagents}
+            format={session ? formattedSessionCost : formattedTurnCost}
+          />
+        )
+        : session
+        ? <strong>{primary}</strong>
+        : <span>{primary}</span>}
       {mismatch && (
         <span className="cost-mismatch-icon" aria-label="Cost mismatch">!</span>
       )}
@@ -653,15 +842,12 @@ function toolMechanics(call: ModelCall) {
   return [...counts].map(([name, count]) => `${name} ×${count}`).join(" · ");
 }
 
-function totalToolDuration(tools: ModelCall["activity"]["tools"]) {
-  const durations = tools.flatMap((tool) =>
-    tool.startedAt === undefined || tool.completedAt === undefined ||
-      tool.completedAt < tool.startedAt
-      ? []
-      : [tool.completedAt - tool.startedAt]
-  );
-  if (durations.length === 0) return undefined;
-  return duration(0, durations.reduce((total, value) => total + value, 0));
+function exceptionalFinishReason(reason?: string) {
+  if (!reason) return undefined;
+  const normalized = reason.toLowerCase().replaceAll(/[-_]/g, "");
+  return ["stop", "endturn", "tooluse", "toolcalls"].includes(normalized)
+    ? undefined
+    : reason;
 }
 
 function toolTargetPreview(value?: string) {
@@ -694,17 +880,16 @@ function toolTargetPreview(value?: string) {
 
 function CallInputMetric({ call }: { call: ModelCall }) {
   const anthropic = call.provider.toLowerCase().includes("anthropic");
-  const total = call.tokens.uncachedInput + call.tokens.cacheRead +
-    (call.tokens.cacheWrite ?? 0);
+  const total = contextSize(call.tokens);
   const parts = anthropic
     ? [
       call.tokens.cacheRead > 0
         ? `${compact.format(call.tokens.cacheRead)} read`
         : undefined,
+      `${compact.format(call.tokens.uncachedInput)} uncached`,
       call.tokens.cacheWrite !== undefined
         ? `${compact.format(call.tokens.cacheWrite)} written`
         : undefined,
-      `${compact.format(call.tokens.uncachedInput)} uncached`,
     ]
     : [
       call.tokens.cacheRead > 0
@@ -787,7 +972,6 @@ function CallTable({
   expandedSubagentID?: string;
   setExpandedSubagentID: (id: string | undefined) => void;
 }) {
-  const [expandedToolsCallID, setExpandedToolsCallID] = useState<string>();
   if (calls.length === 0) {
     return <p className="empty-turn">No completed model calls</p>;
   }
@@ -798,10 +982,13 @@ function CallTable({
         <colgroup>
           <col className="call-number-column" />
           <col className="call-started-column" />
+          <col className="call-model-column" />
           <col className="call-time-column" />
           <col className="call-outcome-column" />
-          <col className="call-model-column" />
+          <col className="call-context-column" />
           <col className="call-input-column" />
+          <col className="call-reused-column" />
+          <col className="call-cache-column" />
           <col className="call-output-column" />
           <col className="call-cost-column" />
         </colgroup>
@@ -809,10 +996,13 @@ function CallTable({
           <tr>
             <th>#</th>
             <th>Started</th>
-            <th>Model time</th>
-            <th>Outcome / preview</th>
             <th>Model</th>
-            <th>Input</th>
+            <th>Time</th>
+            <th>Activity</th>
+            <th>Context</th>
+            <th>Volume</th>
+            <th>Reused</th>
+            <th>Cache</th>
             <th>Output</th>
             <th>Cost</th>
           </tr>
@@ -821,9 +1011,29 @@ function CallTable({
           {calls.map((call) => {
             const expanded = expandedCallID === call.id;
             const callDuration = duration(call.startedAt, call.completedAt);
+            const callContext = contextSize(call.tokens);
+            const reused = cacheHitRate(call.tokens);
             const subagents = callSubagents(call, session);
+            const subagentTotals = aggregateSessionTrees(subagents);
+            const hasSubagents = subagents.length > 0;
+            const inclusiveComputedCost = hasSubagents
+              ? call.computedCost !== undefined &&
+                  subagentTotals.computedCost !== undefined
+                ? call.computedCost + subagentTotals.computedCost
+                : undefined
+              : call.computedCost;
+            const inclusiveReportedCost = hasSubagents
+              ? call.reportedCost !== undefined &&
+                  subagentTotals.reportedCost !== undefined
+                ? call.reportedCost + subagentTotals.reportedCost
+                : undefined
+              : call.reportedCost;
             const mechanics = toolMechanics(call);
-            const toolsExpanded = expandedToolsCallID === call.id;
+            const finishWarning = exceptionalFinishReason(
+              call.activity.finishReason,
+            );
+            const hasDetails = call.activity.tools.length > 0 ||
+              subagents.length > 0 || finishWarning !== undefined;
             const previewTool = call.activity.tools.find((tool) =>
               tool.inputPreview !== undefined
             );
@@ -835,10 +1045,20 @@ function CallTable({
             const secondaryMechanics = call.preview || target ? mechanics : "";
             return (
               <Fragment key={call.id}>
-                <tr className={expanded ? "row-open" : undefined}>
+                <tr
+                  className={`call-row${hasDetails ? " has-details" : ""}${
+                    expanded ? " row-open" : ""
+                  }`}
+                  onClick={hasDetails
+                    ? () => setExpandedCallID(expanded ? undefined : call.id)
+                    : undefined}
+                >
                   <td>{call.callWithinTurn}</td>
                   <td title={fullTimestamp.format(call.startedAt)}>
                     {timeOnly.format(call.startedAt)}
+                  </td>
+                  <td>
+                    {modelDisplayName(call.model)}
                   </td>
                   <td className={callDuration ? undefined : "muted"}>
                     {callDuration ?? "—"}
@@ -847,9 +1067,8 @@ function CallTable({
                     <button
                       type="button"
                       className="activity-button"
-                      aria-expanded={expanded}
-                      onClick={() =>
-                        setExpandedCallID(expanded ? undefined : call.id)}
+                      aria-expanded={hasDetails ? expanded : undefined}
+                      disabled={!hasDetails}
                     >
                       <span className="activity-summary-line">
                         <span title={call.preview}>{outcome}</span>
@@ -870,10 +1089,21 @@ function CallTable({
                     </button>
                   </td>
                   <td>
-                    {modelDisplayName(call.model)}
+                    <ContextMetric
+                      value={callContext}
+                      title={`${integer.format(callContext)} tokens in this request`}
+                    />
                   </td>
                   <td>
                     <CallInputMetric call={call} />
+                  </td>
+                  <td className={reused === undefined ? "muted" : undefined}>
+                    {reused === undefined
+                      ? "-"
+                      : `${(reused * 100).toFixed(1)}%`}
+                  </td>
+                  <td>
+                    <CacheAssessmentBadge assessment={call.cacheAssessment} />
                   </td>
                   <td>
                     <TokenValue
@@ -882,105 +1112,66 @@ function CallTable({
                   </td>
                   <td>
                     <CostCell
-                      reported={call.reportedCost}
-                      computed={call.computedCost}
+                      reported={inclusiveReportedCost}
+                      computed={inclusiveComputedCost}
+                      direct={hasSubagents ? call.computedCost : undefined}
+                      subagents={hasSubagents
+                        ? subagentTotals.computedCost
+                        : undefined}
                       turn
                     />
                   </td>
                 </tr>
                 {expanded && (
                   <tr className="activity-detail-row">
-                    <td colSpan={8}>
+                    <td colSpan={11}>
                       <div className="activity-detail">
-                        <div className="activity-meta">
-                          <span className="chip">
-                            {call.activity.finishReason === "stop"
-                              ? "Final"
-                              : "Model call"}
-                          </span>
-                          {call.activity.hasReasoning && (
-                            <span className="chip chip-muted">Reasoning</span>
-                          )}
-                          {call.activity.hasText && (
-                            <span className="chip chip-muted">Text</span>
-                          )}
-                          {callDuration && <span>Model {callDuration}</span>}
-                          {call.activity.finishReason && (
-                            <span>
-                              Finished: {call.activity.finishReason}
-                            </span>
-                          )}
-                        </div>
-                        {call.activity.tools.length === 0
-                          ? (
-                            <p>
-                              No tool calls in this model invocation.
-                            </p>
-                          )
-                          : (
-                            <div className="tools-detail">
-                              <button
-                                type="button"
-                                className="tools-summary"
-                                aria-expanded={toolsExpanded}
-                                onClick={() =>
-                                  setExpandedToolsCallID(
-                                    toolsExpanded ? undefined : call.id,
-                                  )}
-                              >
-                                <strong>Tools</strong>
-                                <span>{mechanics}</span>
-                                <span>
-                                  {totalToolDuration(call.activity.tools) ??
-                                    "time unavailable"}
-                                </span>
-                                <b>{toolsExpanded ? "▾" : "▸"}</b>
-                              </button>
-                              {toolsExpanded && (
-                                <div className="tool-table-wrap">
-                                  <table className="tool-table">
-                                    <thead>
-                                      <tr>
-                                        <th>Tool</th>
-                                        <th>Target / preview</th>
-                                        <th>Time</th>
-                                        <th>Status</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {call.activity.tools.map((
-                                        tool,
-                                        index,
-                                      ) => (
-                                        <tr key={`${tool.name}-${index}`}>
-                                          <td>{tool.name}</td>
-                                          <td
-                                            className="tool-target"
-                                            title={tool.inputPreview}
-                                          >
-                                            {toolTargetPreview(
-                                              tool.inputPreview,
-                                            ) ?? "—"}
-                                          </td>
-                                          <td>
-                                            {duration(
-                                              tool.startedAt,
-                                              tool.completedAt,
-                                            ) ?? "—"}
-                                          </td>
-                                          <td
-                                            className={`tool-status tool-status-${tool.status}`}
-                                          >
-                                            {tool.status}
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              )}
+                        {finishWarning && (
+                          <div className="activity-warning">
+                            Finished: {finishWarning}
+                          </div>
+                        )}
+                        {call.activity.tools.length > 0 && (
+                          <div className="tools-detail">
+                            <div className="tool-table-wrap">
+                              <table className="tool-table">
+                                <thead>
+                                  <tr>
+                                    <th>Tool</th>
+                                    <th>Status</th>
+                                    <th>Time</th>
+                                    <th>Details</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {call.activity.tools.map((tool, index) => (
+                                    <tr key={`${tool.name}-${index}`}>
+                                      <td>{tool.name}</td>
+                                      <td
+                                        className={`tool-status tool-status-${tool.status}`}
+                                      >
+                                        {tool.status}
+                                      </td>
+                                      <td>
+                                        {duration(
+                                          tool.startedAt,
+                                          tool.completedAt,
+                                        ) ?? "—"}
+                                      </td>
+                                      <td
+                                        className="tool-details"
+                                        title={tool.inputPreview}
+                                      >
+                                        {toolTargetPreview(tool.inputPreview) ??
+                                          "—"}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
                             </div>
-                          )}
+                          </div>
+                        )}
                         {subagents.map((child) => (
                           <SubagentSummary
                             key={child.id}
@@ -1058,10 +1249,6 @@ function SessionBreakdown({
         </div>
       )}
 
-      {!nested && session.subagents.length > 0 && (
-        <SessionCostSummary session={session} />
-      )}
-
       <div className="turn-table-wrap">
         <table className="data-table turn-table">
           <colgroup>
@@ -1069,7 +1256,9 @@ function SessionBreakdown({
             <col className="started-column" />
             <col className="turn-elapsed-column" />
             <col className="turn-activity-column" />
+            <col className="turn-context-column" />
             <col className="turn-input-column" />
+            <col className="turn-cache-column" />
             <col className="turn-output-column" />
             <col className="turn-cost-column" />
           </colgroup>
@@ -1079,7 +1268,9 @@ function SessionBreakdown({
               <th>Started</th>
               <th>Elapsed</th>
               <th>Activity</th>
-              <th>Input</th>
+              <th>Context</th>
+              <th>Volume</th>
+              <th>Cache</th>
               <th>Output</th>
               <th>Cost</th>
             </tr>
@@ -1087,6 +1278,7 @@ function SessionBreakdown({
           <tbody>
             {session.turns.map((turn) => {
               const metrics = turnMetrics(turn.calls);
+              const context = contextRange(turn.calls);
               const open = expandedTurns.has(turn.number);
               const subs = turnSubagents(turn, session);
               const nestedMetrics = aggregateSessionTrees(subs);
@@ -1109,13 +1301,15 @@ function SessionBreakdown({
                 nestedMetrics.cacheRead + nestedMetrics.cacheWrite;
               return (
                 <Fragment key={turn.number}>
-                  <tr className={`turn-row${open ? " row-open" : ""}`}>
+                  <tr
+                    className={`turn-row${open ? " row-open" : ""}`}
+                    onClick={() => toggleTurn(turn.number)}
+                  >
                     <td className="turn-label">
                       <span className="turn-label-line">
                         <button
                           type="button"
                           className="turn-expand"
-                          onClick={() => toggleTurn(turn.number)}
                           aria-expanded={open}
                           aria-label={`${
                             open ? "Collapse" : "Expand"
@@ -1153,6 +1347,22 @@ function SessionBreakdown({
                       </span>
                     </td>
                     <td>
+                      <ContextMetric
+                        value={context.latest?.size}
+                        secondary={context.first?.size}
+                        secondaryLabel="start"
+                        title={context.latest && context.first && context.peak
+                          ? `First request: ${
+                            integer.format(context.first.size)
+                          } tokens · Last request: ${
+                            integer.format(context.latest.size)
+                          } tokens · Peak request: ${
+                            integer.format(context.peak.size)
+                          } tokens (call #${context.peak.call.callWithinTurn})`
+                          : undefined}
+                      />
+                    </td>
+                    <td>
                       {subs.length === 0
                         ? (
                           <SessionInputMetric
@@ -1160,11 +1370,14 @@ function SessionBreakdown({
                               uncachedInput: metrics.uncachedInput,
                               cacheRead: metrics.cacheRead,
                               cacheWrite: metrics.cacheWrite,
+                              cacheWrite5m: metrics.cacheWrite5m,
+                              cacheWrite1h: metrics.cacheWrite1h,
                             }}
                             anthropic={session.providers.some((provider) =>
                               provider.toLowerCase().includes("anthropic")
                             )}
                             label="total input"
+                            showWriteTtl
                           />
                         )
                         : (
@@ -1178,6 +1391,9 @@ function SessionBreakdown({
                             </small>
                           </span>
                         )}
+                    </td>
+                    <td>
+                      <TurnCacheStatus turn={turn} />
                     </td>
                     <td>
                       <TokenValue
@@ -1204,7 +1420,7 @@ function SessionBreakdown({
                   </tr>
                   {open && (
                     <tr className="turn-detail-row">
-                      <td colSpan={7}>
+                      <td colSpan={9}>
                         <CallTable
                           calls={turn.calls}
                           session={session}
@@ -1227,7 +1443,7 @@ function SessionBreakdown({
 }
 
 export function SessionsPage() {
-  const { page, harness } = route.useSearch();
+  const { harness } = route.useSearch();
   const navigate = route.useNavigate();
   const [data, setData] = useState<SessionListResponse>();
   const [expandedIDs, setExpandedIDs] = useState<Set<string>>(
@@ -1235,12 +1451,21 @@ export function SessionsPage() {
   );
   const [details, setDetails] = useState<Record<string, SessionDetail>>({});
   const [error, setError] = useState<string>();
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState<string>();
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const loadingMoreRef = useRef(false);
+  const harnessRef = useRef(harness);
+  harnessRef.current = harness;
 
   useEffect(() => {
     let active = true;
     setData(undefined);
     setError(undefined);
-    getSessions(page, harness).then((result) => active && setData(result))
+    setLoadMoreError(undefined);
+    loadingMoreRef.current = false;
+    setLoadingMore(false);
+    getSessions(1, harness).then((result) => active && setData(result))
       .catch(
         (reason) => {
           if (active) {
@@ -1255,7 +1480,67 @@ export function SessionsPage() {
     return () => {
       active = false;
     };
-  }, [page, harness]);
+  }, [harness]);
+
+  async function loadNextPage() {
+    if (
+      !data || loadingMoreRef.current ||
+      data.pagination.page >= data.pagination.totalPages
+    ) return;
+    const requestedHarness = harness;
+    const nextPage = data.pagination.page + 1;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    setLoadMoreError(undefined);
+    try {
+      const result = await getSessions(nextPage, requestedHarness);
+      if (harnessRef.current !== requestedHarness) return;
+      setData((current) => {
+        if (!current) return result;
+        const seen = new Set(
+          current.items.map((session) => `${session.harness}:${session.id}`),
+        );
+        return {
+          ...result,
+          items: [
+            ...current.items,
+            ...result.items.filter((session) =>
+              !seen.has(`${session.harness}:${session.id}`)
+            ),
+          ],
+        };
+      });
+    } catch (reason) {
+      if (harnessRef.current === requestedHarness) {
+        setLoadMoreError(
+          reason instanceof Error
+            ? reason.message
+            : "Unable to load more sessions",
+        );
+      }
+    } finally {
+      if (harnessRef.current === requestedHarness) {
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      }
+    }
+  }
+
+  useEffect(() => {
+    const target = loadMoreRef.current;
+    if (
+      !target || !data || data.pagination.page >= data.pagination.totalPages ||
+      typeof IntersectionObserver === "undefined"
+    ) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) loadNextPage();
+      },
+      { rootMargin: "400px 0px" },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [data?.pagination.page, data?.pagination.totalPages, harness]);
 
   async function toggleSession(id: string) {
     if (expandedIDs.has(id)) {
@@ -1345,7 +1630,9 @@ export function SessionsPage() {
                   <col className="model-column" />
                   <col className="elapsed-column" />
                   <col className="activity-column" />
+                  <col className="context-column" />
                   <col className="input-column" />
+                  <col className="cache-column" />
                   <col className="output-column" />
                   <col className="cost-column" />
                 </colgroup>
@@ -1355,7 +1642,9 @@ export function SessionsPage() {
                     <th>Model</th>
                     <th>Elapsed</th>
                     <th>Activity</th>
-                    <th>Input</th>
+                    <th>Context</th>
+                    <th>Volume</th>
+                    <th title="Full and partial cache misses">Cache</th>
                     <th>Output</th>
                     <th title="Computed cost; ! if reported is non-zero and differs">
                       Cost
@@ -1370,6 +1659,15 @@ export function SessionsPage() {
                     const tokens = session.inclusiveTokens ?? session.tokens;
                     const hasInclusiveMetrics =
                       session.inclusiveTokens !== undefined;
+                    const hasSubagents = (session.subagentCount ?? 0) > 0;
+                    const subagentComputedCost = hasSubagents &&
+                        session.inclusiveComputedCost !== undefined &&
+                        session.computedCost !== undefined
+                      ? Math.max(
+                        0,
+                        session.inclusiveComputedCost - session.computedCost,
+                      )
+                      : undefined;
                     const anthropic = session.providers.some((provider) =>
                       provider.toLowerCase().includes("anthropic")
                     );
@@ -1379,14 +1677,14 @@ export function SessionsPage() {
                           className={`session-row${
                             expanded ? " row-open" : ""
                           }`}
+                          onClick={() => toggleSession(session.id)}
                         >
                           <td className="session-cell">
                             <div className="session-identity">
-                              <button
-                                type="button"
-                                className="session-expand"
-                                onClick={() => toggleSession(session.id)}
-                                aria-expanded={expanded}
+                                <button
+                                  type="button"
+                                  className="session-expand"
+                                  aria-expanded={expanded}
                                 aria-label={`${
                                   expanded ? "Collapse" : "Expand"
                                 } ${session.title}`}
@@ -1433,24 +1731,52 @@ export function SessionsPage() {
                             <span className="metric-stack">
                               <span>
                                 {session.inclusiveUserTurns ??
-                                  session.userTurns} turns ·{"  "}
+                                  session.userTurns} turns
+                              </span>
+                              <span>
                                 {session.inclusiveModelCalls ??
-                                  session.modelCalls} total calls
+                                  session.modelCalls} calls
                               </span>
-                              <span
-                                className={session.subagentCount
-                                  ? undefined
-                                  : "muted"}
-                              >
-                                {session.subagentCount ?? 0}{" "}
-                                subagent{session.subagentCount === 1 ? "" : "s"}
-                              </span>
+                              {(session.subagentCount ?? 0) > 0 && (
+                                <small>
+                                  {session.subagentCount}{" "}
+                                  subagent{
+                                    session.subagentCount === 1 ? "" : "s"
+                                  }
+                                </small>
+                              )}
                             </span>
+                          </td>
+                          <td>
+                            <ContextMetric
+                              value={session.contextLatest}
+                              secondary={session.contextPeak}
+                              secondaryLabel="peak"
+                              title={session.contextLatest !== undefined &&
+                                  session.contextPeak !== undefined
+                                ? `Latest root request: ${
+                                  integer.format(session.contextLatest)
+                                } tokens · Peak root request: ${
+                                  integer.format(session.contextPeak)
+                                } tokens${
+                                  session.contextPeakTurn !== undefined &&
+                                    session.contextPeakCall !== undefined
+                                    ? ` (turn ${session.contextPeakTurn}, call #${session.contextPeakCall})`
+                                    : ""
+                                }`
+                                : undefined}
+                            />
                           </td>
                           <td>
                             <SessionInputMetric
                               tokens={tokens}
                               anthropic={anthropic}
+                            />
+                          </td>
+                          <td>
+                            <SessionCacheStatus
+                              summary={session.cacheSummary}
+                              issues={session.cacheIssues}
                             />
                           </td>
                           <td>
@@ -1466,13 +1792,17 @@ export function SessionsPage() {
                               computed={hasInclusiveMetrics
                                 ? session.inclusiveComputedCost
                                 : session.computedCost}
+                              direct={hasSubagents
+                                ? session.computedCost
+                                : undefined}
+                              subagents={subagentComputedCost}
                               session
                             />
                           </td>
                         </tr>
                         {expanded && (
                           <tr className="detail-row">
-                            <td colSpan={7}>
+                            <td colSpan={9}>
                               {detail
                                 ? <SessionBreakdown session={detail} />
                                 : (
@@ -1489,25 +1819,24 @@ export function SessionsPage() {
                 </tbody>
               </table>
             </div>
-            <nav className="pagination" aria-label="Session pages">
-              <button
-                type="button"
-                disabled={page <= 1}
-                onClick={() =>
-                  navigate({ search: { page: page - 1, harness } })}
-              >
-                Previous
-              </button>
-              <span>Page {page} of {data.pagination.totalPages || 1}</span>
-              <button
-                type="button"
-                disabled={page >= data.pagination.totalPages}
-                onClick={() =>
-                  navigate({ search: { page: page + 1, harness } })}
-              >
-                Next
-              </button>
-            </nav>
+            <div ref={loadMoreRef} className="session-load-more">
+              {loadingMore && <span>Loading more sessions...</span>}
+              {loadMoreError && (
+                <>
+                  <span className="session-load-error">{loadMoreError}</span>
+                  <button type="button" onClick={loadNextPage}>Try again</button>
+                </>
+              )}
+              {!loadingMore && !loadMoreError &&
+                data.pagination.page < data.pagination.totalPages && (
+                <button type="button" onClick={loadNextPage}>Load more</button>
+              )}
+              {data.pagination.page >= data.pagination.totalPages && (
+                <span>
+                  Showing all {integer.format(data.items.length)} sessions
+                </span>
+              )}
+            </div>
           </>
         )}
       </section>

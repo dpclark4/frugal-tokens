@@ -22,7 +22,7 @@ export async function getUsage(range: number | "all", harness: string) {
 
 export async function getSessions(page: number, harness: string) {
   return sessionListResponseSchema.parse(
-    await getJson(`/api/sessions?page=${page}&pageSize=10&harness=${harness}`),
+    await getJson(`/api/sessions?page=${page}&pageSize=25&harness=${harness}`),
   );
 }
 
