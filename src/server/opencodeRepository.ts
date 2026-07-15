@@ -1,13 +1,22 @@
 import { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import {
-  type ModelCall,
   sessionDetailSchema,
   sessionListResponseSchema,
   type SessionSummary,
   type TokenUsage,
 } from "../shared/sessionSchemas.ts";
 import type { UsageCall } from "./usage.ts";
+import type {
+  SessionCallImport,
+  SessionContentImport,
+  SessionToolImport,
+  SessionTurnImport,
+  SourceSessionCheckpoint,
+  SourceSessionImport,
+} from "./sessionRepository.ts";
+
+const contentPreviewLimit = 512;
 
 const messageDataSchema = z.object({
   role: z.string(),
@@ -32,10 +41,14 @@ const messageDataSchema = z.object({
 
 const partDataSchema = z.object({
   type: z.string(),
+  text: z.string().optional(),
   mime: z.string().optional(),
+  callID: z.string().optional(),
   tool: z.string().optional(),
   state: z.object({
     status: z.string().optional(),
+    input: z.unknown().optional(),
+    output: z.unknown().optional(),
     metadata: z.object({
       sessionId: z.string().optional(),
     }).optional(),
@@ -46,34 +59,48 @@ const partDataSchema = z.object({
   }).optional(),
 }).passthrough();
 
-type SessionRow = {
+export type OpenCodeSessionRow = {
   id: string;
   parent_id: string | null;
   title: string;
   model: string | null;
   agent: string | null;
+  time_created: number;
   time_updated: number;
 };
 
-type MessageRow = {
+export type OpenCodeMessageRow = {
   id: string;
+  session_id: string;
   time_created: number;
+  time_updated: number;
   data: string;
 };
 
-type UsageMessageRow = MessageRow & { session_id: string };
+type UsageMessageRow = OpenCodeMessageRow;
 type UsageSessionRow = {
   id: string;
   parent_id: string | null;
   time_created: number;
 };
 
-type PartRow = {
+export type OpenCodePartRow = {
+  id: string;
   message_id: string;
+  session_id: string;
+  time_created: number;
+  time_updated: number;
   data: string;
 };
 
-type CallActivity = ModelCall["activity"];
+type SessionRow = OpenCodeSessionRow;
+type MessageRow = OpenCodeMessageRow;
+type PartRow = OpenCodePartRow;
+
+type DecodedParts = {
+  activity: SessionCallImport["activity"];
+  content: SessionContentImport[];
+};
 
 const emptyTokens = (): TokenUsage => ({
   uncachedInput: 0,
@@ -105,49 +132,92 @@ function addTokens(total: TokenUsage, usage: TokenUsage) {
   }
 }
 
-function decodeParts(rows: PartRow[]) {
-  const activity = new Map<string, CallActivity>();
+function preview(value: string): SessionContentImport {
+  return {
+    kind: "text",
+    preview: value.slice(0, contentPreviewLimit),
+    originalLength: value.length,
+    truncated: value.length > contentPreviewLimit,
+  };
+}
+
+function serializedPreview(value: unknown) {
+  if (value === undefined) return undefined;
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  if (text === undefined) return undefined;
+  const valuePreview = preview(text);
+  return {
+    preview: valuePreview.preview,
+    originalLength: valuePreview.originalLength,
+    truncated: valuePreview.truncated,
+  };
+}
+
+function decodeParts(rows: OpenCodePartRow[], strict = false) {
+  const decoded = new Map<string, DecodedParts>();
   for (const row of rows) {
     let raw: unknown;
     try {
       raw = JSON.parse(row.data);
-    } catch {
+    } catch (error) {
+      if (strict) throw error;
       continue;
     }
     const result = partDataSchema.safeParse(raw);
-    if (!result.success) continue;
+    if (!result.success) {
+      if (strict) throw result.error;
+      continue;
+    }
     const part = result.data;
-    const current = activity.get(row.message_id) ?? {
-      hasText: false,
-      hasReasoning: false,
-      tools: [],
+    const current = decoded.get(row.message_id) ?? {
+      activity: {
+        hasText: false,
+        hasReasoning: false,
+        tools: [],
+      },
+      content: [],
     };
-    if (part.type === "text") current.hasText = true;
-    if (part.type === "reasoning") current.hasReasoning = true;
-    if (part.type === "file" && part.mime?.startsWith("image/")) {
-      current.images = (current.images ?? 0) + 1;
+    if (part.type === "text") {
+      current.activity.hasText = true;
+      if (part.text !== undefined) current.content.push(preview(part.text));
+    }
+    if (part.type === "reasoning") {
+      current.activity.hasReasoning = true;
+      current.content.push({ kind: "reasoning" });
+    }
+    if (part.type === "file") {
+      const image = part.mime?.startsWith("image/") === true;
+      if (image) {
+        current.activity.images = (current.activity.images ?? 0) + 1;
+      }
+      current.content.push({
+        kind: image ? "image" : "file",
+        mimeType: part.mime,
+      });
     }
     if (part.type === "tool" && part.tool) {
-      current.tools.push({
+      current.activity.tools.push({
+        sourceID: part.callID,
         name: part.tool,
         status: part.state?.status ?? "unknown",
         startedAt: part.state?.time?.start,
         completedAt: part.state?.time?.end,
-        childSessionID: part.state?.metadata?.sessionId,
+        childExternalID: part.state?.metadata?.sessionId,
+        input: serializedPreview(part.state?.input),
+        output: serializedPreview(part.state?.output),
       });
     }
-    activity.set(row.message_id, current);
+    decoded.set(row.message_id, current);
   }
-  return activity;
+  return decoded;
 }
 
 function decodeMessages(
-  rows: MessageRow[],
-  activityByMessage = new Map<string, CallActivity>(),
+  rows: OpenCodeMessageRow[],
+  partsByMessage = new Map<string, DecodedParts>(),
+  strict = false,
 ) {
-  const turns: Array<
-    { number: number; startedAt: number; calls: ModelCall[] }
-  > = [];
+  const turns: SessionTurnImport[] = [];
   const providers = new Set<string>();
   const models = new Set<string>();
   const tokens = emptyTokens();
@@ -158,19 +228,28 @@ function decodeMessages(
     let raw: unknown;
     try {
       raw = JSON.parse(row.data);
-    } catch {
+    } catch (error) {
+      if (strict) throw error;
       continue;
     }
     const result = messageDataSchema.safeParse(raw);
-    if (!result.success) continue;
+    if (!result.success) {
+      const invalidTokenCount = result.error.issues.every((issue) =>
+        issue.code === "too_small" && issue.path[0] === "tokens"
+      );
+      if (strict && !invalidTokenCount) throw result.error;
+      continue;
+    }
     const message = result.data;
 
     if (message.role === "user") {
-      pendingImages = activityByMessage.get(row.id)?.images ?? 0;
+      const parts = partsByMessage.get(row.id);
+      pendingImages = parts?.activity.images ?? 0;
       turns.push({
         number: turns.length + 1,
         startedAt: row.time_created,
         calls: [],
+        inputs: parts?.content ?? [],
       });
       continue;
     }
@@ -198,7 +277,8 @@ function decodeMessages(
     const turn = turns.at(-1)!;
     const provider = message.providerID ?? "unknown";
     const model = message.modelID ?? "unknown";
-    const activity = activityByMessage.get(row.id) ?? {
+    const decodedParts = partsByMessage.get(row.id);
+    const activity = decodedParts?.activity ?? {
       hasText: false,
       hasReasoning: source.reasoning > 0,
       tools: [],
@@ -213,7 +293,7 @@ function decodeMessages(
     models.add(model);
     addTokens(tokens, callTokens);
     reportedCost += cost;
-    turn.calls.push({
+    const call: SessionCallImport = {
       id: row.id,
       callWithinTurn: turn.calls.length + 1,
       provider,
@@ -223,7 +303,9 @@ function decodeMessages(
       reportedCost: cost,
       tokens: callTokens,
       activity,
-    });
+      content: decodedParts?.content ?? [],
+    };
+    turn.calls.push(call);
   }
 
   const nonEmptyTurns = turns
@@ -326,6 +408,81 @@ function sessionBounds(
     ? Math.max(...ends)
     : Math.max(...turns.map((turn) => turn.startedAt));
   return { startedAt, endedAt };
+}
+
+function summaryFromDecoded(
+  row: SessionRow,
+  decoded: ReturnType<typeof decodeMessages>,
+): SessionSummary {
+  const fallback = fallbackModel(row.model);
+  if (decoded.providers.size === 0 && fallback) {
+    decoded.providers.add(fallback.providerID);
+  }
+  if (decoded.models.size === 0 && fallback) decoded.models.add(fallback.id);
+  const bounds = sessionBounds(decoded.turns);
+  return {
+    id: row.id,
+    harness: "opencode",
+    title: row.title,
+    updatedAt: row.time_updated,
+    startedAt: bounds.startedAt,
+    endedAt: bounds.endedAt,
+    providers: [...decoded.providers],
+    models: [...decoded.models],
+    userTurns: decoded.turns.length,
+    modelCalls: decoded.turns.reduce(
+      (sum, turn) => sum + turn.calls.length,
+      0,
+    ),
+    reportedCost: decoded.reportedCost,
+    tokens: decoded.tokens,
+  };
+}
+
+export function normalizeOpenCodeSessionTree(options: {
+  sessions: OpenCodeSessionRow[];
+  messages: OpenCodeMessageRow[];
+  parts: OpenCodePartRow[];
+  sourceID: number;
+  observedAt: number;
+  checkpoint: SourceSessionCheckpoint;
+}): SourceSessionImport[] {
+  const messagesBySession = Map.groupBy(
+    options.messages,
+    (message) => message.session_id,
+  );
+  const partsBySession = Map.groupBy(options.parts, (part) => part.session_id);
+  return options.sessions.map((row) => {
+    const sessionMessages = messagesBySession.get(row.id) ?? [];
+    const decoded = decodeMessages(
+      sessionMessages,
+      decodeParts(partsBySession.get(row.id) ?? [], true),
+      true,
+    );
+    const summary = summaryFromDecoded(row, decoded);
+    return {
+      sourceID: options.sourceID,
+      externalID: row.id,
+      parentExternalID: row.parent_id ?? undefined,
+      artifactPath: `session:${row.id}`,
+      observedAt: options.observedAt,
+      checkpoint: options.checkpoint,
+      session: {
+        title: summary.title,
+        agent: row.agent ?? undefined,
+        updatedAt: summary.updatedAt,
+        startedAt: summary.startedAt,
+        endedAt: summary.endedAt,
+        providers: summary.providers,
+        models: summary.models,
+        userTurns: summary.userTurns,
+        modelCalls: summary.modelCalls,
+        reportedCost: summary.reportedCost,
+        tokens: summary.tokens,
+        turns: decoded.turns,
+      },
+    };
+  });
 }
 
 export class OpenCodeRepository {
@@ -491,28 +648,6 @@ export class OpenCodeRepository {
     row: SessionRow,
     decoded: ReturnType<typeof decodeMessages>,
   ): SessionSummary {
-    const fallback = fallbackModel(row.model);
-    if (decoded.providers.size === 0 && fallback) {
-      decoded.providers.add(fallback.providerID);
-    }
-    if (decoded.models.size === 0 && fallback) decoded.models.add(fallback.id);
-    const bounds = sessionBounds(decoded.turns);
-    return {
-      id: row.id,
-      harness: "opencode",
-      title: row.title,
-      updatedAt: row.time_updated,
-      startedAt: bounds.startedAt,
-      endedAt: bounds.endedAt,
-      providers: [...decoded.providers],
-      models: [...decoded.models],
-      userTurns: decoded.turns.length,
-      modelCalls: decoded.turns.reduce(
-        (sum, turn) => sum + turn.calls.length,
-        0,
-      ),
-      reportedCost: decoded.reportedCost,
-      tokens: decoded.tokens,
-    };
+    return summaryFromDecoded(row, decoded);
   }
 }

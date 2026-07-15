@@ -17,6 +17,7 @@ import { SessionRepository } from "./sessionRepository.ts";
 import { syncPiSessions } from "./piImporter.ts";
 import { syncCodexSessions } from "./codexImporter.ts";
 import { syncClaudeCodeSessions } from "./claudeCodeImporter.ts";
+import { syncOpenCodeSessions } from "./openCodeImporter.ts";
 
 function configuredPath<T>(
   harness: string,
@@ -45,11 +46,11 @@ function configuredPath<T>(
   }
   return create(path);
 }
-const repository = configuredPath(
+const openCodePath = configuredPath(
   "opencode",
   "OPENCODE_DB_PATH",
   "file",
-  (path) => new OpenCodeRepository(path),
+  (path) => path,
 );
 const claudeDirectory = configuredPath(
   "claude-code",
@@ -76,6 +77,12 @@ const archiveDatabase = archiveURL
 const archiveRepository = archiveDatabase
   ? new SessionRepository(archiveDatabase)
   : undefined;
+if (archiveRepository && openCodePath) {
+  const result = syncOpenCodeSessions(openCodePath, archiveRepository);
+  console.info(
+    `[sync] harness=opencode discovered=${result.discovered} imported=${result.imported} skipped=${result.skipped} failed=${result.failed}`,
+  );
+}
 if (archiveRepository && claudeDirectory) {
   const result = await syncClaudeCodeSessions(
     claudeDirectory,
@@ -129,6 +136,17 @@ const codexRepository = archiveRepository
   }
   : codexDirectory
   ? new CodexRepository(codexDirectory)
+  : undefined;
+const repository = archiveRepository
+  ? {
+    listSessions: (page: number, pageSize: number) =>
+      archiveRepository.listSessions(page, pageSize, "opencode"),
+    getSession: (id: string) => archiveRepository.getSession("opencode", id),
+    listUsageCalls: (startedAt?: number) =>
+      archiveRepository.listUsageCalls(startedAt, "opencode"),
+  }
+  : openCodePath
+  ? new OpenCodeRepository(openCodePath)
   : undefined;
 const app = new Hono();
 

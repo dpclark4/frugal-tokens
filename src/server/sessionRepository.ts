@@ -13,6 +13,7 @@ import type { UsageCall } from "./usage.ts";
 type Harness = SessionSummary["harness"];
 
 export type SourceSessionCheckpoint = {
+  changeHint?: string;
   sourceSize?: number;
   sourceModifiedAt?: number;
   checksum?: string;
@@ -63,6 +64,7 @@ export type SourceSessionImport = {
   artifactPath?: string;
   observedAt: number;
   checkpoint: {
+    changeHint?: string;
     sourceSize?: number;
     sourceModifiedAt?: number;
     checksum?: string;
@@ -227,15 +229,17 @@ export class SessionRepository {
     externalID: string,
   ): SourceSessionCheckpoint | undefined {
     const row = this.db.prepare(`
-      SELECT source_size, source_modified_at, checksum, parser_version
+      SELECT change_hint, source_size, source_modified_at, checksum, parser_version
       FROM source_sessions WHERE source_id = ? AND external_id = ?
     `).get(sourceID, externalID) as {
+      change_hint: string | null;
       source_size: number | null;
       source_modified_at: number | null;
       checksum: string | null;
       parser_version: string | null;
     } | undefined;
     return row && {
+      changeHint: optional(row.change_hint),
       sourceSize: optional(row.source_size),
       sourceModifiedAt: optional(row.source_modified_at),
       checksum: optional(row.checksum),
@@ -252,13 +256,14 @@ export class SessionRepository {
   ) {
     this.db.prepare(`
       INSERT INTO source_sessions (
-        source_id, external_id, public_id, artifact_path, availability, source_size,
-        source_modified_at, checksum, parser_version, first_seen_at,
-        last_seen_at, last_error
-      ) VALUES (?, ?, ?, ?, 'available', ?, ?, ?, ?, ?, ?, NULL)
+        source_id, external_id, public_id, artifact_path, availability,
+        change_hint, source_size, source_modified_at, checksum, parser_version,
+        first_seen_at, last_seen_at, last_error
+      ) VALUES (?, ?, ?, ?, 'available', ?, ?, ?, ?, ?, ?, ?, NULL)
       ON CONFLICT (source_id, external_id) DO UPDATE SET
         artifact_path = excluded.artifact_path,
         availability = 'available',
+        change_hint = COALESCE(excluded.change_hint, source_sessions.change_hint),
         source_size = COALESCE(excluded.source_size, source_sessions.source_size),
         source_modified_at = COALESCE(
           excluded.source_modified_at, source_sessions.source_modified_at
@@ -274,6 +279,7 @@ export class SessionRepository {
       externalID,
       externalID,
       artifactPath,
+      checkpoint?.changeHint ?? null,
       checkpoint?.sourceSize ?? null,
       checkpoint?.sourceModifiedAt ?? null,
       checkpoint?.checksum ?? null,
@@ -316,6 +322,20 @@ export class SessionRepository {
       UPDATE source_sessions SET availability = 'missing'
       WHERE source_id = ? AND last_seen_at <> ?
     `).run(sourceID, observedAt);
+  }
+
+  markSourceSessionsSeen(
+    sourceID: number,
+    externalIDs: string[],
+    observedAt: number,
+  ) {
+    if (externalIDs.length === 0) return;
+    this.db.prepare(`
+      UPDATE source_sessions SET availability = 'available', last_seen_at = ?
+      WHERE source_id = ? AND external_id IN (${
+      externalIDs.map(() => "?").join(", ")
+    })
+    `).run(observedAt, sourceID, ...externalIDs);
   }
 
   listSessions(
@@ -680,10 +700,11 @@ export class SessionRepository {
     const checkpoint = value.checkpoint;
     this.db.prepare(`
         UPDATE source_sessions SET
-          source_size = ?, source_modified_at = ?, checksum = ?,
+          change_hint = ?, source_size = ?, source_modified_at = ?, checksum = ?,
           parser_version = ?, imported_at = ?, last_error = NULL
         WHERE id = ?
       `).run(
+      checkpoint.changeHint ?? null,
       checkpoint.sourceSize ?? null,
       checkpoint.sourceModifiedAt ?? null,
       checkpoint.checksum ?? null,
