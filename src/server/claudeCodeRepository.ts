@@ -58,6 +58,7 @@ const recordSchema = z.object({
   }).passthrough().optional(),
   toolUseResult: z.union([
     z.string(),
+    z.array(contentBlockSchema),
     z.object({
       agentId: z.string().optional(),
     }).passthrough(),
@@ -249,6 +250,7 @@ function decodeRecords(records: Record[]) {
               tool.completedAt = timestamp;
               if (
                 typeof record.toolUseResult === "object" &&
+                !Array.isArray(record.toolUseResult) &&
                 record.toolUseResult.agentId
               ) {
                 (tool as SessionToolImport & { childSessionID?: string })
