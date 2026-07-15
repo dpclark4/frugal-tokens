@@ -341,7 +341,9 @@ function decodeRecords(records: Record[]) {
             status: "pending",
             startedAt: timestamp,
             input,
-            inputPreview: input?.preview,
+            ...(input?.preview === undefined
+              ? {}
+              : { inputPreview: input.preview }),
             // Kept internally while matching the later tool_result record.
             id: block.id,
           } as SessionToolImport,

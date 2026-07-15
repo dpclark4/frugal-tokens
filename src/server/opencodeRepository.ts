@@ -208,8 +208,12 @@ function decodeParts(rows: OpenCodePartRow[], strict = false) {
         childExternalID: part.state?.metadata?.sessionId,
         input,
         output,
-        inputPreview: input?.preview,
-        outputPreview: output?.preview,
+        ...(input?.preview === undefined
+          ? {}
+          : { inputPreview: input.preview }),
+        ...(output?.preview === undefined
+          ? {}
+          : { outputPreview: output.preview }),
       });
     }
     decoded.set(row.message_id, current);
@@ -301,8 +305,14 @@ function decodeMessages(
     const call: SessionCallImport = {
       id: row.id,
       callWithinTurn: turn.calls.length + 1,
-      preview: decodedParts?.content.find((item) => item.kind === "text")
-        ?.preview,
+      ...(decodedParts?.content.find((item) => item.kind === "text")
+          ?.preview ===
+          undefined
+        ? {}
+        : {
+          preview: decodedParts.content.find((item) => item.kind === "text")!
+            .preview,
+        }),
       provider,
       model,
       startedAt: message.time?.created ?? row.time_created,

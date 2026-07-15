@@ -227,7 +227,9 @@ function decodeRecords(records: Record[]) {
         startedAt: time,
         sourceID: payload.call_id ?? payload.id,
         input,
-        inputPreview: input?.preview,
+        ...(input?.preview === undefined
+          ? {}
+          : { inputPreview: input.preview }),
       };
       pendingTools.push(tool);
       if (tool.sourceID) tools.set(tool.sourceID, tool);
@@ -281,7 +283,12 @@ function decodeRecords(records: Record[]) {
     const call: SessionCallImport = {
       id: `${turn.number}-${turn.calls.length + 1}`,
       callWithinTurn: turn.calls.length + 1,
-      preview: pendingContent.find((item) => item.kind === "text")?.preview,
+      ...(pendingContent.find((item) => item.kind === "text")?.preview ===
+          undefined
+        ? {}
+        : {
+          preview: pendingContent.find((item) => item.kind === "text")!.preview,
+        }),
       provider: "openai",
       model: currentModel,
       startedAt: time,

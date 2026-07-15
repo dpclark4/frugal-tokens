@@ -408,6 +408,7 @@ function aggregateSessionTrees(sessions: SessionDetail[]) {
   const tree = sessions.flatMap(sessionTree);
   const computedCosts = tree.map((session) => session.computedCost);
   return {
+    userTurns: tree.reduce((total, session) => total + session.userTurns, 0),
     modelCalls: tree.reduce((total, session) => total + session.modelCalls, 0),
     uncachedInput: tree.reduce(
       (total, session) => total + session.tokens.uncachedInput,
@@ -426,6 +427,10 @@ function aggregateSessionTrees(sessions: SessionDetail[]) {
         total + session.tokens.output + session.tokens.reasoning,
       0,
     ),
+    processed: tree.reduce(
+      (total, session) => total + session.tokens.processed,
+      0,
+    ),
     computedCost: computedCosts.every((cost) => cost !== undefined)
       ? computedCosts.reduce((total, cost) => total + cost!, 0)
       : undefined,
@@ -433,6 +438,11 @@ function aggregateSessionTrees(sessions: SessionDetail[]) {
       const end = sessionSpan(session)?.end;
       if (end === undefined) return latest;
       return latest === undefined ? end : Math.max(latest, end);
+    }, undefined),
+    start: tree.reduce<number | undefined>((earliest, session) => {
+      const start = sessionSpan(session)?.start;
+      if (start === undefined) return earliest;
+      return earliest === undefined ? start : Math.min(earliest, start);
     }, undefined),
   };
 }
@@ -480,6 +490,68 @@ function TurnCost({
         {formattedTurnCost(direct)} direct · {formattedTurnCost(nested)} nested
       </small>
     </span>
+  );
+}
+
+function SubagentSummary({
+  session,
+  expanded,
+  onToggle,
+}: {
+  session: SessionDetail;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const total = aggregateSessionTrees([session]);
+  const nested = aggregateSessionTrees(session.subagents);
+  const input = total.uncachedInput + total.cacheRead + total.cacheWrite;
+  const reused = input === 0 ? undefined : total.cacheRead / input;
+  const elapsed = total.start === undefined || total.end === undefined
+    ? undefined
+    : duration(total.start, total.end);
+  const hasDescendants = session.subagents.length > 0;
+  return (
+    <div className={`subagent-summary${expanded ? " is-expanded" : ""}`}>
+      <button
+        type="button"
+        className="subagent-summary-toggle"
+        aria-expanded={expanded}
+        onClick={onToggle}
+      >
+        <span className="subagent-summary-marker">{expanded ? "▾" : "▸"}</span>
+        <span className="subagent-summary-body">
+          <span className="subagent-summary-title">
+            <strong>Subagent · {session.agent ?? "agent"}</strong>
+            <span>{session.title}</span>
+          </span>
+          <small>
+            {total.userTurns} turn{total.userTurns === 1 ? "" : "s"} ·{"  "}
+            {hasDescendants
+              ? `${session.modelCalls} direct calls · ${session.subagents.length} nested subagent${
+                session.subagents.length === 1 ? "" : "s"
+              }`
+              : `${total.modelCalls} calls`}
+            {elapsed ? ` · ${elapsed}` : ""}
+          </small>
+          <small>
+            <TokenValue value={total.processed} /> processed ·{"  "}
+            {reused === undefined
+              ? "reuse unavailable"
+              : `${(reused * 100).toFixed(1)}% reused`}
+          </small>
+        </span>
+        <span className="subagent-summary-cost">
+          <strong>{formattedTurnCost(total.computedCost)}</strong>
+          {hasDescendants && (
+            <small>
+              {formattedTurnCost(session.computedCost)} direct ·{"  "}
+              {formattedTurnCost(nested.computedCost)} nested
+            </small>
+          )}
+        </span>
+      </button>
+      {expanded && <SessionBreakdown session={session} nested hideHeading />}
+    </div>
   );
 }
 
@@ -581,6 +653,17 @@ function toolMechanics(call: ModelCall) {
   return [...counts].map(([name, count]) => `${name} ×${count}`).join(" · ");
 }
 
+function totalToolDuration(tools: ModelCall["activity"]["tools"]) {
+  const durations = tools.flatMap((tool) =>
+    tool.startedAt === undefined || tool.completedAt === undefined ||
+      tool.completedAt < tool.startedAt
+      ? []
+      : [tool.completedAt - tool.startedAt]
+  );
+  if (durations.length === 0) return undefined;
+  return duration(0, durations.reduce((total, value) => total + value, 0));
+}
+
 function toolTargetPreview(value?: string) {
   if (value === undefined) return undefined;
   try {
@@ -638,7 +721,7 @@ function CallInputMetric({ call }: { call: ModelCall }) {
       {call.tokens.cacheWrite5m !== undefined &&
         call.tokens.cacheWrite1h !== undefined && (
         <small>
-          writes: {compact.format(call.tokens.cacheWrite5m)} at 5m · {" "}
+          writes: {compact.format(call.tokens.cacheWrite5m)} at 5m ·{"  "}
           {compact.format(call.tokens.cacheWrite1h)} at 1h
         </small>
       )}
@@ -704,6 +787,7 @@ function CallTable({
   expandedSubagentID?: string;
   setExpandedSubagentID: (id: string | undefined) => void;
 }) {
+  const [expandedToolsCallID, setExpandedToolsCallID] = useState<string>();
   if (calls.length === 0) {
     return <p className="empty-turn">No completed model calls</p>;
   }
@@ -739,6 +823,7 @@ function CallTable({
             const callDuration = duration(call.startedAt, call.completedAt);
             const subagents = callSubagents(call, session);
             const mechanics = toolMechanics(call);
+            const toolsExpanded = expandedToolsCallID === call.id;
             const previewTool = call.activity.tools.find((tool) =>
               tool.inputPreview !== undefined
             );
@@ -833,85 +918,82 @@ function CallTable({
                             </p>
                           )
                           : (
-                            <div className="tool-events">
-                              {call.activity.tools.map((tool, index) => {
-                                const child = tool.childSessionID
-                                  ? session.subagents.find((subagent) =>
-                                    subagent.id === tool.childSessionID
-                                  )
-                                  : undefined;
-                                const childExpanded = child &&
-                                  expandedSubagentID === child.id;
-                                return (
-                                  <div
-                                    className={child
-                                      ? "tool-event has-subagent"
-                                      : "tool-event"}
-                                    key={`${tool.name}-${index}`}
-                                  >
-                                    <strong>{tool.name}</strong>
-                                    <span
-                                      className={`tool-status tool-status-${tool.status}`}
-                                    >
-                                      {tool.status}
-                                    </span>
-                                    <span className="tool-duration">
-                                      {duration(
-                                        tool.startedAt,
-                                        tool.completedAt,
-                                      ) ?? "duration unavailable"}
-                                    </span>
-                                    {tool.inputPreview && (
-                                      <code
-                                        className="tool-preview"
-                                        title={tool.inputPreview}
-                                      >
-                                        {toolTargetPreview(tool.inputPreview)}
-                                      </code>
-                                    )}
-                                    {child && (
-                                      <>
-                                        <button
-                                          type="button"
-                                          className="subagent-toggle"
-                                          aria-expanded={childExpanded}
-                                          onClick={() =>
-                                            setExpandedSubagentID(
-                                              childExpanded
-                                                ? undefined
-                                                : child.id,
-                                            )}
-                                        >
-                                          <span>
-                                            <strong>{child.title}</strong>
-                                            <small>
-                                              {child.agent ?? "subagent"} ·{" "}
-                                              {child.userTurns} turns ·{" "}
-                                              {child.modelCalls} calls ·{" "}
-                                              {child.computedCost === undefined
-                                                ? "unpriced"
-                                                : dollars.format(
-                                                  child.computedCost,
-                                                )}
-                                            </small>
-                                          </span>
-                                          <b>
-                                            {childExpanded ? "Hide" : "Expand"}
-                                          </b>
-                                        </button>
-                                        {childExpanded && (
-                                          <SessionBreakdown
-                                            session={child}
-                                            nested
-                                          />
-                                        )}
-                                      </>
-                                    )}
-                                  </div>
-                                );
-                              })}
+                            <div className="tools-detail">
+                              <button
+                                type="button"
+                                className="tools-summary"
+                                aria-expanded={toolsExpanded}
+                                onClick={() =>
+                                  setExpandedToolsCallID(
+                                    toolsExpanded ? undefined : call.id,
+                                  )}
+                              >
+                                <strong>Tools</strong>
+                                <span>{mechanics}</span>
+                                <span>
+                                  {totalToolDuration(call.activity.tools) ??
+                                    "time unavailable"}
+                                </span>
+                                <b>{toolsExpanded ? "▾" : "▸"}</b>
+                              </button>
+                              {toolsExpanded && (
+                                <div className="tool-table-wrap">
+                                  <table className="tool-table">
+                                    <thead>
+                                      <tr>
+                                        <th>Tool</th>
+                                        <th>Target / preview</th>
+                                        <th>Time</th>
+                                        <th>Status</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {call.activity.tools.map((
+                                        tool,
+                                        index,
+                                      ) => (
+                                        <tr key={`${tool.name}-${index}`}>
+                                          <td>{tool.name}</td>
+                                          <td
+                                            className="tool-target"
+                                            title={tool.inputPreview}
+                                          >
+                                            {toolTargetPreview(
+                                              tool.inputPreview,
+                                            ) ?? "—"}
+                                          </td>
+                                          <td>
+                                            {duration(
+                                              tool.startedAt,
+                                              tool.completedAt,
+                                            ) ?? "—"}
+                                          </td>
+                                          <td
+                                            className={`tool-status tool-status-${tool.status}`}
+                                          >
+                                            {tool.status}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
                             </div>
                           )}
+                        {subagents.map((child) => (
+                          <SubagentSummary
+                            key={child.id}
+                            session={child}
+                            expanded={expandedSubagentID === child.id}
+                            onToggle={() =>
+                              setExpandedSubagentID(
+                                expandedSubagentID === child.id
+                                  ? undefined
+                                  : child.id,
+                              )}
+                          />
+                        ))}
                       </div>
                     </td>
                   </tr>
@@ -928,9 +1010,11 @@ function CallTable({
 function SessionBreakdown({
   session,
   nested = false,
+  hideHeading = false,
 }: {
   session: SessionDetail;
   nested?: boolean;
+  hideHeading?: boolean;
 }) {
   const [expandedTurns, setExpandedTurns] = useState<Set<number>>(
     () => new Set(),
@@ -950,7 +1034,7 @@ function SessionBreakdown({
 
   return (
     <div className={nested ? "breakdown nested-breakdown" : "breakdown"}>
-      {nested && (
+      {nested && !hideHeading && (
         <div className="subagent-heading">
           <div className="subagent-identity">
             <div className="chip-row">

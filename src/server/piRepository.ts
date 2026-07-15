@@ -277,7 +277,11 @@ function decodeRecords(records: Record[]) {
     const call: SessionCallImport = {
       id: record.id ?? `${turn.number}-${turn.calls.length + 1}`,
       callWithinTurn: turn.calls.length + 1,
-      preview: content.find((item) => item.kind === "text")?.preview,
+      ...(content.find((item) => item.kind === "text")?.preview === undefined
+        ? {}
+        : {
+          preview: content.find((item) => item.kind === "text")!.preview,
+        }),
       provider,
       model,
       startedAt: timestamp,
@@ -307,7 +311,9 @@ function decodeRecords(records: Record[]) {
           status: "pending",
           startedAt: timestamp,
           input,
-          inputPreview: input?.preview,
+          ...(input?.preview === undefined
+            ? {}
+            : { inputPreview: input.preview }),
         };
         call.activity.tools.push(tool);
         tools.set(block.id, tool);
