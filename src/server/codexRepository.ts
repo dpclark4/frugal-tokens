@@ -220,12 +220,16 @@ function decodeRecords(records: Record[]) {
     ) {
       const name = toolName(record);
       if (!name) continue;
+      const input = serializedPreview(payload.input);
       const tool = {
         name,
         status: "pending",
         startedAt: time,
         sourceID: payload.call_id ?? payload.id,
-        input: serializedPreview(payload.input),
+        input,
+        ...(input?.preview === undefined
+          ? {}
+          : { inputPreview: input.preview }),
       };
       pendingTools.push(tool);
       if (tool.sourceID) tools.set(tool.sourceID, tool);
@@ -242,6 +246,7 @@ function decodeRecords(records: Record[]) {
         tool.status = "completed";
         tool.completedAt = time;
         tool.output = serializedPreview(payload.output);
+        tool.outputPreview = tool.output?.preview;
       }
       continue;
     }
@@ -278,6 +283,12 @@ function decodeRecords(records: Record[]) {
     const call: SessionCallImport = {
       id: `${turn.number}-${turn.calls.length + 1}`,
       callWithinTurn: turn.calls.length + 1,
+      ...(pendingContent.find((item) => item.kind === "text")?.preview ===
+          undefined
+        ? {}
+        : {
+          preview: pendingContent.find((item) => item.kind === "text")!.preview,
+        }),
       provider: "openai",
       model: currentModel,
       startedAt: time,

@@ -10,6 +10,7 @@ import type {
   SessionDetail,
   SessionListResponse,
   SessionSummary,
+  TokenUsage,
 } from "../shared/sessionSchemas.ts";
 import type { UsageCall } from "./usage.ts";
 import { aggregateUsage } from "./usageAnalytics.ts";
@@ -198,6 +199,67 @@ function repositoryForHarness(harness: SessionSummary["harness"]) {
 
 type SubagentTotals = { count: number; modelCalls: number };
 
+function sumOptional(values: (number | undefined)[]) {
+  const present = values.filter((value): value is number =>
+    value !== undefined
+  );
+  return present.length === 0
+    ? undefined
+    : present.reduce((total, value) => total + value, 0);
+}
+
+function sumTokens(values: TokenUsage[]): TokenUsage {
+  return {
+    uncachedInput: values.reduce(
+      (total, tokens) => total + tokens.uncachedInput,
+      0,
+    ),
+    cacheRead: values.reduce((total, tokens) => total + tokens.cacheRead, 0),
+    cacheWrite: sumOptional(values.map((tokens) => tokens.cacheWrite)),
+    cacheWrite5m: sumOptional(values.map((tokens) => tokens.cacheWrite5m)),
+    cacheWrite1h: sumOptional(values.map((tokens) => tokens.cacheWrite1h)),
+    freshPrompt: values.reduce(
+      (total, tokens) => total + tokens.freshPrompt,
+      0,
+    ),
+    output: values.reduce((total, tokens) => total + tokens.output, 0),
+    reasoning: values.reduce((total, tokens) => total + tokens.reasoning, 0),
+    processed: values.reduce((total, tokens) => total + tokens.processed, 0),
+  };
+}
+
+type SessionTreeMetrics = {
+  sessions: SessionDetail[];
+  userTurns: number;
+  modelCalls: number;
+  tokens: TokenUsage;
+  reportedCost?: number;
+  computedCost?: number;
+};
+
+function sessionTreeMetrics(session: SessionDetail): SessionTreeMetrics {
+  const sessions = [
+    session,
+    ...session.subagents.flatMap((subagent) =>
+      sessionTreeMetrics(subagent).sessions
+    ),
+  ];
+  const reportedCosts = sessions.map((item) => item.reportedCost);
+  const computedCosts = sessions.map((item) => item.computedCost);
+  return {
+    sessions,
+    userTurns: sessions.reduce((total, item) => total + item.userTurns, 0),
+    modelCalls: sessions.reduce((total, item) => total + item.modelCalls, 0),
+    tokens: sumTokens(sessions.map((item) => item.tokens)),
+    reportedCost: reportedCosts.every((cost) => cost !== undefined)
+      ? reportedCosts.reduce((total, cost) => total + cost!, 0)
+      : undefined,
+    computedCost: computedCosts.every((cost) => cost !== undefined)
+      ? computedCosts.reduce((total, cost) => total + cost!, 0)
+      : undefined,
+  };
+}
+
 function subagentTotals(
   subagents: SessionDetail["subagents"],
 ): SubagentTotals {
@@ -220,12 +282,18 @@ function priceSummaries(items: SessionSummary[]) {
     const priced = priceSessionDetail(detail);
     const analyzed = analyzeSessionCache(priced);
     const subagents = subagentTotals(priced.subagents);
+    const inclusive = sessionTreeMetrics(priced);
     return {
       ...item,
       computedCost: priced.computedCost,
       cacheSummary: summarizeSessionCache(analyzed),
       subagentCount: subagents.count,
       subagentModelCalls: subagents.modelCalls,
+      inclusiveUserTurns: inclusive.userTurns,
+      inclusiveModelCalls: inclusive.modelCalls,
+      inclusiveReportedCost: inclusive.reportedCost,
+      inclusiveComputedCost: inclusive.computedCost,
+      inclusiveTokens: inclusive.tokens,
     };
   });
 }

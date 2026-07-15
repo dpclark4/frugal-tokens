@@ -24,6 +24,18 @@ const dollars = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 4,
   maximumFractionDigits: 6,
 });
+const sessionDollars = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 3,
+  maximumFractionDigits: 3,
+});
+const turnDollars = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  minimumFractionDigits: 4,
+  maximumFractionDigits: 4,
+});
 const compact = new Intl.NumberFormat("en-US", {
   notation: "compact",
   maximumFractionDigits: 1,
@@ -37,9 +49,11 @@ const timeOnly = new Intl.DateTimeFormat(undefined, {
   minute: "2-digit",
   second: "2-digit",
 });
-const dateOnly = new Intl.DateTimeFormat(undefined, {
+const sessionStarted = new Intl.DateTimeFormat(undefined, {
   month: "short",
   day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
 });
 
 const COST_EPSILON = 0.0001;
@@ -52,13 +66,15 @@ function ModelSummary({ models }: { models: string[] }) {
   const primary = models.at(-1) ?? "unknown";
   const others = models.slice(0, -1);
   return (
-    <span className="model-summary">
-      <span>{primary}</span>
+    <span className="session-model-summary">
+      <span title={primary}>{modelDisplayName(primary)}</span>
       {others.length > 0 && (
         <span
           className="model-overflow"
-          title={others.join(", ")}
-          aria-label={`Other models: ${others.join(", ")}`}
+          title={others.map(modelDisplayName).join(", ")}
+          aria-label={`Other models: ${
+            others.map(modelDisplayName).join(", ")
+          }`}
           tabIndex={0}
         >
           +{others.length}
@@ -68,10 +84,72 @@ function ModelSummary({ models }: { models: string[] }) {
   );
 }
 
+function modelDisplayName(model: string) {
+  const names: Record<string, string> = {
+    gpt: "GPT",
+    claude: "Claude",
+    codex: "Codex",
+    opus: "Opus",
+    sonnet: "Sonnet",
+    haiku: "Haiku",
+    sol: "Sol",
+    gemini: "Gemini",
+    pro: "Pro",
+    mini: "Mini",
+    nano: "Nano",
+    o1: "O1",
+    o3: "O3",
+    o4: "O4",
+  };
+  return model.split(/[-_]/).map((part) =>
+    names[part.toLowerCase()] ??
+      (part.length === 0 ? part : part[0].toUpperCase() + part.slice(1))
+  ).join(" ");
+}
+
 function cacheHitRate(tokens: TokenUsage) {
   const input = tokens.uncachedInput + tokens.cacheRead +
     (tokens.cacheWrite ?? 0);
   return input === 0 ? undefined : tokens.cacheRead / input;
+}
+
+function SessionInputMetric({
+  tokens,
+  anthropic,
+  label = "input processed",
+}: {
+  tokens: Pick<TokenUsage, "uncachedInput" | "cacheRead" | "cacheWrite">;
+  anthropic: boolean;
+  label?: string;
+}) {
+  const cacheWrite = tokens.cacheWrite ?? 0;
+  const totalInput = tokens.uncachedInput + tokens.cacheRead + cacheWrite;
+  const reused = totalInput === 0 ? undefined : tokens.cacheRead / totalInput;
+  return (
+    <span
+      className="metric-stack session-input-metric"
+      title="Cumulative input processed by all direct and subagent model calls"
+    >
+      <span>
+        <TokenValue value={totalInput} /> {label}
+      </span>
+      <small>
+        <TokenValue value={tokens.cacheRead} /> {anthropic ? "read" : "cached"}
+        {" "}
+        ·{"  "}<TokenValue value={tokens.uncachedInput} /> uncached
+        {tokens.cacheWrite !== undefined && (
+          <>
+            · <TokenValue value={tokens.cacheWrite} /> written
+          </>
+        )}
+      </small>
+      <small className={reused === undefined ? "muted" : undefined}>
+        {reused === undefined
+          ? "Reuse unavailable"
+          : `${(reused * 100).toFixed(1)}% reused`}
+      </small>
+    </span>
+  );
 }
 
 const cacheStatusLabels: Record<CacheAssessment["status"], string> = {
@@ -237,6 +315,18 @@ function duration(startedAt?: number, completedAt?: number) {
   return `${hours}h ${minutes % 60}m`;
 }
 
+function turnDuration(startedAt: number, completedAt: number) {
+  const milliseconds = completedAt - startedAt;
+  if (milliseconds < 0) return undefined;
+  const totalSeconds = Math.round(milliseconds / 1_000);
+  if (totalSeconds < 60) return `${totalSeconds}s`;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes < 60) return `${minutes}m ${seconds}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
 function sessionSpan(
   session: Pick<SessionSummary, "startedAt" | "endedAt" | "updatedAt"> & {
     turns?: SessionDetail["turns"];
@@ -310,6 +400,161 @@ function turnMetrics(calls: ModelCall[]) {
   };
 }
 
+function sessionTree(session: SessionDetail): SessionDetail[] {
+  return [session, ...session.subagents.flatMap(sessionTree)];
+}
+
+function aggregateSessionTrees(sessions: SessionDetail[]) {
+  const tree = sessions.flatMap(sessionTree);
+  const computedCosts = tree.map((session) => session.computedCost);
+  return {
+    userTurns: tree.reduce((total, session) => total + session.userTurns, 0),
+    modelCalls: tree.reduce((total, session) => total + session.modelCalls, 0),
+    uncachedInput: tree.reduce(
+      (total, session) => total + session.tokens.uncachedInput,
+      0,
+    ),
+    cacheRead: tree.reduce(
+      (total, session) => total + session.tokens.cacheRead,
+      0,
+    ),
+    cacheWrite: tree.reduce(
+      (total, session) => total + (session.tokens.cacheWrite ?? 0),
+      0,
+    ),
+    output: tree.reduce(
+      (total, session) =>
+        total + session.tokens.output + session.tokens.reasoning,
+      0,
+    ),
+    processed: tree.reduce(
+      (total, session) => total + session.tokens.processed,
+      0,
+    ),
+    computedCost: computedCosts.every((cost) => cost !== undefined)
+      ? computedCosts.reduce((total, cost) => total + cost!, 0)
+      : undefined,
+    end: tree.reduce<number | undefined>((latest, session) => {
+      const end = sessionSpan(session)?.end;
+      if (end === undefined) return latest;
+      return latest === undefined ? end : Math.max(latest, end);
+    }, undefined),
+    start: tree.reduce<number | undefined>((earliest, session) => {
+      const start = sessionSpan(session)?.start;
+      if (start === undefined) return earliest;
+      return earliest === undefined ? start : Math.min(earliest, start);
+    }, undefined),
+  };
+}
+
+function formattedCost(value?: number) {
+  return value === undefined ? "unpriced" : dollars.format(value);
+}
+
+function formattedTurnCost(value?: number) {
+  return value === undefined ? "unpriced" : turnDollars.format(value);
+}
+
+function SessionCostSummary({ session }: { session: SessionDetail }) {
+  const total = aggregateSessionTrees([session]);
+  const nested = aggregateSessionTrees(session.subagents);
+  return (
+    <div className="session-cost-summary">
+      <span className="session-cost-label">Cost</span>
+      <strong>{formattedCost(total.computedCost)} actual</strong>
+      <span>{formattedCost(session.computedCost)} direct session calls</span>
+      <span>{formattedCost(nested.computedCost)} subagent calls</span>
+    </div>
+  );
+}
+
+function TurnCost({
+  direct,
+  nested,
+}: {
+  direct?: number;
+  nested?: number;
+}) {
+  const total = direct === undefined || nested === undefined
+    ? undefined
+    : direct + nested;
+  return (
+    <span
+      className="metric-stack turn-cost"
+      title={`Total ${formattedCost(total)} · Direct ${
+        formattedCost(direct)
+      } · Nested ${formattedCost(nested)}`}
+    >
+      <strong>{formattedTurnCost(total)} total</strong>
+      <small>
+        {formattedTurnCost(direct)} direct · {formattedTurnCost(nested)} nested
+      </small>
+    </span>
+  );
+}
+
+function SubagentSummary({
+  session,
+  expanded,
+  onToggle,
+}: {
+  session: SessionDetail;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const total = aggregateSessionTrees([session]);
+  const nested = aggregateSessionTrees(session.subagents);
+  const input = total.uncachedInput + total.cacheRead + total.cacheWrite;
+  const reused = input === 0 ? undefined : total.cacheRead / input;
+  const elapsed = total.start === undefined || total.end === undefined
+    ? undefined
+    : duration(total.start, total.end);
+  const hasDescendants = session.subagents.length > 0;
+  return (
+    <div className={`subagent-summary${expanded ? " is-expanded" : ""}`}>
+      <button
+        type="button"
+        className="subagent-summary-toggle"
+        aria-expanded={expanded}
+        onClick={onToggle}
+      >
+        <span className="subagent-summary-marker">{expanded ? "▾" : "▸"}</span>
+        <span className="subagent-summary-body">
+          <span className="subagent-summary-title">
+            <strong>Subagent · {session.agent ?? "agent"}</strong>
+            <span>{session.title}</span>
+          </span>
+          <small>
+            {total.userTurns} turn{total.userTurns === 1 ? "" : "s"} ·{"  "}
+            {hasDescendants
+              ? `${session.modelCalls} direct calls · ${session.subagents.length} nested subagent${
+                session.subagents.length === 1 ? "" : "s"
+              }`
+              : `${total.modelCalls} calls`}
+            {elapsed ? ` · ${elapsed}` : ""}
+          </small>
+          <small>
+            <TokenValue value={total.processed} /> processed ·{"  "}
+            {reused === undefined
+              ? "reuse unavailable"
+              : `${(reused * 100).toFixed(1)}% reused`}
+          </small>
+        </span>
+        <span className="subagent-summary-cost">
+          <strong>{formattedTurnCost(total.computedCost)}</strong>
+          {hasDescendants && (
+            <small>
+              {formattedTurnCost(session.computedCost)} direct ·{"  "}
+              {formattedTurnCost(nested.computedCost)} nested
+            </small>
+          )}
+        </span>
+      </button>
+      {expanded && <SessionBreakdown session={session} nested hideHeading />}
+    </div>
+  );
+}
+
 function costsMismatch(reported?: number, computed?: number) {
   if (reported === undefined || reported === 0) return false;
   if (computed === undefined) return false;
@@ -319,12 +564,20 @@ function costsMismatch(reported?: number, computed?: number) {
 function CostCell({
   reported,
   computed,
+  session = false,
+  turn = false,
 }: {
   reported?: number;
   computed?: number;
+  session?: boolean;
+  turn?: boolean;
 }) {
   const mismatch = costsMismatch(reported, computed);
-  const primary = computed === undefined ? "-" : dollars.format(computed);
+  const primary = computed === undefined
+    ? "-"
+    : (session ? sessionDollars : turn ? turnDollars : dollars).format(
+      computed,
+    );
   const reportedLabel = reported === undefined
     ? "Reported: n/a"
     : `Reported: ${dollars.format(reported)}`;
@@ -337,7 +590,9 @@ function CostCell({
 
   return (
     <span
-      className={`cost-cell${mismatch ? " cost-mismatch" : ""}`}
+      className={`cost-cell${session ? " session-cost" : ""}${
+        mismatch ? " cost-mismatch" : ""
+      }`}
       title={title}
     >
       <span>{primary}</span>
@@ -348,15 +603,14 @@ function CostCell({
   );
 }
 
-function harnessTitle(harness: SessionSummary["harness"]) {
-  if (harness === "claude-code") return "Claude Code";
-  if (harness === "pi") return "PI";
-  if (harness === "codex") return "Codex";
-  return "OpenCode";
-}
-
 function HarnessIcon({ harness }: { harness: SessionSummary["harness"] }) {
-  const title = harnessTitle(harness);
+  const title = harness === "claude-code"
+    ? "Claude Code"
+    : harness === "codex"
+    ? "Codex"
+    : harness === "pi"
+    ? "PI"
+    : "OpenCode";
   const src = harness === "claude-code"
     ? claudeCodeIcon
     : harness === "codex"
@@ -366,7 +620,7 @@ function HarnessIcon({ harness }: { harness: SessionSummary["harness"] }) {
     : openCodeIcon;
   return (
     <span className={`harness-icon harness-${harness}`} title={title}>
-      <img src={src} alt={title} width={16} height={16} />
+      <img src={src} alt={title} />
     </span>
   );
 }
@@ -389,6 +643,90 @@ function activitySummary(call: ModelCall) {
   if (call.activity.hasText) return `${imageLabel}Text response`;
   if (call.activity.hasReasoning) return `${imageLabel}Reasoning`;
   return imageLabel + (call.activity.finishReason ?? "Model call");
+}
+
+function toolMechanics(call: ModelCall) {
+  const counts = new Map<string, number>();
+  for (const tool of call.activity.tools) {
+    counts.set(tool.name, (counts.get(tool.name) ?? 0) + 1);
+  }
+  return [...counts].map(([name, count]) => `${name} ×${count}`).join(" · ");
+}
+
+function totalToolDuration(tools: ModelCall["activity"]["tools"]) {
+  const durations = tools.flatMap((tool) =>
+    tool.startedAt === undefined || tool.completedAt === undefined ||
+      tool.completedAt < tool.startedAt
+      ? []
+      : [tool.completedAt - tool.startedAt]
+  );
+  if (durations.length === 0) return undefined;
+  return duration(0, durations.reduce((total, value) => total + value, 0));
+}
+
+function toolTargetPreview(value?: string) {
+  if (value === undefined) return undefined;
+  try {
+    const parsed = JSON.parse(value);
+    if (typeof parsed === "string") return parsed;
+    if (parsed && typeof parsed === "object") {
+      for (
+        const key of [
+          "description",
+          "prompt",
+          "task",
+          "command",
+          "filePath",
+          "path",
+          "pattern",
+          "query",
+        ]
+      ) {
+        const candidate = (parsed as Record<string, unknown>)[key];
+        if (typeof candidate === "string") return candidate;
+      }
+    }
+  } catch {
+    // Non-JSON previews are already displayable.
+  }
+  return value;
+}
+
+function CallInputMetric({ call }: { call: ModelCall }) {
+  const anthropic = call.provider.toLowerCase().includes("anthropic");
+  const total = call.tokens.uncachedInput + call.tokens.cacheRead +
+    (call.tokens.cacheWrite ?? 0);
+  const parts = anthropic
+    ? [
+      call.tokens.cacheRead > 0
+        ? `${compact.format(call.tokens.cacheRead)} read`
+        : undefined,
+      call.tokens.cacheWrite !== undefined
+        ? `${compact.format(call.tokens.cacheWrite)} written`
+        : undefined,
+      `${compact.format(call.tokens.uncachedInput)} uncached`,
+    ]
+    : [
+      call.tokens.cacheRead > 0
+        ? `${compact.format(call.tokens.cacheRead)} cached`
+        : undefined,
+      `${compact.format(call.tokens.uncachedInput)} uncached`,
+    ];
+  return (
+    <span
+      className="metric-stack call-input-metric"
+      title={`${integer.format(total)} total input tokens`}
+    >
+      <span>{parts.filter(Boolean).join(" · ")}</span>
+      {call.tokens.cacheWrite5m !== undefined &&
+        call.tokens.cacheWrite1h !== undefined && (
+        <small>
+          writes: {compact.format(call.tokens.cacheWrite5m)} at 5m ·{"  "}
+          {compact.format(call.tokens.cacheWrite1h)} at 1h
+        </small>
+      )}
+    </span>
+  );
 }
 
 function callSubagents(call: ModelCall, session: SessionDetail) {
@@ -449,6 +787,7 @@ function CallTable({
   expandedSubagentID?: string;
   setExpandedSubagentID: (id: string | undefined) => void;
 }) {
+  const [expandedToolsCallID, setExpandedToolsCallID] = useState<string>();
   if (calls.length === 0) {
     return <p className="empty-turn">No completed model calls</p>;
   }
@@ -456,17 +795,25 @@ function CallTable({
   return (
     <div className="call-table-wrap">
       <table className="data-table call-table">
+        <colgroup>
+          <col className="call-number-column" />
+          <col className="call-started-column" />
+          <col className="call-time-column" />
+          <col className="call-outcome-column" />
+          <col className="call-model-column" />
+          <col className="call-input-column" />
+          <col className="call-output-column" />
+          <col className="call-cost-column" />
+        </colgroup>
         <thead>
           <tr>
             <th>#</th>
             <th>Started</th>
             <th>Model time</th>
-            <th>Outcome</th>
+            <th>Outcome / preview</th>
             <th>Model</th>
-            <th>Uncached input</th>
-            <th>Cache</th>
-            <th>Completion</th>
-            <th>Processed</th>
+            <th>Input</th>
+            <th>Output</th>
             <th>Cost</th>
           </tr>
         </thead>
@@ -475,6 +822,17 @@ function CallTable({
             const expanded = expandedCallID === call.id;
             const callDuration = duration(call.startedAt, call.completedAt);
             const subagents = callSubagents(call, session);
+            const mechanics = toolMechanics(call);
+            const toolsExpanded = expandedToolsCallID === call.id;
+            const previewTool = call.activity.tools.find((tool) =>
+              tool.inputPreview !== undefined
+            );
+            const target = toolTargetPreview(previewTool?.inputPreview);
+            const outcome = call.preview ??
+              (previewTool && target
+                ? `${previewTool.name}: ${target}`
+                : activitySummary(call));
+            const secondaryMechanics = call.preview || target ? mechanics : "";
             return (
               <Fragment key={call.id}>
                 <tr className={expanded ? "row-open" : undefined}>
@@ -494,56 +852,28 @@ function CallTable({
                         setExpandedCallID(expanded ? undefined : call.id)}
                     >
                       <span className="activity-summary-line">
-                        <span>{activitySummary(call)}</span>
+                        <span title={call.preview}>{outcome}</span>
                         <SubagentBadge count={subagents.length} />
                       </span>
-                      <small>
-                        {expanded ? "Hide details" : "Show details"}
-                        {subagents.length > 0 && !expanded
-                          ? ` · ${subagents.length} subagent${
-                            subagents.length === 1 ? "" : "s"
-                          }`
-                          : ""}
-                      </small>
+                      {(secondaryMechanics || subagents.length > 0) && (
+                        <small>
+                          {[
+                            secondaryMechanics,
+                            subagents.length > 0
+                              ? `${subagents.length} subagent${
+                                subagents.length === 1 ? "" : "s"
+                              }`
+                              : undefined,
+                          ].filter(Boolean).join(" · ")}
+                        </small>
+                      )}
                     </button>
                   </td>
                   <td>
-                    <span className="provider">{call.provider}</span>
-                    {call.model}
+                    {modelDisplayName(call.model)}
                   </td>
                   <td>
-                    <TokenValue value={call.tokens.uncachedInput} />
-                  </td>
-                  <td
-                    title={`Cache read ${
-                      integer.format(call.tokens.cacheRead)
-                    }${
-                      call.tokens.cacheWrite === undefined
-                        ? " · Cache write not reported"
-                        : ` · Cache write ${
-                          integer.format(call.tokens.cacheWrite)
-                        }`
-                    }`}
-                  >
-                    <span className="cache-cell-content cache-call">
-                      <span
-                        className={`metric-stack${
-                          call.tokens.cacheRead > 0 ? " cache-hit" : " muted"
-                        }`}
-                      >
-                        <span>
-                          <TokenValue value={call.tokens.cacheRead} /> read
-                        </span>
-                        {call.tokens.cacheWrite !== undefined && (
-                          <small>
-                            <TokenValue value={call.tokens.cacheWrite} /> write
-                          </small>
-                        )}
-                      </span>
-                      <CacheAssessmentBadge
-                        assessment={call.cacheAssessment}
-                      />
-                    </span>
+                    <CallInputMetric call={call} />
                   </td>
                   <td>
                     <TokenValue
@@ -551,18 +881,16 @@ function CallTable({
                     />
                   </td>
                   <td>
-                    <TokenValue value={call.tokens.processed} />
-                  </td>
-                  <td>
                     <CostCell
                       reported={call.reportedCost}
                       computed={call.computedCost}
+                      turn
                     />
                   </td>
                 </tr>
                 {expanded && (
                   <tr className="activity-detail-row">
-                    <td colSpan={10}>
+                    <td colSpan={8}>
                       <div className="activity-detail">
                         <div className="activity-meta">
                           <span className="chip">
@@ -590,77 +918,82 @@ function CallTable({
                             </p>
                           )
                           : (
-                            <div className="tool-events">
-                              {call.activity.tools.map((tool, index) => {
-                                const child = tool.childSessionID
-                                  ? session.subagents.find((subagent) =>
-                                    subagent.id === tool.childSessionID
-                                  )
-                                  : undefined;
-                                const childExpanded = child &&
-                                  expandedSubagentID === child.id;
-                                return (
-                                  <div
-                                    className={child
-                                      ? "tool-event has-subagent"
-                                      : "tool-event"}
-                                    key={`${tool.name}-${index}`}
-                                  >
-                                    <strong>{tool.name}</strong>
-                                    <span
-                                      className={`tool-status tool-status-${tool.status}`}
-                                    >
-                                      {tool.status}
-                                    </span>
-                                    <span>
-                                      {duration(
-                                        tool.startedAt,
-                                        tool.completedAt,
-                                      ) ?? "duration unavailable"}
-                                    </span>
-                                    {child && (
-                                      <>
-                                        <button
-                                          type="button"
-                                          className="subagent-toggle"
-                                          aria-expanded={childExpanded}
-                                          onClick={() =>
-                                            setExpandedSubagentID(
-                                              childExpanded
-                                                ? undefined
-                                                : child.id,
-                                            )}
-                                        >
-                                          <span>
-                                            <strong>{child.title}</strong>
-                                            <small>
-                                              {child.agent ?? "subagent"} ·{" "}
-                                              {child.userTurns} turns ·{" "}
-                                              {child.modelCalls} calls ·{" "}
-                                              {child.computedCost === undefined
-                                                ? "unpriced"
-                                                : dollars.format(
-                                                  child.computedCost,
-                                                )}
-                                            </small>
-                                          </span>
-                                          <b>
-                                            {childExpanded ? "Hide" : "Expand"}
-                                          </b>
-                                        </button>
-                                        {childExpanded && (
-                                          <SessionBreakdown
-                                            session={child}
-                                            nested
-                                          />
-                                        )}
-                                      </>
-                                    )}
-                                  </div>
-                                );
-                              })}
+                            <div className="tools-detail">
+                              <button
+                                type="button"
+                                className="tools-summary"
+                                aria-expanded={toolsExpanded}
+                                onClick={() =>
+                                  setExpandedToolsCallID(
+                                    toolsExpanded ? undefined : call.id,
+                                  )}
+                              >
+                                <strong>Tools</strong>
+                                <span>{mechanics}</span>
+                                <span>
+                                  {totalToolDuration(call.activity.tools) ??
+                                    "time unavailable"}
+                                </span>
+                                <b>{toolsExpanded ? "▾" : "▸"}</b>
+                              </button>
+                              {toolsExpanded && (
+                                <div className="tool-table-wrap">
+                                  <table className="tool-table">
+                                    <thead>
+                                      <tr>
+                                        <th>Tool</th>
+                                        <th>Target / preview</th>
+                                        <th>Time</th>
+                                        <th>Status</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {call.activity.tools.map((
+                                        tool,
+                                        index,
+                                      ) => (
+                                        <tr key={`${tool.name}-${index}`}>
+                                          <td>{tool.name}</td>
+                                          <td
+                                            className="tool-target"
+                                            title={tool.inputPreview}
+                                          >
+                                            {toolTargetPreview(
+                                              tool.inputPreview,
+                                            ) ?? "—"}
+                                          </td>
+                                          <td>
+                                            {duration(
+                                              tool.startedAt,
+                                              tool.completedAt,
+                                            ) ?? "—"}
+                                          </td>
+                                          <td
+                                            className={`tool-status tool-status-${tool.status}`}
+                                          >
+                                            {tool.status}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
                             </div>
                           )}
+                        {subagents.map((child) => (
+                          <SubagentSummary
+                            key={child.id}
+                            session={child}
+                            expanded={expandedSubagentID === child.id}
+                            onToggle={() =>
+                              setExpandedSubagentID(
+                                expandedSubagentID === child.id
+                                  ? undefined
+                                  : child.id,
+                              )}
+                          />
+                        ))}
                       </div>
                     </td>
                   </tr>
@@ -677,9 +1010,11 @@ function CallTable({
 function SessionBreakdown({
   session,
   nested = false,
+  hideHeading = false,
 }: {
   session: SessionDetail;
   nested?: boolean;
+  hideHeading?: boolean;
 }) {
   const [expandedTurns, setExpandedTurns] = useState<Set<number>>(
     () => new Set(),
@@ -699,7 +1034,7 @@ function SessionBreakdown({
 
   return (
     <div className={nested ? "breakdown nested-breakdown" : "breakdown"}>
-      {nested && (
+      {nested && !hideHeading && (
         <div className="subagent-heading">
           <div className="subagent-identity">
             <div className="chip-row">
@@ -723,22 +1058,30 @@ function SessionBreakdown({
         </div>
       )}
 
+      {!nested && session.subagents.length > 0 && (
+        <SessionCostSummary session={session} />
+      )}
+
       <div className="turn-table-wrap">
         <table className="data-table turn-table">
+          <colgroup>
+            <col className="turn-column" />
+            <col className="started-column" />
+            <col className="turn-elapsed-column" />
+            <col className="turn-activity-column" />
+            <col className="turn-input-column" />
+            <col className="turn-output-column" />
+            <col className="turn-cost-column" />
+          </colgroup>
           <thead>
             <tr>
-              <th>User turn</th>
+              <th>Turn</th>
               <th>Started</th>
-              <th>Model span</th>
-              <th>Model calls</th>
-              <th>Uncached input</th>
-              <th title="Cache reads, writes, coverage, and cache outcome">
-                Cache
-              </th>
-              <th>Completion</th>
-              <th>Processed</th>
+              <th>Elapsed</th>
+              <th>Activity</th>
+              <th>Input</th>
+              <th>Output</th>
               <th>Cost</th>
-              <th aria-label="Expand" />
             </tr>
           </thead>
           <tbody>
@@ -746,63 +1089,122 @@ function SessionBreakdown({
               const metrics = turnMetrics(turn.calls);
               const open = expandedTurns.has(turn.number);
               const subs = turnSubagents(turn, session);
+              const nestedMetrics = aggregateSessionTrees(subs);
+              const toolCalls = turn.calls.reduce(
+                (total, call) => total + call.activity.tools.length,
+                0,
+              );
+              const directEnd = turn.calls.reduce(
+                (latest, call) =>
+                  Math.max(latest, call.completedAt ?? call.startedAt),
+                turn.startedAt,
+              );
+              const turnEnd = nestedMetrics.end === undefined
+                ? directEnd
+                : Math.max(directEnd, nestedMetrics.end);
+              const elapsed = turnDuration(turn.startedAt, turnEnd);
+              const directInput = metrics.uncachedInput + metrics.cacheRead +
+                (metrics.cacheWrite ?? 0);
+              const nestedInput = nestedMetrics.uncachedInput +
+                nestedMetrics.cacheRead + nestedMetrics.cacheWrite;
               return (
                 <Fragment key={turn.number}>
-                  <tr
-                    className={`turn-row${open ? " row-open" : ""}`}
-                    onClick={() => toggleTurn(turn.number)}
-                    aria-expanded={open}
-                  >
+                  <tr className={`turn-row${open ? " row-open" : ""}`}>
                     <td className="turn-label">
                       <span className="turn-label-line">
-                        Turn {turn.number}
-                        <SubagentBadge count={subs.length} />
+                        <button
+                          type="button"
+                          className="turn-expand"
+                          onClick={() => toggleTurn(turn.number)}
+                          aria-expanded={open}
+                          aria-label={`${
+                            open ? "Collapse" : "Expand"
+                          } turn ${turn.number}`}
+                        >
+                          {open ? "▾" : "▸"}
+                        </button>
+                        <span>Turn {turn.number}</span>
                       </span>
                     </td>
                     <td title={fullTimestamp.format(turn.startedAt)}>
-                      <span className="metric-stack timestamp-stack">
-                        <span>{dateOnly.format(turn.startedAt)}</span>
-                        <small>{timeOnly.format(turn.startedAt)}</small>
+                      {timeOnly.format(turn.startedAt)}
+                    </td>
+                    <td className={elapsed ? undefined : "muted"}>
+                      {elapsed ?? "—"}
+                    </td>
+                    <td>
+                      <span className="metric-stack">
+                        <span>
+                          {turn.calls.length}{" "}
+                          {subs.length > 0 ? "direct model" : "model"}{" "}
+                          call{turn.calls.length === 1 ? "" : "s"}
+                        </span>
+                        {(subs.length > 0 || toolCalls > 0) && (
+                          <small>
+                            {subs.length > 0
+                              ? `${subs.length} subagent${
+                                subs.length === 1 ? "" : "s"
+                              } · ${nestedMetrics.modelCalls} nested calls`
+                              : `${toolCalls} tool${
+                                toolCalls === 1 ? "" : "s"
+                              }`}
+                          </small>
+                        )}
                       </span>
                     </td>
-                    <td className={metrics.duration ? undefined : "muted"}>
-                      {metrics.duration ?? "—"}
-                    </td>
-                    <td>{turn.calls.length}</td>
                     <td>
-                      <TokenValue value={metrics.uncachedInput} />
-                    </td>
-                    <td>
-                      <CacheMetric
-                        read={turn.cacheSummary?.totalCacheRead ??
-                          metrics.cacheRead}
-                        write={metrics.cacheWrite}
-                        share={turn.cacheSummary?.cachedInputShare}
-                        summary={turn.cacheSummary}
-                        peak={turn.cacheSummary && turn.calls.length > 1
-                          ? turn.cacheSummary.peakCacheRead
-                          : undefined}
-                      />
+                      {subs.length === 0
+                        ? (
+                          <SessionInputMetric
+                            tokens={{
+                              uncachedInput: metrics.uncachedInput,
+                              cacheRead: metrics.cacheRead,
+                              cacheWrite: metrics.cacheWrite,
+                            }}
+                            anthropic={session.providers.some((provider) =>
+                              provider.toLowerCase().includes("anthropic")
+                            )}
+                            label="total input"
+                          />
+                        )
+                        : (
+                          <span className="metric-stack turn-nested-input">
+                            <span>
+                              <TokenValue value={directInput} /> direct input
+                            </span>
+                            <small>
+                              <TokenValue value={nestedInput} />{" "}
+                              nested processed
+                            </small>
+                          </span>
+                        )}
                     </td>
                     <td>
                       <TokenValue
-                        value={metrics.output + metrics.reasoning}
+                        value={metrics.output + metrics.reasoning +
+                          nestedMetrics.output}
                       />
                     </td>
                     <td>
-                      <TokenValue value={metrics.processed} />
+                      {subs.length === 0
+                        ? (
+                          <CostCell
+                            reported={metrics.reportedCost}
+                            computed={metrics.computedCost}
+                            turn
+                          />
+                        )
+                        : (
+                          <TurnCost
+                            direct={metrics.computedCost}
+                            nested={nestedMetrics.computedCost}
+                          />
+                        )}
                     </td>
-                    <td>
-                      <CostCell
-                        reported={metrics.reportedCost}
-                        computed={metrics.computedCost}
-                      />
-                    </td>
-                    <td className="chevron">{open ? "−" : "+"}</td>
                   </tr>
                   {open && (
                     <tr className="turn-detail-row">
-                      <td colSpan={10}>
+                      <td colSpan={7}>
                         <CallTable
                           calls={turn.calls}
                           session={session}
@@ -938,26 +1340,26 @@ export function SessionsPage() {
           <>
             <div className="session-table-wrap">
               <table className="data-table session-table">
+                <colgroup>
+                  <col className="session-column" />
+                  <col className="model-column" />
+                  <col className="elapsed-column" />
+                  <col className="activity-column" />
+                  <col className="input-column" />
+                  <col className="output-column" />
+                  <col className="cost-column" />
+                </colgroup>
                 <thead>
                   <tr>
                     <th>Session</th>
-                    <th>Provider / model</th>
+                    <th>Model</th>
                     <th>Elapsed</th>
-                    <th title="User turns and model calls in the main session">
-                      Turns / calls
-                    </th>
-                    <th title="Child sessions and model calls inside them">
-                      Subagents / calls
-                    </th>
-                    <th>Uncached input</th>
-                    <th title="Cache reads, writes, coverage, and cache outcome">
-                      Cache
-                    </th>
-                    <th>Processed</th>
+                    <th>Activity</th>
+                    <th>Input</th>
+                    <th>Output</th>
                     <th title="Computed cost; ! if reported is non-zero and differs">
                       Cost
                     </th>
-                    <th aria-label="Expand" />
                   </tr>
                 </thead>
                 <tbody>
@@ -965,18 +1367,32 @@ export function SessionsPage() {
                     const expanded = expandedIDs.has(session.id);
                     const detail = details[session.id];
                     const span = sessionSpan(detail ?? session);
+                    const tokens = session.inclusiveTokens ?? session.tokens;
+                    const hasInclusiveMetrics =
+                      session.inclusiveTokens !== undefined;
+                    const anthropic = session.providers.some((provider) =>
+                      provider.toLowerCase().includes("anthropic")
+                    );
                     return (
                       <Fragment key={session.id}>
                         <tr
                           className={`session-row${
                             expanded ? " row-open" : ""
                           }`}
-                          onClick={() => toggleSession(session.id)}
-                          aria-expanded={expanded}
                         >
                           <td className="session-cell">
                             <div className="session-identity">
-                              <HarnessIcon harness={session.harness} />
+                              <button
+                                type="button"
+                                className="session-expand"
+                                onClick={() => toggleSession(session.id)}
+                                aria-expanded={expanded}
+                                aria-label={`${
+                                  expanded ? "Collapse" : "Expand"
+                                } ${session.title}`}
+                              >
+                                {expanded ? "▾" : "▸"}
+                              </button>
                               <div className="session-copy">
                                 <strong
                                   className="session-title"
@@ -984,23 +1400,24 @@ export function SessionsPage() {
                                 >
                                   {session.title}
                                 </strong>
-                                <small
-                                  className="session-id"
-                                  title={session.id}
-                                >
-                                  {session.id}
-                                </small>
-                                <small className="updated-at">
-                                  {new Date(session.updatedAt).toLocaleString()}
-                                </small>
+                                {session.startedAt !== undefined && (
+                                  <small
+                                    className="session-started"
+                                    title={`Started ${
+                                      fullTimestamp.format(session.startedAt)
+                                    }`}
+                                  >
+                                    {sessionStarted.format(session.startedAt)}
+                                  </small>
+                                )}
                               </div>
                             </div>
                           </td>
                           <td>
-                            <span className="provider">
-                              {session.providers.join(", ") || "unknown"}
+                            <span className="session-model-harness">
+                              <HarnessIcon harness={session.harness} />
+                              <ModelSummary models={session.models} />
                             </span>
-                            <ModelSummary models={session.models} />
                           </td>
                           <td
                             className={span?.label ? undefined : "muted"}
@@ -1012,55 +1429,50 @@ export function SessionsPage() {
                           >
                             {span?.label ?? "—"}
                           </td>
-                          <td>
+                          <td title="Inclusive of direct and subagent turns and calls">
                             <span className="metric-stack">
-                              <span>{session.userTurns} turns</span>
-                              <small>{session.modelCalls} calls</small>
-                            </span>
-                          </td>
-                          <td>
-                            <span className="metric-stack">
+                              <span>
+                                {session.inclusiveUserTurns ??
+                                  session.userTurns} turns ·{"  "}
+                                {session.inclusiveModelCalls ??
+                                  session.modelCalls} total calls
+                              </span>
                               <span
                                 className={session.subagentCount
                                   ? undefined
                                   : "muted"}
                               >
-                                {session.subagentCount ?? 0} subagents
+                                {session.subagentCount ?? 0}{" "}
+                                subagent{session.subagentCount === 1 ? "" : "s"}
                               </span>
-                              <small
-                                className={session.subagentModelCalls
-                                  ? undefined
-                                  : "muted"}
-                              >
-                                {session.subagentModelCalls ?? 0} calls
-                              </small>
                             </span>
                           </td>
                           <td>
-                            <TokenValue value={session.tokens.uncachedInput} />
-                          </td>
-                          <td>
-                            <CacheMetric
-                              read={session.tokens.cacheRead}
-                              write={session.tokens.cacheWrite}
-                              share={cacheHitRate(session.tokens)}
-                              summary={session.cacheSummary}
+                            <SessionInputMetric
+                              tokens={tokens}
+                              anthropic={anthropic}
                             />
                           </td>
                           <td>
-                            <TokenValue value={session.tokens.processed} />
+                            <TokenValue
+                              value={tokens.output + tokens.reasoning}
+                            />
                           </td>
                           <td>
                             <CostCell
-                              reported={session.reportedCost}
-                              computed={session.computedCost}
+                              reported={hasInclusiveMetrics
+                                ? session.inclusiveReportedCost
+                                : session.reportedCost}
+                              computed={hasInclusiveMetrics
+                                ? session.inclusiveComputedCost
+                                : session.computedCost}
+                              session
                             />
                           </td>
-                          <td className="chevron">{expanded ? "−" : "+"}</td>
                         </tr>
                         {expanded && (
                           <tr className="detail-row">
-                            <td colSpan={12}>
+                            <td colSpan={7}>
                               {detail
                                 ? <SessionBreakdown session={detail} />
                                 : (

@@ -56,6 +56,7 @@ Deno.test("normalizes PI JSONL sessions with tool activity and reported cost", (
         {
           id: "assistant-1",
           callWithinTurn: 1,
+          preview: "I'll inspect them.",
           provider: "anthropic",
           model: "claude-opus-4-8",
           startedAt: Date.parse("2026-07-11T13:36:59.000Z"),
@@ -81,12 +82,15 @@ Deno.test("normalizes PI JSONL sessions with tool activity and reported cost", (
               status: "completed",
               startedAt: Date.parse("2026-07-11T13:36:59.000Z"),
               completedAt: Date.parse("2026-07-11T13:37:00.000Z"),
+              inputPreview: '{"command":"ls"}',
+              outputPreview: "ok",
             }],
           },
         },
         {
           id: "assistant-2",
           callWithinTurn: 2,
+          preview: "Done.",
           provider: "anthropic",
           model: "claude-opus-4-8",
           startedAt: Date.parse("2026-07-11T13:37:05.000Z"),

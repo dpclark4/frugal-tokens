@@ -57,6 +57,7 @@ Deno.test("normalizes model changes without creating command turns", () => {
         calls: [{
           id: "call-sonnet",
           callWithinTurn: 1,
+          preview: "Sonnet response",
           provider: "anthropic",
           model: "claude-sonnet-4-5",
           startedAt: Date.parse("2026-06-25T19:51:54.000Z"),
@@ -86,6 +87,7 @@ Deno.test("normalizes model changes without creating command turns", () => {
         calls: [{
           id: "call-opus",
           callWithinTurn: 1,
+          preview: "Opus response",
           provider: "anthropic",
           model: "claude-opus-4-7",
           startedAt: Date.parse("2026-06-25T19:52:02.000Z"),
@@ -169,6 +171,7 @@ Deno.test("normalizes an SDK prompt and deduplicates streamed usage", () => {
       calls: [{
         id: "sdk-call",
         callWithinTurn: 1,
+        preview: "Hi!",
         provider: "anthropic",
         model: "claude-sonnet-4-5",
         startedAt: Date.parse("2026-06-25T20:00:01.000Z"),
@@ -270,12 +273,14 @@ Deno.test("normalizes a linked subagent without folding child usage into parent"
               startedAt: Date.parse("2026-06-25T21:00:01.000Z"),
               completedAt: Date.parse("2026-06-25T21:00:03.000Z"),
               childSessionID: "child",
+              outputPreview: '{"agentId":"child"}',
             }],
           },
         },
         {
           id: "parent-call-2",
           callWithinTurn: 2,
+          preview: "Parent final response",
           provider: "anthropic",
           model: "claude-opus-4-7",
           startedAt: Date.parse("2026-06-25T21:00:04.000Z"),
@@ -329,6 +334,7 @@ Deno.test("normalizes a linked subagent without folding child usage into parent"
         calls: [{
           id: "child-call",
           callWithinTurn: 1,
+          preview: "Child result",
           provider: "anthropic",
           model: "claude-sonnet-4-5",
           startedAt: Date.parse("2026-06-25T21:00:02.500Z"),

@@ -257,6 +257,7 @@ function decodeRecords(records: Record[]) {
               tool.output = serializedPreview(
                 block.content ?? record.toolUseResult,
               );
+              tool.outputPreview = tool.output?.preview;
             }
           }
         }
@@ -324,6 +325,7 @@ function decodeRecords(records: Record[]) {
         decoded.call.activity.hasText = true;
         if (block.text !== undefined) {
           decoded.call.content?.push(preview(block.text));
+          decoded.call.preview ??= block.text;
         }
       }
       if (block.type === "thinking") {
@@ -331,13 +333,17 @@ function decodeRecords(records: Record[]) {
         decoded.call.content?.push({ kind: "reasoning" });
       }
       if (block.type === "tool_use" && block.name && block.id) {
+        const input = serializedPreview(block.input);
         decoded.call.activity.tools.push(
           {
             sourceID: block.id,
             name: block.name,
             status: "pending",
             startedAt: timestamp,
-            input: serializedPreview(block.input),
+            input,
+            ...(input?.preview === undefined
+              ? {}
+              : { inputPreview: input.preview }),
             // Kept internally while matching the later tool_result record.
             id: block.id,
           } as SessionToolImport,

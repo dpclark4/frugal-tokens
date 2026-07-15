@@ -197,6 +197,8 @@ function decodeParts(rows: OpenCodePartRow[], strict = false) {
       });
     }
     if (part.type === "tool" && part.tool) {
+      const input = serializedPreview(part.state?.input);
+      const output = serializedPreview(part.state?.output);
       current.activity.tools.push({
         sourceID: part.callID,
         name: part.tool,
@@ -204,8 +206,14 @@ function decodeParts(rows: OpenCodePartRow[], strict = false) {
         startedAt: part.state?.time?.start,
         completedAt: part.state?.time?.end,
         childExternalID: part.state?.metadata?.sessionId,
-        input: serializedPreview(part.state?.input),
-        output: serializedPreview(part.state?.output),
+        input,
+        output,
+        ...(input?.preview === undefined
+          ? {}
+          : { inputPreview: input.preview }),
+        ...(output?.preview === undefined
+          ? {}
+          : { outputPreview: output.preview }),
       });
     }
     decoded.set(row.message_id, current);
@@ -297,6 +305,14 @@ function decodeMessages(
     const call: SessionCallImport = {
       id: row.id,
       callWithinTurn: turn.calls.length + 1,
+      ...(decodedParts?.content.find((item) => item.kind === "text")
+          ?.preview ===
+          undefined
+        ? {}
+        : {
+          preview: decodedParts.content.find((item) => item.kind === "text")!
+            .preview,
+        }),
       provider,
       model,
       startedAt: message.time?.created ?? row.time_created,

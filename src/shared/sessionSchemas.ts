@@ -20,6 +20,8 @@ export const toolEventSchema = z.object({
   startedAt: z.number().optional(),
   completedAt: z.number().optional(),
   childSessionID: z.string().optional(),
+  inputPreview: z.string().optional(),
+  outputPreview: z.string().optional(),
 });
 
 export const callActivitySchema = z.object({
@@ -81,6 +83,11 @@ export const sessionSummarySchema = z.object({
   modelCalls: z.number().int().nonnegative(),
   subagentCount: z.number().int().nonnegative().optional(),
   subagentModelCalls: z.number().int().nonnegative().optional(),
+  inclusiveUserTurns: z.number().int().nonnegative().optional(),
+  inclusiveModelCalls: z.number().int().nonnegative().optional(),
+  inclusiveReportedCost: z.number().nonnegative().optional(),
+  inclusiveComputedCost: z.number().nonnegative().optional(),
+  inclusiveTokens: tokenUsageSchema.optional(),
   reportedCost: z.number().nonnegative().optional(),
   computedCost: z.number().nonnegative().optional(),
   cacheSummary: cacheSummarySchema.optional(),
@@ -90,6 +97,7 @@ export const sessionSummarySchema = z.object({
 export const modelCallSchema = z.object({
   id: z.string(),
   callWithinTurn: z.number().int().positive(),
+  preview: z.string().optional(),
   provider: z.string(),
   model: z.string(),
   startedAt: z.number(),
