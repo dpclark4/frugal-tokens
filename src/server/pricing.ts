@@ -2,6 +2,7 @@ import type {
   SessionDetail,
   TokenUsage,
 } from "../shared/sessionSchemas.ts";
+import { contextSize } from "../shared/contextMetrics.ts";
 
 type RateCard = {
   input: number;
@@ -92,8 +93,7 @@ export function computeModelCallCost(
   model: string,
   timestamp: number,
 ) {
-  const inputSideTokens = tokens.uncachedInput + tokens.cacheRead +
-    (tokens.cacheWrite ?? 0);
+  const inputSideTokens = contextSize(tokens);
   const rates = rateCard(model, timestamp, inputSideTokens);
   if (!rates) return undefined;
 

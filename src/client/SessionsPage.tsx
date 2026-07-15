@@ -10,6 +10,7 @@ import type {
   SessionSummary,
   TokenUsage,
 } from "../shared/sessionSchemas.ts";
+import { contextRange, contextSize } from "../shared/contextMetrics.ts";
 import { getSession, getSessions } from "./api.ts";
 import claudeCodeIcon from "./assets/icons/claudecode-color.svg";
 import codexIcon from "./assets/icons/codex-logo-light.svg";
@@ -63,6 +64,30 @@ function TokenValue({ value }: { value: number }) {
   return <span title={integer.format(value)}>{compact.format(value)}</span>;
 }
 
+function ContextMetric({
+  value,
+  secondary,
+  secondaryLabel,
+  title,
+}: {
+  value?: number;
+  secondary?: number;
+  secondaryLabel?: string;
+  title?: string;
+}) {
+  if (value === undefined) return <span className="muted">-</span>;
+  return (
+    <span className="metric-stack context-metric" title={title}>
+      <strong><TokenValue value={value} /></strong>
+      {secondary !== undefined && secondary !== value && secondaryLabel && (
+        <small>
+          <TokenValue value={secondary} /> {secondaryLabel}
+        </small>
+      )}
+    </span>
+  );
+}
+
 function ModelSummary({ models }: { models: string[] }) {
   const primary = models.at(-1) ?? "unknown";
   const others = models.slice(0, -1);
@@ -114,8 +139,7 @@ function modelDisplayName(model: string) {
 }
 
 function cacheHitRate(tokens: TokenUsage) {
-  const input = tokens.uncachedInput + tokens.cacheRead +
-    (tokens.cacheWrite ?? 0);
+  const input = contextSize(tokens);
   return input === 0 ? undefined : tokens.cacheRead / input;
 }
 
@@ -856,8 +880,7 @@ function toolTargetPreview(value?: string) {
 
 function CallInputMetric({ call }: { call: ModelCall }) {
   const anthropic = call.provider.toLowerCase().includes("anthropic");
-  const total = call.tokens.uncachedInput + call.tokens.cacheRead +
-    (call.tokens.cacheWrite ?? 0);
+  const total = contextSize(call.tokens);
   const parts = anthropic
     ? [
       call.tokens.cacheRead > 0
@@ -879,10 +902,7 @@ function CallInputMetric({ call }: { call: ModelCall }) {
       className="metric-stack call-input-metric"
       title={`${integer.format(total)} total input tokens`}
     >
-      <span className="call-input-total">
-        <TokenValue value={total} /> total input
-      </span>
-      <small>{parts.filter(Boolean).join(" · ")}</small>
+      <span>{parts.filter(Boolean).join(" · ")}</span>
       {call.tokens.cacheWrite5m !== undefined &&
         call.tokens.cacheWrite1h !== undefined && (
         <small>
@@ -965,6 +985,7 @@ function CallTable({
           <col className="call-model-column" />
           <col className="call-time-column" />
           <col className="call-outcome-column" />
+          <col className="call-context-column" />
           <col className="call-input-column" />
           <col className="call-reused-column" />
           <col className="call-cache-column" />
@@ -978,7 +999,8 @@ function CallTable({
             <th>Model</th>
             <th>Time</th>
             <th>Activity</th>
-            <th>Input</th>
+            <th>Context</th>
+            <th>Volume</th>
             <th>Reused</th>
             <th>Cache</th>
             <th>Output</th>
@@ -989,6 +1011,7 @@ function CallTable({
           {calls.map((call) => {
             const expanded = expandedCallID === call.id;
             const callDuration = duration(call.startedAt, call.completedAt);
+            const callContext = contextSize(call.tokens);
             const reused = cacheHitRate(call.tokens);
             const subagents = callSubagents(call, session);
             const subagentTotals = aggregateSessionTrees(subagents);
@@ -1066,6 +1089,12 @@ function CallTable({
                     </button>
                   </td>
                   <td>
+                    <ContextMetric
+                      value={callContext}
+                      title={`${integer.format(callContext)} tokens in this request`}
+                    />
+                  </td>
+                  <td>
                     <CallInputMetric call={call} />
                   </td>
                   <td className={reused === undefined ? "muted" : undefined}>
@@ -1095,7 +1124,7 @@ function CallTable({
                 </tr>
                 {expanded && (
                   <tr className="activity-detail-row">
-                    <td colSpan={10}>
+                    <td colSpan={11}>
                       <div className="activity-detail">
                         {finishWarning && (
                           <div className="activity-warning">
@@ -1227,6 +1256,7 @@ function SessionBreakdown({
             <col className="started-column" />
             <col className="turn-elapsed-column" />
             <col className="turn-activity-column" />
+            <col className="turn-context-column" />
             <col className="turn-input-column" />
             <col className="turn-cache-column" />
             <col className="turn-output-column" />
@@ -1238,7 +1268,8 @@ function SessionBreakdown({
               <th>Started</th>
               <th>Elapsed</th>
               <th>Activity</th>
-              <th>Input</th>
+              <th>Context</th>
+              <th>Volume</th>
               <th>Cache</th>
               <th>Output</th>
               <th>Cost</th>
@@ -1247,6 +1278,7 @@ function SessionBreakdown({
           <tbody>
             {session.turns.map((turn) => {
               const metrics = turnMetrics(turn.calls);
+              const context = contextRange(turn.calls);
               const open = expandedTurns.has(turn.number);
               const subs = turnSubagents(turn, session);
               const nestedMetrics = aggregateSessionTrees(subs);
@@ -1315,6 +1347,22 @@ function SessionBreakdown({
                       </span>
                     </td>
                     <td>
+                      <ContextMetric
+                        value={context.latest?.size}
+                        secondary={context.first?.size}
+                        secondaryLabel="start"
+                        title={context.latest && context.first && context.peak
+                          ? `First request: ${
+                            integer.format(context.first.size)
+                          } tokens · Last request: ${
+                            integer.format(context.latest.size)
+                          } tokens · Peak request: ${
+                            integer.format(context.peak.size)
+                          } tokens (call #${context.peak.call.callWithinTurn})`
+                          : undefined}
+                      />
+                    </td>
+                    <td>
                       {subs.length === 0
                         ? (
                           <SessionInputMetric
@@ -1372,7 +1420,7 @@ function SessionBreakdown({
                   </tr>
                   {open && (
                     <tr className="turn-detail-row">
-                      <td colSpan={8}>
+                      <td colSpan={9}>
                         <CallTable
                           calls={turn.calls}
                           session={session}
@@ -1582,6 +1630,7 @@ export function SessionsPage() {
                   <col className="model-column" />
                   <col className="elapsed-column" />
                   <col className="activity-column" />
+                  <col className="context-column" />
                   <col className="input-column" />
                   <col className="cache-column" />
                   <col className="output-column" />
@@ -1593,7 +1642,8 @@ export function SessionsPage() {
                     <th>Model</th>
                     <th>Elapsed</th>
                     <th>Activity</th>
-                    <th>Input</th>
+                    <th>Context</th>
+                    <th>Volume</th>
                     <th title="Full and partial cache misses">Cache</th>
                     <th>Output</th>
                     <th title="Computed cost; ! if reported is non-zero and differs">
@@ -1681,19 +1731,41 @@ export function SessionsPage() {
                             <span className="metric-stack">
                               <span>
                                 {session.inclusiveUserTurns ??
-                                  session.userTurns} turns ·{"  "}
+                                  session.userTurns} turns
+                              </span>
+                              <span>
                                 {session.inclusiveModelCalls ??
                                   session.modelCalls} calls
                               </span>
                               {(session.subagentCount ?? 0) > 0 && (
-                                <span>
+                                <small>
                                   {session.subagentCount}{" "}
                                   subagent{
                                     session.subagentCount === 1 ? "" : "s"
                                   }
-                                </span>
+                                </small>
                               )}
                             </span>
+                          </td>
+                          <td>
+                            <ContextMetric
+                              value={session.contextLatest}
+                              secondary={session.contextPeak}
+                              secondaryLabel="peak"
+                              title={session.contextLatest !== undefined &&
+                                  session.contextPeak !== undefined
+                                ? `Latest root request: ${
+                                  integer.format(session.contextLatest)
+                                } tokens · Peak root request: ${
+                                  integer.format(session.contextPeak)
+                                } tokens${
+                                  session.contextPeakTurn !== undefined &&
+                                    session.contextPeakCall !== undefined
+                                    ? ` (turn ${session.contextPeakTurn}, call #${session.contextPeakCall})`
+                                    : ""
+                                }`
+                                : undefined}
+                            />
                           </td>
                           <td>
                             <SessionInputMetric
@@ -1730,7 +1802,7 @@ export function SessionsPage() {
                         </tr>
                         {expanded && (
                           <tr className="detail-row">
-                            <td colSpan={8}>
+                            <td colSpan={9}>
                               {detail
                                 ? <SessionBreakdown session={detail} />
                                 : (

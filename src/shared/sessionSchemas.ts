@@ -98,6 +98,10 @@ export const sessionSummarySchema = z.object({
   computedCost: z.number().nonnegative().optional(),
   cacheSummary: cacheSummarySchema.optional(),
   cacheIssues: z.array(cacheIssueSchema).optional(),
+  contextLatest: z.number().int().nonnegative().optional(),
+  contextPeak: z.number().int().nonnegative().optional(),
+  contextPeakTurn: z.number().int().positive().optional(),
+  contextPeakCall: z.number().int().positive().optional(),
   tokens: tokenUsageSchema,
 });
 
