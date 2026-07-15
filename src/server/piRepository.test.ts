@@ -1,6 +1,6 @@
 import { deepStrictEqual } from "node:assert/strict";
-import { PiRepository } from "../src/server/piRepository.ts";
-import type { SessionDetail } from "../src/shared/sessionSchemas.ts";
+import { PiRepository } from "./piRepository.ts";
+import type { SessionDetail } from "../shared/sessionSchemas.ts";
 
 function repository(files: Record<string, string>) {
   const directory = Deno.makeTempDirSync();

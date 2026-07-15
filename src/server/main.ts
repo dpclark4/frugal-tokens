@@ -12,6 +12,12 @@ import type {
 } from "../shared/sessionSchemas.ts";
 import type { UsageCall } from "./usage.ts";
 import { aggregateUsage } from "./usageAnalytics.ts";
+import { openArchiveDatabase, sqlitePath } from "./database.ts";
+import { SessionRepository } from "./sessionRepository.ts";
+import { syncPiSessions } from "./piImporter.ts";
+import { syncCodexSessions } from "./codexImporter.ts";
+import { syncClaudeCodeSessions } from "./claudeCodeImporter.ts";
+import { syncOpenCodeSessions } from "./openCodeImporter.ts";
 
 function configuredPath<T>(
   harness: string,
@@ -40,30 +46,146 @@ function configuredPath<T>(
   }
   return create(path);
 }
-const repository = configuredPath(
+const openCodePath = configuredPath(
   "opencode",
   "OPENCODE_DB_PATH",
   "file",
-  (path) => new OpenCodeRepository(path),
+  (path) => path,
 );
-const claudeRepository = configuredPath(
+const claudeDirectory = configuredPath(
   "claude-code",
   "CLAUDE_CODE_PROJECT_PATH",
   "directory",
-  (path) => new ClaudeCodeRepository(path),
+  (path) => path,
 );
-const piRepository = configuredPath(
+const piDirectory = configuredPath(
   "pi",
   "PI_SESSION_DIR",
   "directory",
-  (path) => new PiRepository(path),
+  (path) => path,
 );
-const codexRepository = configuredPath(
+const codexDirectory = configuredPath(
   "codex",
   "CODEX_SESSION_DIR",
   "directory",
-  (path) => new CodexRepository(path),
+  (path) => path,
 );
+const archiveURL = Deno.env.get("FRUGAL_TOKENS_DATABASE_URL");
+const archiveDatabase = archiveURL
+  ? openArchiveDatabase(sqlitePath(archiveURL))
+  : undefined;
+const archiveRepository = archiveDatabase
+  ? new SessionRepository(archiveDatabase)
+  : undefined;
+
+async function runSync(
+  harness: SessionSummary["harness"],
+  sync: () =>
+    | {
+      discovered: number;
+      imported: number;
+      skipped: number;
+      failed: number;
+      timings?: Record<string, number>;
+    }
+    | Promise<
+      {
+        discovered: number;
+        imported: number;
+        skipped: number;
+        failed: number;
+        timings?: Record<string, number>;
+      }
+    >,
+) {
+  const startedAt = performance.now();
+  const result = await sync();
+  const phases = result.timings
+    ? ` ${
+      Object.entries(result.timings).map(([name, duration]) =>
+        `${name}=${duration.toFixed(1)}ms`
+      ).join(" ")
+    }`
+    : "";
+  console.info(
+    `[sync] harness=${harness} discovered=${result.discovered} imported=${result.imported} skipped=${result.skipped} failed=${result.failed} duration=${
+      (performance.now() - startedAt).toFixed(1)
+    }ms${phases}`,
+  );
+}
+
+async function syncSources() {
+  if (!archiveRepository) return;
+  const startedAt = performance.now();
+  if (openCodePath) {
+    await runSync(
+      "opencode",
+      () => syncOpenCodeSessions(openCodePath, archiveRepository),
+    );
+  }
+  if (claudeDirectory) {
+    await runSync(
+      "claude-code",
+      () => syncClaudeCodeSessions(claudeDirectory, archiveRepository),
+    );
+  }
+  if (piDirectory) {
+    await runSync("pi", () => syncPiSessions(piDirectory, archiveRepository));
+  }
+  if (codexDirectory) {
+    await runSync(
+      "codex",
+      () => syncCodexSessions(codexDirectory, archiveRepository),
+    );
+  }
+  console.info(
+    `[sync] complete duration=${(performance.now() - startedAt).toFixed(1)}ms`,
+  );
+}
+const claudeRepository = archiveRepository
+  ? {
+    listSessions: (page: number, pageSize: number) =>
+      archiveRepository.listSessions(page, pageSize, "claude-code"),
+    getSession: (id: string) => archiveRepository.getSession("claude-code", id),
+    listUsageCalls: (startedAt?: number) =>
+      archiveRepository.listUsageCalls(startedAt, "claude-code"),
+  }
+  : claudeDirectory
+  ? new ClaudeCodeRepository(claudeDirectory)
+  : undefined;
+const piRepository = archiveRepository
+  ? {
+    listSessions: (page: number, pageSize: number) =>
+      archiveRepository.listSessions(page, pageSize, "pi"),
+    getSession: (id: string) => archiveRepository.getSession("pi", id),
+    listUsageCalls: (startedAt?: number) =>
+      archiveRepository.listUsageCalls(startedAt, "pi"),
+  }
+  : piDirectory
+  ? new PiRepository(piDirectory)
+  : undefined;
+const codexRepository = archiveRepository
+  ? {
+    listSessions: (page: number, pageSize: number) =>
+      archiveRepository.listSessions(page, pageSize, "codex"),
+    getSession: (id: string) => archiveRepository.getSession("codex", id),
+    listUsageCalls: (startedAt?: number) =>
+      archiveRepository.listUsageCalls(startedAt, "codex"),
+  }
+  : codexDirectory
+  ? new CodexRepository(codexDirectory)
+  : undefined;
+const repository = archiveRepository
+  ? {
+    listSessions: (page: number, pageSize: number) =>
+      archiveRepository.listSessions(page, pageSize, "opencode"),
+    getSession: (id: string) => archiveRepository.getSession("opencode", id),
+    listUsageCalls: (startedAt?: number) =>
+      archiveRepository.listUsageCalls(startedAt, "opencode"),
+  }
+  : openCodePath
+  ? new OpenCodeRepository(openCodePath)
+  : undefined;
 const app = new Hono();
 
 function repositoryForHarness(harness: SessionSummary["harness"]) {
@@ -261,5 +383,9 @@ app.use("/assets/*", serveStatic({ root: "./dist" }));
 app.get("*", serveStatic({ root: "./dist", path: "index.html" }));
 
 const port = Number.parseInt(Deno.env.get("PORT") ?? "9000", 10);
-console.log(`Frugal Tokens API listening on http://localhost:${port}`);
-Deno.serve({ port }, app.fetch);
+Deno.serve({
+  port,
+  onListen: ({ port }) =>
+    console.log(`Frugal Tokens API listening on http://localhost:${port}`),
+}, app.fetch);
+await syncSources();

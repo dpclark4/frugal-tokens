@@ -1,12 +1,21 @@
 import { z } from "zod";
 import {
-  type ModelCall,
   sessionDetailSchema,
   sessionListResponseSchema,
   type SessionSummary,
   type TokenUsage,
 } from "../shared/sessionSchemas.ts";
 import { usageCallsFromSession } from "./usage.ts";
+import type {
+  SessionCallImport,
+  SessionContentImport,
+  SessionToolImport,
+  SessionTurnImport,
+  SourceSessionCheckpoint,
+  SourceSessionImport,
+} from "./sessionRepository.ts";
+
+const contentPreviewLimit = 512;
 
 const contentBlockSchema = z.object({
   type: z.string(),
@@ -16,6 +25,8 @@ const contentBlockSchema = z.object({
   name: z.string().optional(),
   tool_use_id: z.string().optional(),
   is_error: z.boolean().optional(),
+  input: z.unknown().optional(),
+  content: z.unknown().optional(),
 }).passthrough();
 
 const recordSchema = z.object({
@@ -45,13 +56,45 @@ const recordSchema = z.object({
       }).optional(),
     }).optional(),
   }).passthrough().optional(),
-  toolUseResult: z.object({
-    agentId: z.string().optional(),
-  }).passthrough().optional(),
+  toolUseResult: z.union([
+    z.string(),
+    z.object({
+      agentId: z.string().optional(),
+    }).passthrough(),
+  ]).optional(),
 }).passthrough();
 
 type Record = z.infer<typeof recordSchema>;
 type IndexEntry = { summary?: string; firstPrompt?: string };
+
+const indexSchema = z.object({
+  entries: z.array(z.object({
+    sessionId: z.string(),
+    summary: z.string().optional(),
+    firstPrompt: z.string().optional(),
+  })),
+});
+const agentMetaSchema = z.object({
+  description: z.string().optional(),
+  agentType: z.string().optional(),
+}).passthrough();
+
+export type ClaudeCodeDependency = {
+  path: string;
+  artifactPath: string;
+  size: number;
+  updatedAt: number;
+};
+
+export type ClaudeCodeSessionCandidate = {
+  id: string;
+  path: string;
+  artifactPath: string;
+  dependencies: ClaudeCodeDependency[];
+  size: number;
+  updatedAt: number;
+  changeHint: number;
+};
 
 const emptyTokens = (): TokenUsage => ({
   uncachedInput: 0,
@@ -97,6 +140,42 @@ function readRecords(path: string) {
   return records;
 }
 
+function readRecordsFromText(text: string, strict = false) {
+  const records: Record[] = [];
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const result = recordSchema.safeParse(JSON.parse(line));
+      if (result.success) records.push(result.data);
+      else if (strict) throw result.error;
+    } catch (error) {
+      if (strict) throw error;
+    }
+  }
+  return records;
+}
+
+function preview(value: string): SessionContentImport {
+  return {
+    kind: "text",
+    preview: value.slice(0, contentPreviewLimit),
+    originalLength: value.length,
+    truncated: value.length > contentPreviewLimit,
+  };
+}
+
+function serializedPreview(value: unknown) {
+  if (value === undefined) return undefined;
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  if (text === undefined) return undefined;
+  const valuePreview = preview(text);
+  return {
+    preview: valuePreview.preview,
+    originalLength: valuePreview.originalLength,
+    truncated: valuePreview.truncated,
+  };
+}
+
 function blocks(record: Record) {
   return Array.isArray(record.message?.content) ? record.message.content : [];
 }
@@ -117,7 +196,12 @@ function startsTurn(record: Record, hasTurns: boolean) {
 }
 
 function sessionBounds(
-  turns: Array<{ startedAt: number; calls: Array<{ startedAt: number; completedAt?: number }> }>,
+  turns: Array<
+    {
+      startedAt: number;
+      calls: Array<{ startedAt: number; completedAt?: number }>;
+    }
+  >,
 ) {
   if (turns.length === 0) return {};
   const startedAt = Math.min(...turns.map((turn) => turn.startedAt));
@@ -131,12 +215,10 @@ function sessionBounds(
 }
 
 function decodeRecords(records: Record[]) {
-  const turns: Array<
-    { number: number; startedAt: number; calls: ModelCall[] }
-  > = [];
+  const turns: SessionTurnImport[] = [];
   const calls = new Map<
     string,
-    { call: ModelCall; blocks: ReturnType<typeof blocks> }
+    { call: SessionCallImport; blocks: ReturnType<typeof blocks> }
   >();
   const tokens = emptyTokens();
   const providers = new Set<string>();
@@ -146,11 +228,13 @@ function decodeRecords(records: Record[]) {
     const timestamp = Date.parse(record.timestamp ?? "") || 0;
     if (record.type === "user") {
       const content = record.message?.content;
+      const text = userText(record);
       if (startsTurn(record, turns.length > 0)) {
         turns.push({
           number: turns.length + 1,
           startedAt: timestamp,
           calls: [],
+          inputs: text === undefined ? [] : [preview(text)],
         });
       }
       if (Array.isArray(content)) {
@@ -163,9 +247,16 @@ function decodeRecords(records: Record[]) {
             if (tool) {
               tool.status = block.is_error ? "error" : "completed";
               tool.completedAt = timestamp;
-              if (record.toolUseResult?.agentId) {
-                tool.childSessionID = record.toolUseResult.agentId;
+              if (
+                typeof record.toolUseResult === "object" &&
+                record.toolUseResult.agentId
+              ) {
+                (tool as SessionToolImport & { childSessionID?: string })
+                  .childSessionID = record.toolUseResult.agentId;
               }
+              tool.output = serializedPreview(
+                block.content ?? record.toolUseResult,
+              );
             }
           }
         }
@@ -182,8 +273,10 @@ function decodeRecords(records: Record[]) {
     if (!decoded) {
       const source = record.message.usage;
       const cacheWrite = source.cache_creation_input_tokens || undefined;
-      const cacheWrite5m = source.cache_creation?.ephemeral_5m_input_tokens ?? 0;
-      const cacheWrite1h = source.cache_creation?.ephemeral_1h_input_tokens ?? 0;
+      const cacheWrite5m = source.cache_creation?.ephemeral_5m_input_tokens ??
+        0;
+      const cacheWrite1h = source.cache_creation?.ephemeral_1h_input_tokens ??
+        0;
       const callTokens: TokenUsage = {
         uncachedInput: source.input_tokens,
         cacheRead: source.cache_read_input_tokens,
@@ -199,7 +292,7 @@ function decodeRecords(records: Record[]) {
       if (callTokens.processed === 0) continue;
       const turn = turns.at(-1)!;
       const model = record.message.model ?? "unknown";
-      const call: ModelCall = {
+      const call: SessionCallImport = {
         id,
         callWithinTurn: turn.calls.length + 1,
         provider: "anthropic",
@@ -207,6 +300,7 @@ function decodeRecords(records: Record[]) {
         startedAt: timestamp,
         tokens: callTokens,
         activity: { hasText: false, hasReasoning: false, tools: [] },
+        content: [],
       };
       turn.calls.push(call);
       decoded = { call, blocks: [] };
@@ -226,17 +320,27 @@ function decodeRecords(records: Record[]) {
         continue;
       }
       decoded.blocks.push(block);
-      if (block.type === "text") decoded.call.activity.hasText = true;
-      if (block.type === "thinking") decoded.call.activity.hasReasoning = true;
+      if (block.type === "text") {
+        decoded.call.activity.hasText = true;
+        if (block.text !== undefined) {
+          decoded.call.content?.push(preview(block.text));
+        }
+      }
+      if (block.type === "thinking") {
+        decoded.call.activity.hasReasoning = true;
+        decoded.call.content?.push({ kind: "reasoning" });
+      }
       if (block.type === "tool_use" && block.name && block.id) {
         decoded.call.activity.tools.push(
           {
+            sourceID: block.id,
             name: block.name,
             status: "pending",
             startedAt: timestamp,
+            input: serializedPreview(block.input),
             // Kept internally while matching the later tool_result record.
             id: block.id,
-          } as ModelCall["activity"]["tools"][number],
+          } as SessionToolImport,
         );
       }
     }
@@ -245,6 +349,260 @@ function decodeRecords(records: Record[]) {
     .filter((turn) => turn.calls.length > 0)
     .map((turn, index) => ({ ...turn, number: index + 1 }));
   return { turns: nonEmptyTurns, tokens, providers, models };
+}
+
+function dependency(path: string, artifactPath: string): ClaudeCodeDependency {
+  const stat = Deno.statSync(path);
+  return {
+    path,
+    artifactPath,
+    size: stat.size,
+    updatedAt: stat.mtime?.getTime() ?? 0,
+  };
+}
+
+function existingDependency(
+  path: string,
+  artifactPath: string,
+): ClaudeCodeDependency | undefined {
+  try {
+    return dependency(path, artifactPath);
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) return undefined;
+    throw error;
+  }
+}
+
+function collectSubagentDependencies(
+  transcriptPath: string,
+  rootDirectory: string,
+  dependencies: ClaudeCodeDependency[],
+) {
+  const subagents = `${transcriptPath.slice(0, -6)}/subagents`;
+  let entries: Deno.DirEntry[];
+  try {
+    entries = [...Deno.readDirSync(subagents)];
+  } catch (error) {
+    if (error instanceof Deno.errors.NotFound) return;
+    throw error;
+  }
+  for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+    if (
+      !entry.isFile || !entry.name.startsWith("agent-") ||
+      !entry.name.endsWith(".jsonl")
+    ) continue;
+    const path = `${subagents}/${entry.name}`;
+    const artifactPath = path.slice(rootDirectory.length + 1);
+    dependencies.push(dependency(path, artifactPath));
+    const metaPath = path.slice(0, -6) + ".meta.json";
+    const meta = existingDependency(
+      metaPath,
+      metaPath.slice(rootDirectory.length + 1),
+    );
+    if (meta) dependencies.push(meta);
+    collectSubagentDependencies(path, rootDirectory, dependencies);
+  }
+}
+
+function metadataHint(dependencies: ClaudeCodeDependency[]) {
+  let hash = 2166136261;
+  for (const item of dependencies) {
+    const value = `${item.artifactPath}\0${item.size}\0${item.updatedAt}`;
+    for (let index = 0; index < value.length; index++) {
+      hash ^= value.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+  }
+  return hash >>> 0;
+}
+
+export function discoverClaudeCodeSessions(
+  directory: string,
+): ClaudeCodeSessionCandidate[] {
+  const roots: Array<{ id: string; path: string; artifactPath: string }> = [];
+  for (const entry of Deno.readDirSync(directory)) {
+    if (entry.isFile && entry.name.endsWith(".jsonl")) {
+      roots.push({
+        id: entry.name.slice(0, -6),
+        path: `${directory}/${entry.name}`,
+        artifactPath: entry.name,
+      });
+      continue;
+    }
+    if (!entry.isDirectory) continue;
+    for (const session of Deno.readDirSync(`${directory}/${entry.name}`)) {
+      if (!session.isFile || !session.name.endsWith(".jsonl")) continue;
+      roots.push({
+        id: `${entry.name}/${session.name.slice(0, -6)}`,
+        path: `${directory}/${entry.name}/${session.name}`,
+        artifactPath: `${entry.name}/${session.name}`,
+      });
+    }
+  }
+
+  return roots.map((root) => {
+    const dependencies = [dependency(root.path, root.artifactPath)];
+    collectSubagentDependencies(root.path, directory, dependencies);
+    const rootParent = root.path.slice(0, root.path.lastIndexOf("/"));
+    const indexPath = `${rootParent}/sessions-index.json`;
+    const index = existingDependency(
+      indexPath,
+      indexPath.slice(directory.length + 1),
+    );
+    if (index) dependencies.push(index);
+    dependencies.sort((a, b) => a.artifactPath.localeCompare(b.artifactPath));
+    return {
+      ...root,
+      dependencies,
+      size: dependencies.reduce((sum, item) => sum + item.size, 0),
+      updatedAt: dependencies.find((item) =>
+        item.path === root.path
+      )!.updatedAt,
+      changeHint: metadataHint(dependencies),
+    };
+  }).sort((a, b) => b.updatedAt - a.updatedAt || b.id.localeCompare(a.id));
+}
+
+function normalizedTitle(
+  records: Record[],
+  id: string,
+  index?: IndexEntry,
+  override?: string,
+) {
+  const customTitle = [...records].reverse().find((record) =>
+    record.customTitle
+  )
+    ?.customTitle;
+  const generatedTitle = [...records].reverse().find((record) => record.aiTitle)
+    ?.aiTitle;
+  const firstPrompt = records.find((record) => startsTurn(record, false));
+  const promptTitle = userText(firstPrompt ?? { type: "" })?.replace(
+    /\s+/g,
+    " ",
+  )
+    .trim().slice(0, 100);
+  return override ?? customTitle ?? index?.summary ?? generatedTitle ??
+    index?.firstPrompt ?? promptTitle ??
+    `Claude Code session ${id.slice(0, 8)}`;
+}
+
+export function normalizeClaudeCodeSessionTree(options: {
+  candidate: ClaudeCodeSessionCandidate;
+  snapshots: Map<string, Uint8Array>;
+  sourceID: number;
+  observedAt: number;
+  checkpoint: SourceSessionCheckpoint;
+}): SourceSessionImport[] {
+  const decoder = new TextDecoder();
+  const text = (path: string) => {
+    const bytes = options.snapshots.get(path);
+    if (!bytes) {
+      throw new Error(`Missing Claude Code dependency snapshot: ${path}`);
+    }
+    return decoder.decode(bytes);
+  };
+  const indexDependency = options.candidate.dependencies.find((item) =>
+    item.artifactPath.endsWith("sessions-index.json")
+  );
+  const index = indexDependency
+    ? indexSchema.parse(JSON.parse(text(indexDependency.path))).entries.find(
+      (entry) => entry.sessionId === options.candidate.id.split("/").at(-1),
+    )
+    : undefined;
+  const transcripts = options.candidate.dependencies.filter((item) =>
+    item.artifactPath.endsWith(".jsonl")
+  );
+  const externalIDs = new Map<string, string>();
+  for (const transcript of transcripts) {
+    externalIDs.set(
+      transcript.artifactPath,
+      transcript.path === options.candidate.path
+        ? options.candidate.id
+        : `${options.candidate.id}::${transcript.artifactPath}`,
+    );
+  }
+
+  return transcripts.map((transcript) => {
+    const isRoot = transcript.path === options.candidate.path;
+    const records = readRecordsFromText(text(transcript.path), true);
+    const decoded = decodeRecords(records);
+    const rawID = isRoot
+      ? options.candidate.id
+      : transcript.artifactPath.split("/").at(-1)!.slice(6, -6);
+    const parentArtifactPath = isRoot
+      ? undefined
+      : transcript.artifactPath.replace(
+        /\/subagents\/agent-[^/]+\.jsonl$/,
+        ".jsonl",
+      );
+    const metaPath = transcript.path.slice(0, -6) + ".meta.json";
+    const metaDependency = options.candidate.dependencies.find((item) =>
+      item.path === metaPath
+    );
+    const meta = metaDependency
+      ? agentMetaSchema.parse(JSON.parse(text(metaPath)))
+      : undefined;
+    for (const turn of decoded.turns) {
+      for (const call of turn.calls) {
+        for (const tool of call.activity.tools) {
+          const rawChild = (tool as SessionToolImport & {
+            childSessionID?: string;
+          }).childSessionID;
+          delete (tool as SessionToolImport & { childSessionID?: string })
+            .childSessionID;
+          if (rawChild) {
+            const child = transcripts.find((item) =>
+              item.artifactPath.startsWith(
+                transcript.artifactPath.slice(0, -6) + "/subagents/",
+              ) && item.artifactPath.endsWith(`/agent-${rawChild}.jsonl`)
+            );
+            if (child) {
+              tool.childExternalID = externalIDs.get(child.artifactPath);
+            }
+          }
+        }
+      }
+    }
+    const transcriptUpdatedAt = [...records].reverse().find((record) =>
+      record.timestamp && Number.isFinite(Date.parse(record.timestamp))
+    )?.timestamp;
+    const bounds = sessionBounds(decoded.turns);
+    const externalID = externalIDs.get(transcript.artifactPath)!;
+    return {
+      sourceID: options.sourceID,
+      externalID,
+      publicID: rawID,
+      parentExternalID: parentArtifactPath === undefined
+        ? undefined
+        : externalIDs.get(parentArtifactPath),
+      artifactPath: transcript.artifactPath,
+      observedAt: options.observedAt,
+      checkpoint: options.checkpoint,
+      session: {
+        title: normalizedTitle(
+          records,
+          rawID,
+          isRoot ? index : undefined,
+          meta?.description,
+        ),
+        agent: meta?.agentType,
+        updatedAt: transcriptUpdatedAt
+          ? Date.parse(transcriptUpdatedAt)
+          : transcript.updatedAt,
+        startedAt: bounds.startedAt,
+        endedAt: bounds.endedAt,
+        providers: [...decoded.providers],
+        models: [...decoded.models],
+        userTurns: decoded.turns.length,
+        modelCalls: decoded.turns.reduce(
+          (sum, turn) => sum + turn.calls.length,
+          0,
+        ),
+        tokens: decoded.tokens,
+        turns: decoded.turns,
+      },
+    };
+  });
 }
 
 export class ClaudeCodeRepository {
@@ -353,7 +711,10 @@ export class ClaudeCodeRepository {
       record.aiTitle
     )?.aiTitle;
     const firstPrompt = records.find((record) => startsTurn(record, false));
-    const promptTitle = userText(firstPrompt ?? { type: "" })?.replace(/\s+/g, " ")
+    const promptTitle = userText(firstPrompt ?? { type: "" })?.replace(
+      /\s+/g,
+      " ",
+    )
       .trim().slice(0, 100);
     const transcriptUpdatedAt = [...records].reverse().find((record) =>
       record.timestamp && Number.isFinite(Date.parse(record.timestamp))
@@ -366,7 +727,9 @@ export class ClaudeCodeRepository {
       id,
       harness: "claude-code",
       title,
-      updatedAt: transcriptUpdatedAt ? Date.parse(transcriptUpdatedAt) : updatedAt,
+      updatedAt: transcriptUpdatedAt
+        ? Date.parse(transcriptUpdatedAt)
+        : updatedAt,
       startedAt: bounds.startedAt,
       endedAt: bounds.endedAt,
       providers: [...decoded.providers],

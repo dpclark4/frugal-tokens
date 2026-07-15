@@ -1,6 +1,6 @@
 import { deepStrictEqual } from "node:assert/strict";
-import { ClaudeCodeRepository } from "../src/server/claudeCodeRepository.ts";
-import type { SessionDetail } from "../src/shared/sessionSchemas.ts";
+import { ClaudeCodeRepository } from "./claudeCodeRepository.ts";
+import type { SessionDetail } from "../shared/sessionSchemas.ts";
 
 function repository(files: Record<string, string>) {
   const directory = Deno.makeTempDirSync();
