@@ -8,6 +8,7 @@ import { computeModelCallCost, priceSessionDetail } from "./pricing.ts";
 import { analyzeSessionCache, summarizeSessionCache } from "./cacheAnalysis.ts";
 import type {
   SessionDetail,
+  SessionListResponse,
   SessionSummary,
 } from "../shared/sessionSchemas.ts";
 import type { UsageCall } from "./usage.ts";
@@ -257,17 +258,14 @@ app.get("/api/usage", (context) => {
   const usageCalls: UsageCall[] = [];
 
   const detailDurations = new Map<string, number>();
-  const sources = [
-    ["opencode", repository],
-    ["claude-code", claudeRepository],
-    ["pi", piRepository],
-    ["codex", codexRepository],
-  ] as const;
-  for (const [name, source] of sources) {
-    if (harness !== "all" && harness !== name) continue;
-    if (!source) continue;
+  if (archiveRepository) {
     const detailStartedAt = performance.now();
-    for (const call of source.listUsageCalls(start)) {
+    const calls = archiveRepository.listUsageCalls(
+      start,
+      harness === "all" ? undefined : harness as SessionSummary["harness"],
+    );
+    detailDurations.set("database", performance.now() - detailStartedAt);
+    for (const call of calls) {
       const pricedCall = {
         ...call,
         computedCost: call.computedCost ?? computeModelCallCost(
@@ -278,7 +276,30 @@ app.get("/api/usage", (context) => {
       };
       usageCalls.push(pricedCall);
     }
-    detailDurations.set(name, performance.now() - detailStartedAt);
+  } else {
+    const sources = [
+      ["opencode", repository],
+      ["claude-code", claudeRepository],
+      ["pi", piRepository],
+      ["codex", codexRepository],
+    ] as const;
+    for (const [name, source] of sources) {
+      if (harness !== "all" && harness !== name) continue;
+      if (!source) continue;
+      const detailStartedAt = performance.now();
+      for (const call of source.listUsageCalls(start)) {
+        const pricedCall = {
+          ...call,
+          computedCost: call.computedCost ?? computeModelCallCost(
+            call.tokens,
+            call.model,
+            call.startedAt,
+          ),
+        };
+        usageCalls.push(pricedCall);
+      }
+      detailDurations.set(name, performance.now() - detailStartedAt);
+    }
   }
 
   const subagentCoverage = harness === "pi" || harness === "codex"
@@ -310,6 +331,7 @@ app.get("/api/usage", (context) => {
 });
 
 app.get("/api/sessions", (context) => {
+  const requestStartedAt = performance.now();
   const page = Math.max(
     1,
     Number.parseInt(context.req.query("page") ?? "1", 10) || 1,
@@ -318,46 +340,66 @@ app.get("/api/sessions", (context) => {
     Number.parseInt(context.req.query("pageSize") ?? "10", 10) || 10;
   const pageSize = Math.min(100, Math.max(1, requestedPageSize));
   const harness = context.req.query("harness") ?? "all";
-  if (harness === "opencode") {
-    const result = listSessions(repository, page, pageSize);
-    return context.json({ ...result, items: priceSummaries(result.items) });
+  if (!["all", "opencode", "claude-code", "pi", "codex"].includes(harness)) {
+    return context.json({ error: "Invalid harness" }, 400);
   }
-  if (harness === "claude-code") {
-    const result = listSessions(claudeRepository, page, pageSize);
-    return context.json({ ...result, items: priceSummaries(result.items) });
-  }
-  if (harness === "pi") {
-    const result = listSessions(piRepository, page, pageSize);
-    return context.json({ ...result, items: priceSummaries(result.items) });
-  }
-  if (harness === "codex") {
-    const result = listSessions(codexRepository, page, pageSize);
-    return context.json({ ...result, items: priceSummaries(result.items) });
-  }
-  const openCode = listSessions(repository, 1, page * pageSize);
-  const claude = listSessions(claudeRepository, 1, page * pageSize);
-  const pi = listSessions(piRepository, 1, page * pageSize);
-  const codex = listSessions(codexRepository, 1, page * pageSize);
-  const totalItems = openCode.pagination.totalItems +
-    claude.pagination.totalItems + pi.pagination.totalItems +
-    codex.pagination.totalItems;
-  const items = [
-    ...openCode.items,
-    ...claude.items,
-    ...pi.items,
-    ...codex.items,
-  ]
-    .sort((a, b) => b.updatedAt - a.updatedAt || b.id.localeCompare(a.id))
-    .slice((page - 1) * pageSize, page * pageSize);
-  return context.json({
-    items: priceSummaries(items),
-    pagination: {
+  const queryStartedAt = performance.now();
+  let result: SessionListResponse;
+  if (archiveRepository) {
+    result = archiveRepository.listSessions(
       page,
       pageSize,
-      totalItems,
-      totalPages: Math.ceil(totalItems / pageSize),
-    },
-  });
+      harness === "all" ? undefined : harness as SessionSummary["harness"],
+    );
+  } else if (harness !== "all") {
+    result = listSessions(
+      repositoryForHarness(harness as SessionSummary["harness"]),
+      page,
+      pageSize,
+    );
+  } else {
+    const openCode = listSessions(repository, 1, page * pageSize);
+    const claude = listSessions(claudeRepository, 1, page * pageSize);
+    const pi = listSessions(piRepository, 1, page * pageSize);
+    const codex = listSessions(codexRepository, 1, page * pageSize);
+    const totalItems = openCode.pagination.totalItems +
+      claude.pagination.totalItems + pi.pagination.totalItems +
+      codex.pagination.totalItems;
+    result = {
+      items: [
+        ...openCode.items,
+        ...claude.items,
+        ...pi.items,
+        ...codex.items,
+      ].sort((a, b) => b.updatedAt - a.updatedAt || b.id.localeCompare(a.id))
+        .slice((page - 1) * pageSize, page * pageSize),
+      pagination: {
+        page,
+        pageSize,
+        totalItems,
+        totalPages: Math.ceil(totalItems / pageSize),
+      },
+    };
+  }
+  const queryDuration = performance.now() - queryStartedAt;
+  const enrichmentStartedAt = performance.now();
+  const items = priceSummaries(result.items);
+  const enrichmentDuration = performance.now() - enrichmentStartedAt;
+  const totalDuration = performance.now() - requestStartedAt;
+  context.header(
+    "Server-Timing",
+    `database;dur=${queryDuration.toFixed(1)}, enrichment;dur=${
+      enrichmentDuration.toFixed(1)
+    }, total;dur=${totalDuration.toFixed(1)}`,
+  );
+  console.info(
+    `[sessions] harness=${harness} page=${page} items=${items.length} database=${
+      queryDuration.toFixed(1)
+    }ms enrichment=${enrichmentDuration.toFixed(1)}ms total=${
+      totalDuration.toFixed(1)
+    }ms`,
+  );
+  return context.json({ ...result, items });
 });
 
 app.get("/api/sessions/:id", (context) => {

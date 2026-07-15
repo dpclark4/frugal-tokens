@@ -367,7 +367,7 @@ export class SessionRepository {
       JOIN sources so ON so.id = ss.source_id
       LEFT JOIN source_sessions parent ON parent.id = ss.parent_id
       WHERE ss.parent_id IS NULL${filter}
-      ORDER BY s.updated_at DESC, ss.id DESC
+      ORDER BY s.updated_at DESC, public_id DESC, so.harness DESC
       LIMIT ? OFFSET ?
     `).all(...parameters, pageSize, (page - 1) * pageSize) as SummaryRow[];
 

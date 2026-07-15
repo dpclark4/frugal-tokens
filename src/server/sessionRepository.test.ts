@@ -145,6 +145,38 @@ Deno.test("stores and reads canonical sessions atomically", () => {
       2,
     );
 
+    const codexSourceID = Number(
+      (db.prepare(`
+        INSERT INTO sources (harness, kind, label, location, created_at)
+        VALUES ('codex', 'directory', 'Codex', '/codex', 1)
+        RETURNING id
+      `).get() as { id: number }).id,
+    );
+    const codex = importedSession(codexSourceID, "codex");
+    codex.session.updatedAt = 100;
+    repository.replaceSourceSession(codex);
+    deepStrictEqual(
+      repository.listSessions(1, 1).items.map(({ harness, id }) => ({
+        harness,
+        id,
+      })),
+      [{ harness: "codex", id: "codex" }],
+    );
+    strictEqual(repository.listSessions(1, 1).pagination.totalItems, 2);
+    deepStrictEqual(
+      repository.listSessions(2, 1).items.map(({ harness, id }) => ({
+        harness,
+        id,
+      })),
+      [{ harness: "pi", id: "root" }],
+    );
+    strictEqual(repository.listSessions(1, 10, "pi").pagination.totalItems, 1);
+    deepStrictEqual(
+      [...new Set(repository.listUsageCalls().map((call) => call.harness))]
+        .sort(),
+      ["codex", "pi"],
+    );
+
     const invalid = importedSession(sourceID, "root");
     invalid.checkpoint.checksum = "must-roll-back";
     invalid.session.title = "must-roll-back";
