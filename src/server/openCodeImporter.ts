@@ -137,7 +137,10 @@ function snapshot(db: DatabaseSync, rootID: string): OpenCodeSnapshot {
   const sessionIDs = sessions.map((session) => session.id);
   const ids = placeholders(sessionIDs);
   const messages = db.prepare(`
-    SELECT id, session_id, time_created, time_updated, data
+    -- OpenCode can store enormous generated diffs in message.summary. The
+    -- archive does not use that field, so keep it out of V8 and the checksum.
+    SELECT id, session_id, time_created, time_updated,
+      json_remove(data, '$.summary') AS data
     FROM message WHERE session_id IN (${ids})
     ORDER BY session_id, time_created, id
   `).all(...sessionIDs) as OpenCodeMessageRow[];
