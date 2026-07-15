@@ -162,3 +162,100 @@ Deno.test("stores and reads canonical sessions atomically", () => {
     Deno.removeSync(directory, { recursive: true });
   }
 });
+
+Deno.test("atomically replaces trees with root-scoped public child IDs", () => {
+  const directory = Deno.makeTempDirSync();
+  const db = openArchiveDatabase(`${directory}/archive.sqlite`);
+  try {
+    migrateTestDatabase(db);
+    const sourceID = Number(
+      (db.prepare(`
+      INSERT INTO sources (harness, kind, label, location, created_at)
+      VALUES ('claude-code', 'directory', 'Claude', '/claude', 1)
+      RETURNING id
+    `).get() as { id: number }).id,
+    );
+    const repository = new SessionRepository(db);
+
+    const tree = (namespace: string): SourceSessionImport[] => {
+      const root = importedSession(sourceID, `${namespace}:root`);
+      root.publicID = namespace;
+      root.session.turns[0].calls[0].activity.tools.push({
+        name: "subagent",
+        status: "completed",
+        childExternalID: `${namespace}:child`,
+      });
+      const child = importedSession(
+        sourceID,
+        `${namespace}:child`,
+        `${namespace}:root`,
+      );
+      child.publicID = "child";
+      return [root, child];
+    };
+
+    repository.replaceSourceSessionTree(tree("root-a"));
+    repository.replaceSourceSessionTree(tree("root-b"));
+
+    deepStrictEqual(
+      repository.listSessions(1, 10, "claude-code").items.map(({ id }) => id)
+        .sort(),
+      ["root-a", "root-b"],
+    );
+    for (const rootID of ["root-a", "root-b"]) {
+      const detail = repository.getSession("claude-code", rootID)!;
+      strictEqual(detail.subagents[0].id, "child");
+      strictEqual(detail.subagents[0].parentID, rootID);
+      strictEqual(
+        detail.turns[0].calls[0].activity.tools[0].childSessionID,
+        "child",
+      );
+    }
+
+    const invalid = tree("root-a");
+    invalid[0].session.title = "must-roll-back";
+    invalid[0].checkpoint.checksum = "must-roll-back";
+    invalid[1].session.turns.push({ ...invalid[1].session.turns[0] });
+    throws(() => repository.replaceSourceSessionTree(invalid));
+    strictEqual(
+      repository.getSession("claude-code", "root-a")?.title,
+      "root-a:root",
+    );
+    strictEqual(
+      repository.getSession("claude-code", "root-a")?.subagents.length,
+      1,
+    );
+    strictEqual(
+      (db.prepare(`
+        SELECT checksum FROM source_sessions
+        WHERE source_id = ? AND external_id = 'root-a:root'
+      `).get(sourceID) as { checksum: string }).checksum,
+      "checksum-root-a:root",
+    );
+
+    const rootOnly = tree("root-a")[0];
+    rootOnly.session.turns[0].calls[0].activity.tools = [];
+    repository.replaceSourceSessionTree([rootOnly]);
+    strictEqual(
+      repository.getSession("claude-code", "root-a")?.subagents.length,
+      0,
+    );
+    strictEqual(
+      repository.getSession("claude-code", "root-b")?.subagents[0].id,
+      "child",
+    );
+    deepStrictEqual(
+      (db.prepare(`
+        SELECT external_id FROM source_sessions
+        WHERE source_id = ? AND public_id = 'child'
+        ORDER BY external_id
+      `).all(sourceID) as Array<{ external_id: string }>).map((row) =>
+        row.external_id
+      ),
+      ["root-b:child"],
+    );
+  } finally {
+    db.close();
+    Deno.removeSync(directory, { recursive: true });
+  }
+});

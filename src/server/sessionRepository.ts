@@ -58,6 +58,7 @@ export type SessionTurnImport = {
 export type SourceSessionImport = {
   sourceID: number;
   externalID: string;
+  publicID?: string;
   parentExternalID?: string;
   artifactPath?: string;
   observedAt: number;
@@ -87,6 +88,7 @@ export type SourceSessionImport = {
 type SummaryRow = {
   source_session_id: number;
   external_id: string;
+  public_id: string;
   harness: Harness;
   title: string;
   agent: string | null;
@@ -107,7 +109,7 @@ type SummaryRow = {
   output_tokens: number;
   reasoning_tokens: number;
   processed_tokens: number;
-  parent_external_id: string | null;
+  parent_public_id: string | null;
 };
 
 type CallRow = {
@@ -140,18 +142,19 @@ type ToolRow = {
   status: string;
   started_at: number | null;
   completed_at: number | null;
-  child_external_id: string | null;
+  child_public_id: string | null;
 };
 
 const summaryColumns = `
-  ss.id AS source_session_id, ss.external_id, so.harness,
+  ss.id AS source_session_id, ss.external_id,
+  COALESCE(ss.public_id, ss.external_id) AS public_id, so.harness,
   s.title, s.agent, s.updated_at, s.started_at, s.ended_at,
   s.providers_json, s.models_json, s.user_turns, s.model_calls,
   s.reported_cost, s.uncached_input_tokens, s.cache_read_tokens,
   s.cache_write_tokens, s.cache_write_5m_tokens,
   s.cache_write_1h_tokens, s.fresh_prompt_tokens, s.output_tokens,
   s.reasoning_tokens, s.processed_tokens,
-  parent.external_id AS parent_external_id
+  COALESCE(parent.public_id, parent.external_id) AS parent_public_id
 `;
 
 const callColumns = `
@@ -184,7 +187,7 @@ function tokens(row: SummaryRow | CallRow): TokenUsage {
 
 function summary(row: SummaryRow): SessionSummary {
   return {
-    id: row.external_id,
+    id: row.public_id,
     harness: row.harness,
     title: row.title,
     updatedAt: row.updated_at,
@@ -249,10 +252,10 @@ export class SessionRepository {
   ) {
     this.db.prepare(`
       INSERT INTO source_sessions (
-        source_id, external_id, artifact_path, availability, source_size,
+        source_id, external_id, public_id, artifact_path, availability, source_size,
         source_modified_at, checksum, parser_version, first_seen_at,
         last_seen_at, last_error
-      ) VALUES (?, ?, ?, 'available', ?, ?, ?, ?, ?, ?, NULL)
+      ) VALUES (?, ?, ?, ?, 'available', ?, ?, ?, ?, ?, ?, NULL)
       ON CONFLICT (source_id, external_id) DO UPDATE SET
         artifact_path = excluded.artifact_path,
         availability = 'available',
@@ -268,6 +271,7 @@ export class SessionRepository {
         last_error = NULL
     `).run(
       sourceID,
+      externalID,
       externalID,
       artifactPath,
       checkpoint?.sourceSize ?? null,
@@ -288,9 +292,9 @@ export class SessionRepository {
   ) {
     this.db.prepare(`
       INSERT INTO source_sessions (
-        source_id, external_id, artifact_path, availability, first_seen_at,
+        source_id, external_id, public_id, artifact_path, availability, first_seen_at,
         last_seen_at, last_error
-      ) VALUES (?, ?, ?, 'available', ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, 'available', ?, ?, ?)
       ON CONFLICT (source_id, external_id) DO UPDATE SET
         artifact_path = excluded.artifact_path,
         availability = 'available',
@@ -298,6 +302,7 @@ export class SessionRepository {
         last_error = excluded.last_error
     `).run(
       sourceID,
+      externalID,
       externalID,
       artifactPath,
       observedAt,
@@ -364,7 +369,8 @@ export class SessionRepository {
       JOIN source_sessions ss ON ss.id = s.source_session_id
       JOIN sources so ON so.id = ss.source_id
       LEFT JOIN source_sessions parent ON parent.id = ss.parent_id
-      WHERE so.harness = ? AND ss.external_id = ?
+       WHERE so.harness = ? AND ss.parent_id IS NULL
+         AND COALESCE(ss.public_id, ss.external_id) = ?
       ORDER BY ss.id
       LIMIT 1
     `).get(harness, id) as SummaryRow | undefined;
@@ -376,8 +382,9 @@ export class SessionRepository {
     type UsageRow = CallRow & {
       harness: Harness;
       external_id: string;
-      root_external_id: string;
-      parent_external_id: string | null;
+      public_id: string;
+      root_public_id: string;
+      parent_public_id: string | null;
       root_started_at: number | null;
       root_updated_at: number;
     };
@@ -394,8 +401,9 @@ export class SessionRepository {
         JOIN session_tree ON session_tree.id = child.parent_id
       )
       SELECT ${callColumns}, so.harness, ss.external_id,
-        root.external_id AS root_external_id,
-        parent.external_id AS parent_external_id,
+        COALESCE(ss.public_id, ss.external_id) AS public_id,
+        COALESCE(root.public_id, root.external_id) AS root_public_id,
+        COALESCE(parent.public_id, parent.external_id) AS parent_public_id,
         root_session.started_at AS root_started_at,
         root_session.updated_at AS root_updated_at
       FROM model_calls mc
@@ -421,9 +429,9 @@ export class SessionRepository {
     return rows.map((row) => ({
       harness: row.harness,
       session: {
-        id: row.external_id,
-        rootID: row.root_external_id,
-        parentID: optional(row.parent_external_id),
+        id: row.public_id,
+        rootID: row.root_public_id,
+        parentID: optional(row.parent_public_id),
       },
       cacheChainID: row.external_id,
       sessionStartedAt: row.root_started_at ?? row.root_updated_at,
@@ -438,37 +446,135 @@ export class SessionRepository {
   replaceSourceSession(value: SourceSessionImport): void {
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      const parentID = value.parentExternalID === undefined
-        ? null
-        : this.#sourceSessionID(value.sourceID, value.parentExternalID);
-      const sourceSessionID = Number(
-        (this.db.prepare(`
+      this.#replaceSourceSession(value, null);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  replaceSourceSessionTree(values: SourceSessionImport[]): void {
+    if (values.length === 0) {
+      throw new Error("A source session tree must not be empty");
+    }
+    const sourceID = values[0].sourceID;
+    const externalIDs = new Set(values.map((value) => value.externalID));
+    if (externalIDs.size !== values.length) {
+      throw new Error("A source session tree must have unique external IDs");
+    }
+    if (values.some((value) => value.sourceID !== sourceID)) {
+      throw new Error("A source session tree must belong to one source");
+    }
+    const roots = values.filter((value) =>
+      value.parentExternalID === undefined
+    );
+    if (roots.length !== 1) {
+      throw new Error("A source session tree must have exactly one root");
+    }
+    for (const value of values) {
+      if (
+        value.parentExternalID !== undefined &&
+        !externalIDs.has(value.parentExternalID)
+      ) {
+        throw new Error(`Unknown tree parent: ${value.parentExternalID}`);
+      }
+    }
+
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const upsertIdentity = this.db.prepare(`
         INSERT INTO source_sessions (
-          source_id, external_id, parent_id, artifact_path, availability,
+          source_id, external_id, public_id, artifact_path, availability,
           first_seen_at, last_seen_at
         ) VALUES (?, ?, ?, ?, 'available', ?, ?)
         ON CONFLICT (source_id, external_id) DO UPDATE SET
+          public_id = excluded.public_id,
+          artifact_path = excluded.artifact_path,
+          availability = 'available',
+          last_seen_at = excluded.last_seen_at
+      `);
+      for (const value of values) {
+        upsertIdentity.run(
+          value.sourceID,
+          value.externalID,
+          value.publicID ?? value.externalID,
+          value.artifactPath ?? null,
+          value.observedAt,
+          value.observedAt,
+        );
+      }
+
+      const rootID = this.#sourceSessionID(sourceID, roots[0].externalID);
+      for (const value of values) {
+        const parentID = value.parentExternalID === undefined
+          ? null
+          : this.#sourceSessionID(sourceID, value.parentExternalID);
+        this.db.prepare(`
+          UPDATE source_sessions SET parent_id = ?, tree_root_id = ?
+          WHERE source_id = ? AND external_id = ?
+        `).run(parentID, rootID, sourceID, value.externalID);
+      }
+
+      for (const value of values) {
+        this.#replaceSourceSession(value, rootID);
+      }
+
+      const currentIDs = values.map((value) =>
+        this.#sourceSessionID(sourceID, value.externalID)
+      );
+      this.db.prepare(`
+        DELETE FROM source_sessions
+        WHERE tree_root_id = ? AND id NOT IN (${
+        currentIDs.map(() => "?").join(",")
+      })
+      `).run(rootID, ...currentIDs);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  #replaceSourceSession(
+    value: SourceSessionImport,
+    treeRootID: number | null,
+  ): void {
+    const parentID = value.parentExternalID === undefined
+      ? null
+      : this.#sourceSessionID(value.sourceID, value.parentExternalID);
+    const sourceSessionID = Number(
+      (this.db.prepare(`
+        INSERT INTO source_sessions (
+          source_id, external_id, public_id, parent_id, tree_root_id,
+          artifact_path, availability, first_seen_at, last_seen_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 'available', ?, ?)
+        ON CONFLICT (source_id, external_id) DO UPDATE SET
+          public_id = excluded.public_id,
           parent_id = excluded.parent_id,
+          tree_root_id = excluded.tree_root_id,
           artifact_path = excluded.artifact_path,
           availability = 'available',
           last_seen_at = excluded.last_seen_at
         RETURNING id
       `).get(
-            value.sourceID,
-            value.externalID,
-            parentID,
-            value.artifactPath ?? null,
-            value.observedAt,
-            value.observedAt,
-          ) as { id: number }).id,
-      );
+        value.sourceID,
+        value.externalID,
+        value.publicID ?? value.externalID,
+        parentID,
+        treeRootID,
+        value.artifactPath ?? null,
+        value.observedAt,
+        value.observedAt,
+      ) as { id: number }).id,
+    );
 
-      this.db.prepare("DELETE FROM sessions WHERE source_session_id = ?").run(
-        sourceSessionID,
-      );
-      const session = value.session;
-      const tokenValues = this.#tokenValues(session.tokens);
-      this.db.prepare(`
+    this.db.prepare("DELETE FROM sessions WHERE source_session_id = ?").run(
+      sourceSessionID,
+    );
+    const session = value.session;
+    const tokenValues = this.#tokenValues(session.tokens);
+    this.db.prepare(`
         INSERT INTO sessions (
           source_session_id, title, agent, updated_at, started_at, ended_at,
           providers_json, models_json, user_turns, model_calls, reported_cost,
@@ -477,39 +583,39 @@ export class SessionRepository {
           output_tokens, reasoning_tokens, processed_tokens
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        sourceSessionID,
-        session.title,
-        session.agent ?? null,
-        session.updatedAt,
-        session.startedAt ?? null,
-        session.endedAt ?? null,
-        JSON.stringify(session.providers),
-        JSON.stringify(session.models),
-        session.userTurns,
-        session.modelCalls,
-        session.reportedCost ?? null,
-        ...tokenValues,
-      );
+      sourceSessionID,
+      session.title,
+      session.agent ?? null,
+      session.updatedAt,
+      session.startedAt ?? null,
+      session.endedAt ?? null,
+      JSON.stringify(session.providers),
+      JSON.stringify(session.models),
+      session.userTurns,
+      session.modelCalls,
+      session.reportedCost ?? null,
+      ...tokenValues,
+    );
 
-      for (const turn of session.turns) {
-        const turnID = Number(
-          (this.db.prepare(`
+    for (const turn of session.turns) {
+      const turnID = Number(
+        (this.db.prepare(`
           INSERT INTO turns (session_id, ordinal, started_at)
           VALUES (?, ?, ?) RETURNING id
         `).get(sourceSessionID, turn.number, turn.startedAt) as { id: number })
-            .id,
-        );
-        this.#insertContent(
-          "turn_inputs",
-          "turn_id",
-          turnID,
-          turn.inputs ?? [],
-        );
+          .id,
+      );
+      this.#insertContent(
+        "turn_inputs",
+        "turn_id",
+        turnID,
+        turn.inputs ?? [],
+      );
 
-        for (const call of turn.calls) {
-          const modelID = this.#modelID(call.provider, call.model);
-          const callID = Number(
-            (this.db.prepare(`
+      for (const call of turn.calls) {
+        const modelID = this.#modelID(call.provider, call.model);
+        const callID = Number(
+          (this.db.prepare(`
             INSERT INTO model_calls (
               turn_id, source_call_id, ordinal, model_id, started_at,
               completed_at, reported_cost, uncached_input_tokens,
@@ -520,31 +626,31 @@ export class SessionRepository {
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             RETURNING id
           `).get(
-                turnID,
-                call.id,
-                call.callWithinTurn,
-                modelID,
-                call.startedAt,
-                call.completedAt ?? null,
-                call.reportedCost ?? null,
-                ...this.#tokenValues(call.tokens),
-                call.activity.finishReason ?? null,
-                call.activity.images ?? null,
-                Number(call.activity.hasText),
-                Number(call.activity.hasReasoning),
-              ) as { id: number }).id,
-          );
-          this.#insertContent(
-            "call_content",
-            "model_call_id",
-            callID,
-            call.content ?? [],
-          );
-          call.activity.tools.forEach((tool, index) => {
-            const childID = tool.childExternalID === undefined
-              ? null
-              : this.#sourceSessionID(value.sourceID, tool.childExternalID);
-            this.db.prepare(`
+            turnID,
+            call.id,
+            call.callWithinTurn,
+            modelID,
+            call.startedAt,
+            call.completedAt ?? null,
+            call.reportedCost ?? null,
+            ...this.#tokenValues(call.tokens),
+            call.activity.finishReason ?? null,
+            call.activity.images ?? null,
+            Number(call.activity.hasText),
+            Number(call.activity.hasReasoning),
+          ) as { id: number }).id,
+        );
+        this.#insertContent(
+          "call_content",
+          "model_call_id",
+          callID,
+          call.content ?? [],
+        );
+        call.activity.tools.forEach((tool, index) => {
+          const childID = tool.childExternalID === undefined
+            ? null
+            : this.#sourceSessionID(value.sourceID, tool.childExternalID);
+          this.db.prepare(`
               INSERT INTO tool_events (
                 model_call_id, source_tool_id, ordinal, name, status,
                 started_at, completed_at, child_source_session_id,
@@ -552,44 +658,39 @@ export class SessionRepository {
                 output_preview, output_original_length, output_truncated
               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `).run(
-              callID,
-              tool.sourceID ?? null,
-              index + 1,
-              tool.name,
-              tool.status,
-              tool.startedAt ?? null,
-              tool.completedAt ?? null,
-              childID,
-              tool.input?.preview ?? null,
-              tool.input?.originalLength ?? null,
-              Number(tool.input?.truncated ?? false),
-              tool.output?.preview ?? null,
-              tool.output?.originalLength ?? null,
-              Number(tool.output?.truncated ?? false),
-            );
-          });
-        }
+            callID,
+            tool.sourceID ?? null,
+            index + 1,
+            tool.name,
+            tool.status,
+            tool.startedAt ?? null,
+            tool.completedAt ?? null,
+            childID,
+            tool.input?.preview ?? null,
+            tool.input?.originalLength ?? null,
+            Number(tool.input?.truncated ?? false),
+            tool.output?.preview ?? null,
+            tool.output?.originalLength ?? null,
+            Number(tool.output?.truncated ?? false),
+          );
+        });
       }
+    }
 
-      const checkpoint = value.checkpoint;
-      this.db.prepare(`
+    const checkpoint = value.checkpoint;
+    this.db.prepare(`
         UPDATE source_sessions SET
           source_size = ?, source_modified_at = ?, checksum = ?,
           parser_version = ?, imported_at = ?, last_error = NULL
         WHERE id = ?
       `).run(
-        checkpoint.sourceSize ?? null,
-        checkpoint.sourceModifiedAt ?? null,
-        checkpoint.checksum ?? null,
-        checkpoint.parserVersion ?? null,
-        checkpoint.importedAt ?? Date.now(),
-        sourceSessionID,
-      );
-      this.db.exec("COMMIT");
-    } catch (error) {
-      this.db.exec("ROLLBACK");
-      throw error;
-    }
+      checkpoint.sourceSize ?? null,
+      checkpoint.sourceModifiedAt ?? null,
+      checkpoint.checksum ?? null,
+      checkpoint.parserVersion ?? null,
+      checkpoint.importedAt ?? Date.now(),
+      sourceSessionID,
+    );
   }
 
   #detail(row: SummaryRow, visited: Set<number>): SessionDetail {
@@ -597,7 +698,7 @@ export class SessionRepository {
     if (visited.has(row.source_session_id)) {
       return {
         ...base,
-        parentID: optional(row.parent_external_id),
+        parentID: optional(row.parent_public_id),
         turns: [],
         subagents: [],
       };
@@ -619,7 +720,8 @@ export class SessionRepository {
       `).all(turn.id) as CallRow[];
       const tools = calls.length === 0 ? [] : this.db.prepare(`
         SELECT te.model_call_id, te.name, te.status, te.started_at,
-          te.completed_at, child.external_id AS child_external_id
+          te.completed_at,
+          COALESCE(child.public_id, child.external_id) AS child_public_id
         FROM tool_events te
         LEFT JOIN source_sessions child ON child.id = te.child_source_session_id
         WHERE te.model_call_id IN (${calls.map(() => "?").join(",")})
@@ -648,7 +750,7 @@ export class SessionRepository {
               status: tool.status,
               startedAt: optional(tool.started_at),
               completedAt: optional(tool.completed_at),
-              childSessionID: optional(tool.child_external_id),
+              childSessionID: optional(tool.child_public_id),
             })),
           },
         })),
@@ -666,7 +768,7 @@ export class SessionRepository {
 
     return {
       ...base,
-      parentID: optional(row.parent_external_id),
+      parentID: optional(row.parent_public_id),
       agent: optional(row.agent),
       turns,
       subagents: children.map((child) => this.#detail(child, nextVisited)),

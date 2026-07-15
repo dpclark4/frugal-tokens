@@ -16,6 +16,7 @@ import { openArchiveDatabase, sqlitePath } from "./database.ts";
 import { SessionRepository } from "./sessionRepository.ts";
 import { syncPiSessions } from "./piImporter.ts";
 import { syncCodexSessions } from "./codexImporter.ts";
+import { syncClaudeCodeSessions } from "./claudeCodeImporter.ts";
 
 function configuredPath<T>(
   harness: string,
@@ -50,11 +51,11 @@ const repository = configuredPath(
   "file",
   (path) => new OpenCodeRepository(path),
 );
-const claudeRepository = configuredPath(
+const claudeDirectory = configuredPath(
   "claude-code",
   "CLAUDE_CODE_PROJECT_PATH",
   "directory",
-  (path) => new ClaudeCodeRepository(path),
+  (path) => path,
 );
 const piDirectory = configuredPath(
   "pi",
@@ -75,6 +76,15 @@ const archiveDatabase = archiveURL
 const archiveRepository = archiveDatabase
   ? new SessionRepository(archiveDatabase)
   : undefined;
+if (archiveRepository && claudeDirectory) {
+  const result = await syncClaudeCodeSessions(
+    claudeDirectory,
+    archiveRepository,
+  );
+  console.info(
+    `[sync] harness=claude-code discovered=${result.discovered} imported=${result.imported} skipped=${result.skipped} failed=${result.failed}`,
+  );
+}
 if (archiveRepository && piDirectory) {
   const result = await syncPiSessions(piDirectory, archiveRepository);
   console.info(
@@ -87,6 +97,17 @@ if (archiveRepository && codexDirectory) {
     `[sync] harness=codex discovered=${result.discovered} imported=${result.imported} skipped=${result.skipped} failed=${result.failed}`,
   );
 }
+const claudeRepository = archiveRepository
+  ? {
+    listSessions: (page: number, pageSize: number) =>
+      archiveRepository.listSessions(page, pageSize, "claude-code"),
+    getSession: (id: string) => archiveRepository.getSession("claude-code", id),
+    listUsageCalls: (startedAt?: number) =>
+      archiveRepository.listUsageCalls(startedAt, "claude-code"),
+  }
+  : claudeDirectory
+  ? new ClaudeCodeRepository(claudeDirectory)
+  : undefined;
 const piRepository = archiveRepository
   ? {
     listSessions: (page: number, pageSize: number) =>
