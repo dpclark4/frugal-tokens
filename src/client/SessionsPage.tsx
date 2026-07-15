@@ -840,7 +840,11 @@ function CallTable({
             const secondaryMechanics = call.preview || target ? mechanics : "";
             return (
               <Fragment key={call.id}>
-                <tr className={expanded ? "row-open" : undefined}>
+                <tr
+                  className={`call-row${expanded ? " row-open" : ""}`}
+                  onClick={() =>
+                    setExpandedCallID(expanded ? undefined : call.id)}
+                >
                   <td>{call.callWithinTurn}</td>
                   <td title={fullTimestamp.format(call.startedAt)}>
                     {timeOnly.format(call.startedAt)}
@@ -853,8 +857,6 @@ function CallTable({
                       type="button"
                       className="activity-button"
                       aria-expanded={expanded}
-                      onClick={() =>
-                        setExpandedCallID(expanded ? undefined : call.id)}
                     >
                       <span className="activity-summary-line">
                         <span title={call.preview}>{outcome}</span>
@@ -1114,13 +1116,15 @@ function SessionBreakdown({
                 nestedMetrics.cacheRead + nestedMetrics.cacheWrite;
               return (
                 <Fragment key={turn.number}>
-                  <tr className={`turn-row${open ? " row-open" : ""}`}>
+                  <tr
+                    className={`turn-row${open ? " row-open" : ""}`}
+                    onClick={() => toggleTurn(turn.number)}
+                  >
                     <td className="turn-label">
                       <span className="turn-label-line">
                         <button
                           type="button"
                           className="turn-expand"
-                          onClick={() => toggleTurn(turn.number)}
                           aria-expanded={open}
                           aria-label={`${
                             open ? "Collapse" : "Expand"
@@ -1380,18 +1384,18 @@ export function SessionsPage() {
                     );
                     return (
                       <Fragment key={session.id}>
-                        <tr
-                          className={`session-row${
-                            expanded ? " row-open" : ""
-                          }`}
-                        >
+                         <tr
+                           className={`session-row${
+                             expanded ? " row-open" : ""
+                           }`}
+                           onClick={() => toggleSession(session.id)}
+                         >
                           <td className="session-cell">
                             <div className="session-identity">
                               <button
-                                type="button"
-                                className="session-expand"
-                                onClick={() => toggleSession(session.id)}
-                                aria-expanded={expanded}
+                                 type="button"
+                                 className="session-expand"
+                                 aria-expanded={expanded}
                                 aria-label={`${
                                   expanded ? "Collapse" : "Expand"
                                 } ${session.title}`}

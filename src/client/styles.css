@@ -543,6 +543,7 @@ table.data-table {
 
 .session-row {
   transition: background .12s ease;
+  cursor: pointer;
 }
 
 .session-row:hover {
@@ -867,8 +868,10 @@ table.data-table {
   vertical-align: top;
 }
 
-.turn-row {
+.turn-row,
+.call-row {
   transition: background .12s ease;
+  cursor: pointer;
 }
 
 .turn-row:hover {
