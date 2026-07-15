@@ -1,6 +1,6 @@
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { OpenCodeRepository } from "../src/server/opencodeRepository.ts";
+import { OpenCodeRepository } from "./opencodeRepository.ts";
 
 Deno.test("removes empty turns without dropping reported cost", () => {
   const path = Deno.makeTempFileSync({ suffix: ".db" });

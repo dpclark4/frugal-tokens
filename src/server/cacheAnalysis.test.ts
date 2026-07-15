@@ -4,12 +4,12 @@ import {
   assessCache,
   summarizeSessionCache,
   summarizeTurnCache,
-} from "../src/server/cacheAnalysis.ts";
+} from "./cacheAnalysis.ts";
 import type {
   ModelCall,
   SessionDetail,
   TokenUsage,
-} from "../src/shared/sessionSchemas.ts";
+} from "../shared/sessionSchemas.ts";
 
 function tokens(cacheRead: number, cacheWrite?: number): TokenUsage {
   return {

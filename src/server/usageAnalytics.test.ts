@@ -1,6 +1,6 @@
 import { deepStrictEqual } from "node:assert/strict";
-import { aggregateUsage } from "../src/server/usageAnalytics.ts";
-import type { UsageCall } from "../src/server/usage.ts";
+import { aggregateUsage } from "./usageAnalytics.ts";
+import type { UsageCall } from "./usage.ts";
 
 function usageCall(
   session: string,

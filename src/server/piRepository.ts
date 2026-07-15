@@ -1,12 +1,19 @@
 import { z } from "zod";
 import {
-  type ModelCall,
   sessionDetailSchema,
   sessionListResponseSchema,
   type SessionSummary,
   type TokenUsage,
 } from "../shared/sessionSchemas.ts";
 import { usageCallsFromSession } from "./usage.ts";
+import type {
+  SessionCallImport,
+  SessionContentImport,
+  SessionToolImport,
+  SessionTurnImport,
+} from "./sessionRepository.ts";
+
+const contentPreviewLimit = 512;
 
 const contentBlockSchema = z.object({
   type: z.string(),
@@ -15,6 +22,9 @@ const contentBlockSchema = z.object({
   id: z.string().optional(),
   name: z.string().optional(),
   isError: z.boolean().optional(),
+  mime: z.string().optional(),
+  mediaType: z.string().optional(),
+  arguments: z.unknown().optional(),
 }).passthrough();
 
 const recordSchema = z.object({
@@ -49,10 +59,12 @@ const recordSchema = z.object({
 }).passthrough();
 
 type Record = z.infer<typeof recordSchema>;
-type FileEntry = {
+export type PiSessionCandidate = {
   id: string;
   path: string;
+  artifactPath: string;
   updatedAt: number;
+  size: number;
 };
 
 const emptyTokens = (): TokenUsage => ({
@@ -85,18 +97,63 @@ function addTokens(total: TokenUsage, usage: TokenUsage) {
   }
 }
 
-function readRecords(path: string) {
+function readRecordsFromText(text: string, strict = false) {
   const records: Record[] = [];
-  for (const line of Deno.readTextFileSync(path).split("\n")) {
+  for (const line of text.split("\n")) {
     if (!line) continue;
     try {
       const result = recordSchema.safeParse(JSON.parse(line));
       if (result.success) records.push(result.data);
-    } catch {
+      else if (strict) throw result.error;
+    } catch (error) {
+      if (strict) throw error;
       // A partially written final line should not hide the rest of the session.
     }
   }
   return records;
+}
+
+function readRecords(path: string) {
+  return readRecordsFromText(Deno.readTextFileSync(path));
+}
+
+function preview(value: string): SessionContentImport {
+  return {
+    kind: "text",
+    preview: value.slice(0, contentPreviewLimit),
+    originalLength: value.length,
+    truncated: value.length > contentPreviewLimit,
+  };
+}
+
+function contentMetadata(
+  blocks: z.infer<typeof contentBlockSchema>[],
+  includeReasoning = false,
+): SessionContentImport[] {
+  return blocks.flatMap((block) => {
+    if (block.type === "text" && block.text !== undefined) {
+      return [preview(block.text)];
+    }
+    if (block.type === "thinking") {
+      return includeReasoning ? [{ kind: "reasoning" }] : [];
+    }
+    if (block.type === "image" || block.type === "input_image") {
+      return [{ kind: "image", mimeType: block.mime ?? block.mediaType }];
+    }
+    return [];
+  });
+}
+
+function serializedPreview(value: unknown) {
+  if (value === undefined) return undefined;
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  if (text === undefined) return undefined;
+  const metadata = preview(text);
+  return {
+    preview: metadata.preview,
+    originalLength: metadata.originalLength,
+    truncated: metadata.truncated,
+  };
 }
 
 function userText(record: Record) {
@@ -105,9 +162,10 @@ function userText(record: Record) {
 
 function userImages(record: Record) {
   const content = record.message?.content ?? [];
-  const blocks = content.filter((block) =>
-    block.type === "image" || block.type === "input_image"
-  ).length;
+  const blocks =
+    content.filter((block) =>
+      block.type === "image" || block.type === "input_image"
+    ).length;
   if (blocks > 0) return blocks;
   // Pi may persist a clipboard attachment as its temporary image path in a
   // text block rather than as an image content block.
@@ -125,7 +183,12 @@ function basename(path: string | undefined) {
 }
 
 function sessionBounds(
-  turns: Array<{ startedAt: number; calls: Array<{ startedAt: number; completedAt?: number }> }>,
+  turns: Array<
+    {
+      startedAt: number;
+      calls: Array<{ startedAt: number; completedAt?: number }>;
+    }
+  >,
 ) {
   if (turns.length === 0) return {};
   const startedAt = Math.min(...turns.map((turn) => turn.startedAt));
@@ -139,16 +202,11 @@ function sessionBounds(
 }
 
 function decodeRecords(records: Record[]) {
-  const turns: Array<
-    { number: number; startedAt: number; calls: ModelCall[]; images?: number }
-  > = [];
+  const turns: Array<SessionTurnImport & { images?: number }> = [];
   const tokens = emptyTokens();
   const providers = new Set<string>();
   const models = new Set<string>();
-  const tools = new Map<
-    string,
-    ModelCall["activity"]["tools"][number]
-  >();
+  const tools = new Map<string, SessionToolImport>();
   let reportedCost = 0;
 
   for (const record of records) {
@@ -163,6 +221,7 @@ function decodeRecords(records: Record[]) {
           number: turns.length + 1,
           startedAt: timestamp,
           calls: [],
+          inputs: contentMetadata(record.message?.content ?? []),
           images: userImages(record),
         });
       }
@@ -175,6 +234,12 @@ function decodeRecords(records: Record[]) {
       if (!tool) continue;
       tool.status = message.isError ? "error" : "completed";
       tool.completedAt = timestamp;
+      tool.output = serializedPreview(
+        message.content?.map((block) => block.text ?? block.thinking).filter(
+          Boolean,
+        )
+          .join("\n"),
+      );
       continue;
     }
 
@@ -207,7 +272,7 @@ function decodeRecords(records: Record[]) {
     const turn = turns.at(-1)!;
     const provider = message.provider ?? "unknown";
     const model = message.model ?? "unknown";
-    const call: ModelCall = {
+    const call: SessionCallImport = {
       id: record.id ?? `${turn.number}-${turn.calls.length + 1}`,
       callWithinTurn: turn.calls.length + 1,
       provider,
@@ -225,6 +290,7 @@ function decodeRecords(records: Record[]) {
         hasReasoning: source.reasoning > 0,
         tools: [],
       },
+      content: contentMetadata(message.content ?? [], true),
     };
 
     for (const block of message.content ?? []) {
@@ -232,9 +298,11 @@ function decodeRecords(records: Record[]) {
       if (block.type === "thinking") call.activity.hasReasoning = true;
       if (block.type === "toolCall" && block.id && block.name) {
         const tool = {
+          sourceID: block.id,
           name: block.name,
           status: "pending",
           startedAt: timestamp,
+          input: serializedPreview(block.arguments),
         };
         call.activity.tools.push(tool);
         tools.set(block.id, tool);
@@ -259,23 +327,7 @@ export class PiRepository {
   constructor(private directory: string) {}
 
   #files() {
-    const files: FileEntry[] = [];
-    for (const project of Deno.readDirSync(this.directory)) {
-      if (!project.isDirectory) continue;
-      const projectPath = `${this.directory}/${project.name}`;
-      for (const entry of Deno.readDirSync(projectPath)) {
-        if (!entry.isFile || !entry.name.endsWith(".jsonl")) continue;
-        const path = `${projectPath}/${entry.name}`;
-        files.push({
-          id: `${project.name}/${entry.name.slice(0, -6)}`,
-          path,
-          updatedAt: Deno.statSync(path).mtime?.getTime() ?? 0,
-        });
-      }
-    }
-    return files.sort((a, b) =>
-      b.updatedAt - a.updatedAt || b.id.localeCompare(a.id)
-    );
+    return discoverPiSessions(this.directory);
   }
 
   listSessions(page: number, pageSize: number) {
@@ -310,48 +362,94 @@ export class PiRepository {
   }
 
   #summary(id: string, path: string, updatedAt: number): SessionSummary {
-    const records = readRecords(path);
-    const decoded = decodeRecords(records);
-    const header = records.find((record) => record.type === "session");
-    const firstPrompt = records.find((record) =>
-      record.type === "message" && record.message?.role === "user" &&
-      userText(record)?.trim()
-    );
-    const promptTitle = userText(firstPrompt ?? { type: "" })?.replace(/\s+/g, " ")
-      .trim().slice(0, 100);
-    const title = promptTitle ??
-      `Pi session ${basename(header?.cwd) ?? id.split("/").at(-1)?.slice(0, 8)}`;
-    const transcriptUpdatedAt = [...records].reverse().find((record) =>
-      record.timestamp && Number.isFinite(Date.parse(record.timestamp))
-    )?.timestamp;
-    const bounds = sessionBounds(decoded.turns);
-    return {
-      id,
-      harness: "pi",
-      title,
-      updatedAt: transcriptUpdatedAt ? Date.parse(transcriptUpdatedAt) : updatedAt,
-      startedAt: bounds.startedAt,
-      endedAt: bounds.endedAt,
-      providers: [...decoded.providers],
-      models: [...decoded.models],
-      userTurns: decoded.turns.length,
-      modelCalls: decoded.turns.reduce(
-        (sum, turn) => sum + turn.calls.length,
-        0,
-      ),
-      reportedCost: decoded.reportedCost,
-      tokens: decoded.tokens,
-    };
+    return piSession(readRecords(path), id, updatedAt).summary;
   }
 
-  #detail(file: FileEntry): unknown {
-    const records = readRecords(file.path);
-    const decoded = decodeRecords(records);
+  #detail(file: PiSessionCandidate): unknown {
+    const normalized = piSession(
+      readRecords(file.path),
+      file.id,
+      file.updatedAt,
+    );
     return {
-      ...this.#summary(file.id, file.path, file.updatedAt),
+      ...normalized.summary,
       parentID: undefined,
-      turns: decoded.turns,
+      turns: normalized.turns,
       subagents: [],
     };
   }
+}
+
+export function discoverPiSessions(directory: string) {
+  const files: PiSessionCandidate[] = [];
+  for (const project of Deno.readDirSync(directory)) {
+    if (!project.isDirectory) continue;
+    const projectPath = `${directory}/${project.name}`;
+    for (const entry of Deno.readDirSync(projectPath)) {
+      if (!entry.isFile || !entry.name.endsWith(".jsonl")) continue;
+      const path = `${projectPath}/${entry.name}`;
+      const stat = Deno.statSync(path);
+      files.push({
+        id: `${project.name}/${entry.name.slice(0, -6)}`,
+        path,
+        artifactPath: `${project.name}/${entry.name}`,
+        updatedAt: stat.mtime?.getTime() ?? 0,
+        size: stat.size,
+      });
+    }
+  }
+  return files.sort((a, b) =>
+    b.updatedAt - a.updatedAt || b.id.localeCompare(a.id)
+  );
+}
+
+function piSession(records: Record[], id: string, updatedAt: number) {
+  const decoded = decodeRecords(records);
+  const header = records.find((record) => record.type === "session");
+  const firstPrompt = records.find((record) =>
+    record.type === "message" && record.message?.role === "user" &&
+    userText(record)?.trim()
+  );
+  const promptTitle = userText(firstPrompt ?? { type: "" })?.replace(
+    /\s+/g,
+    " ",
+  )
+    .trim().slice(0, 100);
+  const title = promptTitle ??
+    `Pi session ${basename(header?.cwd) ?? id.split("/").at(-1)?.slice(0, 8)}`;
+  const transcriptUpdatedAt = [...records].reverse().find((record) =>
+    record.timestamp && Number.isFinite(Date.parse(record.timestamp))
+  )?.timestamp;
+  const bounds = sessionBounds(decoded.turns);
+  const summary: SessionSummary = {
+    id,
+    harness: "pi",
+    title,
+    updatedAt: transcriptUpdatedAt
+      ? Date.parse(transcriptUpdatedAt)
+      : updatedAt,
+    startedAt: bounds.startedAt,
+    endedAt: bounds.endedAt,
+    providers: [...decoded.providers],
+    models: [...decoded.models],
+    userTurns: decoded.turns.length,
+    modelCalls: decoded.turns.reduce(
+      (sum, turn) => sum + turn.calls.length,
+      0,
+    ),
+    reportedCost: decoded.reportedCost,
+    tokens: decoded.tokens,
+  };
+  return { summary, turns: decoded.turns };
+}
+
+export function normalizePiSession(
+  candidate: PiSessionCandidate,
+  text: string,
+) {
+  return piSession(
+    readRecordsFromText(text, true),
+    candidate.id,
+    candidate.updatedAt,
+  );
 }

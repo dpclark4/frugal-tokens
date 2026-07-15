@@ -1,12 +1,19 @@
 import { z } from "zod";
 import {
-  type ModelCall,
   sessionDetailSchema,
   sessionListResponseSchema,
   type SessionSummary,
   type TokenUsage,
 } from "../shared/sessionSchemas.ts";
 import { usageCallsFromSession } from "./usage.ts";
+import type {
+  SessionCallImport,
+  SessionContentImport,
+  SessionToolImport,
+  SessionTurnImport,
+} from "./sessionRepository.ts";
+
+const contentPreviewLimit = 512;
 
 const contentBlockSchema = z.object({
   type: z.string(),
@@ -14,7 +21,7 @@ const contentBlockSchema = z.object({
 }).passthrough();
 
 const recordSchema = z.object({
-  type: z.string(),
+  type: z.string().optional(),
   timestamp: z.string().optional(),
   payload: z.object({
     type: z.string().optional(),
@@ -26,7 +33,7 @@ const recordSchema = z.object({
     output: z.unknown().optional(),
     call_id: z.string().optional(),
     id: z.string().optional(),
-    content: z.array(contentBlockSchema).optional(),
+    content: z.array(contentBlockSchema).nullable().optional(),
     info: z.object({
       last_token_usage: z.object({
         input_tokens: z.number().int().nonnegative().default(0),
@@ -34,15 +41,17 @@ const recordSchema = z.object({
         output_tokens: z.number().int().nonnegative().default(0),
         reasoning_output_tokens: z.number().int().nonnegative().default(0),
       }).optional(),
-    }).passthrough().optional(),
+    }).passthrough().nullable().optional(),
   }).passthrough().optional(),
 }).passthrough();
 
 type Record = z.infer<typeof recordSchema>;
-type FileEntry = {
+export type CodexSessionCandidate = {
   id: string;
   path: string;
+  artifactPath: string;
   updatedAt: number;
+  size: number;
 };
 
 const emptyTokens = (): TokenUsage => ({
@@ -66,18 +75,51 @@ function addTokens(total: TokenUsage, usage: TokenUsage) {
   total.processed += usage.processed;
 }
 
-function readRecords(path: string) {
+function readRecordsFromText(text: string, strict = false) {
   const records: Record[] = [];
-  for (const line of Deno.readTextFileSync(path).split("\n")) {
+  for (const line of text.split("\n")) {
     if (!line) continue;
     try {
       const result = recordSchema.safeParse(JSON.parse(line));
       if (result.success) records.push(result.data);
-    } catch {
+      else if (strict) throw result.error;
+    } catch (error) {
+      if (strict) throw error;
       // A partially written final line should not hide the rest of the session.
     }
   }
   return records;
+}
+
+function readRecords(path: string) {
+  return readRecordsFromText(Deno.readTextFileSync(path));
+}
+
+function preview(value: string): SessionContentImport {
+  return {
+    kind: "text",
+    preview: value.slice(0, contentPreviewLimit),
+    originalLength: value.length,
+    truncated: value.length > contentPreviewLimit,
+  };
+}
+
+function serializedPreview(value: unknown) {
+  if (value === undefined) return undefined;
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  if (text === undefined) return undefined;
+  const metadata = preview(text);
+  return {
+    preview: metadata.preview,
+    originalLength: metadata.originalLength,
+    truncated: metadata.truncated,
+  };
+}
+
+function messageContent(record: Record): SessionContentImport[] {
+  return (record.payload?.content ?? []).flatMap((block) =>
+    block.text === undefined ? [] : [preview(block.text)]
+  );
 }
 
 function timestamp(record: Record) {
@@ -107,13 +149,18 @@ function hasText(record: Record) {
   return payload?.type === "message" && payload.role === "assistant" &&
     (payload.phase === "final_answer" ||
       payload.content?.some((block) =>
-        (block.type === "output_text" || block.type === "text") &&
-        block.text?.trim()
-      ) === true);
+          (block.type === "output_text" || block.type === "text") &&
+          block.text?.trim()
+        ) === true);
 }
 
 function sessionBounds(
-  turns: Array<{ startedAt: number; calls: Array<{ startedAt: number; completedAt?: number }> }>,
+  turns: Array<
+    {
+      startedAt: number;
+      calls: Array<{ startedAt: number; completedAt?: number }>;
+    }
+  >,
 ) {
   if (turns.length === 0) return {};
   const startedAt = Math.min(...turns.map((turn) => turn.startedAt));
@@ -127,18 +174,15 @@ function sessionBounds(
 }
 
 function decodeRecords(records: Record[]) {
-  const turns: Array<
-    { number: number; startedAt: number; calls: ModelCall[] }
-  > = [];
+  const turns: SessionTurnImport[] = [];
   const tokens = emptyTokens();
   const providers = new Set<string>();
   const models = new Set<string>();
-  const tools = new Map<string, ModelCall["activity"]["tools"][number]>();
+  const tools = new Map<string, SessionToolImport>();
   let currentModel = "unknown";
   let pendingHasText = false;
-  let pendingTools: Array<
-    ModelCall["activity"]["tools"][number] & { id?: string }
-  > = [];
+  let pendingTools: SessionToolImport[] = [];
+  let pendingContent: SessionContentImport[] = [];
 
   for (const record of records) {
     const payload = record.payload;
@@ -157,22 +201,34 @@ function decodeRecords(records: Record[]) {
       });
       pendingHasText = false;
       pendingTools = [];
+      pendingContent = [];
       continue;
     }
 
     if (turns.length === 0) continue;
 
-    if (record.type === "response_item" && payload?.type === "custom_tool_call") {
+    if (
+      record.type === "response_item" && payload?.type === "message" &&
+      payload.role === "user"
+    ) {
+      turns.at(-1)!.inputs = messageContent(record);
+      continue;
+    }
+
+    if (
+      record.type === "response_item" && payload?.type === "custom_tool_call"
+    ) {
       const name = toolName(record);
       if (!name) continue;
       const tool = {
         name,
         status: "pending",
         startedAt: time,
-        id: payload.call_id ?? payload.id,
+        sourceID: payload.call_id ?? payload.id,
+        input: serializedPreview(payload.input),
       };
       pendingTools.push(tool);
-      if (tool.id) tools.set(tool.id, tool);
+      if (tool.sourceID) tools.set(tool.sourceID, tool);
       continue;
     }
 
@@ -185,12 +241,14 @@ function decodeRecords(records: Record[]) {
       if (tool) {
         tool.status = "completed";
         tool.completedAt = time;
+        tool.output = serializedPreview(payload.output);
       }
       continue;
     }
 
     if (record.type === "response_item" && hasText(record)) {
       pendingHasText = true;
+      pendingContent.push(...messageContent(record));
       continue;
     }
 
@@ -217,7 +275,7 @@ function decodeRecords(records: Record[]) {
     if (callTokens.processed === 0) continue;
 
     const turn = turns.at(-1)!;
-    const call: ModelCall = {
+    const call: SessionCallImport = {
       id: `${turn.number}-${turn.calls.length + 1}`,
       callWithinTurn: turn.calls.length + 1,
       provider: "openai",
@@ -230,6 +288,7 @@ function decodeRecords(records: Record[]) {
         hasReasoning: source.reasoning_output_tokens > 0,
         tools: pendingTools,
       },
+      content: pendingContent,
     };
 
     providers.add("openai");
@@ -239,6 +298,7 @@ function decodeRecords(records: Record[]) {
     turn.calls.push(call);
     pendingHasText = false;
     pendingTools = [];
+    pendingContent = [];
   }
 
   const nonEmptyTurns = turns
@@ -250,31 +310,8 @@ function decodeRecords(records: Record[]) {
 export class CodexRepository {
   constructor(private directory: string) {}
 
-  #collectFiles(directory: string, prefix = ""): FileEntry[] {
-    const files: FileEntry[] = [];
-    for (const entry of Deno.readDirSync(directory)) {
-      const path = `${directory}/${entry.name}`;
-      const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
-      if (entry.isDirectory) {
-        files.push(...this.#collectFiles(path, relative));
-        continue;
-      }
-      if (!entry.isFile || !entry.name.startsWith("rollout-") || !entry.name.endsWith(".jsonl")) {
-        continue;
-      }
-      files.push({
-        id: relative.slice(0, -6),
-        path,
-        updatedAt: Deno.statSync(path).mtime?.getTime() ?? 0,
-      });
-    }
-    return files;
-  }
-
   #files() {
-    return this.#collectFiles(this.directory).sort((a, b) =>
-      b.updatedAt - a.updatedAt || b.id.localeCompare(a.id)
-    );
+    return discoverCodexSessions(this.directory);
   }
 
   listSessions(page: number, pageSize: number) {
@@ -309,41 +346,101 @@ export class CodexRepository {
   }
 
   #summary(id: string, path: string, updatedAt: number): SessionSummary {
-    const records = readRecords(path);
-    const decoded = decodeRecords(records);
-    const firstPrompt = records.find((record) => userText(record)?.trim());
-    const promptTitle = userText(firstPrompt ?? { type: "" })?.replace(/\s+/g, " ")
-      .trim().slice(0, 100);
-    const transcriptUpdatedAt = [...records].reverse().find((record) =>
-      record.timestamp && Number.isFinite(Date.parse(record.timestamp))
-    )?.timestamp;
-    const bounds = sessionBounds(decoded.turns);
-    return {
-      id,
-      harness: "codex",
-      title: promptTitle ?? `Codex session ${id.split("/").at(-1)?.slice(8, 16) ?? id.slice(0, 8)}`,
-      updatedAt: transcriptUpdatedAt ? Date.parse(transcriptUpdatedAt) : updatedAt,
-      startedAt: bounds.startedAt,
-      endedAt: bounds.endedAt,
-      providers: [...decoded.providers],
-      models: [...decoded.models],
-      userTurns: decoded.turns.length,
-      modelCalls: decoded.turns.reduce(
-        (sum, turn) => sum + turn.calls.length,
-        0,
-      ),
-      tokens: decoded.tokens,
-    };
+    return codexSession(readRecords(path), id, updatedAt).summary;
   }
 
-  #detail(file: FileEntry): unknown {
-    const records = readRecords(file.path);
-    const decoded = decodeRecords(records);
+  #detail(file: CodexSessionCandidate): unknown {
+    const normalized = codexSession(
+      readRecords(file.path),
+      file.id,
+      file.updatedAt,
+    );
     return {
-      ...this.#summary(file.id, file.path, file.updatedAt),
+      ...normalized.summary,
       parentID: undefined,
-      turns: decoded.turns,
+      turns: normalized.turns,
       subagents: [],
     };
   }
+}
+
+function collectCodexSessions(
+  directory: string,
+  prefix = "",
+): CodexSessionCandidate[] {
+  const files: CodexSessionCandidate[] = [];
+  for (const entry of Deno.readDirSync(directory)) {
+    const path = `${directory}/${entry.name}`;
+    const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory) {
+      files.push(...collectCodexSessions(path, relative));
+      continue;
+    }
+    if (
+      !entry.isFile || !entry.name.startsWith("rollout-") ||
+      !entry.name.endsWith(".jsonl")
+    ) {
+      continue;
+    }
+    const stat = Deno.statSync(path);
+    files.push({
+      id: relative.slice(0, -6),
+      path,
+      artifactPath: relative,
+      updatedAt: stat.mtime?.getTime() ?? 0,
+      size: stat.size,
+    });
+  }
+  return files;
+}
+
+export function discoverCodexSessions(directory: string) {
+  return collectCodexSessions(directory).sort((a, b) =>
+    b.updatedAt - a.updatedAt || b.id.localeCompare(a.id)
+  );
+}
+
+function codexSession(records: Record[], id: string, updatedAt: number) {
+  const decoded = decodeRecords(records);
+  const firstPrompt = records.find((record) => userText(record)?.trim());
+  const promptTitle = userText(firstPrompt ?? { type: "" })?.replace(
+    /\s+/g,
+    " ",
+  )
+    .trim().slice(0, 100);
+  const transcriptUpdatedAt = [...records].reverse().find((record) =>
+    record.timestamp && Number.isFinite(Date.parse(record.timestamp))
+  )?.timestamp;
+  const bounds = sessionBounds(decoded.turns);
+  const summary: SessionSummary = {
+    id,
+    harness: "codex",
+    title: promptTitle ??
+      `Codex session ${id.split("/").at(-1)?.slice(8, 16) ?? id.slice(0, 8)}`,
+    updatedAt: transcriptUpdatedAt
+      ? Date.parse(transcriptUpdatedAt)
+      : updatedAt,
+    startedAt: bounds.startedAt,
+    endedAt: bounds.endedAt,
+    providers: [...decoded.providers],
+    models: [...decoded.models],
+    userTurns: decoded.turns.length,
+    modelCalls: decoded.turns.reduce(
+      (sum, turn) => sum + turn.calls.length,
+      0,
+    ),
+    tokens: decoded.tokens,
+  };
+  return { summary, turns: decoded.turns };
+}
+
+export function normalizeCodexSession(
+  candidate: CodexSessionCandidate,
+  text: string,
+) {
+  return codexSession(
+    readRecordsFromText(text, true),
+    candidate.id,
+    candidate.updatedAt,
+  );
 }

@@ -12,6 +12,10 @@ import type {
 } from "../shared/sessionSchemas.ts";
 import type { UsageCall } from "./usage.ts";
 import { aggregateUsage } from "./usageAnalytics.ts";
+import { openArchiveDatabase, sqlitePath } from "./database.ts";
+import { SessionRepository } from "./sessionRepository.ts";
+import { syncPiSessions } from "./piImporter.ts";
+import { syncCodexSessions } from "./codexImporter.ts";
 
 function configuredPath<T>(
   harness: string,
@@ -52,18 +56,59 @@ const claudeRepository = configuredPath(
   "directory",
   (path) => new ClaudeCodeRepository(path),
 );
-const piRepository = configuredPath(
+const piDirectory = configuredPath(
   "pi",
   "PI_SESSION_DIR",
   "directory",
-  (path) => new PiRepository(path),
+  (path) => path,
 );
-const codexRepository = configuredPath(
+const codexDirectory = configuredPath(
   "codex",
   "CODEX_SESSION_DIR",
   "directory",
-  (path) => new CodexRepository(path),
+  (path) => path,
 );
+const archiveURL = Deno.env.get("FRUGAL_TOKENS_DATABASE_URL");
+const archiveDatabase = archiveURL
+  ? openArchiveDatabase(sqlitePath(archiveURL))
+  : undefined;
+const archiveRepository = archiveDatabase
+  ? new SessionRepository(archiveDatabase)
+  : undefined;
+if (archiveRepository && piDirectory) {
+  const result = await syncPiSessions(piDirectory, archiveRepository);
+  console.info(
+    `[sync] harness=pi discovered=${result.discovered} imported=${result.imported} skipped=${result.skipped} failed=${result.failed}`,
+  );
+}
+if (archiveRepository && codexDirectory) {
+  const result = await syncCodexSessions(codexDirectory, archiveRepository);
+  console.info(
+    `[sync] harness=codex discovered=${result.discovered} imported=${result.imported} skipped=${result.skipped} failed=${result.failed}`,
+  );
+}
+const piRepository = archiveRepository
+  ? {
+    listSessions: (page: number, pageSize: number) =>
+      archiveRepository.listSessions(page, pageSize, "pi"),
+    getSession: (id: string) => archiveRepository.getSession("pi", id),
+    listUsageCalls: (startedAt?: number) =>
+      archiveRepository.listUsageCalls(startedAt, "pi"),
+  }
+  : piDirectory
+  ? new PiRepository(piDirectory)
+  : undefined;
+const codexRepository = archiveRepository
+  ? {
+    listSessions: (page: number, pageSize: number) =>
+      archiveRepository.listSessions(page, pageSize, "codex"),
+    getSession: (id: string) => archiveRepository.getSession("codex", id),
+    listUsageCalls: (startedAt?: number) =>
+      archiveRepository.listUsageCalls(startedAt, "codex"),
+  }
+  : codexDirectory
+  ? new CodexRepository(codexDirectory)
+  : undefined;
 const app = new Hono();
 
 function repositoryForHarness(harness: SessionSummary["harness"]) {

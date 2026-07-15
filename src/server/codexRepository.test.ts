@@ -1,6 +1,6 @@
 import { deepStrictEqual } from "node:assert/strict";
-import { CodexRepository } from "../src/server/codexRepository.ts";
-import type { SessionDetail } from "../src/shared/sessionSchemas.ts";
+import { CodexRepository } from "./codexRepository.ts";
+import type { SessionDetail } from "../shared/sessionSchemas.ts";
 
 function repository(files: Record<string, string>) {
   const directory = Deno.makeTempDirSync();

@@ -1,0 +1,733 @@
+import type { DatabaseSync } from "node:sqlite";
+import {
+  type ModelCall,
+  type SessionDetail,
+  sessionDetailSchema,
+  type SessionListResponse,
+  sessionListResponseSchema,
+  type SessionSummary,
+  type TokenUsage,
+} from "../shared/sessionSchemas.ts";
+import type { UsageCall } from "./usage.ts";
+
+type Harness = SessionSummary["harness"];
+
+export type SourceSessionCheckpoint = {
+  sourceSize?: number;
+  sourceModifiedAt?: number;
+  checksum?: string;
+  parserVersion?: string;
+};
+
+export type SessionContentImport = {
+  kind: string;
+  preview?: string;
+  originalLength?: number;
+  truncated?: boolean;
+  mimeType?: string;
+  contentHash?: string;
+};
+
+export type SessionToolImport =
+  & Omit<
+    ModelCall["activity"]["tools"][number],
+    "childSessionID"
+  >
+  & {
+    sourceID?: string;
+    childExternalID?: string;
+    input?: Omit<SessionContentImport, "kind" | "mimeType" | "contentHash">;
+    output?: Omit<SessionContentImport, "kind" | "mimeType" | "contentHash">;
+  };
+
+export type SessionCallImport = Omit<ModelCall, "activity"> & {
+  activity: Omit<ModelCall["activity"], "tools"> & {
+    tools: SessionToolImport[];
+  };
+  content?: SessionContentImport[];
+};
+
+export type SessionTurnImport = {
+  number: number;
+  startedAt: number;
+  inputs?: SessionContentImport[];
+  calls: SessionCallImport[];
+};
+
+/** A complete, already-normalized source session ready for canonical storage. */
+export type SourceSessionImport = {
+  sourceID: number;
+  externalID: string;
+  parentExternalID?: string;
+  artifactPath?: string;
+  observedAt: number;
+  checkpoint: {
+    sourceSize?: number;
+    sourceModifiedAt?: number;
+    checksum?: string;
+    parserVersion?: string;
+    importedAt?: number;
+  };
+  session: {
+    title: string;
+    agent?: string;
+    updatedAt: number;
+    startedAt?: number;
+    endedAt?: number;
+    providers: string[];
+    models: string[];
+    userTurns: number;
+    modelCalls: number;
+    reportedCost?: number;
+    tokens: TokenUsage;
+    turns: SessionTurnImport[];
+  };
+};
+
+type SummaryRow = {
+  source_session_id: number;
+  external_id: string;
+  harness: Harness;
+  title: string;
+  agent: string | null;
+  updated_at: number;
+  started_at: number | null;
+  ended_at: number | null;
+  providers_json: string;
+  models_json: string;
+  user_turns: number;
+  model_calls: number;
+  reported_cost: number | null;
+  uncached_input_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number | null;
+  cache_write_5m_tokens: number | null;
+  cache_write_1h_tokens: number | null;
+  fresh_prompt_tokens: number;
+  output_tokens: number;
+  reasoning_tokens: number;
+  processed_tokens: number;
+  parent_external_id: string | null;
+};
+
+type CallRow = {
+  id: number;
+  source_call_id: string | null;
+  ordinal: number;
+  provider: string;
+  model: string;
+  started_at: number;
+  completed_at: number | null;
+  reported_cost: number | null;
+  uncached_input_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number | null;
+  cache_write_5m_tokens: number | null;
+  cache_write_1h_tokens: number | null;
+  fresh_prompt_tokens: number;
+  output_tokens: number;
+  reasoning_tokens: number;
+  processed_tokens: number;
+  finish_reason: string | null;
+  images: number | null;
+  has_text: number;
+  has_reasoning: number;
+};
+
+type ToolRow = {
+  model_call_id: number;
+  name: string;
+  status: string;
+  started_at: number | null;
+  completed_at: number | null;
+  child_external_id: string | null;
+};
+
+const summaryColumns = `
+  ss.id AS source_session_id, ss.external_id, so.harness,
+  s.title, s.agent, s.updated_at, s.started_at, s.ended_at,
+  s.providers_json, s.models_json, s.user_turns, s.model_calls,
+  s.reported_cost, s.uncached_input_tokens, s.cache_read_tokens,
+  s.cache_write_tokens, s.cache_write_5m_tokens,
+  s.cache_write_1h_tokens, s.fresh_prompt_tokens, s.output_tokens,
+  s.reasoning_tokens, s.processed_tokens,
+  parent.external_id AS parent_external_id
+`;
+
+const callColumns = `
+  mc.id, mc.source_call_id, mc.ordinal, m.provider, m.name AS model,
+  mc.started_at, mc.completed_at, mc.reported_cost,
+  mc.uncached_input_tokens, mc.cache_read_tokens, mc.cache_write_tokens,
+  mc.cache_write_5m_tokens, mc.cache_write_1h_tokens,
+  mc.fresh_prompt_tokens, mc.output_tokens, mc.reasoning_tokens,
+  mc.processed_tokens, mc.finish_reason, mc.images, mc.has_text,
+  mc.has_reasoning
+`;
+
+function optional<T>(value: T | null): T | undefined {
+  return value === null ? undefined : value;
+}
+
+function tokens(row: SummaryRow | CallRow): TokenUsage {
+  return {
+    uncachedInput: row.uncached_input_tokens,
+    cacheRead: row.cache_read_tokens,
+    cacheWrite: optional(row.cache_write_tokens),
+    cacheWrite5m: optional(row.cache_write_5m_tokens),
+    cacheWrite1h: optional(row.cache_write_1h_tokens),
+    freshPrompt: row.fresh_prompt_tokens,
+    output: row.output_tokens,
+    reasoning: row.reasoning_tokens,
+    processed: row.processed_tokens,
+  };
+}
+
+function summary(row: SummaryRow): SessionSummary {
+  return {
+    id: row.external_id,
+    harness: row.harness,
+    title: row.title,
+    updatedAt: row.updated_at,
+    startedAt: optional(row.started_at),
+    endedAt: optional(row.ended_at),
+    providers: JSON.parse(row.providers_json),
+    models: JSON.parse(row.models_json),
+    userTurns: row.user_turns,
+    modelCalls: row.model_calls,
+    reportedCost: optional(row.reported_cost),
+    tokens: tokens(row),
+  };
+}
+
+export class SessionRepository {
+  constructor(private db: DatabaseSync) {}
+
+  ensureSource(
+    harness: Harness,
+    kind: string,
+    label: string,
+    location: string,
+  ) {
+    return Number(
+      (this.db.prepare(`
+      INSERT INTO sources (harness, kind, label, location, created_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT (harness, location) DO UPDATE SET
+        kind = excluded.kind, label = excluded.label, enabled = 1
+      RETURNING id
+    `).get(harness, kind, label, location, Date.now()) as { id: number }).id,
+    );
+  }
+
+  checkpoint(
+    sourceID: number,
+    externalID: string,
+  ): SourceSessionCheckpoint | undefined {
+    const row = this.db.prepare(`
+      SELECT source_size, source_modified_at, checksum, parser_version
+      FROM source_sessions WHERE source_id = ? AND external_id = ?
+    `).get(sourceID, externalID) as {
+      source_size: number | null;
+      source_modified_at: number | null;
+      checksum: string | null;
+      parser_version: string | null;
+    } | undefined;
+    return row && {
+      sourceSize: optional(row.source_size),
+      sourceModifiedAt: optional(row.source_modified_at),
+      checksum: optional(row.checksum),
+      parserVersion: optional(row.parser_version),
+    };
+  }
+
+  recordUnchangedSourceSession(
+    sourceID: number,
+    externalID: string,
+    artifactPath: string,
+    observedAt: number,
+    checkpoint?: SourceSessionCheckpoint,
+  ) {
+    this.db.prepare(`
+      INSERT INTO source_sessions (
+        source_id, external_id, artifact_path, availability, source_size,
+        source_modified_at, checksum, parser_version, first_seen_at,
+        last_seen_at, last_error
+      ) VALUES (?, ?, ?, 'available', ?, ?, ?, ?, ?, ?, NULL)
+      ON CONFLICT (source_id, external_id) DO UPDATE SET
+        artifact_path = excluded.artifact_path,
+        availability = 'available',
+        source_size = COALESCE(excluded.source_size, source_sessions.source_size),
+        source_modified_at = COALESCE(
+          excluded.source_modified_at, source_sessions.source_modified_at
+        ),
+        checksum = COALESCE(excluded.checksum, source_sessions.checksum),
+        parser_version = COALESCE(
+          excluded.parser_version, source_sessions.parser_version
+        ),
+        last_seen_at = excluded.last_seen_at,
+        last_error = NULL
+    `).run(
+      sourceID,
+      externalID,
+      artifactPath,
+      checkpoint?.sourceSize ?? null,
+      checkpoint?.sourceModifiedAt ?? null,
+      checkpoint?.checksum ?? null,
+      checkpoint?.parserVersion ?? null,
+      observedAt,
+      observedAt,
+    );
+  }
+
+  recordSourceSessionError(
+    sourceID: number,
+    externalID: string,
+    artifactPath: string,
+    observedAt: number,
+    error: unknown,
+  ) {
+    this.db.prepare(`
+      INSERT INTO source_sessions (
+        source_id, external_id, artifact_path, availability, first_seen_at,
+        last_seen_at, last_error
+      ) VALUES (?, ?, ?, 'available', ?, ?, ?)
+      ON CONFLICT (source_id, external_id) DO UPDATE SET
+        artifact_path = excluded.artifact_path,
+        availability = 'available',
+        last_seen_at = excluded.last_seen_at,
+        last_error = excluded.last_error
+    `).run(
+      sourceID,
+      externalID,
+      artifactPath,
+      observedAt,
+      observedAt,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+
+  markMissingSourceSessions(sourceID: number, observedAt: number) {
+    this.db.prepare(`
+      UPDATE source_sessions SET availability = 'missing'
+      WHERE source_id = ? AND last_seen_at <> ?
+    `).run(sourceID, observedAt);
+  }
+
+  listSessions(
+    page: number,
+    pageSize: number,
+    harness?: Harness,
+  ): SessionListResponse {
+    if (
+      !Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) ||
+      pageSize < 1
+    ) {
+      throw new RangeError("page and pageSize must be positive integers");
+    }
+    const filter = harness === undefined ? "" : " AND so.harness = ?";
+    const parameters = harness === undefined ? [] : [harness];
+    const totalItems = Number(
+      (this.db.prepare(`
+      SELECT COUNT(*) AS count
+      FROM sessions s
+      JOIN source_sessions ss ON ss.id = s.source_session_id
+      JOIN sources so ON so.id = ss.source_id
+      WHERE ss.parent_id IS NULL${filter}
+    `).get(...parameters) as { count: number }).count,
+    );
+    const rows = this.db.prepare(`
+      SELECT ${summaryColumns}
+      FROM sessions s
+      JOIN source_sessions ss ON ss.id = s.source_session_id
+      JOIN sources so ON so.id = ss.source_id
+      LEFT JOIN source_sessions parent ON parent.id = ss.parent_id
+      WHERE ss.parent_id IS NULL${filter}
+      ORDER BY s.updated_at DESC, ss.id DESC
+      LIMIT ? OFFSET ?
+    `).all(...parameters, pageSize, (page - 1) * pageSize) as SummaryRow[];
+
+    return sessionListResponseSchema.parse({
+      items: rows.map(summary),
+      pagination: {
+        page,
+        pageSize,
+        totalItems,
+        totalPages: Math.ceil(totalItems / pageSize),
+      },
+    });
+  }
+
+  getSession(harness: Harness, id: string): SessionDetail | undefined {
+    const row = this.db.prepare(`
+      SELECT ${summaryColumns}
+      FROM sessions s
+      JOIN source_sessions ss ON ss.id = s.source_session_id
+      JOIN sources so ON so.id = ss.source_id
+      LEFT JOIN source_sessions parent ON parent.id = ss.parent_id
+      WHERE so.harness = ? AND ss.external_id = ?
+      ORDER BY ss.id
+      LIMIT 1
+    `).get(harness, id) as SummaryRow | undefined;
+    if (!row) return undefined;
+    return sessionDetailSchema.parse(this.#detail(row, new Set()));
+  }
+
+  listUsageCalls(startedAt?: number, harness?: Harness): UsageCall[] {
+    type UsageRow = CallRow & {
+      harness: Harness;
+      external_id: string;
+      root_external_id: string;
+      parent_external_id: string | null;
+      root_started_at: number | null;
+      root_updated_at: number;
+    };
+    const rows = this.db.prepare(`
+      WITH RECURSIVE session_tree(id, root_id) AS (
+        SELECT ss.id, ss.id
+        FROM source_sessions ss
+        JOIN sessions s ON s.source_session_id = ss.id
+        WHERE ss.parent_id IS NULL
+        UNION ALL
+        SELECT child.id, session_tree.root_id
+        FROM source_sessions child
+        JOIN sessions child_session ON child_session.source_session_id = child.id
+        JOIN session_tree ON session_tree.id = child.parent_id
+      )
+      SELECT ${callColumns}, so.harness, ss.external_id,
+        root.external_id AS root_external_id,
+        parent.external_id AS parent_external_id,
+        root_session.started_at AS root_started_at,
+        root_session.updated_at AS root_updated_at
+      FROM model_calls mc
+      JOIN turns t ON t.id = mc.turn_id
+      JOIN sessions s ON s.source_session_id = t.session_id
+      JOIN source_sessions ss ON ss.id = s.source_session_id
+      JOIN sources so ON so.id = ss.source_id
+      JOIN models m ON m.id = mc.model_id
+      JOIN session_tree tree ON tree.id = ss.id
+      JOIN source_sessions root ON root.id = tree.root_id
+      JOIN sessions root_session ON root_session.source_session_id = root.id
+      LEFT JOIN source_sessions parent ON parent.id = ss.parent_id
+      WHERE (? IS NULL OR mc.started_at >= ?)
+        AND (? IS NULL OR so.harness = ?)
+      ORDER BY mc.started_at, mc.id
+    `).all(
+      startedAt ?? null,
+      startedAt ?? null,
+      harness ?? null,
+      harness ?? null,
+    ) as UsageRow[];
+
+    return rows.map((row) => ({
+      harness: row.harness,
+      session: {
+        id: row.external_id,
+        rootID: row.root_external_id,
+        parentID: optional(row.parent_external_id),
+      },
+      cacheChainID: row.external_id,
+      sessionStartedAt: row.root_started_at ?? row.root_updated_at,
+      provider: row.provider,
+      model: row.model,
+      startedAt: row.started_at,
+      tokens: tokens(row),
+      reportedCost: optional(row.reported_cost),
+    }));
+  }
+
+  replaceSourceSession(value: SourceSessionImport): void {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const parentID = value.parentExternalID === undefined
+        ? null
+        : this.#sourceSessionID(value.sourceID, value.parentExternalID);
+      const sourceSessionID = Number(
+        (this.db.prepare(`
+        INSERT INTO source_sessions (
+          source_id, external_id, parent_id, artifact_path, availability,
+          first_seen_at, last_seen_at
+        ) VALUES (?, ?, ?, ?, 'available', ?, ?)
+        ON CONFLICT (source_id, external_id) DO UPDATE SET
+          parent_id = excluded.parent_id,
+          artifact_path = excluded.artifact_path,
+          availability = 'available',
+          last_seen_at = excluded.last_seen_at
+        RETURNING id
+      `).get(
+            value.sourceID,
+            value.externalID,
+            parentID,
+            value.artifactPath ?? null,
+            value.observedAt,
+            value.observedAt,
+          ) as { id: number }).id,
+      );
+
+      this.db.prepare("DELETE FROM sessions WHERE source_session_id = ?").run(
+        sourceSessionID,
+      );
+      const session = value.session;
+      const tokenValues = this.#tokenValues(session.tokens);
+      this.db.prepare(`
+        INSERT INTO sessions (
+          source_session_id, title, agent, updated_at, started_at, ended_at,
+          providers_json, models_json, user_turns, model_calls, reported_cost,
+          uncached_input_tokens, cache_read_tokens, cache_write_tokens,
+          cache_write_5m_tokens, cache_write_1h_tokens, fresh_prompt_tokens,
+          output_tokens, reasoning_tokens, processed_tokens
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        sourceSessionID,
+        session.title,
+        session.agent ?? null,
+        session.updatedAt,
+        session.startedAt ?? null,
+        session.endedAt ?? null,
+        JSON.stringify(session.providers),
+        JSON.stringify(session.models),
+        session.userTurns,
+        session.modelCalls,
+        session.reportedCost ?? null,
+        ...tokenValues,
+      );
+
+      for (const turn of session.turns) {
+        const turnID = Number(
+          (this.db.prepare(`
+          INSERT INTO turns (session_id, ordinal, started_at)
+          VALUES (?, ?, ?) RETURNING id
+        `).get(sourceSessionID, turn.number, turn.startedAt) as { id: number })
+            .id,
+        );
+        this.#insertContent(
+          "turn_inputs",
+          "turn_id",
+          turnID,
+          turn.inputs ?? [],
+        );
+
+        for (const call of turn.calls) {
+          const modelID = this.#modelID(call.provider, call.model);
+          const callID = Number(
+            (this.db.prepare(`
+            INSERT INTO model_calls (
+              turn_id, source_call_id, ordinal, model_id, started_at,
+              completed_at, reported_cost, uncached_input_tokens,
+              cache_read_tokens, cache_write_tokens, cache_write_5m_tokens,
+              cache_write_1h_tokens, fresh_prompt_tokens, output_tokens,
+              reasoning_tokens, processed_tokens, finish_reason, images,
+              has_text, has_reasoning
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            RETURNING id
+          `).get(
+                turnID,
+                call.id,
+                call.callWithinTurn,
+                modelID,
+                call.startedAt,
+                call.completedAt ?? null,
+                call.reportedCost ?? null,
+                ...this.#tokenValues(call.tokens),
+                call.activity.finishReason ?? null,
+                call.activity.images ?? null,
+                Number(call.activity.hasText),
+                Number(call.activity.hasReasoning),
+              ) as { id: number }).id,
+          );
+          this.#insertContent(
+            "call_content",
+            "model_call_id",
+            callID,
+            call.content ?? [],
+          );
+          call.activity.tools.forEach((tool, index) => {
+            const childID = tool.childExternalID === undefined
+              ? null
+              : this.#sourceSessionID(value.sourceID, tool.childExternalID);
+            this.db.prepare(`
+              INSERT INTO tool_events (
+                model_call_id, source_tool_id, ordinal, name, status,
+                started_at, completed_at, child_source_session_id,
+                input_preview, input_original_length, input_truncated,
+                output_preview, output_original_length, output_truncated
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              callID,
+              tool.sourceID ?? null,
+              index + 1,
+              tool.name,
+              tool.status,
+              tool.startedAt ?? null,
+              tool.completedAt ?? null,
+              childID,
+              tool.input?.preview ?? null,
+              tool.input?.originalLength ?? null,
+              Number(tool.input?.truncated ?? false),
+              tool.output?.preview ?? null,
+              tool.output?.originalLength ?? null,
+              Number(tool.output?.truncated ?? false),
+            );
+          });
+        }
+      }
+
+      const checkpoint = value.checkpoint;
+      this.db.prepare(`
+        UPDATE source_sessions SET
+          source_size = ?, source_modified_at = ?, checksum = ?,
+          parser_version = ?, imported_at = ?, last_error = NULL
+        WHERE id = ?
+      `).run(
+        checkpoint.sourceSize ?? null,
+        checkpoint.sourceModifiedAt ?? null,
+        checkpoint.checksum ?? null,
+        checkpoint.parserVersion ?? null,
+        checkpoint.importedAt ?? Date.now(),
+        sourceSessionID,
+      );
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  #detail(row: SummaryRow, visited: Set<number>): SessionDetail {
+    const base = summary(row);
+    if (visited.has(row.source_session_id)) {
+      return {
+        ...base,
+        parentID: optional(row.parent_external_id),
+        turns: [],
+        subagents: [],
+      };
+    }
+    const nextVisited = new Set(visited).add(row.source_session_id);
+    const turns = (this.db.prepare(`
+      SELECT id, ordinal, started_at FROM turns
+      WHERE session_id = ? ORDER BY ordinal
+    `).all(row.source_session_id) as Array<{
+      id: number;
+      ordinal: number;
+      started_at: number;
+    }>).map((turn) => {
+      const calls = this.db.prepare(`
+        SELECT ${callColumns}
+        FROM model_calls mc
+        JOIN models m ON m.id = mc.model_id
+        WHERE mc.turn_id = ? ORDER BY mc.ordinal
+      `).all(turn.id) as CallRow[];
+      const tools = calls.length === 0 ? [] : this.db.prepare(`
+        SELECT te.model_call_id, te.name, te.status, te.started_at,
+          te.completed_at, child.external_id AS child_external_id
+        FROM tool_events te
+        LEFT JOIN source_sessions child ON child.id = te.child_source_session_id
+        WHERE te.model_call_id IN (${calls.map(() => "?").join(",")})
+        ORDER BY te.model_call_id, te.ordinal
+      `).all(...calls.map((call) => call.id)) as ToolRow[];
+      const toolsByCall = Map.groupBy(tools, (tool) => tool.model_call_id);
+      return {
+        number: turn.ordinal,
+        startedAt: turn.started_at,
+        calls: calls.map((call) => ({
+          id: call.source_call_id ?? String(call.id),
+          callWithinTurn: call.ordinal,
+          provider: call.provider,
+          model: call.model,
+          startedAt: call.started_at,
+          completedAt: optional(call.completed_at),
+          reportedCost: optional(call.reported_cost),
+          tokens: tokens(call),
+          activity: {
+            finishReason: optional(call.finish_reason),
+            images: optional(call.images),
+            hasText: Boolean(call.has_text),
+            hasReasoning: Boolean(call.has_reasoning),
+            tools: (toolsByCall.get(call.id) ?? []).map((tool) => ({
+              name: tool.name,
+              status: tool.status,
+              startedAt: optional(tool.started_at),
+              completedAt: optional(tool.completed_at),
+              childSessionID: optional(tool.child_external_id),
+            })),
+          },
+        })),
+      };
+    });
+    const children = this.db.prepare(`
+      SELECT ${summaryColumns}
+      FROM sessions s
+      JOIN source_sessions ss ON ss.id = s.source_session_id
+      JOIN sources so ON so.id = ss.source_id
+      LEFT JOIN source_sessions parent ON parent.id = ss.parent_id
+      WHERE ss.parent_id = ?
+      ORDER BY s.updated_at, ss.id
+    `).all(row.source_session_id) as SummaryRow[];
+
+    return {
+      ...base,
+      parentID: optional(row.parent_external_id),
+      agent: optional(row.agent),
+      turns,
+      subagents: children.map((child) => this.#detail(child, nextVisited)),
+    };
+  }
+
+  #sourceSessionID(sourceID: number, externalID: string): number {
+    const row = this.db.prepare(`
+      SELECT id FROM source_sessions WHERE source_id = ? AND external_id = ?
+    `).get(sourceID, externalID) as { id: number } | undefined;
+    if (!row) throw new Error(`Unknown source session: ${externalID}`);
+    return Number(row.id);
+  }
+
+  #modelID(provider: string, name: string): number {
+    return Number(
+      (this.db.prepare(`
+      INSERT INTO models (provider, name) VALUES (?, ?)
+      ON CONFLICT (provider, name) DO UPDATE SET name = excluded.name
+      RETURNING id
+    `).get(provider, name) as { id: number }).id,
+    );
+  }
+
+  #tokenValues(value: TokenUsage) {
+    return [
+      value.uncachedInput,
+      value.cacheRead,
+      value.cacheWrite ?? null,
+      value.cacheWrite5m ?? null,
+      value.cacheWrite1h ?? null,
+      value.freshPrompt,
+      value.output,
+      value.reasoning,
+      value.processed,
+    ];
+  }
+
+  #insertContent(
+    table: "turn_inputs" | "call_content",
+    foreignKey: "turn_id" | "model_call_id",
+    ownerID: number,
+    content: SessionContentImport[],
+  ) {
+    const statement = this.db.prepare(`
+      INSERT INTO ${table} (
+        ${foreignKey}, ordinal, kind, preview, original_length, truncated,
+        mime_type, content_hash
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    content.forEach((item, index) =>
+      statement.run(
+        ownerID,
+        index + 1,
+        item.kind,
+        item.preview ?? null,
+        item.originalLength ?? null,
+        Number(item.truncated ?? false),
+        item.mimeType ?? null,
+        item.contentHash ?? null,
+      )
+    );
+  }
+}
