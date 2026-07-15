@@ -578,6 +578,28 @@ function formattedTurnCost(value?: number) {
   return value === undefined ? "unpriced" : turnDollars.format(value);
 }
 
+function formattedSessionCost(value?: number) {
+  return value === undefined ? "-" : sessionDollars.format(value);
+}
+
+function SubagentCostBreakdown({
+  total,
+  subagents,
+  format,
+}: {
+  total?: number;
+  subagents?: number;
+  format: (value?: number) => string;
+}) {
+  return (
+    <span className="subagent-cost-breakdown">
+      <strong className="subagent-cost-total">{format(total)}</strong>
+      <small className="subagent-cost-label">subagents</small>
+      <small className="subagent-cost-amount">{format(subagents)}</small>
+    </span>
+  );
+}
+
 function TurnCost({
   direct,
   nested,
@@ -590,15 +612,16 @@ function TurnCost({
     : direct + nested;
   return (
     <span
-      className="metric-stack turn-cost"
+      className="turn-cost"
       title={`Total ${formattedCost(total)} · Direct ${
         formattedCost(direct)
-      } · Nested ${formattedCost(nested)}`}
+      } · Subagents ${formattedCost(nested)}`}
     >
-      <strong>{formattedTurnCost(total)} total</strong>
-      <small>
-        {formattedTurnCost(direct)} direct · {formattedTurnCost(nested)} nested
-      </small>
+      <SubagentCostBreakdown
+        total={total}
+        subagents={nested}
+        format={formattedTurnCost}
+      />
     </span>
   );
 }
@@ -650,14 +673,23 @@ function SubagentSummary({
               : `${(reused * 100).toFixed(1)}% reused`}
           </small>
         </span>
-        <span className="subagent-summary-cost">
-          <strong>{formattedTurnCost(total.computedCost)}</strong>
-          {hasDescendants && (
-            <small>
-              {formattedTurnCost(session.computedCost)} direct ·{"  "}
-              {formattedTurnCost(nested.computedCost)} nested
-            </small>
-          )}
+        <span
+          className="subagent-summary-cost"
+          title={hasDescendants
+            ? `Total ${formattedCost(total.computedCost)} · Direct ${
+              formattedCost(session.computedCost)
+            } · Subagents ${formattedCost(nested.computedCost)}`
+            : undefined}
+        >
+          {hasDescendants
+            ? (
+              <SubagentCostBreakdown
+                total={total.computedCost}
+                subagents={nested.computedCost}
+                format={formattedTurnCost}
+              />
+            )
+            : <strong>{formattedTurnCost(total.computedCost)}</strong>}
         </span>
       </button>
       {expanded && <SessionBreakdown session={session} nested hideHeading />}
@@ -716,12 +748,15 @@ function CostCell({
     >
       {session
         ? (
-          <span className="session-cost-values">
-            <strong>{primary}</strong>
-            {subagents !== undefined && (
-              <small>{sessionDollars.format(subagents)} nested</small>
-            )}
-          </span>
+          subagents !== undefined
+            ? (
+              <SubagentCostBreakdown
+                total={computed}
+                subagents={subagents}
+                format={formattedSessionCost}
+              />
+            )
+            : <strong>{primary}</strong>
         )
         : <span>{primary}</span>}
       {mismatch && (

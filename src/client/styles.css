@@ -792,22 +792,42 @@ table.data-table {
   align-items: center;
 }
 
-.session-cost-values {
-  display: inline-flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
+.subagent-cost-breakdown {
+  display: inline-grid;
+  grid-template-columns: max-content;
+  align-items: baseline;
+  justify-items: end;
+  justify-content: end;
+  gap: 1px;
+  white-space: nowrap;
 }
 
-.session-cost-values strong {
+.subagent-cost-total {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: end;
   font-weight: 700;
 }
 
-.session-cost-values small {
+.subagent-cost-label {
   color: var(--muted);
   font-size: 9px;
   font-weight: 400;
-  white-space: nowrap;
+}
+
+.subagent-cost-label {
+  grid-column: 1;
+  grid-row: 3;
+  justify-self: end;
+}
+
+.subagent-cost-amount {
+  grid-column: 1;
+  grid-row: 2;
+  justify-self: end;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .cost-mismatch {
@@ -973,16 +993,8 @@ table.data-table {
   outline-offset: 2px;
 }
 
-.turn-cost {
-  align-items: flex-end;
-}
-
 .turn-nested-input {
   align-items: flex-start;
-}
-
-.turn-cost strong {
-  font-weight: 700;
 }
 
 .turn-detail-row > td {
@@ -1279,6 +1291,14 @@ table.data-table {
 }
 
 .subagent-summary-cost > strong {
+  font-size: 11px;
+}
+
+.subagent-summary-cost .subagent-cost-total {
+  font-size: 11px;
+}
+
+.subagent-summary-cost .subagent-cost-amount {
   font-size: 11px;
 }
 
