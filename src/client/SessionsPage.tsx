@@ -628,32 +628,6 @@ function SubagentCostBreakdown({
   );
 }
 
-function TurnCost({
-  direct,
-  nested,
-}: {
-  direct?: number;
-  nested?: number;
-}) {
-  const total = direct === undefined || nested === undefined
-    ? undefined
-    : direct + nested;
-  return (
-    <span
-      className="turn-cost"
-      title={`Total ${formattedCost(total)} · Direct ${
-        formattedCost(direct)
-      } · Subagents ${formattedCost(nested)}`}
-    >
-      <SubagentCostBreakdown
-        total={total}
-        subagents={nested}
-        format={formattedTurnCost}
-      />
-    </span>
-  );
-}
-
 function SubagentSummary({
   session,
   expanded,
@@ -701,23 +675,14 @@ function SubagentSummary({
               : `${(reused * 100).toFixed(1)}% reused`}
           </small>
         </span>
-        <span
-          className="subagent-summary-cost"
-          title={hasDescendants
-            ? `Total ${formattedCost(total.computedCost)} · Direct ${
-              formattedCost(session.computedCost)
-            } · Subagents ${formattedCost(nested.computedCost)}`
-            : undefined}
-        >
-          {hasDescendants
-            ? (
-              <SubagentCostBreakdown
-                total={total.computedCost}
-                subagents={nested.computedCost}
-                format={formattedTurnCost}
-              />
-            )
-            : <strong>{formattedTurnCost(total.computedCost)}</strong>}
+        <span className="subagent-summary-cost">
+          <CostCell
+            reported={total.reportedCost}
+            computed={total.computedCost}
+            direct={hasDescendants ? session.computedCost : undefined}
+            subagents={hasDescendants ? nested.computedCost : undefined}
+            turn
+          />
         </span>
       </button>
       {expanded && <SessionBreakdown session={session} nested hideHeading />}
@@ -753,16 +718,16 @@ function CostCell({
       computed,
     );
   const reportedLabel = reported === undefined
-    ? "Reported: n/a"
-    : `Reported: ${dollars.format(reported)}`;
+    ? "Reported cost: n/a"
+    : `Reported cost: ${dollars.format(reported)}`;
   const computedLabel = computed === undefined
-    ? "Computed: n/a"
-    : `Computed: ${dollars.format(computed)}`;
+    ? "Calculated cost: n/a"
+    : `Calculated cost: ${dollars.format(computed)}`;
   const costBreakdown = direct === undefined
     ? computedLabel
-    : `Total: ${formattedCost(computed)} · Direct: ${formattedCost(direct)} · Subagents: ${
-      formattedCost(subagents)
-    }`;
+    : `Calculated total: ${formattedCost(computed)} · Direct: ${
+      formattedCost(direct)
+    } · Subagents: ${formattedCost(subagents)}`;
   const title = mismatch
     ? `${costBreakdown} · ${reportedLabel} (mismatch)`
     : `${costBreakdown} · ${reportedLabel}`;
@@ -774,6 +739,9 @@ function CostCell({
       }`}
       title={title}
     >
+      {mismatch && (
+        <span className="cost-mismatch-icon" aria-label="Cost mismatch">!</span>
+      )}
       {subagents !== undefined
         ? (
           <SubagentCostBreakdown
@@ -785,9 +753,6 @@ function CostCell({
         : session
         ? <strong>{primary}</strong>
         : <span>{primary}</span>}
-      {mismatch && (
-        <span className="cost-mismatch-icon" aria-label="Cost mismatch">!</span>
-      )}
     </span>
   );
 }
@@ -1299,6 +1264,16 @@ function SessionBreakdown({
                 (metrics.cacheWrite ?? 0);
               const nestedInput = nestedMetrics.uncachedInput +
                 nestedMetrics.cacheRead + nestedMetrics.cacheWrite;
+              const inclusiveComputedCost =
+                metrics.computedCost !== undefined &&
+                  nestedMetrics.computedCost !== undefined
+                  ? metrics.computedCost + nestedMetrics.computedCost
+                  : undefined;
+              const inclusiveReportedCost =
+                metrics.reportedCost !== undefined &&
+                  nestedMetrics.reportedCost !== undefined
+                  ? metrics.reportedCost + nestedMetrics.reportedCost
+                  : undefined;
               return (
                 <Fragment key={turn.number}>
                   <tr
@@ -1411,9 +1386,12 @@ function SessionBreakdown({
                           />
                         )
                         : (
-                          <TurnCost
+                          <CostCell
+                            reported={inclusiveReportedCost}
+                            computed={inclusiveComputedCost}
                             direct={metrics.computedCost}
-                            nested={nestedMetrics.computedCost}
+                            subagents={nestedMetrics.computedCost}
+                            turn
                           />
                         )}
                     </td>
