@@ -530,6 +530,7 @@ function sessionTree(session: SessionDetail): SessionDetail[] {
 function aggregateSessionTrees(sessions: SessionDetail[]) {
   const tree = sessions.flatMap(sessionTree);
   const computedCosts = tree.map((session) => session.computedCost);
+  const reportedCosts = tree.map((session) => session.reportedCost);
   return {
     userTurns: tree.reduce((total, session) => total + session.userTurns, 0),
     modelCalls: tree.reduce((total, session) => total + session.modelCalls, 0),
@@ -556,6 +557,9 @@ function aggregateSessionTrees(sessions: SessionDetail[]) {
     ),
     computedCost: computedCosts.every((cost) => cost !== undefined)
       ? computedCosts.reduce((total, cost) => total + cost!, 0)
+      : undefined,
+    reportedCost: reportedCosts.every((cost) => cost !== undefined)
+      ? reportedCosts.reduce((total, cost) => total + cost!, 0)
       : undefined,
     end: tree.reduce<number | undefined>((latest, session) => {
       const end = sessionSpan(session)?.end;
@@ -746,18 +750,16 @@ function CostCell({
       }`}
       title={title}
     >
-      {session
+      {subagents !== undefined
         ? (
-          subagents !== undefined
-            ? (
-              <SubagentCostBreakdown
-                total={computed}
-                subagents={subagents}
-                format={formattedSessionCost}
-              />
-            )
-            : <strong>{primary}</strong>
+          <SubagentCostBreakdown
+            total={computed}
+            subagents={subagents}
+            format={session ? formattedSessionCost : formattedTurnCost}
+          />
         )
+        : session
+        ? <strong>{primary}</strong>
         : <span>{primary}</span>}
       {mismatch && (
         <span className="cost-mismatch-icon" aria-label="Cost mismatch">!</span>
@@ -989,6 +991,20 @@ function CallTable({
             const callDuration = duration(call.startedAt, call.completedAt);
             const reused = cacheHitRate(call.tokens);
             const subagents = callSubagents(call, session);
+            const subagentTotals = aggregateSessionTrees(subagents);
+            const hasSubagents = subagents.length > 0;
+            const inclusiveComputedCost = hasSubagents
+              ? call.computedCost !== undefined &&
+                  subagentTotals.computedCost !== undefined
+                ? call.computedCost + subagentTotals.computedCost
+                : undefined
+              : call.computedCost;
+            const inclusiveReportedCost = hasSubagents
+              ? call.reportedCost !== undefined &&
+                  subagentTotals.reportedCost !== undefined
+                ? call.reportedCost + subagentTotals.reportedCost
+                : undefined
+              : call.reportedCost;
             const mechanics = toolMechanics(call);
             const finishWarning = exceptionalFinishReason(
               call.activity.finishReason,
@@ -1067,8 +1083,12 @@ function CallTable({
                   </td>
                   <td>
                     <CostCell
-                      reported={call.reportedCost}
-                      computed={call.computedCost}
+                      reported={inclusiveReportedCost}
+                      computed={inclusiveComputedCost}
+                      direct={hasSubagents ? call.computedCost : undefined}
+                      subagents={hasSubagents
+                        ? subagentTotals.computedCost
+                        : undefined}
                       turn
                     />
                   </td>
