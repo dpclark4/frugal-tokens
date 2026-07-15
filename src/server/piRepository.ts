@@ -240,6 +240,7 @@ function decodeRecords(records: Record[]) {
         )
           .join("\n"),
       );
+      tool.outputPreview = tool.output?.preview;
       continue;
     }
 
@@ -272,9 +273,11 @@ function decodeRecords(records: Record[]) {
     const turn = turns.at(-1)!;
     const provider = message.provider ?? "unknown";
     const model = message.model ?? "unknown";
+    const content = contentMetadata(message.content ?? [], true);
     const call: SessionCallImport = {
       id: record.id ?? `${turn.number}-${turn.calls.length + 1}`,
       callWithinTurn: turn.calls.length + 1,
+      preview: content.find((item) => item.kind === "text")?.preview,
       provider,
       model,
       startedAt: timestamp,
@@ -290,19 +293,21 @@ function decodeRecords(records: Record[]) {
         hasReasoning: source.reasoning > 0,
         tools: [],
       },
-      content: contentMetadata(message.content ?? [], true),
+      content,
     };
 
     for (const block of message.content ?? []) {
       if (block.type === "text") call.activity.hasText = true;
       if (block.type === "thinking") call.activity.hasReasoning = true;
       if (block.type === "toolCall" && block.id && block.name) {
+        const input = serializedPreview(block.arguments);
         const tool = {
           sourceID: block.id,
           name: block.name,
           status: "pending",
           startedAt: timestamp,
-          input: serializedPreview(block.arguments),
+          input,
+          inputPreview: input?.preview,
         };
         call.activity.tools.push(tool);
         tools.set(block.id, tool);

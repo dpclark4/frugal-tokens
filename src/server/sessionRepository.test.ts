@@ -99,6 +99,7 @@ Deno.test("stores and reads canonical sessions atomically", () => {
       startedAt: 11,
       completedAt: 12,
       childExternalID: "child",
+      input: { preview: '{"path":"src/schema.ts"}' },
     });
     repository.replaceSourceSession(root);
 
@@ -113,6 +114,11 @@ Deno.test("stores and reads canonical sessions atomically", () => {
     strictEqual(
       detail.turns[0].calls[0].activity.tools[0].childSessionID,
       "child",
+    );
+    strictEqual(detail.turns[0].calls[0].preview, "answer");
+    strictEqual(
+      detail.turns[0].calls[0].activity.tools[0].inputPreview,
+      '{"path":"src/schema.ts"}',
     );
     strictEqual(detail.subagents[0].id, "child");
     strictEqual(detail.subagents[0].parentID, "root");

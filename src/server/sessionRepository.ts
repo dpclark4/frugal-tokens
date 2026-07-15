@@ -145,6 +145,14 @@ type ToolRow = {
   started_at: number | null;
   completed_at: number | null;
   child_public_id: string | null;
+  input_preview: string | null;
+  output_preview: string | null;
+};
+
+type ContentRow = {
+  model_call_id: number;
+  kind: string;
+  preview: string | null;
 };
 
 const summaryColumns = `
@@ -171,6 +179,54 @@ const callColumns = `
 
 function optional<T>(value: T | null): T | undefined {
   return value === null ? undefined : value;
+}
+
+function concisePreview(value?: string) {
+  if (value === undefined) return undefined;
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length === 0) return undefined;
+  return normalized.length <= 64
+    ? normalized
+    : `${normalized.slice(0, 63).trimEnd()}…`;
+}
+
+function toolTarget(value?: string) {
+  if (value === undefined) return undefined;
+  try {
+    const parsed = JSON.parse(value);
+    if (typeof parsed === "string") return concisePreview(parsed);
+    if (parsed && typeof parsed === "object") {
+      for (
+        const key of [
+          "description",
+          "prompt",
+          "task",
+          "command",
+          "filePath",
+          "path",
+          "pattern",
+          "query",
+        ]
+      ) {
+        const candidate = (parsed as Record<string, unknown>)[key];
+        if (typeof candidate === "string") return concisePreview(candidate);
+      }
+    }
+  } catch {
+    // Non-JSON tool inputs are useful as-is.
+  }
+  return concisePreview(value);
+}
+
+function callPreview(contents: ContentRow[], tools: ToolRow[]) {
+  const text = contents.find((content) =>
+    content.kind === "text" && content.preview !== null
+  )?.preview;
+  const contentPreview = concisePreview(text ?? undefined);
+  if (contentPreview !== undefined) return contentPreview;
+  const tool = tools.find((item) => item.input_preview !== null);
+  const target = toolTarget(tool?.input_preview ?? undefined);
+  return tool && target ? concisePreview(`${tool.name}: ${target}`) : undefined;
 }
 
 function tokens(row: SummaryRow | CallRow): TokenUsage {
@@ -742,39 +798,56 @@ export class SessionRepository {
       const tools = calls.length === 0 ? [] : this.db.prepare(`
         SELECT te.model_call_id, te.name, te.status, te.started_at,
           te.completed_at,
-          COALESCE(child.public_id, child.external_id) AS child_public_id
+          COALESCE(child.public_id, child.external_id) AS child_public_id,
+          te.input_preview, te.output_preview
         FROM tool_events te
         LEFT JOIN source_sessions child ON child.id = te.child_source_session_id
         WHERE te.model_call_id IN (${calls.map(() => "?").join(",")})
         ORDER BY te.model_call_id, te.ordinal
       `).all(...calls.map((call) => call.id)) as ToolRow[];
       const toolsByCall = Map.groupBy(tools, (tool) => tool.model_call_id);
+      const contents = calls.length === 0 ? [] : this.db.prepare(`
+        SELECT model_call_id, kind, preview
+        FROM call_content
+        WHERE model_call_id IN (${calls.map(() => "?").join(",")})
+        ORDER BY model_call_id, ordinal
+      `).all(...calls.map((call) => call.id)) as ContentRow[];
+      const contentsByCall = Map.groupBy(
+        contents,
+        (content) => content.model_call_id,
+      );
       return {
         number: turn.ordinal,
         startedAt: turn.started_at,
-        calls: calls.map((call) => ({
-          id: call.source_call_id ?? String(call.id),
-          callWithinTurn: call.ordinal,
-          provider: call.provider,
-          model: call.model,
-          startedAt: call.started_at,
-          completedAt: optional(call.completed_at),
-          reportedCost: optional(call.reported_cost),
-          tokens: tokens(call),
-          activity: {
-            finishReason: optional(call.finish_reason),
-            images: optional(call.images),
-            hasText: Boolean(call.has_text),
-            hasReasoning: Boolean(call.has_reasoning),
-            tools: (toolsByCall.get(call.id) ?? []).map((tool) => ({
-              name: tool.name,
-              status: tool.status,
-              startedAt: optional(tool.started_at),
-              completedAt: optional(tool.completed_at),
-              childSessionID: optional(tool.child_public_id),
-            })),
-          },
-        })),
+        calls: calls.map((call) => {
+          const callTools = toolsByCall.get(call.id) ?? [];
+          return {
+            id: call.source_call_id ?? String(call.id),
+            callWithinTurn: call.ordinal,
+            preview: callPreview(contentsByCall.get(call.id) ?? [], callTools),
+            provider: call.provider,
+            model: call.model,
+            startedAt: call.started_at,
+            completedAt: optional(call.completed_at),
+            reportedCost: optional(call.reported_cost),
+            tokens: tokens(call),
+            activity: {
+              finishReason: optional(call.finish_reason),
+              images: optional(call.images),
+              hasText: Boolean(call.has_text),
+              hasReasoning: Boolean(call.has_reasoning),
+              tools: callTools.map((tool) => ({
+                name: tool.name,
+                status: tool.status,
+                startedAt: optional(tool.started_at),
+                completedAt: optional(tool.completed_at),
+                childSessionID: optional(tool.child_public_id),
+                inputPreview: optional(tool.input_preview),
+                outputPreview: optional(tool.output_preview),
+              })),
+            },
+          };
+        }),
       };
     });
     const children = this.db.prepare(`
