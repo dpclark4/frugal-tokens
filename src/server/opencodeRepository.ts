@@ -60,6 +60,7 @@ const partDataSchema = z.object({
 }).passthrough();
 
 export type OpenCodeSessionRow = {
+  [column: string]: unknown;
   id: string;
   parent_id: string | null;
   title: string;

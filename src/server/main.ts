@@ -77,31 +77,69 @@ const archiveDatabase = archiveURL
 const archiveRepository = archiveDatabase
   ? new SessionRepository(archiveDatabase)
   : undefined;
-if (archiveRepository && openCodePath) {
-  const result = syncOpenCodeSessions(openCodePath, archiveRepository);
+
+async function runSync(
+  harness: SessionSummary["harness"],
+  sync: () =>
+    | {
+      discovered: number;
+      imported: number;
+      skipped: number;
+      failed: number;
+      timings?: Record<string, number>;
+    }
+    | Promise<
+      {
+        discovered: number;
+        imported: number;
+        skipped: number;
+        failed: number;
+        timings?: Record<string, number>;
+      }
+    >,
+) {
+  const startedAt = performance.now();
+  const result = await sync();
+  const phases = result.timings
+    ? ` ${
+      Object.entries(result.timings).map(([name, duration]) =>
+        `${name}=${duration.toFixed(1)}ms`
+      ).join(" ")
+    }`
+    : "";
   console.info(
-    `[sync] harness=opencode discovered=${result.discovered} imported=${result.imported} skipped=${result.skipped} failed=${result.failed}`,
+    `[sync] harness=${harness} discovered=${result.discovered} imported=${result.imported} skipped=${result.skipped} failed=${result.failed} duration=${
+      (performance.now() - startedAt).toFixed(1)
+    }ms${phases}`,
   );
 }
-if (archiveRepository && claudeDirectory) {
-  const result = await syncClaudeCodeSessions(
-    claudeDirectory,
-    archiveRepository,
-  );
+
+async function syncSources() {
+  if (!archiveRepository) return;
+  const startedAt = performance.now();
+  if (openCodePath) {
+    await runSync(
+      "opencode",
+      () => syncOpenCodeSessions(openCodePath, archiveRepository),
+    );
+  }
+  if (claudeDirectory) {
+    await runSync(
+      "claude-code",
+      () => syncClaudeCodeSessions(claudeDirectory, archiveRepository),
+    );
+  }
+  if (piDirectory) {
+    await runSync("pi", () => syncPiSessions(piDirectory, archiveRepository));
+  }
+  if (codexDirectory) {
+    await runSync(
+      "codex",
+      () => syncCodexSessions(codexDirectory, archiveRepository),
+    );
+  }
   console.info(
-    `[sync] harness=claude-code discovered=${result.discovered} imported=${result.imported} skipped=${result.skipped} failed=${result.failed}`,
-  );
-}
-if (archiveRepository && piDirectory) {
-  const result = await syncPiSessions(piDirectory, archiveRepository);
-  console.info(
-    `[sync] harness=pi discovered=${result.discovered} imported=${result.imported} skipped=${result.skipped} failed=${result.failed}`,
-  );
-}
-if (archiveRepository && codexDirectory) {
-  const result = await syncCodexSessions(codexDirectory, archiveRepository);
-  console.info(
-    `[sync] harness=codex discovered=${result.discovered} imported=${result.imported} skipped=${result.skipped} failed=${result.failed}`,
+    `[sync] complete duration=${(performance.now() - startedAt).toFixed(1)}ms`,
   );
 }
 const claudeRepository = archiveRepository
@@ -345,5 +383,9 @@ app.use("/assets/*", serveStatic({ root: "./dist" }));
 app.get("*", serveStatic({ root: "./dist", path: "index.html" }));
 
 const port = Number.parseInt(Deno.env.get("PORT") ?? "9000", 10);
-console.log(`Frugal Tokens API listening on http://localhost:${port}`);
-Deno.serve({ port }, app.fetch);
+Deno.serve({
+  port,
+  onListen: ({ port }) =>
+    console.log(`Frugal Tokens API listening on http://localhost:${port}`),
+}, app.fetch);
+await syncSources();

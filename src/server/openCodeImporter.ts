@@ -11,13 +11,11 @@ import {
   type SourceSessionCheckpoint,
 } from "./sessionRepository.ts";
 
-const parserVersion = "opencode-1";
+const parserVersion = "opencode-2";
 
 type AggregateRow = {
   session_id: string;
   row_count: number;
-  max_updated: number | null;
-  update_sum: string | null;
 };
 
 type OpenCodeCandidate = {
@@ -34,9 +32,7 @@ type OpenCodeSnapshot = {
   parts: OpenCodePartRow[];
 };
 
-const sessionColumns = `
-  id, parent_id, title, model, agent, time_created, time_updated
-`;
+const sessionColumns = "*";
 
 function digest(values: unknown[]) {
   const hash = createHash("sha256");
@@ -47,12 +43,13 @@ function digest(values: unknown[]) {
   return hash.digest("hex");
 }
 
+// Selecting part.time_updated forces SQLite to visit rows spread across the
+// large JSON payload table. The complete session row plus indexed child counts
+// is the cheap hint; changed trees still receive a full content checksum below.
 function aggregates(db: DatabaseSync, table: "message" | "part") {
   return new Map(
     (db.prepare(`
-      SELECT session_id, COUNT(*) AS row_count,
-        MAX(time_updated) AS max_updated,
-        CAST(SUM(time_updated) AS TEXT) AS update_sum
+      SELECT session_id, COUNT(*) AS row_count
       FROM ${table}
       GROUP BY session_id
       ORDER BY session_id
@@ -67,7 +64,7 @@ function candidate(
 ): OpenCodeCandidate {
   const ordered = sessions.toSorted((a, b) => a.id.localeCompare(b.id));
   const hintValues = ordered.map((session) => ({
-    session,
+    session: Object.entries(session).toSorted(([a], [b]) => a.localeCompare(b)),
     messages: messages.get(session.id) ?? null,
     parts: parts.get(session.id) ?? null,
   }));
@@ -83,13 +80,7 @@ function candidate(
       0,
     ),
     updatedAt: ordered.reduce(
-      (latest, session) =>
-        Math.max(
-          latest,
-          session.time_updated,
-          messages.get(session.id)?.max_updated ?? 0,
-          parts.get(session.id)?.max_updated ?? 0,
-        ),
+      (latest, session) => Math.max(latest, session.time_updated),
       0,
     ),
   };
@@ -159,9 +150,7 @@ function snapshot(db: DatabaseSync, rootID: string): OpenCodeSnapshot {
 }
 
 function snapshotCandidate(value: OpenCodeSnapshot) {
-  function aggregate<T extends { session_id: string; time_updated: number }>(
-    rows: T[],
-  ) {
+  function aggregate<T extends { session_id: string }>(rows: T[]) {
     return new Map(
       [...Map.groupBy(rows, (row) => row.session_id)].map((
         [sessionID, values],
@@ -170,11 +159,6 @@ function snapshotCandidate(value: OpenCodeSnapshot) {
         {
           session_id: sessionID,
           row_count: values.length,
-          max_updated: Math.max(...values.map((row) => row.time_updated)),
-          update_sum: values.reduce(
-            (sum, row) => sum + BigInt(row.time_updated),
-            0n,
-          ).toString(),
         },
       ]),
     );
@@ -247,11 +231,20 @@ export function syncOpenCodeSessions(
   let skipped = 0;
   let failed = 0;
   let candidates: OpenCodeCandidate[] = [];
+  let discoveryDuration = 0;
+  let checkpointDuration = 0;
+  let sourceReadDuration = 0;
+  let normalizeDuration = 0;
+  let archiveWriteDuration = 0;
 
   try {
+    const discoveryStartedAt = performance.now();
     candidates = discover(source);
+    discoveryDuration = performance.now() - discoveryStartedAt;
     for (const initial of candidates) {
+      const checkpointStartedAt = performance.now();
       const previous = repository.checkpoint(sourceID, initial.id);
+      checkpointDuration += performance.now() - checkpointStartedAt;
       if (
         previous?.parserVersion === parserVersion &&
         previous.changeHint === initial.changeHint
@@ -262,11 +255,13 @@ export function syncOpenCodeSessions(
 
       let transaction = false;
       try {
+        const sourceReadStartedAt = performance.now();
         source.exec("BEGIN");
         transaction = true;
         const rows = snapshot(source, initial.id);
         const fresh = snapshotCandidate(rows);
         const contentChecksum = checksum(rows);
+        sourceReadDuration += performance.now() - sourceReadStartedAt;
         const checkpoint: SourceSessionCheckpoint = {
           changeHint: fresh.changeHint,
           sourceSize: fresh.rowCount,
@@ -274,12 +269,14 @@ export function syncOpenCodeSessions(
           checksum: contentChecksum,
           parserVersion,
         };
+        const normalizeStartedAt = performance.now();
         const normalized = normalizeOpenCodeSessionTree({
           ...rows,
           sourceID,
           observedAt,
           checkpoint,
         });
+        normalizeDuration += performance.now() - normalizeStartedAt;
         source.exec("COMMIT");
         transaction = false;
 
@@ -287,6 +284,7 @@ export function syncOpenCodeSessions(
           previous?.parserVersion === parserVersion &&
           previous.checksum === contentChecksum
         ) {
+          const archiveWriteStartedAt = performance.now();
           recordUnchangedTree(
             repository,
             sourceID,
@@ -294,10 +292,13 @@ export function syncOpenCodeSessions(
             observedAt,
             checkpoint,
           );
+          archiveWriteDuration += performance.now() - archiveWriteStartedAt;
           skipped++;
           continue;
         }
+        const archiveWriteStartedAt = performance.now();
         repository.replaceSourceSessionTree(normalized);
+        archiveWriteDuration += performance.now() - archiveWriteStartedAt;
         imported++;
       } catch (error) {
         if (transaction) source.exec("ROLLBACK");
@@ -315,6 +316,7 @@ export function syncOpenCodeSessions(
         failed++;
       }
     }
+    const finalizeStartedAt = performance.now();
     repository.markSourceSessionsSeen(
       sourceID,
       candidates.flatMap((value) =>
@@ -323,7 +325,21 @@ export function syncOpenCodeSessions(
       observedAt,
     );
     repository.markMissingSourceSessions(sourceID, observedAt);
-    return { discovered: candidates.length, imported, skipped, failed };
+    const finalizeDuration = performance.now() - finalizeStartedAt;
+    return {
+      discovered: candidates.length,
+      imported,
+      skipped,
+      failed,
+      timings: {
+        discovery: discoveryDuration,
+        checkpoints: checkpointDuration,
+        sourceRead: sourceReadDuration,
+        normalize: normalizeDuration,
+        archiveWrite: archiveWriteDuration,
+        finalize: finalizeDuration,
+      },
+    };
   } finally {
     source.close();
   }

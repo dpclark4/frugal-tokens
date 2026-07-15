@@ -183,6 +183,8 @@ Deno.test("incrementally imports OpenCode session trees", () => {
         data = json_set(data, '$.state.output', 'changed')
       WHERE id = 'tool'
     `).run();
+    source.prepare("UPDATE session SET time_updated = 21 WHERE id = 'root'")
+      .run();
     strictEqual(syncOpenCodeSessions(sourcePath, repository).imported, 1);
     strictEqual(
       archive.prepare("SELECT output_preview FROM tool_events").get()!
