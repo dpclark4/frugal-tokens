@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { getRouteApi } from "@tanstack/react-router";
 import type {
   CacheAssessment,
@@ -1375,7 +1375,7 @@ function SessionBreakdown({
 }
 
 export function SessionsPage() {
-  const { page, harness } = route.useSearch();
+  const { harness } = route.useSearch();
   const navigate = route.useNavigate();
   const [data, setData] = useState<SessionListResponse>();
   const [expandedIDs, setExpandedIDs] = useState<Set<string>>(
@@ -1383,12 +1383,21 @@ export function SessionsPage() {
   );
   const [details, setDetails] = useState<Record<string, SessionDetail>>({});
   const [error, setError] = useState<string>();
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState<string>();
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const loadingMoreRef = useRef(false);
+  const harnessRef = useRef(harness);
+  harnessRef.current = harness;
 
   useEffect(() => {
     let active = true;
     setData(undefined);
     setError(undefined);
-    getSessions(page, harness).then((result) => active && setData(result))
+    setLoadMoreError(undefined);
+    loadingMoreRef.current = false;
+    setLoadingMore(false);
+    getSessions(1, harness).then((result) => active && setData(result))
       .catch(
         (reason) => {
           if (active) {
@@ -1403,7 +1412,67 @@ export function SessionsPage() {
     return () => {
       active = false;
     };
-  }, [page, harness]);
+  }, [harness]);
+
+  async function loadNextPage() {
+    if (
+      !data || loadingMoreRef.current ||
+      data.pagination.page >= data.pagination.totalPages
+    ) return;
+    const requestedHarness = harness;
+    const nextPage = data.pagination.page + 1;
+    loadingMoreRef.current = true;
+    setLoadingMore(true);
+    setLoadMoreError(undefined);
+    try {
+      const result = await getSessions(nextPage, requestedHarness);
+      if (harnessRef.current !== requestedHarness) return;
+      setData((current) => {
+        if (!current) return result;
+        const seen = new Set(
+          current.items.map((session) => `${session.harness}:${session.id}`),
+        );
+        return {
+          ...result,
+          items: [
+            ...current.items,
+            ...result.items.filter((session) =>
+              !seen.has(`${session.harness}:${session.id}`)
+            ),
+          ],
+        };
+      });
+    } catch (reason) {
+      if (harnessRef.current === requestedHarness) {
+        setLoadMoreError(
+          reason instanceof Error
+            ? reason.message
+            : "Unable to load more sessions",
+        );
+      }
+    } finally {
+      if (harnessRef.current === requestedHarness) {
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      }
+    }
+  }
+
+  useEffect(() => {
+    const target = loadMoreRef.current;
+    if (
+      !target || !data || data.pagination.page >= data.pagination.totalPages ||
+      typeof IntersectionObserver === "undefined"
+    ) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) loadNextPage();
+      },
+      { rootMargin: "400px 0px" },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [data?.pagination.page, data?.pagination.totalPages, harness]);
 
   async function toggleSession(id: string) {
     if (expandedIDs.has(id)) {
@@ -1658,25 +1727,24 @@ export function SessionsPage() {
                 </tbody>
               </table>
             </div>
-            <nav className="pagination" aria-label="Session pages">
-              <button
-                type="button"
-                disabled={page <= 1}
-                onClick={() =>
-                  navigate({ search: { page: page - 1, harness } })}
-              >
-                Previous
-              </button>
-              <span>Page {page} of {data.pagination.totalPages || 1}</span>
-              <button
-                type="button"
-                disabled={page >= data.pagination.totalPages}
-                onClick={() =>
-                  navigate({ search: { page: page + 1, harness } })}
-              >
-                Next
-              </button>
-            </nav>
+            <div ref={loadMoreRef} className="session-load-more">
+              {loadingMore && <span>Loading more sessions...</span>}
+              {loadMoreError && (
+                <>
+                  <span className="session-load-error">{loadMoreError}</span>
+                  <button type="button" onClick={loadNextPage}>Try again</button>
+                </>
+              )}
+              {!loadingMore && !loadMoreError &&
+                data.pagination.page < data.pagination.totalPages && (
+                <button type="button" onClick={loadNextPage}>Load more</button>
+              )}
+              {data.pagination.page >= data.pagination.totalPages && (
+                <span>
+                  Showing all {integer.format(data.items.length)} sessions
+                </span>
+              )}
+            </div>
           </>
         )}
       </section>

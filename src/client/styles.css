@@ -1572,35 +1572,35 @@ table.data-table {
   color: var(--danger);
 }
 
-.pagination {
+.session-load-more {
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
+  min-height: 64px;
   padding: 18px 24px;
 }
 
-.pagination span {
+.session-load-more span {
   font-family: var(--mono);
   color: #696c65;
   font-size: 11px;
 }
 
-.pagination button {
+.session-load-more .session-load-error {
+  color: var(--danger);
+}
+
+.session-load-more button {
   background: transparent;
   border: 1px solid #bbb8af;
   padding: 7px 12px;
   cursor: pointer;
 }
 
-.pagination button:hover:not(:disabled) {
+.session-load-more button:hover {
   border-color: var(--green);
   color: #354d33;
-}
-
-.pagination button:disabled {
-  opacity: .35;
-  cursor: default;
 }
 
 @media (max-width: 760px) {
