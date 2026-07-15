@@ -460,19 +460,6 @@ function formattedTurnCost(value?: number) {
   return value === undefined ? "unpriced" : turnDollars.format(value);
 }
 
-function SessionCostSummary({ session }: { session: SessionDetail }) {
-  const total = aggregateSessionTrees([session]);
-  const nested = aggregateSessionTrees(session.subagents);
-  return (
-    <div className="session-cost-summary">
-      <span className="session-cost-label">Cost</span>
-      <strong>{formattedCost(total.computedCost)} actual</strong>
-      <span>{formattedCost(session.computedCost)} direct session calls</span>
-      <span>{formattedCost(nested.computedCost)} subagent calls</span>
-    </div>
-  );
-}
-
 function TurnCost({
   direct,
   nested,
@@ -569,11 +556,15 @@ function costsMismatch(reported?: number, computed?: number) {
 function CostCell({
   reported,
   computed,
+  direct,
+  subagents,
   session = false,
   turn = false,
 }: {
   reported?: number;
   computed?: number;
+  direct?: number;
+  subagents?: number;
   session?: boolean;
   turn?: boolean;
 }) {
@@ -589,9 +580,14 @@ function CostCell({
   const computedLabel = computed === undefined
     ? "Computed: n/a"
     : `Computed: ${dollars.format(computed)}`;
+  const costBreakdown = direct === undefined
+    ? computedLabel
+    : `Total: ${formattedCost(computed)} · Direct: ${formattedCost(direct)} · Subagents: ${
+      formattedCost(subagents)
+    }`;
   const title = mismatch
-    ? `${computedLabel} · ${reportedLabel} (mismatch)`
-    : `${computedLabel} · ${reportedLabel}`;
+    ? `${costBreakdown} · ${reportedLabel} (mismatch)`
+    : `${costBreakdown} · ${reportedLabel}`;
 
   return (
     <span
@@ -600,7 +596,16 @@ function CostCell({
       }`}
       title={title}
     >
-      <span>{primary}</span>
+      {session
+        ? (
+          <span className="session-cost-values">
+            <strong>{primary}</strong>
+            {subagents !== undefined && (
+              <small>{sessionDollars.format(subagents)} nested</small>
+            )}
+          </span>
+        )
+        : <span>{primary}</span>}
       {mismatch && (
         <span className="cost-mismatch-icon" aria-label="Cost mismatch">!</span>
       )}
@@ -1065,10 +1070,6 @@ function SessionBreakdown({
         </div>
       )}
 
-      {!nested && session.subagents.length > 0 && (
-        <SessionCostSummary session={session} />
-      )}
-
       <div className="turn-table-wrap">
         <table className="data-table turn-table">
           <colgroup>
@@ -1379,23 +1380,32 @@ export function SessionsPage() {
                     const tokens = session.inclusiveTokens ?? session.tokens;
                     const hasInclusiveMetrics =
                       session.inclusiveTokens !== undefined;
+                    const hasSubagents = (session.subagentCount ?? 0) > 0;
+                    const subagentComputedCost = hasSubagents &&
+                        session.inclusiveComputedCost !== undefined &&
+                        session.computedCost !== undefined
+                      ? Math.max(
+                        0,
+                        session.inclusiveComputedCost - session.computedCost,
+                      )
+                      : undefined;
                     const anthropic = session.providers.some((provider) =>
                       provider.toLowerCase().includes("anthropic")
                     );
                     return (
                       <Fragment key={session.id}>
-                         <tr
-                           className={`session-row${
-                             expanded ? " row-open" : ""
-                           }`}
-                           onClick={() => toggleSession(session.id)}
-                         >
+                        <tr
+                          className={`session-row${
+                            expanded ? " row-open" : ""
+                          }`}
+                          onClick={() => toggleSession(session.id)}
+                        >
                           <td className="session-cell">
                             <div className="session-identity">
-                              <button
-                                 type="button"
-                                 className="session-expand"
-                                 aria-expanded={expanded}
+                                <button
+                                  type="button"
+                                  className="session-expand"
+                                  aria-expanded={expanded}
                                 aria-label={`${
                                   expanded ? "Collapse" : "Expand"
                                 } ${session.title}`}
@@ -1446,14 +1456,14 @@ export function SessionsPage() {
                                 {session.inclusiveModelCalls ??
                                   session.modelCalls} calls
                               </span>
-                              <span
-                                className={session.subagentCount
-                                  ? undefined
-                                  : "muted"}
-                              >
-                                {session.subagentCount ?? 0}{" "}
-                                subagent{session.subagentCount === 1 ? "" : "s"}
-                              </span>
+                              {(session.subagentCount ?? 0) > 0 && (
+                                <span>
+                                  {session.subagentCount}{" "}
+                                  subagent{
+                                    session.subagentCount === 1 ? "" : "s"
+                                  }
+                                </span>
+                              )}
                             </span>
                           </td>
                           <td>
@@ -1475,6 +1485,10 @@ export function SessionsPage() {
                               computed={hasInclusiveMetrics
                                 ? session.inclusiveComputedCost
                                 : session.computedCost}
+                              direct={hasSubagents
+                                ? session.computedCost
+                                : undefined}
+                              subagents={subagentComputedCost}
                               session
                             />
                           </td>

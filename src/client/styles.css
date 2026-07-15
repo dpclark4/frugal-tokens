@@ -750,7 +750,25 @@ table.data-table {
 }
 
 .session-cost {
+  align-items: center;
+}
+
+.session-cost-values {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.session-cost-values strong {
   font-weight: 700;
+}
+
+.session-cost-values small {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 400;
+  white-space: nowrap;
 }
 
 .cost-mismatch {
@@ -913,30 +931,6 @@ table.data-table {
 
 .turn-cost strong {
   font-weight: 700;
-}
-
-.session-cost-summary {
-  display: grid;
-  grid-template-columns: minmax(150px, max-content);
-  gap: 4px;
-  margin: 2px 0 12px;
-  padding: 12px 14px;
-  border-left: 3px solid var(--rail);
-  background: var(--surface-0);
-  font-family: var(--mono);
-  font-size: 11px;
-}
-
-.session-cost-summary strong {
-  margin-bottom: 8px;
-  font-size: 13px;
-}
-
-.session-cost-label {
-  color: var(--muted);
-  font-size: 9px;
-  letter-spacing: .06em;
-  text-transform: uppercase;
 }
 
 .turn-detail-row > td {
