@@ -63,6 +63,12 @@ export const cacheSummarySchema = z.object({
   unknown: z.number().int().nonnegative(),
 });
 
+export const cacheIssueSchema = z.object({
+  status: z.enum(["partial-hit", "full-miss"]),
+  turn: z.number().int().positive(),
+  scope: z.string().optional(),
+});
+
 export const turnCacheSummarySchema = cacheSummarySchema.extend({
   totalCacheRead: z.number().int().nonnegative(),
   peakCacheRead: z.number().int().nonnegative(),
@@ -91,6 +97,7 @@ export const sessionSummarySchema = z.object({
   reportedCost: z.number().nonnegative().optional(),
   computedCost: z.number().nonnegative().optional(),
   cacheSummary: cacheSummarySchema.optional(),
+  cacheIssues: z.array(cacheIssueSchema).optional(),
   tokens: tokenUsageSchema,
 });
 
@@ -209,6 +216,7 @@ export const usageResponseSchema = z.object({
 export type ModelCall = z.infer<typeof modelCallSchema>;
 export type CacheAssessment = z.infer<typeof cacheAssessmentSchema>;
 export type CacheSummary = z.infer<typeof cacheSummarySchema>;
+export type CacheIssue = z.infer<typeof cacheIssueSchema>;
 export type TurnCacheSummary = z.infer<typeof turnCacheSummarySchema>;
 export type SessionListResponse = z.infer<typeof sessionListResponseSchema>;
 export type SessionSummary = z.infer<typeof sessionSummarySchema>;

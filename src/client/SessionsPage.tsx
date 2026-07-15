@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from "react";
 import { getRouteApi } from "@tanstack/react-router";
 import type {
   CacheAssessment,
+  CacheIssue,
   CacheSummary,
   ModelCall,
   SessionDetail,
@@ -33,8 +34,8 @@ const sessionDollars = new Intl.NumberFormat("en-US", {
 const turnDollars = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
-  minimumFractionDigits: 4,
-  maximumFractionDigits: 4,
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 });
 const compact = new Intl.NumberFormat("en-US", {
   notation: "compact",
@@ -122,10 +123,19 @@ function SessionInputMetric({
   tokens,
   anthropic,
   label = "input processed",
+  showWriteTtl = false,
 }: {
-  tokens: Pick<TokenUsage, "uncachedInput" | "cacheRead" | "cacheWrite">;
+  tokens: Pick<
+    TokenUsage,
+    | "uncachedInput"
+    | "cacheRead"
+    | "cacheWrite"
+    | "cacheWrite5m"
+    | "cacheWrite1h"
+  >;
   anthropic: boolean;
   label?: string;
+  showWriteTtl?: boolean;
 }) {
   const cacheWrite = tokens.cacheWrite ?? 0;
   const totalInput = tokens.uncachedInput + tokens.cacheRead + cacheWrite;
@@ -148,6 +158,14 @@ function SessionInputMetric({
           </>
         )}
       </small>
+      {showWriteTtl &&
+        (tokens.cacheWrite5m !== undefined ||
+          tokens.cacheWrite1h !== undefined) && (
+        <small>
+          writes: <TokenValue value={tokens.cacheWrite5m ?? 0} /> at 5m ·{"  "}
+          <TokenValue value={tokens.cacheWrite1h ?? 0} /> at 1h
+        </small>
+      )}
       <small className={reused === undefined ? "muted" : undefined}>
         {reused === undefined
           ? "Reuse unavailable"
@@ -157,15 +175,6 @@ function SessionInputMetric({
   );
 }
 
-const cacheStatusLabels: Record<CacheAssessment["status"], string> = {
-  baseline: "Baseline",
-  hit: "Hit",
-  "partial-hit": "Partial hit",
-  "full-miss": "Full miss",
-  "not-comparable": "Not comparable",
-  unknown: "Unavailable",
-};
-
 const cacheAssessmentReasonLabels = {
   "no-predecessor": "No preceding comparable call",
   "model-change": "New cache chain: provider or model changed",
@@ -173,10 +182,16 @@ const cacheAssessmentReasonLabels = {
 } as const;
 
 function CacheAssessmentBadge(
-  { assessment }: { assessment?: CacheAssessment },
+  { assessment, title: providedTitle }: {
+    assessment?: CacheAssessment;
+    title?: string;
+  },
 ) {
-  if (!assessment || assessment.status === "baseline") return null;
-  const title = assessment.reason !== undefined
+  if (
+    !assessment ||
+    (assessment.status !== "partial-hit" && assessment.status !== "full-miss")
+  ) return null;
+  const title = providedTitle ?? (assessment.reason !== undefined
     ? cacheAssessmentReasonLabels[assessment.reason]
     : assessment.retainedRatio === undefined ||
         assessment.previousReusableTokens === undefined
@@ -189,15 +204,13 @@ function CacheAssessmentBadge(
       )
     } of ${
       integer.format(assessment.previousReusableTokens)
-    } previously reusable tokens`;
-  const label = assessment.status === "not-comparable"
-    ? assessment.reason === "model-change"
-      ? "New cache chain"
-      : "No prior cache"
-    : cacheStatusLabels[assessment.status];
+    } previously reusable tokens`);
+  const label = assessment.status === "full-miss"
+    ? "Full miss"
+    : "Partial miss";
   return (
     <span
-      className={`cache-assessment cache-assessment-${assessment.status}`}
+      className={`cache-assessment cache-issue-badge cache-assessment-${assessment.status}`}
       title={title}
     >
       {label}
@@ -248,6 +261,97 @@ function CacheSummaryBadge({ summary }: { summary?: CacheSummary }) {
       title={title}
     >
       {parts.join(" · ") || "Unavailable"}
+    </span>
+  );
+}
+
+function cacheIssueLabel(issue: CacheIssue) {
+  return issue.scope
+    ? `${issue.scope}, turn ${issue.turn}`
+    : `Turn ${issue.turn}`;
+}
+
+function SessionCacheStatus({
+  summary,
+  issues,
+}: {
+  summary?: CacheSummary;
+  issues?: CacheIssue[];
+}) {
+  const full = issues?.filter((issue) => issue.status === "full-miss") ?? [];
+  const partial = issues?.filter((issue) => issue.status === "partial-hit") ??
+    [];
+  if (!summary || (full.length === 0 && partial.length === 0)) {
+    return null;
+  }
+  const title = [
+    full.length > 0
+      ? `Full miss turns:\n${full.map(cacheIssueLabel).join("\n")}`
+      : undefined,
+    partial.length > 0
+      ? `Partial hit turns:\n${partial.map(cacheIssueLabel).join("\n")}`
+      : undefined,
+    `Call totals: ${cacheSummaryTitle(summary)}`,
+  ].filter(Boolean).join("\n\n");
+  return (
+    <span className="session-cache-status" title={title}>
+      {full.length > 0 && (
+        <>
+          <span className="cache-issue-badge session-cache-full">
+            Full miss
+          </span>
+          <span className="session-cache-count">x{full.length}</span>
+        </>
+      )}
+      {partial.length > 0 && (
+        <>
+          <span className="cache-issue-badge session-cache-partial">
+            Partial miss
+          </span>
+          <span className="session-cache-count">x{partial.length}</span>
+        </>
+      )}
+    </span>
+  );
+}
+
+function TurnCacheStatus({ turn }: { turn: SessionDetail["turns"][number] }) {
+  const full = turn.calls.filter((call) =>
+    call.cacheAssessment?.status === "full-miss"
+  );
+  const partial = turn.calls.filter((call) =>
+    call.cacheAssessment?.status === "partial-hit"
+  );
+  const title = [
+    full.length > 0
+      ? `Full miss calls: ${
+        full.map((call) => `#${call.callWithinTurn}`).join(", ")
+      }`
+      : undefined,
+    partial.length > 0
+      ? `Partial hit calls: ${
+        partial.map((call) => `#${call.callWithinTurn}`).join(", ")
+      }`
+      : undefined,
+    turn.cacheSummary === undefined
+      ? undefined
+      : `Call totals: ${cacheSummaryTitle(turn.cacheSummary)}`,
+  ].filter(Boolean).join("\n");
+  if (full.length === 0 && partial.length === 0) return null;
+  return (
+    <span className="cache-issue-group">
+      {full.length > 0 && (
+        <CacheAssessmentBadge
+          assessment={full[0].cacheAssessment}
+          title={title}
+        />
+      )}
+      {partial.length > 0 && (
+        <CacheAssessmentBadge
+          assessment={partial[0].cacheAssessment}
+          title={title}
+        />
+      )}
     </span>
   );
 }
@@ -359,6 +463,10 @@ function turnMetrics(calls: ModelCall[]) {
   let cacheRead = 0;
   let cacheWrite = 0;
   let hasWrite = false;
+  let cacheWrite5m = 0;
+  let hasWrite5m = false;
+  let cacheWrite1h = 0;
+  let hasWrite1h = false;
   let output = 0;
   let reasoning = 0;
   let processed = 0;
@@ -375,6 +483,14 @@ function turnMetrics(calls: ModelCall[]) {
     if (call.tokens.cacheWrite !== undefined) {
       cacheWrite += call.tokens.cacheWrite;
       hasWrite = true;
+    }
+    if (call.tokens.cacheWrite5m !== undefined) {
+      cacheWrite5m += call.tokens.cacheWrite5m;
+      hasWrite5m = true;
+    }
+    if (call.tokens.cacheWrite1h !== undefined) {
+      cacheWrite1h += call.tokens.cacheWrite1h;
+      hasWrite1h = true;
     }
     output += call.tokens.output;
     reasoning += call.tokens.reasoning;
@@ -396,6 +512,8 @@ function turnMetrics(calls: ModelCall[]) {
     uncachedInput,
     cacheRead,
     cacheWrite: hasWrite ? cacheWrite : undefined,
+    cacheWrite5m: hasWrite5m ? cacheWrite5m : undefined,
+    cacheWrite1h: hasWrite1h ? cacheWrite1h : undefined,
     output,
     reasoning,
     processed,
@@ -663,15 +781,12 @@ function toolMechanics(call: ModelCall) {
   return [...counts].map(([name, count]) => `${name} ×${count}`).join(" · ");
 }
 
-function totalToolDuration(tools: ModelCall["activity"]["tools"]) {
-  const durations = tools.flatMap((tool) =>
-    tool.startedAt === undefined || tool.completedAt === undefined ||
-      tool.completedAt < tool.startedAt
-      ? []
-      : [tool.completedAt - tool.startedAt]
-  );
-  if (durations.length === 0) return undefined;
-  return duration(0, durations.reduce((total, value) => total + value, 0));
+function exceptionalFinishReason(reason?: string) {
+  if (!reason) return undefined;
+  const normalized = reason.toLowerCase().replaceAll(/[-_]/g, "");
+  return ["stop", "endturn", "tooluse", "toolcalls"].includes(normalized)
+    ? undefined
+    : reason;
 }
 
 function toolTargetPreview(value?: string) {
@@ -711,10 +826,10 @@ function CallInputMetric({ call }: { call: ModelCall }) {
       call.tokens.cacheRead > 0
         ? `${compact.format(call.tokens.cacheRead)} read`
         : undefined,
+      `${compact.format(call.tokens.uncachedInput)} uncached`,
       call.tokens.cacheWrite !== undefined
         ? `${compact.format(call.tokens.cacheWrite)} written`
         : undefined,
-      `${compact.format(call.tokens.uncachedInput)} uncached`,
     ]
     : [
       call.tokens.cacheRead > 0
@@ -727,7 +842,10 @@ function CallInputMetric({ call }: { call: ModelCall }) {
       className="metric-stack call-input-metric"
       title={`${integer.format(total)} total input tokens`}
     >
-      <span>{parts.filter(Boolean).join(" · ")}</span>
+      <span className="call-input-total">
+        <TokenValue value={total} /> total input
+      </span>
+      <small>{parts.filter(Boolean).join(" · ")}</small>
       {call.tokens.cacheWrite5m !== undefined &&
         call.tokens.cacheWrite1h !== undefined && (
         <small>
@@ -797,7 +915,6 @@ function CallTable({
   expandedSubagentID?: string;
   setExpandedSubagentID: (id: string | undefined) => void;
 }) {
-  const [expandedToolsCallID, setExpandedToolsCallID] = useState<string>();
   if (calls.length === 0) {
     return <p className="empty-turn">No completed model calls</p>;
   }
@@ -808,10 +925,12 @@ function CallTable({
         <colgroup>
           <col className="call-number-column" />
           <col className="call-started-column" />
+          <col className="call-model-column" />
           <col className="call-time-column" />
           <col className="call-outcome-column" />
-          <col className="call-model-column" />
           <col className="call-input-column" />
+          <col className="call-reused-column" />
+          <col className="call-cache-column" />
           <col className="call-output-column" />
           <col className="call-cost-column" />
         </colgroup>
@@ -819,10 +938,12 @@ function CallTable({
           <tr>
             <th>#</th>
             <th>Started</th>
-            <th>Model time</th>
-            <th>Outcome / preview</th>
             <th>Model</th>
+            <th>Time</th>
+            <th>Activity</th>
             <th>Input</th>
+            <th>Reused</th>
+            <th>Cache</th>
             <th>Output</th>
             <th>Cost</th>
           </tr>
@@ -831,9 +952,14 @@ function CallTable({
           {calls.map((call) => {
             const expanded = expandedCallID === call.id;
             const callDuration = duration(call.startedAt, call.completedAt);
+            const reused = cacheHitRate(call.tokens);
             const subagents = callSubagents(call, session);
             const mechanics = toolMechanics(call);
-            const toolsExpanded = expandedToolsCallID === call.id;
+            const finishWarning = exceptionalFinishReason(
+              call.activity.finishReason,
+            );
+            const hasDetails = call.activity.tools.length > 0 ||
+              subagents.length > 0 || finishWarning !== undefined;
             const previewTool = call.activity.tools.find((tool) =>
               tool.inputPreview !== undefined
             );
@@ -846,13 +972,19 @@ function CallTable({
             return (
               <Fragment key={call.id}>
                 <tr
-                  className={`call-row${expanded ? " row-open" : ""}`}
-                  onClick={() =>
-                    setExpandedCallID(expanded ? undefined : call.id)}
+                  className={`call-row${hasDetails ? " has-details" : ""}${
+                    expanded ? " row-open" : ""
+                  }`}
+                  onClick={hasDetails
+                    ? () => setExpandedCallID(expanded ? undefined : call.id)
+                    : undefined}
                 >
                   <td>{call.callWithinTurn}</td>
                   <td title={fullTimestamp.format(call.startedAt)}>
                     {timeOnly.format(call.startedAt)}
+                  </td>
+                  <td>
+                    {modelDisplayName(call.model)}
                   </td>
                   <td className={callDuration ? undefined : "muted"}>
                     {callDuration ?? "—"}
@@ -861,7 +993,8 @@ function CallTable({
                     <button
                       type="button"
                       className="activity-button"
-                      aria-expanded={expanded}
+                      aria-expanded={hasDetails ? expanded : undefined}
+                      disabled={!hasDetails}
                     >
                       <span className="activity-summary-line">
                         <span title={call.preview}>{outcome}</span>
@@ -882,10 +1015,15 @@ function CallTable({
                     </button>
                   </td>
                   <td>
-                    {modelDisplayName(call.model)}
+                    <CallInputMetric call={call} />
+                  </td>
+                  <td className={reused === undefined ? "muted" : undefined}>
+                    {reused === undefined
+                      ? "-"
+                      : `${(reused * 100).toFixed(1)}%`}
                   </td>
                   <td>
-                    <CallInputMetric call={call} />
+                    <CacheAssessmentBadge assessment={call.cacheAssessment} />
                   </td>
                   <td>
                     <TokenValue
@@ -902,97 +1040,54 @@ function CallTable({
                 </tr>
                 {expanded && (
                   <tr className="activity-detail-row">
-                    <td colSpan={8}>
+                    <td colSpan={10}>
                       <div className="activity-detail">
-                        <div className="activity-meta">
-                          <span className="chip">
-                            {call.activity.finishReason === "stop"
-                              ? "Final"
-                              : "Model call"}
-                          </span>
-                          {call.activity.hasReasoning && (
-                            <span className="chip chip-muted">Reasoning</span>
-                          )}
-                          {call.activity.hasText && (
-                            <span className="chip chip-muted">Text</span>
-                          )}
-                          {callDuration && <span>Model {callDuration}</span>}
-                          {call.activity.finishReason && (
-                            <span>
-                              Finished: {call.activity.finishReason}
-                            </span>
-                          )}
-                        </div>
-                        {call.activity.tools.length === 0
-                          ? (
-                            <p>
-                              No tool calls in this model invocation.
-                            </p>
-                          )
-                          : (
-                            <div className="tools-detail">
-                              <button
-                                type="button"
-                                className="tools-summary"
-                                aria-expanded={toolsExpanded}
-                                onClick={() =>
-                                  setExpandedToolsCallID(
-                                    toolsExpanded ? undefined : call.id,
-                                  )}
-                              >
-                                <strong>Tools</strong>
-                                <span>{mechanics}</span>
-                                <span>
-                                  {totalToolDuration(call.activity.tools) ??
-                                    "time unavailable"}
-                                </span>
-                                <b>{toolsExpanded ? "▾" : "▸"}</b>
-                              </button>
-                              {toolsExpanded && (
-                                <div className="tool-table-wrap">
-                                  <table className="tool-table">
-                                    <thead>
-                                      <tr>
-                                        <th>Tool</th>
-                                        <th>Target / preview</th>
-                                        <th>Time</th>
-                                        <th>Status</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {call.activity.tools.map((
-                                        tool,
-                                        index,
-                                      ) => (
-                                        <tr key={`${tool.name}-${index}`}>
-                                          <td>{tool.name}</td>
-                                          <td
-                                            className="tool-target"
-                                            title={tool.inputPreview}
-                                          >
-                                            {toolTargetPreview(
-                                              tool.inputPreview,
-                                            ) ?? "—"}
-                                          </td>
-                                          <td>
-                                            {duration(
-                                              tool.startedAt,
-                                              tool.completedAt,
-                                            ) ?? "—"}
-                                          </td>
-                                          <td
-                                            className={`tool-status tool-status-${tool.status}`}
-                                          >
-                                            {tool.status}
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              )}
+                        {finishWarning && (
+                          <div className="activity-warning">
+                            Finished: {finishWarning}
+                          </div>
+                        )}
+                        {call.activity.tools.length > 0 && (
+                          <div className="tools-detail">
+                            <div className="tool-table-wrap">
+                              <table className="tool-table">
+                                <thead>
+                                  <tr>
+                                    <th>Tool</th>
+                                    <th>Status</th>
+                                    <th>Time</th>
+                                    <th>Details</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {call.activity.tools.map((tool, index) => (
+                                    <tr key={`${tool.name}-${index}`}>
+                                      <td>{tool.name}</td>
+                                      <td
+                                        className={`tool-status tool-status-${tool.status}`}
+                                      >
+                                        {tool.status}
+                                      </td>
+                                      <td>
+                                        {duration(
+                                          tool.startedAt,
+                                          tool.completedAt,
+                                        ) ?? "—"}
+                                      </td>
+                                      <td
+                                        className="tool-details"
+                                        title={tool.inputPreview}
+                                      >
+                                        {toolTargetPreview(tool.inputPreview) ??
+                                          "—"}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
                             </div>
-                          )}
+                          </div>
+                        )}
                         {subagents.map((child) => (
                           <SubagentSummary
                             key={child.id}
@@ -1078,6 +1173,7 @@ function SessionBreakdown({
             <col className="turn-elapsed-column" />
             <col className="turn-activity-column" />
             <col className="turn-input-column" />
+            <col className="turn-cache-column" />
             <col className="turn-output-column" />
             <col className="turn-cost-column" />
           </colgroup>
@@ -1088,6 +1184,7 @@ function SessionBreakdown({
               <th>Elapsed</th>
               <th>Activity</th>
               <th>Input</th>
+              <th>Cache</th>
               <th>Output</th>
               <th>Cost</th>
             </tr>
@@ -1170,11 +1267,14 @@ function SessionBreakdown({
                               uncachedInput: metrics.uncachedInput,
                               cacheRead: metrics.cacheRead,
                               cacheWrite: metrics.cacheWrite,
+                              cacheWrite5m: metrics.cacheWrite5m,
+                              cacheWrite1h: metrics.cacheWrite1h,
                             }}
                             anthropic={session.providers.some((provider) =>
                               provider.toLowerCase().includes("anthropic")
                             )}
                             label="total input"
+                            showWriteTtl
                           />
                         )
                         : (
@@ -1188,6 +1288,9 @@ function SessionBreakdown({
                             </small>
                           </span>
                         )}
+                    </td>
+                    <td>
+                      <TurnCacheStatus turn={turn} />
                     </td>
                     <td>
                       <TokenValue
@@ -1214,7 +1317,7 @@ function SessionBreakdown({
                   </tr>
                   {open && (
                     <tr className="turn-detail-row">
-                      <td colSpan={7}>
+                      <td colSpan={8}>
                         <CallTable
                           calls={turn.calls}
                           session={session}
@@ -1356,6 +1459,7 @@ export function SessionsPage() {
                   <col className="elapsed-column" />
                   <col className="activity-column" />
                   <col className="input-column" />
+                  <col className="cache-column" />
                   <col className="output-column" />
                   <col className="cost-column" />
                 </colgroup>
@@ -1366,6 +1470,7 @@ export function SessionsPage() {
                     <th>Elapsed</th>
                     <th>Activity</th>
                     <th>Input</th>
+                    <th title="Full and partial cache misses">Cache</th>
                     <th>Output</th>
                     <th title="Computed cost; ! if reported is non-zero and differs">
                       Cost
@@ -1473,6 +1578,12 @@ export function SessionsPage() {
                             />
                           </td>
                           <td>
+                            <SessionCacheStatus
+                              summary={session.cacheSummary}
+                              issues={session.cacheIssues}
+                            />
+                          </td>
+                          <td>
                             <TokenValue
                               value={tokens.output + tokens.reasoning}
                             />
@@ -1495,7 +1606,7 @@ export function SessionsPage() {
                         </tr>
                         {expanded && (
                           <tr className="detail-row">
-                            <td colSpan={7}>
+                            <td colSpan={8}>
                               {detail
                                 ? <SessionBreakdown session={detail} />
                                 : (

@@ -5,7 +5,11 @@ import { ClaudeCodeRepository } from "./claudeCodeRepository.ts";
 import { PiRepository } from "./piRepository.ts";
 import { CodexRepository } from "./codexRepository.ts";
 import { computeModelCallCost, priceSessionDetail } from "./pricing.ts";
-import { analyzeSessionCache, summarizeSessionCache } from "./cacheAnalysis.ts";
+import {
+  analyzeSessionCache,
+  sessionCacheIssues,
+  summarizeSessionCache,
+} from "./cacheAnalysis.ts";
 import type {
   SessionDetail,
   SessionListResponse,
@@ -287,6 +291,7 @@ function priceSummaries(items: SessionSummary[]) {
       ...item,
       computedCost: priced.computedCost,
       cacheSummary: summarizeSessionCache(analyzed),
+      cacheIssues: sessionCacheIssues(analyzed),
       subagentCount: subagents.count,
       subagentModelCalls: subagents.modelCalls,
       inclusiveUserTurns: inclusive.userTurns,
