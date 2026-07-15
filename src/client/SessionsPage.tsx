@@ -27,8 +27,8 @@ const dollars = new Intl.NumberFormat("en-US", {
 const sessionDollars = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
-  minimumFractionDigits: 3,
-  maximumFractionDigits: 3,
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
 });
 const turnDollars = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -67,7 +67,9 @@ function ModelSummary({ models }: { models: string[] }) {
   const others = models.slice(0, -1);
   return (
     <span className="session-model-summary">
-      <span title={primary}>{modelDisplayName(primary)}</span>
+      <span className="session-model-name" title={primary}>
+        {modelDisplayName(primary)}
+      </span>
       {others.length > 0 && (
         <span
           className="model-overflow"
@@ -101,7 +103,10 @@ function modelDisplayName(model: string) {
     o3: "O3",
     o4: "O4",
   };
-  return model.split(/[-_]/).map((part) =>
+  const displayModel = model.toLowerCase().includes("claude")
+    ? model.replace(/[-_]20\d{6}$/, "")
+    : model;
+  return displayModel.split(/[-_]/).map((part) =>
     names[part.toLowerCase()] ??
       (part.length === 0 ? part : part[0].toUpperCase() + part.slice(1))
   ).join(" ");
@@ -1435,7 +1440,7 @@ export function SessionsPage() {
                                 {session.inclusiveUserTurns ??
                                   session.userTurns} turns ·{"  "}
                                 {session.inclusiveModelCalls ??
-                                  session.modelCalls} total calls
+                                  session.modelCalls} calls
                               </span>
                               <span
                                 className={session.subagentCount

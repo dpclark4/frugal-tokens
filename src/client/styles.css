@@ -454,29 +454,32 @@ h1 {
   overflow-x: auto;
 }
 
-.session-table .session-column {
-  width: 29%;
+.session-table {
+  table-layout: fixed;
 }
 
 .session-table .model-column {
-  width: 17%;
+  width: clamp(140px, 12vw, 170px);
 }
 
 .session-table .elapsed-column {
-  width: 7%;
+  width: clamp(72px, 6vw, 82px);
 }
 
 .session-table .activity-column {
-  width: 14%;
+  width: clamp(150px, 13vw, 190px);
 }
 
 .session-table .input-column {
-  width: 21%;
+  width: clamp(210px, 19vw, 270px);
 }
 
-.session-table .output-column,
+.session-table .output-column {
+  width: clamp(65px, 6vw, 78px);
+}
+
 .session-table .cost-column {
-  width: 6%;
+  width: 100px;
 }
 
 table.data-table {
@@ -509,6 +512,10 @@ table.data-table {
   text-align: left;
 }
 
+.session-table th:nth-child(3) {
+  text-align: right;
+}
+
 .data-table td {
   font-family: var(--mono);
   font-size: 12px;
@@ -530,6 +537,10 @@ table.data-table {
   text-align: left;
 }
 
+.session-table td:nth-child(3) {
+  text-align: right;
+}
+
 .session-row {
   transition: background .12s ease;
 }
@@ -543,7 +554,6 @@ table.data-table {
 }
 
 .session-cell {
-  max-width: 360px;
   white-space: normal;
   font-family: "Avenir Next", "Segoe UI", sans-serif;
 }
@@ -607,9 +617,10 @@ table.data-table {
 }
 
 .session-model-harness {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .session-table th:nth-child(2) {
@@ -619,6 +630,12 @@ table.data-table {
 .session-model-harness .session-model-summary {
   color: var(--ink);
   font-weight: 600;
+}
+
+.session-model-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .harness-icon {
@@ -646,8 +663,14 @@ table.data-table {
 }
 
 .session-input-metric {
-  min-width: 210px;
+  max-width: 100%;
   text-align: left;
+}
+
+.session-input-metric > span,
+.session-input-metric > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .session-input-metric > span:first-child {
