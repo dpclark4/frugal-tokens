@@ -112,7 +112,25 @@ function ModelSummary({ models }: { models: string[] }) {
   );
 }
 
+const modelDisplayNames: Record<string, string> = {
+  "claude-fable-5": "Claude Fable 5",
+  "claude-mythos-5": "Claude Mythos 5",
+  "claude-opus-4-8": "Claude Opus 4.8",
+  "claude-opus-4-7": "Claude Opus 4.7",
+  "claude-opus-4-6": "Claude Opus 4.6",
+  "claude-opus-4-5": "Claude Opus 4.5",
+  "claude-opus-4-1": "Claude Opus 4.1",
+  "claude-sonnet-4-6": "Claude Sonnet 4.6",
+  "claude-sonnet-4-5": "Claude Sonnet 4.5",
+  "claude-haiku-4-5": "Claude Haiku 4.5",
+  "claude-haiku-3-5": "Claude Haiku 3.5",
+  "grok-4-5": "Grok 4.5",
+};
+
 function modelDisplayName(model: string) {
+  const mapped = modelDisplayNames[model];
+  if (mapped) return mapped;
+
   const names: Record<string, string> = {
     gpt: "GPT",
     claude: "Claude",
