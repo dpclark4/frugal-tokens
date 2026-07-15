@@ -39,6 +39,33 @@ const standard: Record<string, RateCard> = {
   "gpt-5.4-pro": { input: 30, cacheRead: 0, output: 180 },
 };
 
+const longContext: Record<string, RateCard> = {
+  "gpt-5.6-sol": {
+    input: 10,
+    cacheRead: 1,
+    cacheWrite: 12.5,
+    output: 45,
+  },
+  "gpt-5.6-terra": {
+    input: 5,
+    cacheRead: 0.5,
+    cacheWrite: 6.25,
+    output: 22.5,
+  },
+  "gpt-5.6-luna": {
+    input: 2,
+    cacheRead: 0.2,
+    cacheWrite: 2.5,
+    output: 9,
+  },
+  "gpt-5.5": { input: 10, cacheRead: 1, output: 45 },
+  "gpt-5.5-pro": { input: 60, cacheRead: 0, output: 270 },
+  "gpt-5.4": { input: 5, cacheRead: 0.5, output: 22.5 },
+  "gpt-5.4-pro": { input: 60, cacheRead: 0, output: 270 },
+};
+
+const LONG_CONTEXT_THRESHOLD = 272_000;
+
 function normalizedModel(model: string) {
   return model.replace(/^.*?((?:claude|gpt|grok)-)/, "$1").replace(
     /-\d{8}.*$/,
@@ -46,8 +73,12 @@ function normalizedModel(model: string) {
   );
 }
 
-function rateCard(model: string, timestamp: number) {
+function rateCard(model: string, timestamp: number, inputTokens: number) {
   const normalized = normalizedModel(model);
+  if (
+    normalized.startsWith("gpt-5.") &&
+    inputTokens >= LONG_CONTEXT_THRESHOLD
+  ) return longContext[normalized];
   if (normalized === "claude-sonnet-5") {
     return timestamp < Date.parse("2026-09-01T00:00:00Z")
       ? { input: 2, cacheWrite5m: 2.5, cacheWrite1h: 4, cacheRead: 0.2, output: 10 }
@@ -61,13 +92,10 @@ export function computeModelCallCost(
   model: string,
   timestamp: number,
 ) {
-  const rates = rateCard(model, timestamp);
-  if (!rates) return undefined;
   const inputSideTokens = tokens.uncachedInput + tokens.cacheRead +
     (tokens.cacheWrite ?? 0);
-  if (normalizedModel(model).startsWith("gpt-5.") && inputSideTokens >= 272_000) {
-    return undefined;
-  }
+  const rates = rateCard(model, timestamp, inputSideTokens);
+  if (!rates) return undefined;
 
   let cacheWriteCost = 0;
   if (tokens.cacheWrite !== undefined) {
