@@ -174,6 +174,23 @@ Deno.test("incrementally imports OpenCode session trees", () => {
     strictEqual(tool.input_preview, '{"prompt":"inspect"}');
     strictEqual(tool.output_preview, "done");
 
+    source.prepare(`
+      UPDATE message SET data = json_set(
+        data,
+        '$.summary',
+        json_object('diffs', json_array('unused generated diff'))
+      )
+      WHERE id = 'user'
+    `).run();
+    // Force the importer past its cheap change hint without changing any
+    // archived content. The full checksum should ignore both unknown session
+    // metadata and the unused message summary.
+    source.exec("ALTER TABLE session ADD COLUMN ignored_metadata TEXT");
+    source.prepare(`
+      UPDATE session SET ignored_metadata = 'changed' WHERE id = 'root'
+    `).run();
+    strictEqual(syncOpenCodeSessions(sourcePath, repository).skipped, 1);
+
     strictEqual(syncOpenCodeSessions(sourcePath, repository).skipped, 1);
     source.prepare("UPDATE part SET time_updated = 20 WHERE id = 'tool'").run();
     strictEqual(syncOpenCodeSessions(sourcePath, repository).skipped, 1);
