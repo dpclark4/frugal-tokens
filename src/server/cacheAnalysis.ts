@@ -62,7 +62,10 @@ function isClaude(call: Pick<ModelCall, "provider" | "model">): boolean {
     call.model.toLowerCase().includes("claude");
 }
 
-function ttlExpired(previous: ModelCall, current: ModelCall): boolean {
+export function ttlExpired(
+  previous: Pick<ModelCall, "provider" | "model" | "tokens" | "startedAt">,
+  current: Pick<ModelCall, "startedAt">,
+): boolean {
   const elapsed = current.startedAt - previous.startedAt;
   if (elapsed < 0) return false;
   if (isClaude(previous)) {
@@ -147,8 +150,8 @@ export function analyzeSessionCache(session: SessionDetail): SessionDetail {
     const calls = turn.calls.map((call) => {
       const rawAssessment = assessCache(previous, call);
       const followsCompaction = (call.contextEventsBefore ?? []).some((event) =>
-          event.type === "compaction"
-        );
+        event.type === "compaction"
+      );
       const cacheAssessment = isMiss(rawAssessment) && followsCompaction
         ? { ...rawAssessment, cause: "compaction" as const }
         : isMiss(rawAssessment) && previous && ttlExpired(previous, call)

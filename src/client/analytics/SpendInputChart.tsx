@@ -19,6 +19,7 @@ const money = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 4,
 });
 const day = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+const DAY_MS = 86_400_000;
 const colors = ["#b4522d", "#466244", "#c18a3d", "#637b86", "#786578", "#8c7658", "#78916c", "#b46f62"];
 const visibleModels = 5;
 
@@ -38,7 +39,7 @@ function UsageTooltip({ active, label, payload, metric }: {
   const total = items.reduce((sum, item) => sum + item.value!, 0);
   return (
     <div className="usage-tooltip">
-      <p>{day.format(new Date(`${String(label)}T00:00:00`))}</p>
+      <p>{day.format(new Date(Number(label)))}</p>
       <strong>{formatValue(metric, total)} total</strong>
       <div className="usage-tooltip-models">
         {items.map((item) => (
@@ -55,7 +56,7 @@ function UsageTooltip({ active, label, payload, metric }: {
 export function SpendInputChart({ usage, metric, range }: {
   usage: UsageResponse;
   metric: Metric;
-  range: 7 | 30 | "all";
+  range: 7 | 30 | 90 | "all";
 }) {
   const models = [...new Set(usage.days.flatMap((entry) => entry.models.map(({ model }) => model)))].sort();
   const series = models.map((model, index) => ({
@@ -66,7 +67,9 @@ export function SpendInputChart({ usage, metric, range }: {
       .reduce((sum, item) => sum + (item[metric] ?? 0), 0),
   })).sort((a, b) => b.total - a.total || a.model.localeCompare(b.model));
   const data = usage.days.map((entry) => {
-    const row: Record<string, string | number | undefined> = { date: entry.date };
+    const row: Record<string, string | number | undefined> = {
+      timestamp: new Date(`${entry.date}T00:00:00`).getTime(),
+    };
     for (const item of entry.models) {
       const key = series.find(({ model }) => model === item.model)?.key;
       if (key) row[key] = item[metric];
@@ -96,7 +99,19 @@ export function SpendInputChart({ usage, metric, range }: {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data} margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
                 <CartesianGrid vertical={false} stroke="#dfdbd1" strokeDasharray="3 5" />
-                <XAxis dataKey="date" tickFormatter={(value: string) => day.format(new Date(`${value}T00:00:00`))} tickLine={false} axisLine={false} minTickGap={24} />
+                <XAxis
+                  dataKey="timestamp"
+                  type="number"
+                  scale="time"
+                  domain={[
+                    (minimum: number) => minimum - DAY_MS / 2,
+                    (maximum: number) => maximum + DAY_MS / 2,
+                  ]}
+                  tickFormatter={(value: number) => day.format(new Date(value))}
+                  tickLine={false}
+                  axisLine={false}
+                  minTickGap={24}
+                />
                 <YAxis tickFormatter={(value: number) => metric === "cost" ? `$${compact.format(value)}` : compact.format(value)} tickLine={false} axisLine={false} width={54} />
                 <Tooltip cursor={{ fill: "rgba(70, 98, 68, .07)" }} content={(props) => (
                   <UsageTooltip active={props.active} label={props.label} payload={props.payload as Array<{ color?: string; name?: string; value?: number }>} metric={metric} />

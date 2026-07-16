@@ -145,7 +145,7 @@ function SubagentTooltip({ active, payload }: {
 
 export function SubagentChart({ usage, range }: {
   usage: UsageResponse;
-  range: 7 | 30 | "all";
+  range: 7 | 30 | 90 | "all";
 }) {
   const [bucket, setBucket] = useState<"day" | "week">("week");
   const allCohorts = bucket === "day"

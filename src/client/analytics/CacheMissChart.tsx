@@ -39,7 +39,7 @@ function CacheTooltip({ active, label, payload }: {
 
 export function CacheMissChart({ usage, range }: {
   usage: UsageResponse;
-  range: 7 | 30 | "all";
+  range: 7 | 30 | 90 | "all";
 }) {
   const total = usage.cacheDays.reduce(
     (sum, entry) => sum + entry.clean + entry.partial + entry.fullMiss + entry.notComparable,

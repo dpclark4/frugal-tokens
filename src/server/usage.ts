@@ -19,6 +19,7 @@ export type UsageCall = {
   tokens: TokenUsage;
   reportedCost?: number;
   computedCost?: number;
+  followsCompaction?: boolean;
 };
 
 export function usageCallsFromSession(
@@ -42,6 +43,9 @@ export function usageCallsFromSession(
         tokens: call.tokens,
         reportedCost: call.reportedCost,
         computedCost: call.computedCost,
+        followsCompaction: (call.contextEventsBefore ?? []).some((event) =>
+          event.type === "compaction"
+        ),
       }))
     ),
     ...session.subagents.flatMap((subagent) =>

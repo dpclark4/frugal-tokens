@@ -3,6 +3,10 @@ import type {
   TokenUsage,
 } from "../shared/sessionSchemas.ts";
 import { contextSize } from "../shared/contextMetrics.ts";
+import {
+  type CacheMissTokens,
+  estimateCacheMissCost,
+} from "./cacheMissPricing.ts";
 
 type RateCard = {
   input: number;
@@ -120,6 +124,18 @@ export function computeModelCallCost(
     cacheWriteCost +
     (tokens.output + tokens.reasoning) * rates.output
   ) / 1_000_000;
+}
+
+export function estimateModelCacheMissCost(
+  before: CacheMissTokens,
+  after: CacheMissTokens,
+  model: string,
+  timestamp: number,
+) {
+  // A hit changes the billing category, not the request's context size. Resolve
+  // short- versus long-context rates from the call where the miss occurred.
+  const rates = rateCard(model, timestamp, contextSize(after));
+  return rates && estimateCacheMissCost(rates, before, after);
 }
 
 export function priceSessionDetail(session: SessionDetail): SessionDetail {

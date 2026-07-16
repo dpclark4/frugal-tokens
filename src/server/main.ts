@@ -18,6 +18,7 @@ import type {
 } from "../shared/sessionSchemas.ts";
 import type { UsageCall } from "./usage.ts";
 import { aggregateUsage } from "./usageAnalytics.ts";
+import { aggregateTtlMisses } from "./ttlMissAnalytics.ts";
 import { contextRange } from "../shared/contextMetrics.ts";
 import { openArchiveDatabase, sqlitePath } from "./database.ts";
 import { SessionRepository } from "./sessionRepository.ts";
@@ -386,6 +387,42 @@ function listSessions(
     pagination: { page, pageSize, totalItems: 0, totalPages: 0 },
   };
 }
+
+app.get("/api/ttl-misses", (context) => {
+  const harness = context.req.query("harness") ?? "all";
+  if (!["all", "opencode", "claude-code", "pi", "codex"].includes(harness)) {
+    return context.json({ error: "Invalid harness" }, 400);
+  }
+  const rangeParam = context.req.query("range") ?? "90";
+  const range = Math.min(
+    365,
+    Math.max(1, Number.parseInt(rangeParam, 10) || 90),
+  );
+  const start = new Date(
+    new Date().setHours(0, 0, 0, 0) - (range - 1) * 86_400_000,
+  ).getTime();
+  const usageCalls: UsageCall[] = [];
+
+  if (archiveRepository) {
+    usageCalls.push(...archiveRepository.listUsageCalls(
+      start,
+      harness === "all" ? undefined : harness as SessionSummary["harness"],
+    ));
+  } else {
+    const sources = [
+      ["opencode", repository],
+      ["claude-code", claudeRepository],
+      ["pi", piRepository],
+      ["codex", codexRepository],
+    ] as const;
+    for (const [name, source] of sources) {
+      if (!source || (harness !== "all" && harness !== name)) continue;
+      usageCalls.push(...source.listUsageCalls(start));
+    }
+  }
+
+  return context.json(aggregateTtlMisses(usageCalls, start, range));
+});
 
 app.get("/api/usage", (context) => {
   const requestStartedAt = performance.now();
