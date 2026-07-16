@@ -118,6 +118,52 @@ Deno.test("normalizes Codex JSONL sessions from token count events", () => {
   deepStrictEqual(actual, expected);
 });
 
+Deno.test("normalizes exported Codex session arrays", () => {
+  const actual = repository({
+    "rollout_exported.jsonl": JSON.stringify([
+      {
+        timestamp: "2026-05-22T02:08:00.000Z",
+        type: "event_msg",
+        payload: { type: "task_started" },
+      },
+      {
+        timestamp: "2026-05-22T02:08:01.000Z",
+        type: "response_item",
+        payload: {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: "Imported session" }],
+        },
+      },
+      {
+        timestamp: "2026-05-22T02:08:02.000Z",
+        type: "event_msg",
+        payload: { type: "agent_message", phase: null },
+      },
+      {
+        timestamp: "2026-05-22T02:08:03.000Z",
+        type: "event_msg",
+        payload: {
+          type: "token_count",
+          info: {
+            last_token_usage: {
+              input_tokens: 0,
+              cached_input_tokens: 0,
+              output_tokens: 0,
+              reasoning_output_tokens: 0,
+              total_tokens: 7963,
+            },
+          },
+        },
+      },
+    ]),
+  }).getSession("rollout_exported");
+
+  deepStrictEqual(actual?.title, "Imported session");
+  deepStrictEqual(actual?.modelCalls, 1);
+  deepStrictEqual(actual?.tokens.processed, 7963);
+});
+
 Deno.test("lists Codex sessions recursively by latest transcript timestamp", () => {
   const result = repository({
     "2026/07/10/rollout-old.jsonl": `

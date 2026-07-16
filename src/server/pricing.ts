@@ -93,6 +93,10 @@ export function computeModelCallCost(
   model: string,
   timestamp: number,
 ) {
+  const categorizedTokens = tokens.uncachedInput + tokens.cacheRead +
+    (tokens.cacheWrite ?? 0) + tokens.output + tokens.reasoning;
+  if (tokens.processed > 0 && categorizedTokens === 0) return undefined;
+
   const inputSideTokens = contextSize(tokens);
   const rates = rateCard(model, timestamp, inputSideTokens);
   if (!rates) return undefined;

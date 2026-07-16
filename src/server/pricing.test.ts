@@ -100,6 +100,17 @@ Deno.test("leaves models without long-context rates unpriced", () => {
   );
 });
 
+Deno.test("leaves aggregate-only usage unpriced", () => {
+  strictEqual(
+    computeModelCallCost(
+      tokens({ processed: 7_963 }),
+      "gpt-5.6-sol",
+      timestamp,
+    ),
+    undefined,
+  );
+});
+
 Deno.test("prices each call from its own effective context size", () => {
   closeTo(
     computeModelCallCost(

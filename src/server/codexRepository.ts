@@ -27,7 +27,7 @@ const recordSchema = z.object({
     type: z.string().optional(),
     model: z.string().optional(),
     role: z.string().optional(),
-    phase: z.string().optional(),
+    phase: z.string().nullable().optional(),
     name: z.string().optional(),
     input: z.unknown().optional(),
     output: z.unknown().optional(),
@@ -40,6 +40,7 @@ const recordSchema = z.object({
         cached_input_tokens: z.number().int().nonnegative().default(0),
         output_tokens: z.number().int().nonnegative().default(0),
         reasoning_output_tokens: z.number().int().nonnegative().default(0),
+        total_tokens: z.number().int().nonnegative().optional(),
       }).optional(),
     }).passthrough().nullable().optional(),
   }).passthrough().optional(),
@@ -76,6 +77,19 @@ function addTokens(total: TokenUsage, usage: TokenUsage) {
 }
 
 function readRecordsFromText(text: string, strict = false) {
+  const trimmed = text.trim();
+  if (trimmed.startsWith("[")) {
+    try {
+      const result = z.array(recordSchema).safeParse(JSON.parse(trimmed));
+      if (result.success) return result.data;
+      if (strict) throw result.error;
+      return [];
+    } catch (error) {
+      if (strict) throw error;
+      return [];
+    }
+  }
+
   const records: Record[] = [];
   for (const line of text.split("\n")) {
     if (!line) continue;
@@ -274,8 +288,11 @@ function decodeRecords(records: Record[]) {
       freshPrompt: uncachedInput,
       output: source.output_tokens,
       reasoning: source.reasoning_output_tokens,
-      processed: source.input_tokens + source.output_tokens +
-        source.reasoning_output_tokens,
+      processed: Math.max(
+        source.input_tokens + source.output_tokens +
+          source.reasoning_output_tokens,
+        source.total_tokens ?? 0,
+      ),
     };
     if (callTokens.processed === 0) continue;
 
@@ -388,7 +405,9 @@ function collectCodexSessions(
       continue;
     }
     if (
-      !entry.isFile || !entry.name.startsWith("rollout-") ||
+      !entry.isFile ||
+      (!entry.name.startsWith("rollout-") &&
+        !entry.name.startsWith("rollout_")) ||
       !entry.name.endsWith(".jsonl")
     ) {
       continue;
