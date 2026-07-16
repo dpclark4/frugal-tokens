@@ -1274,7 +1274,7 @@ table.data-table {
 
 .call-table .tool-table th:first-child,
 .call-table .tool-table td:first-child {
-  width: 110px;
+  width: 180px;
   text-align: left;
 }
 
