@@ -280,6 +280,27 @@ function subagentTotals(
   );
 }
 
+function compactionCount(session: SessionDetail): number {
+  return (session.contextEvents ?? []).filter((event) =>
+    event.type === "compaction"
+  )
+    .length +
+    session.turns.reduce(
+      (total, turn) =>
+        total + turn.calls.reduce(
+          (callTotal, call) =>
+            callTotal + (call.contextEventsBefore ?? []).filter((event) =>
+              event.type === "compaction"
+            ).length,
+          0,
+        ),
+      0,
+    ) + session.subagents.reduce(
+      (total, subagent) => total + compactionCount(subagent),
+      0,
+    );
+}
+
 function priceSummaries(items: SessionSummary[]) {
   return items.map((item) => {
     const detail = repositoryForHarness(item.harness)?.getSession(item.id);
@@ -288,19 +309,22 @@ function priceSummaries(items: SessionSummary[]) {
     const analyzed = analyzeSessionCache(priced);
     const subagents = subagentTotals(priced.subagents);
     const inclusive = sessionTreeMetrics(priced);
-    const context = contextRange(priced.turns.flatMap((turn) =>
-      turn.calls.map((call) => ({
-        startedAt: call.startedAt,
-        tokens: call.tokens,
-        turn: turn.number,
-        call: call.callWithinTurn,
-      }))
-    ));
+    const context = contextRange(
+      priced.turns.flatMap((turn) =>
+        turn.calls.map((call) => ({
+          startedAt: call.startedAt,
+          tokens: call.tokens,
+          turn: turn.number,
+          call: call.callWithinTurn,
+        }))
+      ),
+    );
     return {
       ...item,
       computedCost: priced.computedCost,
       cacheSummary: summarizeSessionCache(analyzed),
       cacheIssues: sessionCacheIssues(analyzed),
+      compactionCount: compactionCount(analyzed),
       contextLatest: context.latest?.size,
       contextPeak: context.peak?.size,
       contextPeakTurn: context.peak?.call.turn,

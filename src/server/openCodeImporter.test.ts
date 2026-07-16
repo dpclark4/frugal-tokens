@@ -1,9 +1,10 @@
-import { strictEqual } from "node:assert/strict";
+import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
 import { openArchiveDatabase } from "./database.ts";
 import { syncOpenCodeSessions } from "./openCodeImporter.ts";
 import { SessionRepository } from "./sessionRepository.ts";
+import { analyzeSessionCache } from "./cacheAnalysis.ts";
 
 function sourceDatabase(path: string) {
   const db = new DatabaseSync(path);
@@ -65,6 +66,57 @@ Deno.test("incrementally imports OpenCode session trees", () => {
         output: 3,
         reasoning: 0,
         cache: { read: 4, write: 0 },
+      },
+    }),
+  );
+  insertMessage.run(
+    "compaction-user",
+    "root",
+    5,
+    5,
+    JSON.stringify({ role: "user" }),
+  );
+  insertMessage.run(
+    "compaction-summary",
+    "root",
+    6,
+    6,
+    JSON.stringify({
+      role: "assistant",
+      summary: true,
+      providerID: "anthropic",
+      modelID: "claude",
+      cost: 0.2,
+      tokens: {
+        input: 100,
+        output: 10,
+        reasoning: 0,
+        cache: { read: 100, write: 0 },
+      },
+    }),
+  );
+  insertMessage.run(
+    "post-user",
+    "root",
+    7,
+    7,
+    JSON.stringify({ role: "user" }),
+  );
+  insertMessage.run(
+    "post-assistant",
+    "root",
+    8,
+    8,
+    JSON.stringify({
+      role: "assistant",
+      providerID: "anthropic",
+      modelID: "claude",
+      cost: 0.1,
+      tokens: {
+        input: 80,
+        output: 5,
+        reasoning: 0,
+        cache: { read: 20, write: 0 },
       },
     }),
   );
@@ -147,6 +199,26 @@ Deno.test("incrementally imports OpenCode session trees", () => {
       },
     }),
   );
+  insertPart.run(
+    "compaction",
+    "compaction-user",
+    "root",
+    5,
+    5,
+    JSON.stringify({
+      type: "compaction",
+      auto: false,
+      tail_start_id: "assistant",
+    }),
+  );
+  insertPart.run(
+    "summary-text",
+    "compaction-summary",
+    "root",
+    6,
+    6,
+    JSON.stringify({ type: "text", text: "Sensitive generated summary" }),
+  );
 
   const archive = openArchiveDatabase(`${directory}/archive.sqlite`);
   migrateTestDatabase(archive);
@@ -173,6 +245,26 @@ Deno.test("incrementally imports OpenCode session trees", () => {
     `).get()!;
     strictEqual(tool.input_preview, '{"prompt":"inspect"}');
     strictEqual(tool.output_preview, "done");
+    const compacted = detail.turns[2].calls[0];
+    strictEqual(compacted.id, "post-assistant");
+    deepStrictEqual(compacted.contextEventsBefore, [{
+      type: "compaction",
+      sourceOrder: 4,
+      occurredAt: 5,
+    }]);
+    strictEqual(
+      analyzeSessionCache(detail).turns[2].calls[0].cacheAssessment?.cause,
+      "compaction",
+    );
+    strictEqual(detail.contextEvents?.length, 0);
+    strictEqual(
+      archive.prepare(`
+        SELECT COUNT(*) AS count FROM call_content cc
+        JOIN model_calls mc ON mc.id = cc.model_call_id
+        WHERE mc.source_call_id = 'compaction-summary'
+      `).get()!.count,
+      0,
+    );
 
     source.prepare(`
       UPDATE message SET data = json_set(

@@ -59,6 +59,7 @@ are not available for the sessions inspected.
 | `message.data.role = "user"` | User-turn boundary |
 | Assistant message with non-zero usage | Model call |
 | `part.data.type = "tool"` | Tool event |
+| `part.data.type = "compaction"` | Context-transition event |
 | Session with `parent_id` | Subagent session |
 | `task` part metadata `sessionId` | Link from tool event to subagent |
 
@@ -67,6 +68,34 @@ assistant calls belong to that turn until the next user message. One turn may
 contain many calls because each tool-use loop invokes the model again.
 
 Ignore assistant records whose reported token usage is entirely zero.
+
+### Compaction
+
+OpenCode records a durable compaction signal as a synthetic user message with a
+part whose `data.type` is `compaction`. The following assistant call generates
+the compacted summary. Frugal Tokens preserves that call's usage and cost but
+does not retain its generated summary text.
+
+The normalized context event is attached immediately before the first later
+model call whose provider request uses the compacted context. This may be in
+the same turn or a later user turn. If the session ends before another model
+call, the event remains session-level with no inferred boundary. Token changes
+alone never create a compaction event or establish its boundary.
+
+Cache hit, partial-miss, and full-miss outcomes remain token-derived. A partial
+or full miss on the explicitly affected call is additionally classified as
+compaction-related; an unbounded event cannot explain a specific miss.
+
+The normalized event contract is harness-independent: event type, session
+ownership, source order, optional timestamp, and optional affected model call.
+Current source support is:
+
+| Harness | Compaction support |
+|---|---|
+| OpenCode | Explicit `compaction` part; affected call resolved when present |
+| Claude Code | Source signal and ordering not yet investigated |
+| Codex | Source signal and ordering not yet investigated |
+| PI | Source signal and ordering not yet investigated |
 
 ### Usage And Cost
 
@@ -127,7 +156,7 @@ counting child sessions that also appear in the session list.
 ### Other Metadata
 
 Useful but not currently required fields include session directory, project
-worktree, VCS, harness version, agent, compaction events, retries, errors, and
+worktree, VCS, harness version, agent, retries, errors, and
 Git tree snapshots. A snapshot is a Git tree object, not a commit or branch.
 
 Absolute paths, branch names, filenames, URLs, prompts, reasoning, patches,

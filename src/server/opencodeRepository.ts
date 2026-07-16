@@ -10,6 +10,7 @@ import type { UsageCall } from "./usage.ts";
 import type {
   SessionCallImport,
   SessionContentImport,
+  SessionContextEventImport,
   SessionToolImport,
   SessionTurnImport,
   SourceSessionCheckpoint,
@@ -101,6 +102,7 @@ type PartRow = OpenCodePartRow;
 type DecodedParts = {
   activity: SessionCallImport["activity"];
   content: SessionContentImport[];
+  compaction: boolean;
 };
 
 const emptyTokens = (): TokenUsage => ({
@@ -177,6 +179,7 @@ function decodeParts(rows: OpenCodePartRow[], strict = false) {
         tools: [],
       },
       content: [],
+      compaction: false,
     };
     if (part.type === "text") {
       current.activity.hasText = true;
@@ -216,6 +219,7 @@ function decodeParts(rows: OpenCodePartRow[], strict = false) {
           : { outputPreview: output.preview }),
       });
     }
+    if (part.type === "compaction") current.compaction = true;
     decoded.set(row.message_id, current);
   }
   return decoded;
@@ -232,8 +236,14 @@ function decodeMessages(
   const tokens = emptyTokens();
   let reportedCost = 0;
   let pendingImages = 0;
+  type PendingContextEvent = SessionContextEventImport & {
+    operationSeen: boolean;
+    affectedCallReference?: SessionCallImport;
+  };
+  const contextEvents: PendingContextEvent[] = [];
+  const pendingContextEvents: PendingContextEvent[] = [];
 
-  for (const row of rows) {
+  for (const [messageIndex, row] of rows.entries()) {
     let raw: unknown;
     try {
       raw = JSON.parse(row.data);
@@ -253,6 +263,16 @@ function decodeMessages(
 
     if (message.role === "user") {
       const parts = partsByMessage.get(row.id);
+      if (parts?.compaction) {
+        const event: PendingContextEvent = {
+          type: "compaction",
+          sourceOrder: messageIndex + 1,
+          occurredAt: row.time_created,
+          operationSeen: false,
+        };
+        contextEvents.push(event);
+        pendingContextEvents.push(event);
+      }
       pendingImages = parts?.activity.images ?? 0;
       turns.push({
         number: turns.length + 1,
@@ -283,6 +303,12 @@ function decodeMessages(
     const cost = message.cost ?? 0;
     if (callTokens.processed === 0 && cost === 0) continue;
 
+    const operationEvents = pendingContextEvents.filter((event) =>
+      !event.operationSeen
+    );
+    const compactionOperation = operationEvents.length > 0;
+    operationEvents.forEach((event) => event.operationSeen = true);
+
     const turn = turns.at(-1)!;
     const provider = message.providerID ?? "unknown";
     const model = message.modelID ?? "unknown";
@@ -302,17 +328,13 @@ function decodeMessages(
     models.add(model);
     addTokens(tokens, callTokens);
     reportedCost += cost;
+    const textPreview = compactionOperation
+      ? undefined
+      : decodedParts?.content.find((item) => item.kind === "text")?.preview;
     const call: SessionCallImport = {
       id: row.id,
       callWithinTurn: turn.calls.length + 1,
-      ...(decodedParts?.content.find((item) => item.kind === "text")
-          ?.preview ===
-          undefined
-        ? {}
-        : {
-          preview: decodedParts.content.find((item) => item.kind === "text")!
-            .preview,
-        }),
+      ...(textPreview === undefined ? {} : { preview: textPreview }),
       provider,
       model,
       startedAt: message.time?.created ?? row.time_created,
@@ -320,16 +342,41 @@ function decodeMessages(
       reportedCost: cost,
       tokens: callTokens,
       activity,
-      content: decodedParts?.content ?? [],
+      content: compactionOperation ? [] : decodedParts?.content ?? [],
     };
     turn.calls.push(call);
+    if (!compactionOperation) {
+      for (let index = pendingContextEvents.length - 1; index >= 0; index--) {
+        const event = pendingContextEvents[index];
+        if (!event.operationSeen) continue;
+        event.affectedCallReference = call;
+        pendingContextEvents.splice(index, 1);
+      }
+    }
   }
 
   const nonEmptyTurns = turns
     .filter((turn) => turn.calls.length > 0)
     .map((turn, index) => ({ ...turn, number: index + 1 }));
+  const normalizedContextEvents: SessionContextEventImport[] = contextEvents
+    .map(
+      ({ operationSeen: _operationSeen, affectedCallReference, ...event }) => {
+        if (affectedCallReference === undefined) return event;
+        const turn = nonEmptyTurns.find((candidate) =>
+          candidate.calls.includes(affectedCallReference)
+        );
+        return turn === undefined ? event : {
+          ...event,
+          affectedCall: {
+            turn: turn.number,
+            call: affectedCallReference.callWithinTurn,
+          },
+        };
+      },
+    );
   return {
     turns: nonEmptyTurns,
+    contextEvents: normalizedContextEvents,
     providers,
     models,
     tokens,
@@ -497,6 +544,7 @@ export function normalizeOpenCodeSessionTree(options: {
         reportedCost: summary.reportedCost,
         tokens: summary.tokens,
         turns: decoded.turns,
+        contextEvents: decoded.contextEvents,
       },
     };
   });
@@ -633,11 +681,24 @@ export class OpenCodeRepository {
       WHERE parent_id = ?
       ORDER BY time_created, id
     `).all(row.id) as SessionRow[];
+    const turns = decoded.turns.map((turn) => ({
+      ...turn,
+      calls: turn.calls.map((call) => ({
+        ...call,
+        contextEventsBefore: decoded.contextEvents.filter((event) =>
+          event.affectedCall?.turn === turn.number &&
+          event.affectedCall.call === call.callWithinTurn
+        ).map(({ affectedCall: _affectedCall, ...event }) => event),
+      })),
+    }));
     return {
       ...this.#toSummary(row, decoded),
       parentID: row.parent_id ?? undefined,
       agent: row.agent ?? undefined,
-      turns: decoded.turns,
+      turns,
+      contextEvents: decoded.contextEvents.filter((event) =>
+        event.affectedCall === undefined
+      ),
       subagents: children
         .filter((child) => !visited.has(child.id))
         .map((child) => this.#detail(child, new Set(visited))),

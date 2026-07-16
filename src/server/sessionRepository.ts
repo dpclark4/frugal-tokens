@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import {
+  type ContextEvent,
   type ModelCall,
   type SessionDetail,
   sessionDetailSchema,
@@ -41,11 +42,23 @@ export type SessionToolImport =
     output?: Omit<SessionContentImport, "kind" | "mimeType" | "contentHash">;
   };
 
-export type SessionCallImport = Omit<ModelCall, "activity"> & {
-  activity: Omit<ModelCall["activity"], "tools"> & {
-    tools: SessionToolImport[];
+export type SessionCallImport =
+  & Omit<
+    ModelCall,
+    "activity" | "contextEventsBefore"
+  >
+  & {
+    activity: Omit<ModelCall["activity"], "tools"> & {
+      tools: SessionToolImport[];
+    };
+    content?: SessionContentImport[];
   };
-  content?: SessionContentImport[];
+
+export type SessionContextEventImport = ContextEvent & {
+  affectedCall?: {
+    turn: number;
+    call: number;
+  };
 };
 
 export type SessionTurnImport = {
@@ -84,6 +97,7 @@ export type SourceSessionImport = {
     reportedCost?: number;
     tokens: TokenUsage;
     turns: SessionTurnImport[];
+    contextEvents?: SessionContextEventImport[];
   };
 };
 
@@ -153,6 +167,13 @@ type ContentRow = {
   model_call_id: number;
   kind: string;
   preview: string | null;
+};
+
+type ContextEventRow = {
+  event_type: string;
+  source_order: number;
+  occurred_at: number | null;
+  affected_model_call_id: number | null;
 };
 
 const summaryColumns = `
@@ -673,6 +694,7 @@ export class SessionRepository {
       ...tokenValues,
     );
 
+    const callIDs = new Map<string, number>();
     for (const turn of session.turns) {
       const turnID = Number(
         (this.db.prepare(`
@@ -716,6 +738,7 @@ export class SessionRepository {
             Number(call.activity.hasReasoning),
           ) as { id: number }).id,
         );
+        callIDs.set(`${turn.number}:${call.callWithinTurn}`, callID);
         this.#insertContent(
           "call_content",
           "model_call_id",
@@ -753,6 +776,32 @@ export class SessionRepository {
       }
     }
 
+    const insertContextEvent = this.db.prepare(`
+      INSERT INTO context_events (
+        session_id, event_type, source_order, occurred_at,
+        affected_model_call_id
+      ) VALUES (?, ?, ?, ?, ?)
+    `);
+    for (const event of session.contextEvents ?? []) {
+      const affectedCallID = event.affectedCall === undefined
+        ? null
+        : callIDs.get(
+          `${event.affectedCall.turn}:${event.affectedCall.call}`,
+        );
+      if (event.affectedCall !== undefined && affectedCallID === undefined) {
+        throw new Error(
+          `Unknown affected call: turn ${event.affectedCall.turn}, call ${event.affectedCall.call}`,
+        );
+      }
+      insertContextEvent.run(
+        sourceSessionID,
+        event.type,
+        event.sourceOrder,
+        event.occurredAt ?? null,
+        affectedCallID ?? null,
+      );
+    }
+
     const checkpoint = value.checkpoint;
     this.db.prepare(`
         UPDATE source_sessions SET
@@ -777,10 +826,26 @@ export class SessionRepository {
         ...base,
         parentID: optional(row.parent_public_id),
         turns: [],
+        contextEvents: [],
         subagents: [],
       };
     }
     const nextVisited = new Set(visited).add(row.source_session_id);
+    const contextEventRows = this.db.prepare(`
+      SELECT event_type, source_order, occurred_at, affected_model_call_id
+      FROM context_events
+      WHERE session_id = ?
+      ORDER BY source_order
+    `).all(row.source_session_id) as ContextEventRow[];
+    const contextEventsByCall = Map.groupBy(
+      contextEventRows.filter((event) => event.affected_model_call_id !== null),
+      (event) => event.affected_model_call_id!,
+    );
+    const contextEvent = (event: ContextEventRow): ContextEvent => ({
+      type: event.event_type,
+      sourceOrder: event.source_order,
+      occurredAt: optional(event.occurred_at),
+    });
     const turns = (this.db.prepare(`
       SELECT id, ordinal, started_at FROM turns
       WHERE session_id = ? ORDER BY ordinal
@@ -846,6 +911,9 @@ export class SessionRepository {
                 outputPreview: optional(tool.output_preview),
               })),
             },
+            contextEventsBefore: (contextEventsByCall.get(call.id) ?? []).map(
+              contextEvent,
+            ),
           };
         }),
       };
@@ -865,6 +933,9 @@ export class SessionRepository {
       parentID: optional(row.parent_public_id),
       agent: optional(row.agent),
       turns,
+      contextEvents: contextEventRows.filter((event) =>
+        event.affected_model_call_id === null
+      ).map(contextEvent),
       subagents: children.map((child) => this.#detail(child, nextVisited)),
     };
   }

@@ -71,6 +71,12 @@ function importedSession(
           },
         }],
       }],
+      contextEvents: [{
+        type: "compaction",
+        sourceOrder: 2,
+        occurredAt: 12,
+        affectedCall: { turn: 1, call: 1 },
+      }],
     },
   };
 }
@@ -116,6 +122,12 @@ Deno.test("stores and reads canonical sessions atomically", () => {
       "child",
     );
     strictEqual(detail.turns[0].calls[0].preview, "answer");
+    deepStrictEqual(detail.turns[0].calls[0].contextEventsBefore, [{
+      type: "compaction",
+      sourceOrder: 2,
+      occurredAt: 12,
+    }]);
+    deepStrictEqual(detail.contextEvents, []);
     strictEqual(
       detail.turns[0].calls[0].activity.tools[0].inputPreview,
       '{"path":"src/schema.ts"}',

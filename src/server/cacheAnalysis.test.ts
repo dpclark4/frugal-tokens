@@ -109,6 +109,8 @@ Deno.test("tracks an OpenAI miss and implicit cache recovery across turns", () =
     fullMisses: 1,
     notComparable: 0,
     unknown: 0,
+    compactionRelatedMisses: 0,
+    unexpectedMisses: 1,
     totalCacheRead: 107_520,
     peakCacheRead: 54_272,
     totalNewInput: 55_906,
@@ -169,9 +171,34 @@ Deno.test("summarizes turns and includes independently analyzed subagents", () =
     fullMisses: 2,
     notComparable: 0,
     unknown: 0,
+    compactionRelatedMisses: 0,
+    unexpectedMisses: 3,
   });
   deepStrictEqual(sessionCacheIssues(actual), [
     { status: "full-miss", turn: 1, scope: undefined },
     { status: "full-miss", turn: 1, scope: "child" },
   ]);
+});
+
+Deno.test("classifies a miss after a bounded compaction without changing status", () => {
+  const previous = call("previous", 80_000, 20_000);
+  const compacted = call("compacted", 50_000);
+  compacted.contextEventsBefore = [{
+    type: "compaction",
+    sourceOrder: 2,
+    occurredAt: 2,
+  }];
+  const actual = analyzeSessionCache(session("compaction", [
+    previous,
+    compacted,
+  ]));
+
+  deepStrictEqual(actual.turns[0].calls[1].cacheAssessment, {
+    status: "partial-hit",
+    retainedRatio: 0.5,
+    previousReusableTokens: 100_000,
+    cause: "compaction",
+  });
+  strictEqual(actual.turns[0].cacheSummary?.compactionRelatedMisses, 1);
+  strictEqual(actual.turns[0].cacheSummary?.unexpectedMisses, 0);
 });

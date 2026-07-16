@@ -50,6 +50,7 @@ export const cacheAssessmentReasonSchema = z.enum([
 export const cacheAssessmentSchema = z.object({
   status: cacheStatusSchema,
   reason: cacheAssessmentReasonSchema.optional(),
+  cause: z.enum(["compaction"]).optional(),
   retainedRatio: z.number().nonnegative().optional(),
   previousReusableTokens: z.number().int().positive().optional(),
 });
@@ -61,10 +62,13 @@ export const cacheSummarySchema = z.object({
   fullMisses: z.number().int().nonnegative(),
   notComparable: z.number().int().nonnegative(),
   unknown: z.number().int().nonnegative(),
+  compactionRelatedMisses: z.number().int().nonnegative(),
+  unexpectedMisses: z.number().int().nonnegative(),
 });
 
 export const cacheIssueSchema = z.object({
   status: z.enum(["partial-hit", "full-miss"]),
+  cause: z.enum(["compaction"]).optional(),
   turn: z.number().int().positive(),
   scope: z.string().optional(),
 });
@@ -98,11 +102,18 @@ export const sessionSummarySchema = z.object({
   computedCost: z.number().nonnegative().optional(),
   cacheSummary: cacheSummarySchema.optional(),
   cacheIssues: z.array(cacheIssueSchema).optional(),
+  compactionCount: z.number().int().nonnegative().optional(),
   contextLatest: z.number().int().nonnegative().optional(),
   contextPeak: z.number().int().nonnegative().optional(),
   contextPeakTurn: z.number().int().positive().optional(),
   contextPeakCall: z.number().int().positive().optional(),
   tokens: tokenUsageSchema,
+});
+
+export const contextEventSchema = z.object({
+  type: z.string().min(1),
+  sourceOrder: z.number().int().positive(),
+  occurredAt: z.number().optional(),
 });
 
 export const modelCallSchema = z.object({
@@ -117,6 +128,7 @@ export const modelCallSchema = z.object({
   computedCost: z.number().nonnegative().optional(),
   tokens: tokenUsageSchema,
   activity: callActivitySchema,
+  contextEventsBefore: z.array(contextEventSchema).optional(),
   cacheAssessment: cacheAssessmentSchema.optional(),
 });
 
@@ -132,6 +144,7 @@ const sessionDetailBaseSchema = sessionSummarySchema.extend({
   parentID: z.string().optional(),
   agent: z.string().optional(),
   turns: z.array(userTurnSchema),
+  contextEvents: z.array(contextEventSchema).optional(),
 });
 
 export type SessionDetail = z.infer<typeof sessionDetailBaseSchema> & {
@@ -218,6 +231,7 @@ export const usageResponseSchema = z.object({
 });
 
 export type ModelCall = z.infer<typeof modelCallSchema>;
+export type ContextEvent = z.infer<typeof contextEventSchema>;
 export type CacheAssessment = z.infer<typeof cacheAssessmentSchema>;
 export type CacheSummary = z.infer<typeof cacheSummarySchema>;
 export type CacheIssue = z.infer<typeof cacheIssueSchema>;
