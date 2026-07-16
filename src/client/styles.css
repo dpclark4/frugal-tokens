@@ -445,8 +445,7 @@ h1 {
 }
 
 .sessions-panel {
-  width: calc(100vw - 32px);
-  margin-left: calc(50% - 50vw + 16px);
+  width: 100%;
   background: var(--panel);
   border: 1px solid var(--panel-border);
   box-shadow: 0 18px 60px rgba(57, 51, 40, .08);
@@ -521,7 +520,7 @@ h1 {
 }
 
 .session-table .activity-column {
-  width: clamp(110px, 9vw, 135px);
+  width: 90px;
 }
 
 .session-table .context-column {
@@ -963,6 +962,11 @@ table.data-table {
 .turn-table-wrap,
 .call-table-wrap {
   overflow-x: auto;
+}
+
+.turn-table,
+.call-table {
+  table-layout: fixed;
 }
 
 .turn-table th {

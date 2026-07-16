@@ -962,10 +962,11 @@ function CallInputMetric({ call }: { call: ModelCall }) {
     ];
   return (
     <span
-      className="metric-stack call-input-metric"
+      className="metric-stack session-input-metric call-input-metric"
       title={`${integer.format(total)} total input tokens`}
     >
-      <span>{parts.filter(Boolean).join(" · ")}</span>
+      <span><TokenValue value={total} /> total input</span>
+      <small>{parts.filter(Boolean).join(" · ")}</small>
       {call.tokens.cacheWrite5m !== undefined &&
         call.tokens.cacheWrite1h !== undefined && (
         <small>
