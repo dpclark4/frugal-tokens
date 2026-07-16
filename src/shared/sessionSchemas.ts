@@ -234,12 +234,21 @@ export const usageResponseSchema = z.object({
 export const ttlMissMetricsSchema = z.object({
   rangeDays: z.number().int().positive(),
   sessions: z.number().int().nonnegative(),
+  totalSessionCost: z.number().nonnegative(),
+  hasUnpricedSessionCost: z.boolean(),
   affectedSessions: z.number().int().nonnegative(),
+  affectedSessionCost: z.number().nonnegative(),
+  hasUnpricedAffectedSessionCost: z.boolean(),
   misses: z.object({
     total: z.number().int().nonnegative(),
+    attributedCost: z.number().nonnegative(),
+    unpriced: z.number().int().nonnegative(),
     underTwoHours: z.number().int().nonnegative(),
+    underTwoHoursCost: z.number().nonnegative(),
     twoToEightHours: z.number().int().nonnegative(),
+    twoToEightHoursCost: z.number().nonnegative(),
     eightHoursOrMore: z.number().int().nonnegative(),
+    eightHoursOrMoreCost: z.number().nonnegative(),
   }),
   subagents: z.object({
     affectedSessions: z.number().int().nonnegative(),

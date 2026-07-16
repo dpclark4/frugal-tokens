@@ -1,12 +1,15 @@
 import type { TtlMissMetrics } from "../shared/sessionSchemas.ts";
 import { assessCache, ttlExpired } from "./cacheAnalysis.ts";
+import { computeModelCallCost, estimateModelCacheMissCost } from "./pricing.ts";
 import type { UsageCall } from "./usage.ts";
 
 const TWO_HOURS_MS = 2 * 60 * 60 * 1_000;
 const EIGHT_HOURS_MS = 8 * 60 * 60 * 1_000;
 
-function ttlMissGaps(calls: UsageCall[]) {
-  const gaps: number[] = [];
+type TtlMiss = { gap: number; attributedCost?: number };
+
+function ttlMisses(calls: UsageCall[]) {
+  const misses: TtlMiss[] = [];
   for (
     const chain of Map.groupBy(calls, (call) => call.cacheChainID).values()
   ) {
@@ -19,12 +22,20 @@ function ttlMissGaps(calls: UsageCall[]) {
         miss && !call.followsCompaction && previous &&
         ttlExpired(previous, call)
       ) {
-        gaps.push(call.startedAt - previous.startedAt);
+        misses.push({
+          gap: call.startedAt - previous.startedAt,
+          attributedCost: estimateModelCacheMissCost(
+            previous.tokens,
+            call.tokens,
+            call.model,
+            call.startedAt,
+          )?.actualMissedCost,
+        });
       }
       previous = call;
     }
   }
-  return gaps;
+  return misses;
 }
 
 export function aggregateTtlMisses(
@@ -39,33 +50,69 @@ export function aggregateTtlMisses(
   const result: TtlMissMetrics = {
     rangeDays,
     sessions: sessions.size,
+    totalSessionCost: 0,
+    hasUnpricedSessionCost: false,
     affectedSessions: 0,
+    affectedSessionCost: 0,
+    hasUnpricedAffectedSessionCost: false,
     misses: {
       total: 0,
+      attributedCost: 0,
+      unpriced: 0,
       underTwoHours: 0,
+      underTwoHoursCost: 0,
       twoToEightHours: 0,
+      twoToEightHoursCost: 0,
       eightHoursOrMore: 0,
+      eightHoursOrMoreCost: 0,
     },
     subagents: { affectedSessions: 0, misses: 0 },
   };
 
   for (const calls of sessions.values()) {
-    const rootGaps = ttlMissGaps(
-      calls.filter((call) => call.session.id === call.session.rootID),
+    const rootCalls = calls.filter((call) =>
+      call.session.id === call.session.rootID
     );
-    if (rootGaps.length > 0) result.affectedSessions++;
-    result.misses.total += rootGaps.length;
-    for (const gap of rootGaps) {
-      if (gap < TWO_HOURS_MS) result.misses.underTwoHours++;
-      else if (gap < EIGHT_HOURS_MS) result.misses.twoToEightHours++;
-      else result.misses.eightHoursOrMore++;
+    const rootMisses = ttlMisses(rootCalls);
+    let rootSessionCost = 0;
+    let hasUnpricedRootSessionCost = false;
+    for (const call of rootCalls) {
+      const cost = call.computedCost ?? computeModelCallCost(
+        call.tokens,
+        call.model,
+        call.startedAt,
+      );
+      if (cost === undefined) hasUnpricedRootSessionCost = true;
+      else rootSessionCost += cost;
+    }
+    result.totalSessionCost += rootSessionCost;
+    result.hasUnpricedSessionCost ||= hasUnpricedRootSessionCost;
+    if (rootMisses.length > 0) {
+      result.affectedSessions++;
+      result.affectedSessionCost += rootSessionCost;
+      result.hasUnpricedAffectedSessionCost ||= hasUnpricedRootSessionCost;
+    }
+    result.misses.total += rootMisses.length;
+    for (const miss of rootMisses) {
+      if (miss.attributedCost === undefined) result.misses.unpriced++;
+      else result.misses.attributedCost += miss.attributedCost;
+      if (miss.gap < TWO_HOURS_MS) {
+        result.misses.underTwoHours++;
+        result.misses.underTwoHoursCost += miss.attributedCost ?? 0;
+      } else if (miss.gap < EIGHT_HOURS_MS) {
+        result.misses.twoToEightHours++;
+        result.misses.twoToEightHoursCost += miss.attributedCost ?? 0;
+      } else {
+        result.misses.eightHoursOrMore++;
+        result.misses.eightHoursOrMoreCost += miss.attributedCost ?? 0;
+      }
     }
 
-    const subagentGaps = ttlMissGaps(
+    const subagentMisses = ttlMisses(
       calls.filter((call) => call.session.id !== call.session.rootID),
     );
-    if (subagentGaps.length > 0) result.subagents.affectedSessions++;
-    result.subagents.misses += subagentGaps.length;
+    if (subagentMisses.length > 0) result.subagents.affectedSessions++;
+    result.subagents.misses += subagentMisses.length;
   }
 
   return result;

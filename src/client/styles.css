@@ -230,6 +230,35 @@ h1 {
   font-size: 13px;
 }
 
+.ttl-cost-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  margin: 0 28px 18px;
+  border: 1px solid var(--row-border);
+  background: var(--surface-1);
+}
+
+.ttl-cost-summary > div {
+  display: grid;
+  gap: 3px;
+  padding: 12px 14px;
+  font-family: var(--mono);
+}
+
+.ttl-cost-summary > div + div {
+  border-left: 1px solid var(--row-border);
+}
+
+.ttl-cost-summary span,
+.ttl-cost-summary small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.ttl-cost-summary strong {
+  font-size: 17px;
+}
+
 .ttl-miss-breakdown {
   margin: 0 28px;
   border-top: 1px solid var(--row-border);
@@ -269,14 +298,20 @@ h1 {
 }
 
 .ttl-miss-row strong {
-  min-width: 28px;
+  min-width: 64px;
   text-align: right;
 }
 
 .ttl-miss-row small {
-  width: 44px;
+  width: 70px;
   color: var(--muted);
   text-align: right;
+}
+
+.ttl-pricing-note {
+  margin: 8px 28px 0;
+  color: var(--muted);
+  font: 9px var(--mono);
 }
 
 .ttl-subagent-summary {
@@ -1881,6 +1916,44 @@ table.data-table {
 
   .usage-chart-heading {
     padding: 18px 18px 10px;
+  }
+
+  .ttl-miss-heading {
+    padding: 18px;
+  }
+
+  .ttl-miss-lead {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+
+  .ttl-cost-summary {
+    grid-template-columns: 1fr;
+    margin-right: 18px;
+    margin-left: 18px;
+  }
+
+  .ttl-cost-summary > div + div {
+    border-top: 1px solid var(--row-border);
+    border-left: 0;
+  }
+
+  .ttl-miss-breakdown,
+  .ttl-subagent-summary {
+    margin-right: 18px;
+    margin-left: 18px;
+  }
+
+  .ttl-miss-row {
+    gap: 6px;
+  }
+
+  .ttl-miss-row small {
+    width: 62px;
+  }
+
+  .ttl-pricing-note {
+    margin-left: 18px;
   }
 
   .analytics-toolbar {
