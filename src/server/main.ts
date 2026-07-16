@@ -84,6 +84,22 @@ const archiveDatabase = archiveURL
 const archiveRepository = archiveDatabase
   ? new SessionRepository(archiveDatabase)
   : undefined;
+const syncIntervalSeconds = (() => {
+  const value = Deno.env.get("FRUGAL_TOKENS_SYNC_INTERVAL_SECONDS");
+  if (value === undefined || value === "0") return undefined;
+  if (!/^[1-9]\d*$/.test(value)) {
+    throw new Error(
+      "FRUGAL_TOKENS_SYNC_INTERVAL_SECONDS must be a positive integer or 0",
+    );
+  }
+  const seconds = Number(value);
+  if (!Number.isSafeInteger(seconds) || seconds > 2_147_483) {
+    throw new Error(
+      "FRUGAL_TOKENS_SYNC_INTERVAL_SECONDS is too large",
+    );
+  }
+  return seconds;
+})();
 
 async function runSync(
   harness: SessionSummary["harness"],
@@ -148,6 +164,24 @@ async function syncSources() {
   console.info(
     `[sync] complete duration=${(performance.now() - startedAt).toFixed(1)}ms`,
   );
+}
+
+async function syncSourcesPeriodically(intervalSeconds: number) {
+  console.info(`[sync] periodic sync enabled interval=${intervalSeconds}s`);
+  while (true) {
+    await new Promise((resolve) =>
+      setTimeout(resolve, intervalSeconds * 1_000)
+    );
+    try {
+      await syncSources();
+    } catch (error) {
+      console.error(
+        `[sync] periodic sync failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  }
 }
 const claudeRepository = archiveRepository
   ? {
@@ -543,3 +577,6 @@ Deno.serve({
     console.log(`Frugal Tokens API listening on http://localhost:${port}`),
 }, app.fetch);
 await syncSources();
+if (archiveRepository && syncIntervalSeconds !== undefined) {
+  void syncSourcesPeriodically(syncIntervalSeconds);
+}
