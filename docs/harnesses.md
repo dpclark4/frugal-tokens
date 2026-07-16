@@ -94,7 +94,7 @@ Current source support is:
 |---|---|
 | OpenCode | Explicit `compaction` part; affected call resolved when present |
 | Claude Code | Explicit `system/compact_boundary`; affected call resolved when present |
-| Codex | Source signal and ordering not yet investigated |
+| Codex | Explicit `event_msg/context_compacted`; affected call resolved when present |
 | PI | Explicit JSONL `compaction` record; affected call resolved when present |
 
 PI compaction support currently follows the importer's existing linear,
@@ -114,6 +114,14 @@ a later synthetic user record that does not start a normalized turn and is not
 retained. The first later assistant message with usage is the affected provider
 request. `/compact` command text and cache-token changes are not detection
 signals.
+
+Codex writes a large top-level `compacted` record containing replacement
+history and encrypted compaction material, followed by an explicit
+`event_msg` whose payload type is `context_compacted`. Historical fixtures
+consistently contain the small explicit event, so it is the normalized signal
+and the adjacent records are not double-counted. Replacement history and
+encrypted content are not retained. The first later nonzero `token_count`
+model call is the affected provider request.
 
 ### Usage And Cost
 
