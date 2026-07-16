@@ -361,7 +361,7 @@ function SessionCacheStatus({
     `Call totals: ${cacheSummaryTitle(summary)}`,
   ].filter(Boolean).join("\n\n");
   return (
-    <span className="session-cache-status" title={title}>
+    <span className="cache-issue-counts" title={title}>
       {full.length > 0 && (
         <>
           <span className="cache-issue-badge session-cache-full">
@@ -908,6 +908,7 @@ function toolTargetPreview(value?: string) {
 function CallInputMetric({ call }: { call: ModelCall }) {
   const anthropic = call.provider.toLowerCase().includes("anthropic");
   const total = contextSize(call.tokens);
+  const reused = cacheHitRate(call.tokens);
   const parts = anthropic
     ? [
       call.tokens.cacheRead > 0
@@ -936,6 +937,9 @@ function CallInputMetric({ call }: { call: ModelCall }) {
           writes: {compact.format(call.tokens.cacheWrite5m)} at 5m ·{"  "}
           {compact.format(call.tokens.cacheWrite1h)} at 1h
         </small>
+      )}
+      {reused !== undefined && (
+        <small>{(reused * 100).toFixed(1)}% reused</small>
       )}
     </span>
   );
@@ -1014,7 +1018,6 @@ function CallTable({
           <col className="call-outcome-column" />
           <col className="call-context-column" />
           <col className="call-input-column" />
-          <col className="call-reused-column" />
           <col className="call-cache-column" />
           <col className="call-output-column" />
           <col className="call-cost-column" />
@@ -1028,7 +1031,6 @@ function CallTable({
             <th>Activity</th>
             <th>Context</th>
             <th>Volume</th>
-            <th>Reused</th>
             <th>Cache</th>
             <th>Output</th>
             <th>Cost</th>
@@ -1039,7 +1041,12 @@ function CallTable({
             const expanded = expandedCallID === call.id;
             const callDuration = duration(call.startedAt, call.completedAt);
             const callContext = contextSize(call.tokens);
-            const reused = cacheHitRate(call.tokens);
+            const cacheMiss = call.cacheAssessment?.cause !== "compaction" &&
+              (call.cacheAssessment?.status === "partial-hit" ||
+                call.cacheAssessment?.status === "full-miss");
+            const compactions = (call.contextEventsBefore ?? []).filter((
+              event,
+            ) => event.type === "compaction").length;
             const subagents = callSubagents(call, session);
             const subagentTotals = aggregateSessionTrees(subagents);
             const hasSubagents = subagents.length > 0;
@@ -1126,20 +1133,17 @@ function CallTable({
                   <td>
                     <CallInputMetric call={call} />
                   </td>
-                  <td className={reused === undefined ? "muted" : undefined}>
-                    {reused === undefined
-                      ? "-"
-                      : `${(reused * 100).toFixed(1)}%`}
-                  </td>
                   <td>
-                    <span className="cache-issue-group">
-                      <CacheAssessmentBadge assessment={call.cacheAssessment} />
-                      <CompactionBadge
-                        count={(call.contextEventsBefore ?? []).filter((
-                          event,
-                        ) => event.type === "compaction").length}
-                      />
-                    </span>
+                    {(cacheMiss || compactions > 0) && (
+                      <span className="cache-issue-group">
+                        {cacheMiss && (
+                          <CacheAssessmentBadge
+                            assessment={call.cacheAssessment}
+                          />
+                        )}
+                        <CompactionBadge count={compactions} />
+                      </span>
+                    )}
                   </td>
                   <td>
                     <TokenValue
@@ -1160,7 +1164,7 @@ function CallTable({
                 </tr>
                 {expanded && (
                   <tr className="activity-detail-row">
-                    <td colSpan={11}>
+                    <td colSpan={10}>
                       <div className="activity-detail">
                         {finishWarning && (
                           <div className="activity-warning">
