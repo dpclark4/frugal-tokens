@@ -1,4 +1,5 @@
 import { createRoot } from "react-dom/client";
+import { version as reactVersion } from "react";
 import {
   createRootRoute,
   createRoute,
@@ -10,7 +11,50 @@ import { z } from "zod";
 import { SessionsPage } from "./SessionsPage.tsx";
 import "./styles.css";
 
-const rootRoute = createRootRoute({ component: () => <Outlet /> });
+function AppError({ error, reset }: { error: unknown; reset: () => void }) {
+  const message = error instanceof Error ? error.message : String(error);
+  const stack = error instanceof Error ? error.stack : undefined;
+  const diagnostics = JSON.stringify({
+    capturedAt: new Date().toISOString(),
+    message,
+    stack,
+    url: window.location.href,
+    userAgent: navigator.userAgent,
+    reactVersion,
+    scripts: Array.from(document.scripts, (script) => script.src).filter(Boolean),
+  }, null, 2);
+
+  return (
+    <main className="app-error">
+      <p className="eyebrow">Render failure</p>
+      <h1>Something went wrong</h1>
+      <p className="app-error-message">{message}</p>
+      <div className="app-error-actions">
+        <button type="button" onClick={reset}>Try again</button>
+        <button type="button" onClick={() => window.location.reload()}>
+          Reload page
+        </button>
+        {navigator.clipboard && (
+          <button
+            type="button"
+            onClick={() => void navigator.clipboard.writeText(diagnostics)}
+          >
+            Copy diagnostics
+          </button>
+        )}
+      </div>
+      <details>
+        <summary>Diagnostic details</summary>
+        <pre>{diagnostics}</pre>
+      </details>
+    </main>
+  );
+}
+
+const rootRoute = createRootRoute({
+  component: () => <Outlet />,
+  errorComponent: AppError,
+});
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",

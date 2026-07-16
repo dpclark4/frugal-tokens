@@ -54,6 +54,60 @@ main {
   position: relative;
 }
 
+.app-error {
+  max-width: 900px;
+}
+
+.app-error h1 {
+  font-size: clamp(36px, 6vw, 64px);
+}
+
+.app-error-message {
+  margin: 28px 0 18px;
+  padding: 14px 16px;
+  border: 1px solid #d9a99b;
+  background: #fff5f1;
+  color: var(--danger);
+  font: 13px/1.5 var(--mono);
+}
+
+.app-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 22px;
+}
+
+.app-error-actions button {
+  padding: 8px 12px;
+  border: 1px solid var(--panel-border);
+  background: var(--surface-0);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.app-error details {
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+}
+
+.app-error summary {
+  padding: 12px 14px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.app-error pre {
+  max-height: 55vh;
+  margin: 0;
+  padding: 14px;
+  overflow: auto;
+  border-top: 1px solid var(--panel-border);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 12px/1.55 var(--mono);
+}
+
 .page-header {
   display: flex;
   justify-content: space-between;
