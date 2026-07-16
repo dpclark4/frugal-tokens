@@ -48,7 +48,7 @@ body::before {
 }
 
 main {
-  width: min(1440px, calc(100% - 48px));
+  width: min(1600px, calc(100% - 48px));
   margin: 0 auto;
   padding: 60px 0 80px;
   position: relative;
@@ -1692,7 +1692,7 @@ table.data-table {
 
 @media (max-width: 760px) {
   main {
-    width: min(100% - 24px, 1440px);
+    width: min(100% - 24px, 1600px);
     padding-top: 32px;
   }
 
