@@ -151,7 +151,7 @@ export function aggregateUsage(
 ): { response: UsageResponse; callCount: number; dayCount: number } {
   const days = new Map<
     string,
-    Map<string, { input: number; cost: number; priced: boolean }>
+    Map<string, { input: number; cost: number; hasPricedCost: boolean }>
   >();
   let hasUnpricedCost = false;
   let callCount = 0;
@@ -166,11 +166,11 @@ export function aggregateUsage(
     const bucket = models.get(call.model) ?? {
       input: 0,
       cost: 0,
-      priced: true,
+      hasPricedCost: false,
     };
     bucket.input += call.tokens.uncachedInput + call.tokens.cacheRead +
       (call.tokens.cacheWrite ?? 0);
-    bucket.priced &&= call.computedCost !== undefined;
+    bucket.hasPricedCost ||= call.computedCost !== undefined;
     hasUnpricedCost ||= call.computedCost === undefined;
     bucket.cost += call.computedCost ?? 0;
     models.set(call.model, bucket);
@@ -266,7 +266,7 @@ export function aggregateUsage(
           models: [...models.entries()].map(([model, bucket]) => ({
             model,
             input: bucket.input,
-            cost: bucket.priced ? bucket.cost : undefined,
+            cost: bucket.hasPricedCost ? bucket.cost : undefined,
           })),
         }),
       ),

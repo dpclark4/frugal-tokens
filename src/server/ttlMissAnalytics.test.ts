@@ -50,6 +50,7 @@ Deno.test("counts every root TTL miss in its elapsed-time bucket", () => {
   ];
 
   const result = aggregateTtlMisses(calls, start, 90);
+  strictEqual(Math.abs(result.totalCost - 0.001875) < 1e-12, true);
   strictEqual(Math.abs(result.totalSessionCost - 0.001875) < 1e-12, true);
   strictEqual(Math.abs(result.affectedSessionCost - 0.0015) < 1e-12, true);
   strictEqual(Math.abs(result.misses.attributedCost - 0.001125) < 1e-12, true);
@@ -67,6 +68,7 @@ Deno.test("counts every root TTL miss in its elapsed-time bucket", () => {
   );
   deepStrictEqual({
     ...result,
+    totalCost: 0,
     totalSessionCost: 0,
     affectedSessionCost: 0,
     misses: {
@@ -79,6 +81,8 @@ Deno.test("counts every root TTL miss in its elapsed-time bucket", () => {
   }, {
     rangeDays: 90,
     sessions: 2,
+    totalCost: 0,
+    hasUnpricedTotalCost: false,
     totalSessionCost: 0,
     hasUnpricedSessionCost: false,
     affectedSessions: 1,
@@ -116,6 +120,8 @@ Deno.test("separates subagent misses and excludes compactions and old sessions",
   deepStrictEqual(aggregateTtlMisses(calls, start, 90), {
     rangeDays: 90,
     sessions: 1,
+    totalCost: 0.001875,
+    hasUnpricedTotalCost: false,
     totalSessionCost: 0.00075,
     hasUnpricedSessionCost: false,
     affectedSessions: 0,
@@ -147,6 +153,8 @@ Deno.test("reports incomplete affected-session and miss pricing", () => {
   );
 
   strictEqual(result.affectedSessions, 1);
+  strictEqual(result.totalCost, 0);
+  strictEqual(result.hasUnpricedTotalCost, true);
   strictEqual(result.totalSessionCost, 0);
   strictEqual(result.hasUnpricedSessionCost, true);
   strictEqual(result.affectedSessionCost, 0);

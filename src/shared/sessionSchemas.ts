@@ -234,6 +234,8 @@ export const usageResponseSchema = z.object({
 export const ttlMissMetricsSchema = z.object({
   rangeDays: z.number().int().positive(),
   sessions: z.number().int().nonnegative(),
+  totalCost: z.number().nonnegative(),
+  hasUnpricedTotalCost: z.boolean(),
   totalSessionCost: z.number().nonnegative(),
   hasUnpricedSessionCost: z.boolean(),
   affectedSessions: z.number().int().nonnegative(),
