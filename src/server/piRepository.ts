@@ -9,6 +9,7 @@ import { usageCallsFromSession } from "./usage.ts";
 import type {
   SessionCallImport,
   SessionContentImport,
+  SessionContextEventImport,
   SessionToolImport,
   SessionTurnImport,
 } from "./sessionRepository.ts";
@@ -208,9 +209,24 @@ function decodeRecords(records: Record[]) {
   const models = new Set<string>();
   const tools = new Map<string, SessionToolImport>();
   let reportedCost = 0;
+  type PendingContextEvent = SessionContextEventImport & {
+    affectedCallReference?: SessionCallImport;
+  };
+  const contextEvents: PendingContextEvent[] = [];
+  const pendingContextEvents: PendingContextEvent[] = [];
 
-  for (const record of records) {
+  for (const [recordIndex, record] of records.entries()) {
     const timestamp = Date.parse(record.timestamp ?? "") || 0;
+    if (record.type === "compaction") {
+      const event: PendingContextEvent = {
+        type: "compaction",
+        sourceOrder: recordIndex + 1,
+        ...(timestamp === 0 ? {} : { occurredAt: timestamp }),
+      };
+      contextEvents.push(event);
+      pendingContextEvents.push(event);
+      continue;
+    }
     const message = record.message;
     if (record.type !== "message" || !message?.role) continue;
 
@@ -326,12 +342,39 @@ function decodeRecords(records: Record[]) {
     addTokens(tokens, callTokens);
     reportedCost += cost;
     turn.calls.push(call);
+    for (const event of pendingContextEvents) {
+      event.affectedCallReference = call;
+    }
+    pendingContextEvents.length = 0;
   }
 
   const nonEmptyTurns = turns
     .filter((turn) => turn.calls.length > 0)
     .map((turn, index) => ({ ...turn, number: index + 1 }));
-  return { turns: nonEmptyTurns, tokens, providers, models, reportedCost };
+  const normalizedContextEvents: SessionContextEventImport[] = contextEvents
+    .map(
+      ({ affectedCallReference, ...event }) => {
+        if (affectedCallReference === undefined) return event;
+        const turn = nonEmptyTurns.find((candidate) =>
+          candidate.calls.includes(affectedCallReference)
+        );
+        return turn === undefined ? event : {
+          ...event,
+          affectedCall: {
+            turn: turn.number,
+            call: affectedCallReference.callWithinTurn,
+          },
+        };
+      },
+    );
+  return {
+    turns: nonEmptyTurns,
+    contextEvents: normalizedContextEvents,
+    tokens,
+    providers,
+    models,
+    reportedCost,
+  };
 }
 
 export class PiRepository {
@@ -382,10 +425,23 @@ export class PiRepository {
       file.id,
       file.updatedAt,
     );
+    const turns = normalized.turns.map((turn) => ({
+      ...turn,
+      calls: turn.calls.map((call) => ({
+        ...call,
+        contextEventsBefore: normalized.contextEvents.filter((event) =>
+          event.affectedCall?.turn === turn.number &&
+          event.affectedCall.call === call.callWithinTurn
+        ).map(({ affectedCall: _affectedCall, ...event }) => event),
+      })),
+    }));
     return {
       ...normalized.summary,
       parentID: undefined,
-      turns: normalized.turns,
+      turns,
+      contextEvents: normalized.contextEvents.filter((event) =>
+        event.affectedCall === undefined
+      ),
       subagents: [],
     };
   }
@@ -451,7 +507,11 @@ function piSession(records: Record[], id: string, updatedAt: number) {
     reportedCost: decoded.reportedCost,
     tokens: decoded.tokens,
   };
-  return { summary, turns: decoded.turns };
+  return {
+    summary,
+    turns: decoded.turns,
+    contextEvents: decoded.contextEvents,
+  };
 }
 
 export function normalizePiSession(

@@ -86,6 +86,7 @@ Deno.test("normalizes PI JSONL sessions with tool activity and reported cost", (
               outputPreview: "ok",
             }],
           },
+          contextEventsBefore: [],
         },
         {
           id: "assistant-2",
@@ -113,9 +114,11 @@ Deno.test("normalizes PI JSONL sessions with tool activity and reported cost", (
             hasReasoning: true,
             tools: [],
           },
+          contextEventsBefore: [],
         },
       ],
     }],
+    contextEvents: [],
     subagents: [],
   };
 

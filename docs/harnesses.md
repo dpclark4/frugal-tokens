@@ -95,7 +95,16 @@ Current source support is:
 | OpenCode | Explicit `compaction` part; affected call resolved when present |
 | Claude Code | Source signal and ordering not yet investigated |
 | Codex | Source signal and ordering not yet investigated |
-| PI | Source signal and ordering not yet investigated |
+| PI | Explicit JSONL `compaction` record; affected call resolved when present |
+
+PI compaction support currently follows the importer's existing linear,
+append-order interpretation of a session file. A verified persisted event had
+`type`, `id`, `parentId`, `timestamp`, and `summary`; optional fields described
+elsewhere such as `firstKeptEntryId`, `tokensBefore`, and `fromHook` were absent.
+The summary is not retained. Because PI does not persist a separate assistant
+usage record for summary generation in this fixture, the first later assistant
+call with usage is the affected provider request. Branch reconstruction remains
+out of scope.
 
 ### Usage And Cost
 

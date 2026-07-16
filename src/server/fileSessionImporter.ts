@@ -1,4 +1,5 @@
 import type {
+  SessionContextEventImport,
   SessionRepository,
   SessionTurnImport,
 } from "./sessionRepository.ts";
@@ -15,6 +16,7 @@ export type FileSessionCandidate = {
 type NormalizedFileSession = {
   summary: SessionSummary;
   turns: SessionTurnImport[];
+  contextEvents?: SessionContextEventImport[];
 };
 
 function checksum(bytes: Uint8Array) {
@@ -141,6 +143,7 @@ export async function syncFileSessions(options: {
           reportedCost: normalized.summary.reportedCost,
           tokens: normalized.summary.tokens,
           turns: normalized.turns,
+          contextEvents: normalized.contextEvents,
         },
       });
       imported++;
