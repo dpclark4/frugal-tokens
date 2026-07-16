@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import {
+  type ContextEvent,
   type ModelCall,
   type SessionDetail,
   sessionDetailSchema,
@@ -41,11 +42,23 @@ export type SessionToolImport =
     output?: Omit<SessionContentImport, "kind" | "mimeType" | "contentHash">;
   };
 
-export type SessionCallImport = Omit<ModelCall, "activity"> & {
-  activity: Omit<ModelCall["activity"], "tools"> & {
-    tools: SessionToolImport[];
+export type SessionCallImport =
+  & Omit<
+    ModelCall,
+    "activity" | "contextEventsBefore"
+  >
+  & {
+    activity: Omit<ModelCall["activity"], "tools"> & {
+      tools: SessionToolImport[];
+    };
+    content?: SessionContentImport[];
   };
-  content?: SessionContentImport[];
+
+export type SessionContextEventImport = ContextEvent & {
+  affectedCall?: {
+    turn: number;
+    call: number;
+  };
 };
 
 export type SessionTurnImport = {
@@ -84,6 +97,7 @@ export type SourceSessionImport = {
     reportedCost?: number;
     tokens: TokenUsage;
     turns: SessionTurnImport[];
+    contextEvents?: SessionContextEventImport[];
   };
 };
 
@@ -153,6 +167,13 @@ type ContentRow = {
   model_call_id: number;
   kind: string;
   preview: string | null;
+};
+
+type ContextEventRow = {
+  event_type: string;
+  source_order: number;
+  occurred_at: number | null;
+  affected_model_call_id: number | null;
 };
 
 const summaryColumns = `
@@ -494,6 +515,10 @@ export class SessionRepository {
       LEFT JOIN source_sessions parent ON parent.id = ss.parent_id
       WHERE (? IS NULL OR mc.started_at >= ?)
         AND (? IS NULL OR so.harness = ?)
+        AND NOT (
+          so.harness = 'codex' AND
+          mc.source_call_id LIKE 'context-operation:%'
+        )
       ORDER BY mc.started_at, mc.id
     `).all(
       startedAt ?? null,
@@ -673,6 +698,7 @@ export class SessionRepository {
       ...tokenValues,
     );
 
+    const callIDs = new Map<string, number>();
     for (const turn of session.turns) {
       const turnID = Number(
         (this.db.prepare(`
@@ -716,6 +742,7 @@ export class SessionRepository {
             Number(call.activity.hasReasoning),
           ) as { id: number }).id,
         );
+        callIDs.set(`${turn.number}:${call.callWithinTurn}`, callID);
         this.#insertContent(
           "call_content",
           "model_call_id",
@@ -753,6 +780,32 @@ export class SessionRepository {
       }
     }
 
+    const insertContextEvent = this.db.prepare(`
+      INSERT INTO context_events (
+        session_id, event_type, source_order, occurred_at,
+        affected_model_call_id
+      ) VALUES (?, ?, ?, ?, ?)
+    `);
+    for (const event of session.contextEvents ?? []) {
+      const affectedCallID = event.affectedCall === undefined
+        ? null
+        : callIDs.get(
+          `${event.affectedCall.turn}:${event.affectedCall.call}`,
+        );
+      if (event.affectedCall !== undefined && affectedCallID === undefined) {
+        throw new Error(
+          `Unknown affected call: turn ${event.affectedCall.turn}, call ${event.affectedCall.call}`,
+        );
+      }
+      insertContextEvent.run(
+        sourceSessionID,
+        event.type,
+        event.sourceOrder,
+        event.occurredAt ?? null,
+        affectedCallID ?? null,
+      );
+    }
+
     const checkpoint = value.checkpoint;
     this.db.prepare(`
         UPDATE source_sessions SET
@@ -777,10 +830,26 @@ export class SessionRepository {
         ...base,
         parentID: optional(row.parent_public_id),
         turns: [],
+        contextEvents: [],
         subagents: [],
       };
     }
     const nextVisited = new Set(visited).add(row.source_session_id);
+    const contextEventRows = this.db.prepare(`
+      SELECT event_type, source_order, occurred_at, affected_model_call_id
+      FROM context_events
+      WHERE session_id = ?
+      ORDER BY source_order
+    `).all(row.source_session_id) as ContextEventRow[];
+    const contextEventsByCall = Map.groupBy(
+      contextEventRows.filter((event) => event.affected_model_call_id !== null),
+      (event) => event.affected_model_call_id!,
+    );
+    const contextEvent = (event: ContextEventRow): ContextEvent => ({
+      type: event.event_type,
+      sourceOrder: event.source_order,
+      occurredAt: optional(event.occurred_at),
+    });
     const turns = (this.db.prepare(`
       SELECT id, ordinal, started_at FROM turns
       WHERE session_id = ? ORDER BY ordinal
@@ -789,12 +858,17 @@ export class SessionRepository {
       ordinal: number;
       started_at: number;
     }>).map((turn) => {
-      const calls = this.db.prepare(`
+      const calls = (this.db.prepare(`
         SELECT ${callColumns}
         FROM model_calls mc
         JOIN models m ON m.id = mc.model_id
         WHERE mc.turn_id = ? ORDER BY mc.ordinal
-      `).all(turn.id) as CallRow[];
+      `).all(turn.id) as CallRow[]).filter((call) => {
+        // Codex persists compaction machinery as an opaque model call. Its
+        // importer tags only that call; all other calls hydrate normally.
+        return row.harness !== "codex" ||
+          !call.source_call_id?.startsWith("context-operation:");
+      });
       const tools = calls.length === 0 ? [] : this.db.prepare(`
         SELECT te.model_call_id, te.name, te.status, te.started_at,
           te.completed_at,
@@ -846,10 +920,16 @@ export class SessionRepository {
                 outputPreview: optional(tool.output_preview),
               })),
             },
+            contextEventsBefore: (contextEventsByCall.get(call.id) ?? []).map(
+              contextEvent,
+            ),
           };
         }),
       };
-    });
+    }).filter((turn) => turn.calls.length > 0).map((turn, index) => ({
+      ...turn,
+      number: index + 1,
+    }));
     const children = this.db.prepare(`
       SELECT ${summaryColumns}
       FROM sessions s
@@ -864,7 +944,12 @@ export class SessionRepository {
       ...base,
       parentID: optional(row.parent_public_id),
       agent: optional(row.agent),
+      userTurns: turns.length,
+      modelCalls: turns.reduce((total, turn) => total + turn.calls.length, 0),
       turns,
+      contextEvents: contextEventRows.filter((event) =>
+        event.affected_model_call_id === null
+      ).map(contextEvent),
       subagents: children.map((child) => this.#detail(child, nextVisited)),
     };
   }

@@ -9,6 +9,7 @@ import { usageCallsFromSession } from "./usage.ts";
 import type {
   SessionCallImport,
   SessionContentImport,
+  SessionContextEventImport,
   SessionToolImport,
   SessionTurnImport,
   SourceSessionCheckpoint,
@@ -31,6 +32,7 @@ const contentBlockSchema = z.object({
 
 const recordSchema = z.object({
   type: z.string(),
+  subtype: z.string().optional(),
   uuid: z.string().optional(),
   timestamp: z.string().optional(),
   aiTitle: z.string().optional(),
@@ -224,9 +226,24 @@ function decodeRecords(records: Record[]) {
   const tokens = emptyTokens();
   const providers = new Set<string>();
   const models = new Set<string>();
+  type PendingContextEvent = SessionContextEventImport & {
+    affectedCallReference?: SessionCallImport;
+  };
+  const contextEvents: PendingContextEvent[] = [];
+  const pendingContextEvents: PendingContextEvent[] = [];
 
-  for (const record of records) {
+  for (const [recordIndex, record] of records.entries()) {
     const timestamp = Date.parse(record.timestamp ?? "") || 0;
+    if (record.type === "system" && record.subtype === "compact_boundary") {
+      const event: PendingContextEvent = {
+        type: "compaction",
+        sourceOrder: recordIndex + 1,
+        ...(timestamp === 0 ? {} : { occurredAt: timestamp }),
+      };
+      contextEvents.push(event);
+      pendingContextEvents.push(event);
+      continue;
+    }
     if (record.type === "user") {
       const content = record.message?.content;
       const text = userText(record);
@@ -306,6 +323,10 @@ function decodeRecords(records: Record[]) {
         content: [],
       };
       turn.calls.push(call);
+      for (const event of pendingContextEvents) {
+        event.affectedCallReference = call;
+      }
+      pendingContextEvents.length = 0;
       decoded = { call, blocks: [] };
       calls.set(id, decoded);
       providers.add("anthropic");
@@ -356,7 +377,29 @@ function decodeRecords(records: Record[]) {
   const nonEmptyTurns = turns
     .filter((turn) => turn.calls.length > 0)
     .map((turn, index) => ({ ...turn, number: index + 1 }));
-  return { turns: nonEmptyTurns, tokens, providers, models };
+  const normalizedContextEvents: SessionContextEventImport[] = contextEvents
+    .map(
+      ({ affectedCallReference, ...event }) => {
+        if (affectedCallReference === undefined) return event;
+        const turn = nonEmptyTurns.find((candidate) =>
+          candidate.calls.includes(affectedCallReference)
+        );
+        return turn === undefined ? event : {
+          ...event,
+          affectedCall: {
+            turn: turn.number,
+            call: affectedCallReference.callWithinTurn,
+          },
+        };
+      },
+    );
+  return {
+    turns: nonEmptyTurns,
+    contextEvents: normalizedContextEvents,
+    tokens,
+    providers,
+    models,
+  };
 }
 
 function dependency(path: string, artifactPath: string): ClaudeCodeDependency {
@@ -608,6 +651,7 @@ export function normalizeClaudeCodeSessionTree(options: {
         ),
         tokens: decoded.tokens,
         turns: decoded.turns,
+        contextEvents: decoded.contextEvents,
       },
     };
   });
@@ -761,6 +805,22 @@ export class ClaudeCodeRepository {
     const records = readRecords(path);
     const decoded = decodeRecords(records);
     const summary = this.#summary(id, path, updatedAt);
+    const turns = decoded.turns.map((turn) => ({
+      ...turn,
+      calls: turn.calls.map((call) => {
+        const contextEventsBefore = decoded.contextEvents.filter((event) =>
+          event.affectedCall?.turn === turn.number &&
+          event.affectedCall.call === call.callWithinTurn
+        ).map(({ affectedCall: _affectedCall, ...event }) => event);
+        return {
+          ...call,
+          ...(contextEventsBefore.length === 0 ? {} : { contextEventsBefore }),
+        };
+      }),
+    }));
+    const contextEvents = decoded.contextEvents.filter((event) =>
+      event.affectedCall === undefined
+    );
     const subagentDirectory = `${path.slice(0, -6)}/subagents`;
     let subagents: unknown[] = [];
     try {
@@ -798,7 +858,8 @@ export class ClaudeCodeRepository {
       ...summary,
       title: title ?? summary.title,
       parentID,
-      turns: decoded.turns,
+      turns,
+      ...(contextEvents.length === 0 ? {} : { contextEvents }),
       subagents,
     };
   }

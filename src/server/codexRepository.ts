@@ -9,6 +9,7 @@ import { usageCallsFromSession } from "./usage.ts";
 import type {
   SessionCallImport,
   SessionContentImport,
+  SessionContextEventImport,
   SessionToolImport,
   SessionTurnImport,
 } from "./sessionRepository.ts";
@@ -197,10 +198,37 @@ function decodeRecords(records: Record[]) {
   let pendingHasText = false;
   let pendingTools: SessionToolImport[] = [];
   let pendingContent: SessionContentImport[] = [];
+  type PendingContextEvent = SessionContextEventImport & {
+    affectedCallReference?: SessionCallImport;
+  };
+  const contextEvents: PendingContextEvent[] = [];
+  const pendingContextEvents: PendingContextEvent[] = [];
+  let lastCall: SessionCallImport | undefined;
 
-  for (const record of records) {
+  for (const [recordIndex, record] of records.entries()) {
     const payload = record.payload;
     const time = timestamp(record);
+
+    if (record.type === "event_msg" && payload?.type === "context_compacted") {
+      if (
+        lastCall && lastCall.tokens.uncachedInput === 0 &&
+        lastCall.tokens.cacheRead === 0 && lastCall.tokens.output === 0 &&
+        lastCall.tokens.reasoning === 0 && lastCall.tokens.processed > 0 &&
+        !lastCall.activity.hasText && lastCall.activity.tools.length === 0
+      ) {
+        // Codex emits this opaque total-only call for compaction itself. Keep
+        // it canonical, but tag it so only Codex hydration hides the machinery.
+        lastCall.id = `context-operation:${lastCall.id}`;
+      }
+      const event: PendingContextEvent = {
+        type: "compaction",
+        sourceOrder: recordIndex + 1,
+        ...(time === 0 ? {} : { occurredAt: time }),
+      };
+      contextEvents.push(event);
+      pendingContextEvents.push(event);
+      continue;
+    }
 
     if (record.type === "turn_context" && payload?.model) {
       currentModel = payload.model;
@@ -324,6 +352,11 @@ function decodeRecords(records: Record[]) {
     models.add(currentModel);
     addTokens(tokens, callTokens);
     turn.calls.push(call);
+    lastCall = call;
+    for (const event of pendingContextEvents) {
+      event.affectedCallReference = call;
+    }
+    pendingContextEvents.length = 0;
     pendingHasText = false;
     pendingTools = [];
     pendingContent = [];
@@ -332,7 +365,29 @@ function decodeRecords(records: Record[]) {
   const nonEmptyTurns = turns
     .filter((turn) => turn.calls.length > 0)
     .map((turn, index) => ({ ...turn, number: index + 1 }));
-  return { turns: nonEmptyTurns, tokens, providers, models };
+  const normalizedContextEvents: SessionContextEventImport[] = contextEvents
+    .map(
+      ({ affectedCallReference, ...event }) => {
+        if (affectedCallReference === undefined) return event;
+        const turn = nonEmptyTurns.find((candidate) =>
+          candidate.calls.includes(affectedCallReference)
+        );
+        return turn === undefined ? event : {
+          ...event,
+          affectedCall: {
+            turn: turn.number,
+            call: affectedCallReference.callWithinTurn,
+          },
+        };
+      },
+    );
+  return {
+    turns: nonEmptyTurns,
+    contextEvents: normalizedContextEvents,
+    tokens,
+    providers,
+    models,
+  };
 }
 
 export class CodexRepository {
@@ -383,10 +438,34 @@ export class CodexRepository {
       file.id,
       file.updatedAt,
     );
+    const turns = normalized.turns.map((turn) => ({
+      ...turn,
+      calls: turn.calls.filter((call) =>
+        !call.id.startsWith("context-operation:")
+      ).map((call) => {
+        const contextEventsBefore = normalized.contextEvents.filter((event) =>
+          event.affectedCall?.turn === turn.number &&
+          event.affectedCall.call === call.callWithinTurn
+        ).map(({ affectedCall: _affectedCall, ...event }) => event);
+        return {
+          ...call,
+          ...(contextEventsBefore.length === 0 ? {} : { contextEventsBefore }),
+        };
+      }),
+    })).filter((turn) => turn.calls.length > 0).map((turn, index) => ({
+      ...turn,
+      number: index + 1,
+    }));
+    const contextEvents = normalized.contextEvents.filter((event) =>
+      event.affectedCall === undefined
+    );
     return {
       ...normalized.summary,
+      userTurns: turns.length,
+      modelCalls: turns.reduce((total, turn) => total + turn.calls.length, 0),
       parentID: undefined,
-      turns: normalized.turns,
+      turns,
+      ...(contextEvents.length === 0 ? {} : { contextEvents }),
       subagents: [],
     };
   }
@@ -461,7 +540,11 @@ function codexSession(records: Record[], id: string, updatedAt: number) {
     ),
     tokens: decoded.tokens,
   };
-  return { summary, turns: decoded.turns };
+  return {
+    summary,
+    turns: decoded.turns,
+    contextEvents: decoded.contextEvents,
+  };
 }
 
 export function normalizeCodexSession(

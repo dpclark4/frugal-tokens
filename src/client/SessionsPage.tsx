@@ -78,7 +78,9 @@ function ContextMetric({
   if (value === undefined) return <span className="muted">-</span>;
   return (
     <span className="metric-stack context-metric" title={title}>
-      <strong><TokenValue value={value} /></strong>
+      <strong>
+        <TokenValue value={value} />
+      </strong>
       {secondary !== undefined && secondary !== value && secondaryLabel && (
         <small>
           <TokenValue value={secondary} /> {secondaryLabel}
@@ -202,12 +204,13 @@ function SessionInputMetric({
       </small>
       {showWriteTtl &&
         (tokens.cacheWrite5m !== undefined ||
-          tokens.cacheWrite1h !== undefined) && (
-        <small>
-          writes: <TokenValue value={tokens.cacheWrite5m ?? 0} /> at 5m ·{"  "}
-          <TokenValue value={tokens.cacheWrite1h ?? 0} /> at 1h
-        </small>
-      )}
+          tokens.cacheWrite1h !== undefined) &&
+        (
+          <small>
+            writes: <TokenValue value={tokens.cacheWrite5m ?? 0} /> at 5m ·
+            {"  "}<TokenValue value={tokens.cacheWrite1h ?? 0} /> at 1h
+          </small>
+        )}
       <small className={reused === undefined ? "muted" : undefined}>
         {reused === undefined
           ? "Reuse unavailable"
@@ -233,20 +236,21 @@ function CacheAssessmentBadge(
     !assessment ||
     (assessment.status !== "partial-hit" && assessment.status !== "full-miss")
   ) return null;
-  const title = providedTitle ?? (assessment.reason !== undefined
-    ? cacheAssessmentReasonLabels[assessment.reason]
-    : assessment.retainedRatio === undefined ||
-        assessment.previousReusableTokens === undefined
-    ? "No comparable preceding call"
-    : `Retained ${(assessment.retainedRatio * 100).toFixed(1)}% · Read ${
-      integer.format(
-        Math.round(
-          assessment.retainedRatio * assessment.previousReusableTokens,
-        ),
-      )
-    } of ${
-      integer.format(assessment.previousReusableTokens)
-    } previously reusable tokens`);
+  const title = providedTitle ??
+    (assessment.reason !== undefined
+      ? cacheAssessmentReasonLabels[assessment.reason]
+      : assessment.retainedRatio === undefined ||
+          assessment.previousReusableTokens === undefined
+      ? "No comparable preceding call"
+      : `Retained ${(assessment.retainedRatio * 100).toFixed(1)}% · Read ${
+        integer.format(
+          Math.round(
+            assessment.retainedRatio * assessment.previousReusableTokens,
+          ),
+        )
+      } of ${
+        integer.format(assessment.previousReusableTokens)
+      } previously reusable tokens`);
   const label = assessment.status === "full-miss"
     ? "Full miss"
     : "Partial miss";
@@ -261,7 +265,19 @@ function CacheAssessmentBadge(
 }
 
 function cacheSummaryTitle(summary: CacheSummary) {
-  return `${summary.hits} hits · ${summary.partialHits} partial hits · ${summary.fullMisses} full misses · ${summary.baseline} baseline · ${summary.notComparable} not comparable · ${summary.unknown} unavailable`;
+  return `${summary.hits} hits · ${summary.partialHits} partial hits · ${summary.fullMisses} full misses · ${summary.compactionRelatedMisses} compaction-related misses · ${summary.unexpectedMisses} unexpected misses · ${summary.baseline} baseline · ${summary.notComparable} not comparable · ${summary.unknown} unavailable`;
+}
+
+function CompactionBadge({ count = 1 }: { count?: number }) {
+  if (count === 0) return null;
+  return (
+    <span
+      className="cache-issue-badge compaction-badge"
+      title={`${count} context compaction${count === 1 ? "" : "s"}`}
+    >
+      Compacted
+    </span>
+  );
 }
 
 function hasCacheOutcome(summary?: CacheSummary) {
@@ -316,14 +332,19 @@ function cacheIssueLabel(issue: CacheIssue) {
 function SessionCacheStatus({
   summary,
   issues,
+  compactionCount,
 }: {
   summary?: CacheSummary;
   issues?: CacheIssue[];
+  compactionCount?: number;
 }) {
   const full = issues?.filter((issue) => issue.status === "full-miss") ?? [];
   const partial = issues?.filter((issue) => issue.status === "partial-hit") ??
     [];
-  if (!summary || (full.length === 0 && partial.length === 0)) {
+  if (
+    !summary ||
+    (full.length === 0 && partial.length === 0 && !compactionCount)
+  ) {
     return null;
   }
   const title = [
@@ -353,6 +374,12 @@ function SessionCacheStatus({
           <span className="session-cache-count">x{partial.length}</span>
         </>
       )}
+      {!!compactionCount && (
+        <>
+          <CompactionBadge count={compactionCount} />
+          <span className="session-cache-count">x{compactionCount}</span>
+        </>
+      )}
     </span>
   );
 }
@@ -363,6 +390,14 @@ function TurnCacheStatus({ turn }: { turn: SessionDetail["turns"][number] }) {
   );
   const partial = turn.calls.filter((call) =>
     call.cacheAssessment?.status === "partial-hit"
+  );
+  const compactions = turn.calls.reduce(
+    (total, call) =>
+      total +
+      (call.contextEventsBefore ?? []).filter((event) =>
+        event.type === "compaction"
+      ).length,
+    0,
   );
   const title = [
     full.length > 0
@@ -379,7 +414,9 @@ function TurnCacheStatus({ turn }: { turn: SessionDetail["turns"][number] }) {
       ? undefined
       : `Call totals: ${cacheSummaryTitle(turn.cacheSummary)}`,
   ].filter(Boolean).join("\n");
-  if (full.length === 0 && partial.length === 0) return null;
+  if (full.length === 0 && partial.length === 0 && compactions === 0) {
+    return null;
+  }
   return (
     <span className="cache-issue-group">
       {full.length > 0 && (
@@ -394,6 +431,7 @@ function TurnCacheStatus({ turn }: { turn: SessionDetail["turns"][number] }) {
           title={title}
         />
       )}
+      <CompactionBadge count={compactions} />
     </span>
   );
 }
@@ -1074,7 +1112,9 @@ function CallTable({
                   <td>
                     <ContextMetric
                       value={callContext}
-                      title={`${integer.format(callContext)} tokens in this request`}
+                      title={`${
+                        integer.format(callContext)
+                      } tokens in this request`}
                     />
                   </td>
                   <td>
@@ -1086,7 +1126,14 @@ function CallTable({
                       : `${(reused * 100).toFixed(1)}%`}
                   </td>
                   <td>
-                    <CacheAssessmentBadge assessment={call.cacheAssessment} />
+                    <span className="cache-issue-group">
+                      <CacheAssessmentBadge assessment={call.cacheAssessment} />
+                      <CompactionBadge
+                        count={(call.contextEventsBefore ?? []).filter((
+                          event,
+                        ) => event.type === "compaction").length}
+                      />
+                    </span>
                   </td>
                   <td>
                     <TokenValue
@@ -1677,10 +1724,10 @@ export function SessionsPage() {
                         >
                           <td className="session-cell">
                             <div className="session-identity">
-                                <button
-                                  type="button"
-                                  className="session-expand"
-                                  aria-expanded={expanded}
+                              <button
+                                type="button"
+                                className="session-expand"
+                                aria-expanded={expanded}
                                 aria-label={`${
                                   expanded ? "Collapse" : "Expand"
                                 } ${session.title}`}
@@ -1736,9 +1783,9 @@ export function SessionsPage() {
                               {(session.subagentCount ?? 0) > 0 && (
                                 <small>
                                   {session.subagentCount}{" "}
-                                  subagent{
-                                    session.subagentCount === 1 ? "" : "s"
-                                  }
+                                  subagent{session.subagentCount === 1
+                                    ? ""
+                                    : "s"}
                                 </small>
                               )}
                             </span>
@@ -1773,6 +1820,7 @@ export function SessionsPage() {
                             <SessionCacheStatus
                               summary={session.cacheSummary}
                               issues={session.cacheIssues}
+                              compactionCount={session.compactionCount}
                             />
                           </td>
                           <td>
@@ -1820,7 +1868,9 @@ export function SessionsPage() {
               {loadMoreError && (
                 <>
                   <span className="session-load-error">{loadMoreError}</span>
-                  <button type="button" onClick={loadNextPage}>Try again</button>
+                  <button type="button" onClick={loadNextPage}>
+                    Try again
+                  </button>
                 </>
               )}
               {!loadingMore && !loadMoreError &&

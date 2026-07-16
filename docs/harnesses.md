@@ -59,6 +59,7 @@ are not available for the sessions inspected.
 | `message.data.role = "user"` | User-turn boundary |
 | Assistant message with non-zero usage | Model call |
 | `part.data.type = "tool"` | Tool event |
+| `part.data.type = "compaction"` | Context-transition event |
 | Session with `parent_id` | Subagent session |
 | `task` part metadata `sessionId` | Link from tool event to subagent |
 
@@ -67,6 +68,67 @@ assistant calls belong to that turn until the next user message. One turn may
 contain many calls because each tool-use loop invokes the model again.
 
 Ignore assistant records whose reported token usage is entirely zero.
+
+### Compaction
+
+OpenCode records a durable compaction signal as a synthetic user message with a
+part whose `data.type` is `compaction`. The following assistant call generates
+the compacted summary. Frugal Tokens preserves that call's usage and cost but
+does not retain its generated summary text.
+
+The normalized context event is attached immediately before the first later
+model call whose provider request uses the compacted context. This may be in
+the same turn or a later user turn. If the session ends before another model
+call, the event remains session-level with no inferred boundary. Token changes
+alone never create a compaction event or establish its boundary.
+
+Cache hit, partial-miss, and full-miss outcomes remain token-derived. A partial
+or full miss on the explicitly affected call is additionally classified as
+compaction-related; an unbounded event cannot explain a specific miss.
+
+The normalized event contract is harness-independent: event type, session
+ownership, source order, optional timestamp, and optional affected model call.
+Current source support is:
+
+| Harness | Compaction support |
+|---|---|
+| OpenCode | Explicit `compaction` part; affected call resolved when present |
+| Claude Code | Explicit `system/compact_boundary`; affected call resolved when present |
+| Codex | Explicit `event_msg/context_compacted`; affected call resolved when present |
+| PI | Explicit JSONL `compaction` record; affected call resolved when present |
+
+PI compaction support currently follows the importer's existing linear,
+append-order interpretation of a session file. A verified persisted event had
+`type`, `id`, `parentId`, `timestamp`, and `summary`; optional fields described
+elsewhere such as `firstKeptEntryId`, `tokensBefore`, and `fromHook` were absent.
+The summary is not retained. Because PI does not persist a separate assistant
+usage record for summary generation in this fixture, the first later assistant
+call with usage is the affected provider request. Branch reconstruction remains
+out of scope.
+
+Claude Code records a compaction as a system entry with subtype
+`compact_boundary`. A verified manual event included optional metadata such as
+pre/post token counts and preserved-message UUIDs, but normalized detection
+uses only the explicit type/subtype and record order. The generated summary is
+a later synthetic user record that does not start a normalized turn and is not
+retained. The first later assistant message with usage is the affected provider
+request. `/compact` command text and cache-token changes are not detection
+signals.
+
+Codex writes a large top-level `compacted` record containing replacement
+history and encrypted compaction material, followed by an explicit
+`event_msg` whose payload type is `context_compacted`. Historical fixtures
+consistently contain the small explicit event, so it is the normalized signal
+and the adjacent records are not double-counted. Replacement history and
+encrypted content are not retained. The first later nonzero `token_count`
+model call is the affected provider request.
+
+Codex also persists compaction machinery as an opaque total-only model call.
+The importer gives only that confirmed operation call a
+`context-operation:` source-call prefix. SQLite retains its turn and call, but
+Codex detail hydration filters the tagged call and any turn left empty, then
+renumbers visible turns. Other harnesses never apply this filter. Replacement
+history and encrypted content remain only in the source JSONL.
 
 ### Usage And Cost
 
@@ -127,7 +189,7 @@ counting child sessions that also appear in the session list.
 ### Other Metadata
 
 Useful but not currently required fields include session directory, project
-worktree, VCS, harness version, agent, compaction events, retries, errors, and
+worktree, VCS, harness version, agent, retries, errors, and
 Git tree snapshots. A snapshot is a Git tree object, not a commit or branch.
 
 Absolute paths, branch names, filenames, URLs, prompts, reasoning, patches,

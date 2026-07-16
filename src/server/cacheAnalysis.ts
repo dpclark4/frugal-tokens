@@ -52,6 +52,8 @@ export function summarizeTurnCache(calls: ModelCall[]): TurnCacheSummary {
     fullMisses: 0,
     notComparable: 0,
     unknown: 0,
+    compactionRelatedMisses: 0,
+    unexpectedMisses: 0,
     totalCacheRead: 0,
     peakCacheRead: 0,
     totalNewInput: 0,
@@ -82,6 +84,14 @@ export function summarizeTurnCache(calls: ModelCall[]): TurnCacheSummary {
       default:
         summary.unknown++;
     }
+    if (call.cacheAssessment?.cause === "compaction") {
+      summary.compactionRelatedMisses++;
+    } else if (
+      call.cacheAssessment?.status === "partial-hit" ||
+      call.cacheAssessment?.status === "full-miss"
+    ) {
+      summary.unexpectedMisses++;
+    }
   }
   const totalInput = summary.totalCacheRead + summary.totalNewInput;
   if (totalInput > 0) {
@@ -94,7 +104,14 @@ export function analyzeSessionCache(session: SessionDetail): SessionDetail {
   let previous: ModelCall | undefined;
   const turns = session.turns.map((turn) => {
     const calls = turn.calls.map((call) => {
-      const cacheAssessment = assessCache(previous, call);
+      const rawAssessment = assessCache(previous, call);
+      const cacheAssessment = (call.contextEventsBefore ?? []).some((event) =>
+          event.type === "compaction"
+        ) &&
+          (rawAssessment.status === "partial-hit" ||
+            rawAssessment.status === "full-miss")
+        ? { ...rawAssessment, cause: "compaction" as const }
+        : rawAssessment;
       previous = call;
       return { ...call, cacheAssessment };
     });
@@ -116,8 +133,6 @@ export function analyzeSessionCache(session: SessionDetail): SessionDetail {
   return {
     ...session,
     turns,
-    // Future source compaction events can explain drops without changing the
-    // token-based classification itself.
     subagents: session.subagents.map(analyzeSessionCache),
   };
 }
@@ -130,6 +145,8 @@ export function summarizeSessionCache(session: SessionDetail): CacheSummary {
     fullMisses: 0,
     notComparable: 0,
     unknown: 0,
+    compactionRelatedMisses: 0,
+    unexpectedMisses: 0,
   };
   for (const turn of session.turns) {
     for (const call of turn.calls) {
@@ -152,6 +169,14 @@ export function summarizeSessionCache(session: SessionDetail): CacheSummary {
         default:
           summary.unknown++;
       }
+      if (call.cacheAssessment?.cause === "compaction") {
+        summary.compactionRelatedMisses++;
+      } else if (
+        call.cacheAssessment?.status === "partial-hit" ||
+        call.cacheAssessment?.status === "full-miss"
+      ) {
+        summary.unexpectedMisses++;
+      }
     }
   }
   for (const subagent of session.subagents) {
@@ -162,6 +187,8 @@ export function summarizeSessionCache(session: SessionDetail): CacheSummary {
     summary.fullMisses += nested.fullMisses;
     summary.notComparable += nested.notComparable;
     summary.unknown += nested.unknown;
+    summary.compactionRelatedMisses += nested.compactionRelatedMisses;
+    summary.unexpectedMisses += nested.unexpectedMisses;
   }
   return summary;
 }
@@ -171,15 +198,20 @@ export function sessionCacheIssues(
   nested = false,
 ): CacheIssue[] {
   const scope = nested
-    ? session.agent
-      ? `${session.agent}: ${session.title}`
-      : session.title
+    ? session.agent ? `${session.agent}: ${session.title}` : session.title
     : undefined;
   return [
     ...session.turns.flatMap((turn) =>
       turn.cacheAssessment?.status === "full-miss" ||
         turn.cacheAssessment?.status === "partial-hit"
-        ? [{ status: turn.cacheAssessment.status, turn: turn.number, scope }]
+        ? [{
+          status: turn.cacheAssessment.status,
+          ...(turn.cacheAssessment.cause === undefined
+            ? {}
+            : { cause: turn.cacheAssessment.cause }),
+          turn: turn.number,
+          scope,
+        }]
         : []
     ),
     ...session.subagents.flatMap((subagent) =>
