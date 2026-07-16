@@ -2,6 +2,7 @@ import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxi
 import type { UsageResponse } from "../../shared/sessionSchemas.ts";
 
 const day = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+const DAY_MS = 86_400_000;
 const cacheSeries = [
   { key: "clean", label: "Clean", color: "#466244" },
   { key: "partial", label: "Partial only", color: "#c18a3d" },
@@ -20,7 +21,7 @@ function CacheTooltip({ active, label, payload }: {
   const total = cacheSeries.reduce((sum, item) => sum + (row[`${item.key}Count`] ?? 0), 0);
   return (
     <div className="usage-tooltip cache-tooltip">
-      <p>{day.format(new Date(`${String(label)}T00:00:00`))}</p>
+      <p>{day.format(new Date(Number(label)))}</p>
       <strong>{total} sessions</strong>
       <div className="usage-tooltip-models">
         {cacheSeries.map((item) => {
@@ -48,7 +49,7 @@ export function CacheMissChart({ usage, range }: {
   const data = usage.cacheDays.map((entry) => {
     const entryTotal = entry.clean + entry.partial + entry.fullMiss + entry.notComparable;
     return {
-      date: entry.date,
+      timestamp: new Date(`${entry.date}T00:00:00`).getTime(),
       ...Object.fromEntries(cacheSeries.flatMap((item) => [
         [item.key, entryTotal === 0 ? 0 : entry[item.key] / entryTotal * 100],
         [`${item.key}Count`, entry[item.key]],
@@ -72,7 +73,19 @@ export function CacheMissChart({ usage, range }: {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={data} margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
                 <CartesianGrid vertical={false} stroke="#dfdbd1" strokeDasharray="3 5" />
-                <XAxis dataKey="date" tickFormatter={(value: string) => day.format(new Date(`${value}T00:00:00`))} tickLine={false} axisLine={false} minTickGap={24} />
+                <XAxis
+                  dataKey="timestamp"
+                  type="number"
+                  scale="time"
+                  domain={[
+                    (minimum: number) => minimum - DAY_MS / 2,
+                    (maximum: number) => maximum + DAY_MS / 2,
+                  ]}
+                  tickFormatter={(value: number) => day.format(new Date(value))}
+                  tickLine={false}
+                  axisLine={false}
+                  minTickGap={24}
+                />
                 <YAxis domain={[0, 100]} tickFormatter={(value: number) => `${value}%`} tickLine={false} axisLine={false} width={42} />
                 <Tooltip cursor={{ fill: "rgba(70, 98, 68, .07)" }} content={(props) => (
                   <CacheTooltip active={props.active} label={props.label} payload={props.payload as Array<{ payload?: Record<string, number> }>} />

@@ -68,11 +68,21 @@ export function TtlMissCard({ harness }: { harness: string }) {
           </div>
           <div className="ttl-cost-summary">
             <div>
-              <span>All root-session spend</span>
+              <span>All spend in range</span>
+              <strong>{money.format(metrics.totalCost)}</strong>
+              <small>
+                Root + subagents
+                {metrics.hasUnpricedTotalCost ? " · known prices only" : ""}
+              </small>
+            </div>
+            <div>
+              <span>Root spend analyzed</span>
               <strong>{money.format(metrics.totalSessionCost)}</strong>
-              {metrics.hasUnpricedSessionCost && (
-                <small>Known prices only</small>
-              )}
+              <small>
+                {share(metrics.totalSessionCost, metrics.totalCost)}{" "}
+                of all spend
+                {metrics.hasUnpricedSessionCost ? " · known prices only" : ""}
+              </small>
             </div>
             <div>
               <span>Affected root-session spend</span>
@@ -80,7 +90,7 @@ export function TtlMissCard({ harness }: { harness: string }) {
               <small>
                 {share(metrics.affectedSessionCost, metrics.totalSessionCost)}
                 {" "}
-                of all spend
+                of root spend
                 {metrics.hasUnpricedAffectedSessionCost
                   ? " · known prices only"
                   : ""}

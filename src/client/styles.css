@@ -232,7 +232,7 @@ h1 {
 
 .ttl-cost-summary {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   margin: 0 28px 18px;
   border: 1px solid var(--row-border);
   background: var(--surface-1);
@@ -247,6 +247,14 @@ h1 {
 
 .ttl-cost-summary > div + div {
   border-left: 1px solid var(--row-border);
+}
+
+.ttl-cost-summary > div:nth-child(n + 3) {
+  border-top: 1px solid var(--row-border);
+}
+
+.ttl-cost-summary > div:nth-child(odd) {
+  border-left: 0;
 }
 
 .ttl-cost-summary span,

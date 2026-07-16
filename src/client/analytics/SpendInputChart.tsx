@@ -16,7 +16,7 @@ const money = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
   minimumFractionDigits: 2,
-  maximumFractionDigits: 4,
+  maximumFractionDigits: 2,
 });
 const day = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
 const DAY_MS = 86_400_000;

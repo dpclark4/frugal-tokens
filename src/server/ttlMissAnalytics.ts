@@ -43,13 +43,16 @@ export function aggregateTtlMisses(
   start: number,
   rangeDays: number,
 ): TtlMissMetrics {
+  const rangedCalls = usageCalls.filter((call) => call.startedAt >= start);
   const sessions = Map.groupBy(
-    usageCalls.filter((call) => call.sessionStartedAt >= start),
+    rangedCalls.filter((call) => call.sessionStartedAt >= start),
     (call) => `${call.harness}:${call.session.rootID}`,
   );
   const result: TtlMissMetrics = {
     rangeDays,
     sessions: sessions.size,
+    totalCost: 0,
+    hasUnpricedTotalCost: false,
     totalSessionCost: 0,
     hasUnpricedSessionCost: false,
     affectedSessions: 0,
@@ -68,6 +71,16 @@ export function aggregateTtlMisses(
     },
     subagents: { affectedSessions: 0, misses: 0 },
   };
+
+  for (const call of rangedCalls) {
+    const cost = call.computedCost ?? computeModelCallCost(
+      call.tokens,
+      call.model,
+      call.startedAt,
+    );
+    if (cost === undefined) result.hasUnpricedTotalCost = true;
+    else result.totalCost += cost;
+  }
 
   for (const calls of sessions.values()) {
     const rootCalls = calls.filter((call) =>
