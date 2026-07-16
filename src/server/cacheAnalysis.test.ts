@@ -180,7 +180,7 @@ Deno.test("summarizes turns and includes independently analyzed subagents", () =
   ]);
 });
 
-Deno.test("classifies a miss after a bounded compaction without changing status", () => {
+Deno.test("tracks a partial miss after compaction without counting it as a miss", () => {
   const previous = call("previous", 80_000, 20_000);
   const compacted = call("compacted", 50_000);
   compacted.contextEventsBefore = [{
@@ -188,17 +188,75 @@ Deno.test("classifies a miss after a bounded compaction without changing status"
     sourceOrder: 2,
     occurredAt: 2,
   }];
-  const actual = analyzeSessionCache(session("compaction", [
-    previous,
-    compacted,
-  ]));
+  const base = session("compaction", []);
+  base.userTurns = 2;
+  base.modelCalls = 2;
+  base.turns = [
+    { number: 1, startedAt: 1, calls: [previous] },
+    { number: 2, startedAt: 2, calls: [compacted] },
+  ];
+  const actual = analyzeSessionCache(base);
 
-  deepStrictEqual(actual.turns[0].calls[1].cacheAssessment, {
+  deepStrictEqual(actual.turns[1].calls[0].cacheAssessment, {
     status: "partial-hit",
     retainedRatio: 0.5,
     previousReusableTokens: 100_000,
     cause: "compaction",
   });
-  strictEqual(actual.turns[0].cacheSummary?.compactionRelatedMisses, 1);
-  strictEqual(actual.turns[0].cacheSummary?.unexpectedMisses, 0);
+  deepStrictEqual(actual.turns[1].cacheSummary, {
+    baseline: 0,
+    hits: 0,
+    partialHits: 0,
+    fullMisses: 0,
+    notComparable: 0,
+    unknown: 0,
+    compactionRelatedMisses: 1,
+    unexpectedMisses: 0,
+    totalCacheRead: 50_000,
+    peakCacheRead: 50_000,
+    totalNewInput: 100,
+    cachedInputShare: 50_000 / 50_100,
+  });
+  strictEqual(actual.turns[1].cacheAssessment, undefined);
+  deepStrictEqual(summarizeSessionCache(actual), {
+    baseline: 1,
+    hits: 0,
+    partialHits: 0,
+    fullMisses: 0,
+    notComparable: 0,
+    unknown: 0,
+    compactionRelatedMisses: 1,
+    unexpectedMisses: 0,
+  });
+  deepStrictEqual(sessionCacheIssues(actual), []);
+});
+
+Deno.test("tracks a full miss after compaction without counting it as a miss", () => {
+  const previous = call("previous", 80_000, 20_000);
+  const compacted = call("compacted", 5_000);
+  compacted.contextEventsBefore = [{
+    type: "compaction",
+    sourceOrder: 2,
+    occurredAt: 2,
+  }];
+  const base = session("compaction", []);
+  base.userTurns = 2;
+  base.modelCalls = 2;
+  base.turns = [
+    { number: 1, startedAt: 1, calls: [previous] },
+    { number: 2, startedAt: 2, calls: [compacted] },
+  ];
+  const actual = analyzeSessionCache(base);
+
+  deepStrictEqual(actual.turns[1].calls[0].cacheAssessment, {
+    status: "full-miss",
+    retainedRatio: 0.05,
+    previousReusableTokens: 100_000,
+    cause: "compaction",
+  });
+  strictEqual(actual.turns[1].cacheAssessment, undefined);
+  strictEqual(actual.turns[1].cacheSummary?.fullMisses, 0);
+  strictEqual(actual.turns[1].cacheSummary?.compactionRelatedMisses, 1);
+  strictEqual(summarizeSessionCache(actual).fullMisses, 0);
+  deepStrictEqual(sessionCacheIssues(actual), []);
 });

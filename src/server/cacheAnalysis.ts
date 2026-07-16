@@ -44,6 +44,10 @@ const severity: Record<CacheAssessment["status"], number> = {
   "full-miss": 3,
 };
 
+function assessmentSeverity(assessment: CacheAssessment): number {
+  return assessment.cause === "compaction" ? 0 : severity[assessment.status];
+}
+
 export function summarizeTurnCache(calls: ModelCall[]): TurnCacheSummary {
   const summary: TurnCacheSummary = {
     baseline: 0,
@@ -65,6 +69,10 @@ export function summarizeTurnCache(calls: ModelCall[]): TurnCacheSummary {
       call.tokens.cacheRead,
     );
     summary.totalNewInput += call.tokens.freshPrompt;
+    if (call.cacheAssessment?.cause === "compaction") {
+      summary.compactionRelatedMisses++;
+      continue;
+    }
     switch (call.cacheAssessment?.status) {
       case "baseline":
         summary.baseline++;
@@ -84,9 +92,7 @@ export function summarizeTurnCache(calls: ModelCall[]): TurnCacheSummary {
       default:
         summary.unknown++;
     }
-    if (call.cacheAssessment?.cause === "compaction") {
-      summary.compactionRelatedMisses++;
-    } else if (
+    if (
       call.cacheAssessment?.status === "partial-hit" ||
       call.cacheAssessment?.status === "full-miss"
     ) {
@@ -116,10 +122,14 @@ export function analyzeSessionCache(session: SessionDetail): SessionDetail {
       return { ...call, cacheAssessment };
     });
     const cacheAssessment = calls.reduce<CacheAssessment | undefined>(
-      (worst, call) =>
-        !worst || severity[call.cacheAssessment.status] > severity[worst.status]
+      (worst, call) => {
+        if (call.cacheAssessment.cause === "compaction") return worst;
+        return !worst ||
+            assessmentSeverity(call.cacheAssessment) >
+              assessmentSeverity(worst)
           ? call.cacheAssessment
-          : worst,
+          : worst;
+      },
       undefined,
     );
     return {
@@ -150,6 +160,10 @@ export function summarizeSessionCache(session: SessionDetail): CacheSummary {
   };
   for (const turn of session.turns) {
     for (const call of turn.calls) {
+      if (call.cacheAssessment?.cause === "compaction") {
+        summary.compactionRelatedMisses++;
+        continue;
+      }
       switch (call.cacheAssessment?.status) {
         case "baseline":
           summary.baseline++;
@@ -169,9 +183,7 @@ export function summarizeSessionCache(session: SessionDetail): CacheSummary {
         default:
           summary.unknown++;
       }
-      if (call.cacheAssessment?.cause === "compaction") {
-        summary.compactionRelatedMisses++;
-      } else if (
+      if (
         call.cacheAssessment?.status === "partial-hit" ||
         call.cacheAssessment?.status === "full-miss"
       ) {
@@ -202,8 +214,9 @@ export function sessionCacheIssues(
     : undefined;
   return [
     ...session.turns.flatMap((turn) =>
-      turn.cacheAssessment?.status === "full-miss" ||
-        turn.cacheAssessment?.status === "partial-hit"
+      turn.cacheAssessment?.cause !== "compaction" &&
+        (turn.cacheAssessment?.status === "full-miss" ||
+          turn.cacheAssessment?.status === "partial-hit")
         ? [{
           status: turn.cacheAssessment.status,
           ...(turn.cacheAssessment.cause === undefined

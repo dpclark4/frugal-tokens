@@ -234,6 +234,7 @@ function CacheAssessmentBadge(
 ) {
   if (
     !assessment ||
+    assessment.cause === "compaction" ||
     (assessment.status !== "partial-hit" && assessment.status !== "full-miss")
   ) return null;
   const title = providedTitle ??
@@ -338,9 +339,12 @@ function SessionCacheStatus({
   issues?: CacheIssue[];
   compactionCount?: number;
 }) {
-  const full = issues?.filter((issue) => issue.status === "full-miss") ?? [];
-  const partial = issues?.filter((issue) => issue.status === "partial-hit") ??
-    [];
+  const full = issues?.filter((issue) =>
+    issue.status === "full-miss" && issue.cause !== "compaction"
+  ) ?? [];
+  const partial = issues?.filter((issue) =>
+    issue.status === "partial-hit" && issue.cause !== "compaction"
+  ) ?? [];
   if (
     !summary ||
     (full.length === 0 && partial.length === 0 && !compactionCount)
@@ -386,10 +390,12 @@ function SessionCacheStatus({
 
 function TurnCacheStatus({ turn }: { turn: SessionDetail["turns"][number] }) {
   const full = turn.calls.filter((call) =>
-    call.cacheAssessment?.status === "full-miss"
+    call.cacheAssessment?.status === "full-miss" &&
+    call.cacheAssessment.cause !== "compaction"
   );
   const partial = turn.calls.filter((call) =>
-    call.cacheAssessment?.status === "partial-hit"
+    call.cacheAssessment?.status === "partial-hit" &&
+    call.cacheAssessment.cause !== "compaction"
   );
   const compactions = turn.calls.reduce(
     (total, call) =>
