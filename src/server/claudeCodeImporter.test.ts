@@ -1,4 +1,4 @@
-import { strictEqual } from "node:assert/strict";
+import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { syncClaudeCodeSessions } from "./claudeCodeImporter.ts";
 import { openArchiveDatabase } from "./database.ts";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
@@ -21,6 +21,10 @@ Deno.test("imports a Claude Code root and namespaced child tree", async () => {
 {"type":"assistant","timestamp":"2026-07-14T10:00:01Z","message":{"id":"root-call","model":"claude-opus","stop_reason":"tool_use","content":[{"type":"thinking","thinking":"secret reasoning"},{"type":"text","text":"Calling child"},{"type":"tool_use","id":"tool-1","name":"Agent","input":{"prompt":"investigate"}}],"usage":{"input_tokens":2,"cache_read_input_tokens":3,"cache_creation_input_tokens":4,"output_tokens":5}}}
 {"type":"user","timestamp":"2026-07-14T10:00:02Z","message":{"content":[{"type":"tool_result","tool_use_id":"tool-1","content":"child output"}]},"toolUseResult":{"agentId":"child"}}
 {"type":"user","timestamp":"2026-07-14T10:00:03Z","message":{"content":[{"type":"tool_result","tool_use_id":"unknown","content":"plain output"}]},"toolUseResult":"plain output"}
+{"type":"system","subtype":"compact_boundary","timestamp":"2026-07-14T10:00:04Z","content":"Conversation compacted","compactMetadata":{"trigger":"manual","preTokens":48059,"postTokens":5625}}
+{"type":"user","timestamp":"2026-07-14T10:00:04Z","message":{"content":"Sensitive generated summary"}}
+{"type":"user","timestamp":"2026-07-14T10:00:05Z","promptSource":"typed","origin":{"kind":"human"},"message":{"content":"Continue"}}
+{"type":"assistant","timestamp":"2026-07-14T10:00:06Z","message":{"id":"post-compact-call","model":"claude-opus","stop_reason":"end_turn","content":[{"type":"text","text":"Continued"}],"usage":{"input_tokens":2,"cache_read_input_tokens":1,"cache_creation_input_tokens":8,"output_tokens":5}}}
   `,
   );
   write(
@@ -87,6 +91,18 @@ Deno.test("imports a Claude Code root and namespaced child tree", async () => {
     `).get()!;
     strictEqual(tool.input_preview, '{"prompt":"investigate"}');
     strictEqual(tool.output_preview, "child output");
+    deepStrictEqual(detail.turns[1].calls[0].contextEventsBefore, [{
+      type: "compaction",
+      sourceOrder: 5,
+      occurredAt: Date.parse("2026-07-14T10:00:04Z"),
+    }]);
+    strictEqual(
+      db.prepare(`
+        SELECT COUNT(*) AS count FROM turn_inputs
+        WHERE preview LIKE '%Sensitive generated summary%'
+      `).get()!.count,
+      0,
+    );
   } finally {
     db.close();
     Deno.removeSync(directory, { recursive: true });

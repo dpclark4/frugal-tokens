@@ -93,7 +93,7 @@ Current source support is:
 | Harness | Compaction support |
 |---|---|
 | OpenCode | Explicit `compaction` part; affected call resolved when present |
-| Claude Code | Source signal and ordering not yet investigated |
+| Claude Code | Explicit `system/compact_boundary`; affected call resolved when present |
 | Codex | Source signal and ordering not yet investigated |
 | PI | Explicit JSONL `compaction` record; affected call resolved when present |
 
@@ -105,6 +105,15 @@ The summary is not retained. Because PI does not persist a separate assistant
 usage record for summary generation in this fixture, the first later assistant
 call with usage is the affected provider request. Branch reconstruction remains
 out of scope.
+
+Claude Code records a compaction as a system entry with subtype
+`compact_boundary`. A verified manual event included optional metadata such as
+pre/post token counts and preserved-message UUIDs, but normalized detection
+uses only the explicit type/subtype and record order. The generated summary is
+a later synthetic user record that does not start a normalized turn and is not
+retained. The first later assistant message with usage is the affected provider
+request. `/compact` command text and cache-token changes are not detection
+signals.
 
 ### Usage And Cost
 
