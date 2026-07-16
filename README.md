@@ -16,6 +16,8 @@ Configure any session sources you use: `OPENCODE_DB_PATH` for the OpenCode
 SQLite database, `CLAUDE_CODE_PROJECT_PATH` for the Claude Code projects directory,
 `PI_SESSION_DIR` for the PI session root (usually `~/.pi/agent/sessions`), and
 `CODEX_SESSION_DIR` for the Codex session root (usually `~/.codex/sessions`).
+Pi session JSONL files may be directly in `PI_SESSION_DIR` or grouped one level
+below it in project directories.
 Missing or inaccessible sources are disabled with a startup warning. Local
 development loads these values from the ignored `.env` file.
 

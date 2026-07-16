@@ -450,6 +450,18 @@ export class PiRepository {
 export function discoverPiSessions(directory: string) {
   const files: PiSessionCandidate[] = [];
   for (const project of Deno.readDirSync(directory)) {
+    if (project.isFile && project.name.endsWith(".jsonl")) {
+      const path = `${directory}/${project.name}`;
+      const stat = Deno.statSync(path);
+      files.push({
+        id: project.name.slice(0, -6),
+        path,
+        artifactPath: project.name,
+        updatedAt: stat.mtime?.getTime() ?? 0,
+        size: stat.size,
+      });
+      continue;
+    }
     if (!project.isDirectory) continue;
     const projectPath = `${directory}/${project.name}`;
     for (const entry of Deno.readDirSync(projectPath)) {

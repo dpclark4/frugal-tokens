@@ -15,6 +15,32 @@ function transcript(prompt: string) {
 `.trim();
 }
 
+Deno.test("imports PI sessions directly from the configured directory", async () => {
+  const directory = Deno.makeTempDirSync();
+  const sessions = `${directory}/sessions`;
+  Deno.mkdirSync(sessions);
+  Deno.writeTextFileSync(
+    `${sessions}/root-session.jsonl`,
+    transcript("Root session"),
+  );
+
+  const db = openArchiveDatabase(`${directory}/archive.sqlite`);
+  migrateTestDatabase(db);
+  const repository = new SessionRepository(db);
+  try {
+    const result = await syncPiSessions(sessions, repository);
+    strictEqual(result.discovered, 1);
+    strictEqual(result.imported, 1);
+    strictEqual(
+      repository.getSession("pi", "root-session")?.title,
+      "Root session",
+    );
+  } finally {
+    db.close();
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
 Deno.test("incrementally imports PI sessions and preserves the last good archive", async () => {
   const directory = Deno.makeTempDirSync();
   const sessions = `${directory}/sessions`;
