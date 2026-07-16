@@ -7,7 +7,7 @@ import { SpendInputChart } from "./analytics/SpendInputChart.tsx";
 import { SubagentChart } from "./analytics/SubagentChart.tsx";
 
 type View = "spend" | "input" | "session-input" | "cache" | "subagents";
-type Range = 7 | 30 | "all";
+type Range = 7 | 30 | 90 | "all";
 
 const views: Array<{ value: View; label: string }> = [
   { value: "spend", label: "Spend" },
@@ -59,7 +59,7 @@ export function UsageChart({ harness }: { harness: string }) {
           ))}
         </div>
         <div className="segmented" aria-label="Chart range">
-          {([7, 30, "all"] as const).map((value) => (
+          {([7, 30, 90, "all"] as const).map((value) => (
             <button
               key={value}
               type="button"

@@ -70,7 +70,7 @@ function SessionInputTooltip({ active, payload }: {
 
 export function SessionInputChart({ usage, range }: {
   usage: UsageResponse;
-  range: 7 | 30 | "all";
+  range: 7 | 30 | 90 | "all";
 }) {
   const [bucket, setBucket] = useState<"day" | "week">("week");
   const cohorts = bucket === "day"
