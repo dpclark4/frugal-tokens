@@ -321,6 +321,8 @@ function priceSummaries(items: SessionSummary[]) {
     );
     return {
       ...item,
+      userTurns: priced.userTurns,
+      modelCalls: priced.modelCalls,
       computedCost: priced.computedCost,
       cacheSummary: summarizeSessionCache(analyzed),
       cacheIssues: sessionCacheIssues(analyzed),

@@ -123,6 +123,13 @@ and the adjacent records are not double-counted. Replacement history and
 encrypted content are not retained. The first later nonzero `token_count`
 model call is the affected provider request.
 
+Codex also persists compaction machinery as an opaque total-only model call.
+The importer gives only that confirmed operation call a
+`context-operation:` source-call prefix. SQLite retains its turn and call, but
+Codex detail hydration filters the tagged call and any turn left empty, then
+renumbers visible turns. Other harnesses never apply this filter. Replacement
+history and encrypted content remain only in the source JSONL.
+
 ### Usage And Cost
 
 Assistant message JSON supplies:

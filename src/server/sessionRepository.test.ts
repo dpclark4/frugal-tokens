@@ -309,3 +309,36 @@ Deno.test("atomically replaces trees with root-scoped public child IDs", () => {
     Deno.removeSync(directory, { recursive: true });
   }
 });
+
+Deno.test("hides tagged context operations for Codex only", () => {
+  const directory = Deno.makeTempDirSync();
+  const db = openArchiveDatabase(`${directory}/archive.sqlite`);
+  try {
+    migrateTestDatabase(db);
+    const repository = new SessionRepository(db);
+    const source = (harness: "pi" | "codex") =>
+      Number(
+        (db.prepare(`
+          INSERT INTO sources (harness, kind, label, location, created_at)
+          VALUES (?, 'directory', ?, ?, 1) RETURNING id
+        `).get(harness, harness, `/${harness}`) as { id: number }).id,
+      );
+    const pi = importedSession(source("pi"), "pi-operation");
+    const codex = importedSession(source("codex"), "codex-operation");
+    pi.session.turns[0].calls[0].id = "context-operation:1-1";
+    codex.session.turns[0].calls[0].id = "context-operation:1-1";
+    repository.replaceSourceSession(pi);
+    repository.replaceSourceSession(codex);
+
+    strictEqual(repository.getSession("pi", pi.externalID)?.turns.length, 1);
+    strictEqual(
+      repository.getSession("codex", codex.externalID)?.turns.length,
+      0,
+    );
+    strictEqual(repository.listUsageCalls(undefined, "pi").length, 1);
+    strictEqual(repository.listUsageCalls(undefined, "codex").length, 0);
+  } finally {
+    db.close();
+    Deno.removeSync(directory, { recursive: true });
+  }
+});

@@ -515,6 +515,10 @@ export class SessionRepository {
       LEFT JOIN source_sessions parent ON parent.id = ss.parent_id
       WHERE (? IS NULL OR mc.started_at >= ?)
         AND (? IS NULL OR so.harness = ?)
+        AND NOT (
+          so.harness = 'codex' AND
+          mc.source_call_id LIKE 'context-operation:%'
+        )
       ORDER BY mc.started_at, mc.id
     `).all(
       startedAt ?? null,
@@ -854,12 +858,17 @@ export class SessionRepository {
       ordinal: number;
       started_at: number;
     }>).map((turn) => {
-      const calls = this.db.prepare(`
+      const calls = (this.db.prepare(`
         SELECT ${callColumns}
         FROM model_calls mc
         JOIN models m ON m.id = mc.model_id
         WHERE mc.turn_id = ? ORDER BY mc.ordinal
-      `).all(turn.id) as CallRow[];
+      `).all(turn.id) as CallRow[]).filter((call) => {
+        // Codex persists compaction machinery as an opaque model call. Its
+        // importer tags only that call; all other calls hydrate normally.
+        return row.harness !== "codex" ||
+          !call.source_call_id?.startsWith("context-operation:");
+      });
       const tools = calls.length === 0 ? [] : this.db.prepare(`
         SELECT te.model_call_id, te.name, te.status, te.started_at,
           te.completed_at,
@@ -917,7 +926,10 @@ export class SessionRepository {
           };
         }),
       };
-    });
+    }).filter((turn) => turn.calls.length > 0).map((turn, index) => ({
+      ...turn,
+      number: index + 1,
+    }));
     const children = this.db.prepare(`
       SELECT ${summaryColumns}
       FROM sessions s
@@ -932,6 +944,8 @@ export class SessionRepository {
       ...base,
       parentID: optional(row.parent_public_id),
       agent: optional(row.agent),
+      userTurns: turns.length,
+      modelCalls: turns.reduce((total, turn) => total + turn.calls.length, 0),
       turns,
       contextEvents: contextEventRows.filter((event) =>
         event.affected_model_call_id === null

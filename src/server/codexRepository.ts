@@ -203,12 +203,23 @@ function decodeRecords(records: Record[]) {
   };
   const contextEvents: PendingContextEvent[] = [];
   const pendingContextEvents: PendingContextEvent[] = [];
+  let lastCall: SessionCallImport | undefined;
 
   for (const [recordIndex, record] of records.entries()) {
     const payload = record.payload;
     const time = timestamp(record);
 
     if (record.type === "event_msg" && payload?.type === "context_compacted") {
+      if (
+        lastCall && lastCall.tokens.uncachedInput === 0 &&
+        lastCall.tokens.cacheRead === 0 && lastCall.tokens.output === 0 &&
+        lastCall.tokens.reasoning === 0 && lastCall.tokens.processed > 0 &&
+        !lastCall.activity.hasText && lastCall.activity.tools.length === 0
+      ) {
+        // Codex emits this opaque total-only call for compaction itself. Keep
+        // it canonical, but tag it so only Codex hydration hides the machinery.
+        lastCall.id = `context-operation:${lastCall.id}`;
+      }
       const event: PendingContextEvent = {
         type: "compaction",
         sourceOrder: recordIndex + 1,
@@ -341,6 +352,7 @@ function decodeRecords(records: Record[]) {
     models.add(currentModel);
     addTokens(tokens, callTokens);
     turn.calls.push(call);
+    lastCall = call;
     for (const event of pendingContextEvents) {
       event.affectedCallReference = call;
     }
@@ -428,7 +440,9 @@ export class CodexRepository {
     );
     const turns = normalized.turns.map((turn) => ({
       ...turn,
-      calls: turn.calls.map((call) => {
+      calls: turn.calls.filter((call) =>
+        !call.id.startsWith("context-operation:")
+      ).map((call) => {
         const contextEventsBefore = normalized.contextEvents.filter((event) =>
           event.affectedCall?.turn === turn.number &&
           event.affectedCall.call === call.callWithinTurn
@@ -438,12 +452,17 @@ export class CodexRepository {
           ...(contextEventsBefore.length === 0 ? {} : { contextEventsBefore }),
         };
       }),
+    })).filter((turn) => turn.calls.length > 0).map((turn, index) => ({
+      ...turn,
+      number: index + 1,
     }));
     const contextEvents = normalized.contextEvents.filter((event) =>
       event.affectedCall === undefined
     );
     return {
       ...normalized.summary,
+      userTurns: turns.length,
+      modelCalls: turns.reduce((total, turn) => total + turn.calls.length, 0),
       parentID: undefined,
       turns,
       ...(contextEvents.length === 0 ? {} : { contextEvents }),
