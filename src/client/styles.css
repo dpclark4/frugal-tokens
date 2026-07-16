@@ -781,6 +781,10 @@ table.data-table {
   color: #5868a6;
 }
 
+.ttl-miss-badge {
+  color: #786578;
+}
+
 .session-model-summary {
   display: inline-flex;
   align-items: baseline;

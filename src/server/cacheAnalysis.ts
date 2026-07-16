@@ -9,6 +9,8 @@ import type {
 
 export const CACHE_HIT_RATIO = 0.9;
 export const CACHE_FULL_MISS_RATIO = 0.1;
+export const CACHE_TTL_5M_MS = 5 * 60 * 1000;
+export const CACHE_TTL_1H_MS = 60 * 60 * 1000;
 
 export function assessCache(
   previous: Pick<ModelCall, "provider" | "model" | "tokens"> | undefined,
@@ -40,12 +42,40 @@ const severity: Record<CacheAssessment["status"], number> = {
   unknown: 0,
   "not-comparable": 0,
   hit: 1,
-  "partial-hit": 2,
-  "full-miss": 3,
+  "partial-hit": 3,
+  "full-miss": 4,
 };
 
 function assessmentSeverity(assessment: CacheAssessment): number {
-  return assessment.cause === "compaction" ? 0 : severity[assessment.status];
+  if (assessment.cause === "compaction") return 0;
+  if (assessment.cause === "ttl") return 2;
+  return severity[assessment.status];
+}
+
+function isMiss(assessment: CacheAssessment | undefined): boolean {
+  return assessment?.status === "partial-hit" ||
+    assessment?.status === "full-miss";
+}
+
+function isClaude(call: Pick<ModelCall, "provider" | "model">): boolean {
+  return call.provider.toLowerCase().includes("anthropic") ||
+    call.model.toLowerCase().includes("claude");
+}
+
+function ttlExpired(previous: ModelCall, current: ModelCall): boolean {
+  const elapsed = current.startedAt - previous.startedAt;
+  if (elapsed < 0) return false;
+  if (isClaude(previous)) {
+    if (
+      (previous.tokens.cacheWrite5m ?? 0) > 0 &&
+      elapsed >= CACHE_TTL_5M_MS
+    ) return true;
+    if (
+      (previous.tokens.cacheWrite1h ?? 0) > 0 &&
+      elapsed >= CACHE_TTL_1H_MS
+    ) return true;
+  }
+  return elapsed >= CACHE_TTL_1H_MS;
 }
 
 export function summarizeTurnCache(calls: ModelCall[]): TurnCacheSummary {
@@ -57,6 +87,7 @@ export function summarizeTurnCache(calls: ModelCall[]): TurnCacheSummary {
     notComparable: 0,
     unknown: 0,
     compactionRelatedMisses: 0,
+    ttlRelatedMisses: 0,
     unexpectedMisses: 0,
     totalCacheRead: 0,
     peakCacheRead: 0,
@@ -71,6 +102,10 @@ export function summarizeTurnCache(calls: ModelCall[]): TurnCacheSummary {
     summary.totalNewInput += call.tokens.freshPrompt;
     if (call.cacheAssessment?.cause === "compaction") {
       summary.compactionRelatedMisses++;
+      continue;
+    }
+    if (call.cacheAssessment?.cause === "ttl") {
+      summary.ttlRelatedMisses++;
       continue;
     }
     switch (call.cacheAssessment?.status) {
@@ -111,12 +146,13 @@ export function analyzeSessionCache(session: SessionDetail): SessionDetail {
   const turns = session.turns.map((turn) => {
     const calls = turn.calls.map((call) => {
       const rawAssessment = assessCache(previous, call);
-      const cacheAssessment = (call.contextEventsBefore ?? []).some((event) =>
+      const followsCompaction = (call.contextEventsBefore ?? []).some((event) =>
           event.type === "compaction"
-        ) &&
-          (rawAssessment.status === "partial-hit" ||
-            rawAssessment.status === "full-miss")
+        );
+      const cacheAssessment = isMiss(rawAssessment) && followsCompaction
         ? { ...rawAssessment, cause: "compaction" as const }
+        : isMiss(rawAssessment) && previous && ttlExpired(previous, call)
+        ? { ...rawAssessment, cause: "ttl" as const }
         : rawAssessment;
       previous = call;
       return { ...call, cacheAssessment };
@@ -156,12 +192,17 @@ export function summarizeSessionCache(session: SessionDetail): CacheSummary {
     notComparable: 0,
     unknown: 0,
     compactionRelatedMisses: 0,
+    ttlRelatedMisses: 0,
     unexpectedMisses: 0,
   };
   for (const turn of session.turns) {
     for (const call of turn.calls) {
       if (call.cacheAssessment?.cause === "compaction") {
         summary.compactionRelatedMisses++;
+        continue;
+      }
+      if (call.cacheAssessment?.cause === "ttl") {
+        summary.ttlRelatedMisses++;
         continue;
       }
       switch (call.cacheAssessment?.status) {
@@ -200,6 +241,7 @@ export function summarizeSessionCache(session: SessionDetail): CacheSummary {
     summary.notComparable += nested.notComparable;
     summary.unknown += nested.unknown;
     summary.compactionRelatedMisses += nested.compactionRelatedMisses;
+    summary.ttlRelatedMisses += nested.ttlRelatedMisses;
     summary.unexpectedMisses += nested.unexpectedMisses;
   }
   return summary;
@@ -213,20 +255,28 @@ export function sessionCacheIssues(
     ? session.agent ? `${session.agent}: ${session.title}` : session.title
     : undefined;
   return [
-    ...session.turns.flatMap((turn) =>
-      turn.cacheAssessment?.cause !== "compaction" &&
-        (turn.cacheAssessment?.status === "full-miss" ||
-          turn.cacheAssessment?.status === "partial-hit")
-        ? [{
-          status: turn.cacheAssessment.status,
-          ...(turn.cacheAssessment.cause === undefined
-            ? {}
-            : { cause: turn.cacheAssessment.cause }),
+    ...session.turns.flatMap((turn) => {
+      const issues: CacheIssue[] = [];
+      for (const cause of [undefined, "ttl"] as const) {
+        const misses = turn.calls.filter((call) =>
+          isMiss(call.cacheAssessment) &&
+          call.cacheAssessment?.cause === cause
+        );
+        if (misses.length === 0) continue;
+        const status = misses.some((call) =>
+            call.cacheAssessment?.status === "full-miss"
+          )
+          ? "full-miss" as const
+          : "partial-hit" as const;
+        issues.push({
+          status,
+          ...(cause ? { cause } : {}),
           turn: turn.number,
           scope,
-        }]
-        : []
-    ),
+        });
+      }
+      return issues;
+    }),
     ...session.subagents.flatMap((subagent) =>
       sessionCacheIssues(subagent, true)
     ),
