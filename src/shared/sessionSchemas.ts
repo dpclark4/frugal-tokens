@@ -231,6 +231,22 @@ export const usageResponseSchema = z.object({
   })),
 });
 
+export const ttlMissMetricsSchema = z.object({
+  rangeDays: z.number().int().positive(),
+  sessions: z.number().int().nonnegative(),
+  affectedSessions: z.number().int().nonnegative(),
+  misses: z.object({
+    total: z.number().int().nonnegative(),
+    underTwoHours: z.number().int().nonnegative(),
+    twoToEightHours: z.number().int().nonnegative(),
+    eightHoursOrMore: z.number().int().nonnegative(),
+  }),
+  subagents: z.object({
+    affectedSessions: z.number().int().nonnegative(),
+    misses: z.number().int().nonnegative(),
+  }),
+});
+
 export type ModelCall = z.infer<typeof modelCallSchema>;
 export type ContextEvent = z.infer<typeof contextEventSchema>;
 export type CacheAssessment = z.infer<typeof cacheAssessmentSchema>;
@@ -241,3 +257,4 @@ export type SessionListResponse = z.infer<typeof sessionListResponseSchema>;
 export type SessionSummary = z.infer<typeof sessionSummarySchema>;
 export type TokenUsage = z.infer<typeof tokenUsageSchema>;
 export type UsageResponse = z.infer<typeof usageResponseSchema>;
+export type TtlMissMetrics = z.infer<typeof ttlMissMetricsSchema>;

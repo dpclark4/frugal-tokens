@@ -484,6 +484,7 @@ export class SessionRepository {
       parent_public_id: string | null;
       root_started_at: number | null;
       root_updated_at: number;
+      follows_compaction: number;
     };
     const rows = this.db.prepare(`
       WITH RECURSIVE session_tree(id, root_id) AS (
@@ -502,7 +503,12 @@ export class SessionRepository {
         COALESCE(root.public_id, root.external_id) AS root_public_id,
         COALESCE(parent.public_id, parent.external_id) AS parent_public_id,
         root_session.started_at AS root_started_at,
-        root_session.updated_at AS root_updated_at
+        root_session.updated_at AS root_updated_at,
+        EXISTS (
+          SELECT 1 FROM context_events ce
+          WHERE ce.affected_model_call_id = mc.id
+            AND ce.event_type = 'compaction'
+        ) AS follows_compaction
       FROM model_calls mc
       JOIN turns t ON t.id = mc.turn_id
       JOIN sessions s ON s.source_session_id = t.session_id
@@ -541,6 +547,7 @@ export class SessionRepository {
       startedAt: row.started_at,
       tokens: tokens(row),
       reportedCost: optional(row.reported_cost),
+      followsCompaction: row.follows_compaction === 1,
     }));
   }
 

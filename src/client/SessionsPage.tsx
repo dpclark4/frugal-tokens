@@ -17,6 +17,7 @@ import codexIcon from "./assets/icons/codex-logo-light.svg";
 import openCodeIcon from "./assets/icons/opencode-logo-light.svg";
 import piIcon from "./assets/icons/pi-logo.svg";
 import { UsageChart } from "./UsageChart.tsx";
+import { TtlMissCard } from "./TtlMissCard.tsx";
 
 const route = getRouteApi("/");
 const integer = new Intl.NumberFormat("en-US");
@@ -351,12 +352,14 @@ function SessionCacheStatus({
   issues?: CacheIssue[];
   compactionCount?: number;
 }) {
-  const full = issues?.filter((issue) =>
-    issue.status === "full-miss" && issue.cause === undefined
-  ) ?? [];
-  const partial = issues?.filter((issue) =>
-    issue.status === "partial-hit" && issue.cause === undefined
-  ) ?? [];
+  const full =
+    issues?.filter((issue) =>
+      issue.status === "full-miss" && issue.cause === undefined
+    ) ?? [];
+  const partial =
+    issues?.filter((issue) =>
+      issue.status === "partial-hit" && issue.cause === undefined
+    ) ?? [];
   const ttl = issues?.filter((issue) => issue.cause === "ttl") ?? [];
   if (
     !summary ||
@@ -965,7 +968,9 @@ function CallInputMetric({ call }: { call: ModelCall }) {
       className="metric-stack session-input-metric call-input-metric"
       title={`${integer.format(total)} total input tokens`}
     >
-      <span><TokenValue value={total} /> total input</span>
+      <span>
+        <TokenValue value={total} /> total input
+      </span>
       <small>{parts.filter(Boolean).join(" · ")}</small>
       {call.tokens.cacheWrite5m !== undefined &&
         call.tokens.cacheWrite1h !== undefined && (
@@ -1673,7 +1678,10 @@ export function SessionsPage() {
         </p>
       </header>
 
-      <UsageChart harness={harness} />
+      <div className="homepage-metrics">
+        <TtlMissCard harness={harness} />
+        <UsageChart harness={harness} />
+      </div>
 
       <section className="sessions-panel">
         <div className="panel-heading">
