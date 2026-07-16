@@ -1,7 +1,7 @@
 import type { TokenUsage } from "../shared/sessionSchemas.ts";
 import { contextSize } from "../shared/contextMetrics.ts";
 
-type CacheMissTokens = Pick<
+export type CacheMissTokens = Pick<
   TokenUsage,
   | "uncachedInput"
   | "cacheRead"

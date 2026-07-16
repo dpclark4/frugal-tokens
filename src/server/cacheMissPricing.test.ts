@@ -6,6 +6,7 @@ import {
   estimateCacheMissTokens,
   type InputBillingRates,
 } from "./cacheMissPricing.ts";
+import { estimateModelCacheMissCost } from "./pricing.ts";
 
 function tokens(values: Partial<TokenUsage>): TokenUsage {
   return {
@@ -149,4 +150,53 @@ Deno.test("does not price observed categories with missing rates", () => {
     computeCacheMissCost({ input: 3, cacheRead: 0.3 }, estimate),
     undefined,
   );
+});
+
+Deno.test("uses short-context GPT rates below 272k", () => {
+  const result = estimateModelCacheMissCost(
+    tokens({ cacheRead: 229_000 }),
+    tokens({ uncachedInput: 230_000 }),
+    "gpt-5.6-sol",
+    Date.parse("2026-07-15T00:00:00Z"),
+  );
+  if (!result) throw new Error("Expected a priced estimate");
+
+  closeTo(result.actualMissedCost, 229_000 * 5 / 1_000_000);
+  closeTo(result.expectedReadCost, 229_000 * 0.5 / 1_000_000);
+  closeTo(result.estimatedExtraCost, 229_000 * 4.5 / 1_000_000);
+});
+
+Deno.test("uses long-context GPT rates above 272k", () => {
+  const result = estimateModelCacheMissCost(
+    tokens({ cacheRead: 289_000 }),
+    tokens({ uncachedInput: 290_000 }),
+    "gpt-5.6-sol",
+    Date.parse("2026-07-15T00:00:00Z"),
+  );
+  if (!result) throw new Error("Expected a priced estimate");
+
+  closeTo(result.actualMissedCost, 289_000 * 10 / 1_000_000);
+  closeTo(result.expectedReadCost, 289_000 * 1 / 1_000_000);
+  closeTo(result.estimatedExtraCost, 289_000 * 9 / 1_000_000);
+});
+
+Deno.test("switches cache-miss pricing at exactly 272k current context", () => {
+  const timestamp = Date.parse("2026-07-15T00:00:00Z");
+  const before = tokens({ cacheRead: 271_000 });
+  const below = estimateModelCacheMissCost(
+    before,
+    tokens({ uncachedInput: 271_999 }),
+    "gpt-5.6-sol",
+    timestamp,
+  );
+  const atBoundary = estimateModelCacheMissCost(
+    before,
+    tokens({ uncachedInput: 272_000 }),
+    "gpt-5.6-sol",
+    timestamp,
+  );
+  if (!below || !atBoundary) throw new Error("Expected priced estimates");
+
+  closeTo(below.estimatedExtraCost, 271_000 * 4.5 / 1_000_000);
+  closeTo(atBoundary.estimatedExtraCost, 271_000 * 9 / 1_000_000);
 });
