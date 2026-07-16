@@ -2,6 +2,8 @@ import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import {
   analyzeSessionCache,
   assessCache,
+  CACHE_TTL_1H_MS,
+  CACHE_TTL_5M_MS,
   sessionCacheIssues,
   summarizeSessionCache,
   summarizeTurnCache,
@@ -110,6 +112,7 @@ Deno.test("tracks an OpenAI miss and implicit cache recovery across turns", () =
     notComparable: 0,
     unknown: 0,
     compactionRelatedMisses: 0,
+    ttlRelatedMisses: 0,
     unexpectedMisses: 1,
     totalCacheRead: 107_520,
     peakCacheRead: 54_272,
@@ -172,6 +175,7 @@ Deno.test("summarizes turns and includes independently analyzed subagents", () =
     notComparable: 0,
     unknown: 0,
     compactionRelatedMisses: 0,
+    ttlRelatedMisses: 0,
     unexpectedMisses: 3,
   });
   deepStrictEqual(sessionCacheIssues(actual), [
@@ -180,7 +184,7 @@ Deno.test("summarizes turns and includes independently analyzed subagents", () =
   ]);
 });
 
-Deno.test("classifies a miss after a bounded compaction without changing status", () => {
+Deno.test("tracks a partial miss after compaction without counting it as a miss", () => {
   const previous = call("previous", 80_000, 20_000);
   const compacted = call("compacted", 50_000);
   compacted.contextEventsBefore = [{
@@ -188,17 +192,189 @@ Deno.test("classifies a miss after a bounded compaction without changing status"
     sourceOrder: 2,
     occurredAt: 2,
   }];
-  const actual = analyzeSessionCache(session("compaction", [
-    previous,
-    compacted,
-  ]));
+  const base = session("compaction", []);
+  base.userTurns = 2;
+  base.modelCalls = 2;
+  base.turns = [
+    { number: 1, startedAt: 1, calls: [previous] },
+    { number: 2, startedAt: 2, calls: [compacted] },
+  ];
+  const actual = analyzeSessionCache(base);
 
-  deepStrictEqual(actual.turns[0].calls[1].cacheAssessment, {
+  deepStrictEqual(actual.turns[1].calls[0].cacheAssessment, {
     status: "partial-hit",
     retainedRatio: 0.5,
     previousReusableTokens: 100_000,
     cause: "compaction",
   });
-  strictEqual(actual.turns[0].cacheSummary?.compactionRelatedMisses, 1);
+  deepStrictEqual(actual.turns[1].cacheSummary, {
+    baseline: 0,
+    hits: 0,
+    partialHits: 0,
+    fullMisses: 0,
+    notComparable: 0,
+    unknown: 0,
+    compactionRelatedMisses: 1,
+    ttlRelatedMisses: 0,
+    unexpectedMisses: 0,
+    totalCacheRead: 50_000,
+    peakCacheRead: 50_000,
+    totalNewInput: 100,
+    cachedInputShare: 50_000 / 50_100,
+  });
+  strictEqual(actual.turns[1].cacheAssessment, undefined);
+  deepStrictEqual(summarizeSessionCache(actual), {
+    baseline: 1,
+    hits: 0,
+    partialHits: 0,
+    fullMisses: 0,
+    notComparable: 0,
+    unknown: 0,
+    compactionRelatedMisses: 1,
+    ttlRelatedMisses: 0,
+    unexpectedMisses: 0,
+  });
+  deepStrictEqual(sessionCacheIssues(actual), []);
+});
+
+Deno.test("attributes a Claude miss to an expired 5-minute write", () => {
+  const previous = call("previous", 80_000, 20_000);
+  previous.startedAt = 0;
+  previous.tokens.cacheWrite5m = 20_000;
+  previous.tokens.cacheWrite1h = 0;
+  const expired = call("expired", 50_000);
+  expired.startedAt = CACHE_TTL_5M_MS;
+  expired.callWithinTurn = 2;
+
+  const actual = analyzeSessionCache(session("ttl-5m", [previous, expired]));
+
+  deepStrictEqual(actual.turns[0].calls[1].cacheAssessment, {
+    status: "partial-hit",
+    retainedRatio: 0.5,
+    previousReusableTokens: 100_000,
+    cause: "ttl",
+  });
+  strictEqual(actual.turns[0].cacheSummary?.partialHits, 0);
+  strictEqual(actual.turns[0].cacheSummary?.ttlRelatedMisses, 1);
   strictEqual(actual.turns[0].cacheSummary?.unexpectedMisses, 0);
+  deepStrictEqual(sessionCacheIssues(actual), [{
+    status: "partial-hit",
+    cause: "ttl",
+    turn: 1,
+    scope: undefined,
+  }]);
+});
+
+Deno.test("keeps a Claude miss unexpected before its 5-minute TTL", () => {
+  const previous = call("previous", 80_000, 20_000);
+  previous.startedAt = 0;
+  previous.tokens.cacheWrite5m = 20_000;
+  const early = call("early", 50_000);
+  early.startedAt = CACHE_TTL_5M_MS - 1;
+
+  const actual = analyzeSessionCache(session("before-ttl", [previous, early]));
+
+  strictEqual(actual.turns[0].calls[1].cacheAssessment?.cause, undefined);
+  strictEqual(actual.turns[0].cacheSummary?.partialHits, 1);
+  strictEqual(actual.turns[0].cacheSummary?.ttlRelatedMisses, 0);
+  strictEqual(actual.turns[0].cacheSummary?.unexpectedMisses, 1);
+});
+
+Deno.test("attributes a cross-turn Claude miss to an expired 1-hour write", () => {
+  const previous = call("previous", 80_000, 20_000);
+  previous.startedAt = 0;
+  previous.tokens.cacheWrite5m = 0;
+  previous.tokens.cacheWrite1h = 20_000;
+  const expired = call("expired", 5_000);
+  expired.startedAt = CACHE_TTL_1H_MS;
+  const base = session("ttl-1h", []);
+  base.userTurns = 2;
+  base.modelCalls = 2;
+  base.turns = [
+    { number: 1, startedAt: 0, calls: [previous] },
+    { number: 2, startedAt: CACHE_TTL_1H_MS, calls: [expired] },
+  ];
+
+  const actual = analyzeSessionCache(base);
+
+  strictEqual(actual.turns[1].calls[0].cacheAssessment?.cause, "ttl");
+  strictEqual(actual.turns[1].cacheSummary?.fullMisses, 0);
+  strictEqual(actual.turns[1].cacheSummary?.ttlRelatedMisses, 1);
+  deepStrictEqual(sessionCacheIssues(actual), [{
+    status: "full-miss",
+    cause: "ttl",
+    turn: 2,
+    scope: undefined,
+  }]);
+});
+
+Deno.test("uses a 1-hour TTL fallback for other providers", () => {
+  const previous = call(
+    "previous",
+    80_000,
+    undefined,
+    "gpt-5.5",
+    "openai",
+  );
+  previous.startedAt = 0;
+  const expired = call("expired", 0, undefined, "gpt-5.5", "openai");
+  expired.startedAt = CACHE_TTL_1H_MS;
+
+  const actual = analyzeSessionCache(session("generic-ttl", [
+    previous,
+    expired,
+  ]));
+
+  strictEqual(actual.turns[0].calls[1].cacheAssessment?.cause, "ttl");
+  strictEqual(actual.turns[0].cacheSummary?.fullMisses, 0);
+  strictEqual(actual.turns[0].cacheSummary?.ttlRelatedMisses, 1);
+  strictEqual(actual.turns[0].cacheSummary?.unexpectedMisses, 0);
+});
+
+Deno.test("attributes an expired miss to compaction before TTL", () => {
+  const previous = call("previous", 80_000, 20_000);
+  previous.startedAt = 0;
+  previous.tokens.cacheWrite5m = 20_000;
+  const expired = call("expired", 50_000);
+  expired.startedAt = CACHE_TTL_5M_MS;
+  expired.contextEventsBefore = [{ type: "compaction", sourceOrder: 1 }];
+
+  const actual = analyzeSessionCache(session("compaction-first", [
+    previous,
+    expired,
+  ]));
+
+  strictEqual(actual.turns[0].calls[1].cacheAssessment?.cause, "compaction");
+  strictEqual(actual.turns[0].cacheSummary?.compactionRelatedMisses, 1);
+  strictEqual(actual.turns[0].cacheSummary?.ttlRelatedMisses, 0);
+});
+
+Deno.test("tracks a full miss after compaction without counting it as a miss", () => {
+  const previous = call("previous", 80_000, 20_000);
+  const compacted = call("compacted", 5_000);
+  compacted.contextEventsBefore = [{
+    type: "compaction",
+    sourceOrder: 2,
+    occurredAt: 2,
+  }];
+  const base = session("compaction", []);
+  base.userTurns = 2;
+  base.modelCalls = 2;
+  base.turns = [
+    { number: 1, startedAt: 1, calls: [previous] },
+    { number: 2, startedAt: 2, calls: [compacted] },
+  ];
+  const actual = analyzeSessionCache(base);
+
+  deepStrictEqual(actual.turns[1].calls[0].cacheAssessment, {
+    status: "full-miss",
+    retainedRatio: 0.05,
+    previousReusableTokens: 100_000,
+    cause: "compaction",
+  });
+  strictEqual(actual.turns[1].cacheAssessment, undefined);
+  strictEqual(actual.turns[1].cacheSummary?.fullMisses, 0);
+  strictEqual(actual.turns[1].cacheSummary?.compactionRelatedMisses, 1);
+  strictEqual(summarizeSessionCache(actual).fullMisses, 0);
+  deepStrictEqual(sessionCacheIssues(actual), []);
 });

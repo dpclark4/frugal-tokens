@@ -747,7 +747,7 @@ table.data-table {
   text-align: center;
 }
 
-.session-cache-status {
+.cache-issue-counts {
   display: inline-grid;
   grid-template-columns: minmax(0, 1fr) 3ch;
   align-items: center;
@@ -758,7 +758,7 @@ table.data-table {
   white-space: nowrap;
 }
 
-.session-cache-status .cache-issue-badge {
+.cache-issue-counts .cache-issue-badge {
   justify-self: start;
 }
 
@@ -779,6 +779,10 @@ table.data-table {
 
 .compaction-badge {
   color: #5868a6;
+}
+
+.ttl-miss-badge {
+  color: #786578;
 }
 
 .session-model-summary {
@@ -922,7 +926,7 @@ table.data-table {
 .breakdown {
   background: var(--surface-1);
   color: var(--ink);
-  padding: 10px 12px 14px;
+  padding: 10px 0 14px 12px;
   border-left: 3px solid var(--rail);
 }
 
@@ -978,27 +982,27 @@ table.data-table {
 }
 
 .turn-table .turn-activity-column {
-  width: 16%;
+  width: auto;
 }
 
 .turn-table .turn-context-column {
-  width: 9%;
+  width: 95px;
 }
 
 .turn-table .turn-input-column {
-  width: 20%;
+  width: clamp(210px, 19vw, 270px);
 }
 
 .turn-table .turn-cache-column {
-  width: 8%;
+  width: 132px;
 }
 
 .turn-table .turn-output-column {
-  width: 8%;
+  width: clamp(65px, 6vw, 78px);
 }
 
 .turn-table .turn-cost-column {
-  width: 13%;
+  width: 100px;
 }
 
 .turn-table td:first-child,
@@ -1089,7 +1093,7 @@ table.data-table {
 }
 
 .call-table .call-outcome-column {
-  width: 22%;
+  width: auto;
 }
 
 .call-table .call-model-column {
@@ -1097,27 +1101,23 @@ table.data-table {
 }
 
 .call-table .call-context-column {
-  width: 8%;
+  width: 95px;
 }
 
 .call-table .call-input-column {
-  width: 14%;
-}
-
-.call-table .call-reused-column {
-  width: 6%;
+  width: clamp(210px, 19vw, 270px);
 }
 
 .call-table .call-cache-column {
-  width: 8%;
+  width: 132px;
 }
 
 .call-table .call-output-column {
-  width: 6%;
+  width: clamp(65px, 6vw, 78px);
 }
 
 .call-table .call-cost-column {
-  width: 7%;
+  width: 100px;
 }
 
 .call-table th:nth-child(4),
@@ -1135,8 +1135,8 @@ table.data-table {
   text-align: left;
 }
 
-.call-table th:nth-child(9),
-.call-table td:nth-child(9) {
+.call-table th:nth-child(8),
+.call-table td:nth-child(8) {
   text-align: center;
 }
 
@@ -1274,7 +1274,7 @@ table.data-table {
 
 .call-table .tool-table th:first-child,
 .call-table .tool-table td:first-child {
-  width: 110px;
+  width: 180px;
   text-align: left;
 }
 
@@ -1576,9 +1576,10 @@ table.data-table {
 }
 
 .cache-issue-group {
-  display: inline-grid;
+  display: grid;
   justify-items: start;
   gap: 4px;
+  width: 100%;
 }
 
 .cache-assessment-hit {

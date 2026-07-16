@@ -50,7 +50,7 @@ export const cacheAssessmentReasonSchema = z.enum([
 export const cacheAssessmentSchema = z.object({
   status: cacheStatusSchema,
   reason: cacheAssessmentReasonSchema.optional(),
-  cause: z.enum(["compaction"]).optional(),
+  cause: z.enum(["compaction", "ttl"]).optional(),
   retainedRatio: z.number().nonnegative().optional(),
   previousReusableTokens: z.number().int().positive().optional(),
 });
@@ -63,12 +63,13 @@ export const cacheSummarySchema = z.object({
   notComparable: z.number().int().nonnegative(),
   unknown: z.number().int().nonnegative(),
   compactionRelatedMisses: z.number().int().nonnegative(),
+  ttlRelatedMisses: z.number().int().nonnegative(),
   unexpectedMisses: z.number().int().nonnegative(),
 });
 
 export const cacheIssueSchema = z.object({
   status: z.enum(["partial-hit", "full-miss"]),
-  cause: z.enum(["compaction"]).optional(),
+  cause: z.enum(["compaction", "ttl"]).optional(),
   turn: z.number().int().positive(),
   scope: z.string().optional(),
 });

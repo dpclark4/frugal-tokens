@@ -234,6 +234,7 @@ function CacheAssessmentBadge(
 ) {
   if (
     !assessment ||
+    assessment.cause !== undefined ||
     (assessment.status !== "partial-hit" && assessment.status !== "full-miss")
   ) return null;
   const title = providedTitle ??
@@ -265,7 +266,7 @@ function CacheAssessmentBadge(
 }
 
 function cacheSummaryTitle(summary: CacheSummary) {
-  return `${summary.hits} hits · ${summary.partialHits} partial hits · ${summary.fullMisses} full misses · ${summary.compactionRelatedMisses} compaction-related misses · ${summary.unexpectedMisses} unexpected misses · ${summary.baseline} baseline · ${summary.notComparable} not comparable · ${summary.unknown} unavailable`;
+  return `${summary.hits} hits · ${summary.partialHits} partial hits · ${summary.fullMisses} full misses · ${summary.compactionRelatedMisses} compaction-related misses · ${summary.ttlRelatedMisses} TTL misses · ${summary.unexpectedMisses} unexpected misses · ${summary.baseline} baseline · ${summary.notComparable} not comparable · ${summary.unknown} unavailable`;
 }
 
 function CompactionBadge({ count = 1 }: { count?: number }) {
@@ -276,6 +277,18 @@ function CompactionBadge({ count = 1 }: { count?: number }) {
       title={`${count} context compaction${count === 1 ? "" : "s"}`}
     >
       Compacted
+    </span>
+  );
+}
+
+function TtlMissBadge({ count = 1 }: { count?: number }) {
+  if (count === 0) return null;
+  return (
+    <span
+      className="cache-issue-badge ttl-miss-badge"
+      title={`${count} cache miss${count === 1 ? "" : "es"} after TTL expiry`}
+    >
+      TTL miss
     </span>
   );
 }
@@ -338,12 +351,17 @@ function SessionCacheStatus({
   issues?: CacheIssue[];
   compactionCount?: number;
 }) {
-  const full = issues?.filter((issue) => issue.status === "full-miss") ?? [];
-  const partial = issues?.filter((issue) => issue.status === "partial-hit") ??
-    [];
+  const full = issues?.filter((issue) =>
+    issue.status === "full-miss" && issue.cause === undefined
+  ) ?? [];
+  const partial = issues?.filter((issue) =>
+    issue.status === "partial-hit" && issue.cause === undefined
+  ) ?? [];
+  const ttl = issues?.filter((issue) => issue.cause === "ttl") ?? [];
   if (
     !summary ||
-    (full.length === 0 && partial.length === 0 && !compactionCount)
+    (full.length === 0 && partial.length === 0 && ttl.length === 0 &&
+      !compactionCount)
   ) {
     return null;
   }
@@ -354,10 +372,13 @@ function SessionCacheStatus({
     partial.length > 0
       ? `Partial hit turns:\n${partial.map(cacheIssueLabel).join("\n")}`
       : undefined,
+    ttl.length > 0
+      ? `TTL miss turns:\n${ttl.map(cacheIssueLabel).join("\n")}`
+      : undefined,
     `Call totals: ${cacheSummaryTitle(summary)}`,
   ].filter(Boolean).join("\n\n");
   return (
-    <span className="session-cache-status" title={title}>
+    <span className="cache-issue-counts" title={title}>
       {full.length > 0 && (
         <>
           <span className="cache-issue-badge session-cache-full">
@@ -374,6 +395,12 @@ function SessionCacheStatus({
           <span className="session-cache-count">x{partial.length}</span>
         </>
       )}
+      {ttl.length > 0 && (
+        <>
+          <TtlMissBadge count={ttl.length} />
+          <span className="session-cache-count">x{ttl.length}</span>
+        </>
+      )}
       {!!compactionCount && (
         <>
           <CompactionBadge count={compactionCount} />
@@ -386,10 +413,15 @@ function SessionCacheStatus({
 
 function TurnCacheStatus({ turn }: { turn: SessionDetail["turns"][number] }) {
   const full = turn.calls.filter((call) =>
-    call.cacheAssessment?.status === "full-miss"
+    call.cacheAssessment?.status === "full-miss" &&
+    call.cacheAssessment.cause === undefined
   );
   const partial = turn.calls.filter((call) =>
-    call.cacheAssessment?.status === "partial-hit"
+    call.cacheAssessment?.status === "partial-hit" &&
+    call.cacheAssessment.cause === undefined
+  );
+  const ttl = turn.calls.filter((call) =>
+    call.cacheAssessment?.cause === "ttl"
   );
   const compactions = turn.calls.reduce(
     (total, call) =>
@@ -410,11 +442,19 @@ function TurnCacheStatus({ turn }: { turn: SessionDetail["turns"][number] }) {
         partial.map((call) => `#${call.callWithinTurn}`).join(", ")
       }`
       : undefined,
+    ttl.length > 0
+      ? `TTL miss calls: ${
+        ttl.map((call) => `#${call.callWithinTurn}`).join(", ")
+      }`
+      : undefined,
     turn.cacheSummary === undefined
       ? undefined
       : `Call totals: ${cacheSummaryTitle(turn.cacheSummary)}`,
   ].filter(Boolean).join("\n");
-  if (full.length === 0 && partial.length === 0 && compactions === 0) {
+  if (
+    full.length === 0 && partial.length === 0 && ttl.length === 0 &&
+    compactions === 0
+  ) {
     return null;
   }
   return (
@@ -431,6 +471,7 @@ function TurnCacheStatus({ turn }: { turn: SessionDetail["turns"][number] }) {
           title={title}
         />
       )}
+      <TtlMissBadge count={ttl.length} />
       <CompactionBadge count={compactions} />
     </span>
   );
@@ -902,6 +943,7 @@ function toolTargetPreview(value?: string) {
 function CallInputMetric({ call }: { call: ModelCall }) {
   const anthropic = call.provider.toLowerCase().includes("anthropic");
   const total = contextSize(call.tokens);
+  const reused = cacheHitRate(call.tokens);
   const parts = anthropic
     ? [
       call.tokens.cacheRead > 0
@@ -930,6 +972,9 @@ function CallInputMetric({ call }: { call: ModelCall }) {
           writes: {compact.format(call.tokens.cacheWrite5m)} at 5m ·{"  "}
           {compact.format(call.tokens.cacheWrite1h)} at 1h
         </small>
+      )}
+      {reused !== undefined && (
+        <small>{(reused * 100).toFixed(1)}% reused</small>
       )}
     </span>
   );
@@ -1008,7 +1053,6 @@ function CallTable({
           <col className="call-outcome-column" />
           <col className="call-context-column" />
           <col className="call-input-column" />
-          <col className="call-reused-column" />
           <col className="call-cache-column" />
           <col className="call-output-column" />
           <col className="call-cost-column" />
@@ -1022,7 +1066,6 @@ function CallTable({
             <th>Activity</th>
             <th>Context</th>
             <th>Volume</th>
-            <th>Reused</th>
             <th>Cache</th>
             <th>Output</th>
             <th>Cost</th>
@@ -1033,7 +1076,13 @@ function CallTable({
             const expanded = expandedCallID === call.id;
             const callDuration = duration(call.startedAt, call.completedAt);
             const callContext = contextSize(call.tokens);
-            const reused = cacheHitRate(call.tokens);
+            const cacheMiss = call.cacheAssessment?.cause === undefined &&
+              (call.cacheAssessment?.status === "partial-hit" ||
+                call.cacheAssessment?.status === "full-miss");
+            const ttlMiss = call.cacheAssessment?.cause === "ttl";
+            const compactions = (call.contextEventsBefore ?? []).filter((
+              event,
+            ) => event.type === "compaction").length;
             const subagents = callSubagents(call, session);
             const subagentTotals = aggregateSessionTrees(subagents);
             const hasSubagents = subagents.length > 0;
@@ -1120,20 +1169,18 @@ function CallTable({
                   <td>
                     <CallInputMetric call={call} />
                   </td>
-                  <td className={reused === undefined ? "muted" : undefined}>
-                    {reused === undefined
-                      ? "-"
-                      : `${(reused * 100).toFixed(1)}%`}
-                  </td>
                   <td>
-                    <span className="cache-issue-group">
-                      <CacheAssessmentBadge assessment={call.cacheAssessment} />
-                      <CompactionBadge
-                        count={(call.contextEventsBefore ?? []).filter((
-                          event,
-                        ) => event.type === "compaction").length}
-                      />
-                    </span>
+                    {(cacheMiss || ttlMiss || compactions > 0) && (
+                      <span className="cache-issue-group">
+                        {cacheMiss && (
+                          <CacheAssessmentBadge
+                            assessment={call.cacheAssessment}
+                          />
+                        )}
+                        <TtlMissBadge count={ttlMiss ? 1 : 0} />
+                        <CompactionBadge count={compactions} />
+                      </span>
+                    )}
                   </td>
                   <td>
                     <TokenValue
@@ -1154,7 +1201,7 @@ function CallTable({
                 </tr>
                 {expanded && (
                   <tr className="activity-detail-row">
-                    <td colSpan={11}>
+                    <td colSpan={10}>
                       <div className="activity-detail">
                         {finishWarning && (
                           <div className="activity-warning">
