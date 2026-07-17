@@ -231,6 +231,52 @@ export const usageResponseSchema = z.object({
   })),
 });
 
+const distributionSchema = z.object({
+  average: z.number().nonnegative(),
+  median: z.number().nonnegative(),
+  p90: z.number().nonnegative(),
+});
+
+export const overviewResponseSchema = z.object({
+  rangeDays: z.number().int().positive(),
+  sessions: z.number().int().nonnegative(),
+  activeDays: z.number().int().nonnegative(),
+  activeWeekdays: z.number().int().nonnegative(),
+  elapsedWeekdays: z.number().int().nonnegative(),
+  weekendDays: z.number().int().nonnegative(),
+  weekdayActivityRate: z.number().min(0).max(1),
+  subagentCoverage: z.enum(["full", "partial", "none"]),
+  activity: z.object({
+    sessions: distributionSchema.optional(),
+    turns: distributionSchema.optional(),
+    spend: distributionSchema.optional(),
+    hasUnpricedCost: z.boolean(),
+  }),
+  sessionProfile: z.object({
+    turns: distributionSchema.optional(),
+    input: distributionSchema.optional(),
+    peakContext: distributionSchema.optional(),
+    elapsed: distributionSchema.optional(),
+    spend: distributionSchema.optional(),
+    efficiency: distributionSchema.optional(),
+    overallEfficiency: z.number().min(0).max(1).optional(),
+    hasUnpricedCost: z.boolean(),
+  }),
+  multiDaySessions: z.number().int().nonnegative(),
+  multiDaySessionRate: z.number().min(0).max(1),
+  averageActiveSpan: z.number().nonnegative(),
+  models: z.array(z.object({
+    model: z.string(),
+    sessions: z.number().int().nonnegative(),
+    input: z.number().int().nonnegative(),
+    spend: z.number().nonnegative(),
+    spendShare: z.number().min(0).max(1),
+    efficiency: z.number().min(0).max(1).optional(),
+    hasUnpricedCost: z.boolean(),
+    isOther: z.boolean(),
+  })),
+});
+
 export const ttlMissMetricsSchema = z.object({
   rangeDays: z.number().int().positive(),
   sessions: z.number().int().nonnegative(),
@@ -291,4 +337,5 @@ export type SessionListResponse = z.infer<typeof sessionListResponseSchema>;
 export type SessionSummary = z.infer<typeof sessionSummarySchema>;
 export type TokenUsage = z.infer<typeof tokenUsageSchema>;
 export type UsageResponse = z.infer<typeof usageResponseSchema>;
+export type OverviewResponse = z.infer<typeof overviewResponseSchema>;
 export type TtlMissMetrics = z.infer<typeof ttlMissMetricsSchema>;

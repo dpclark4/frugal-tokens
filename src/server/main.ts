@@ -19,6 +19,7 @@ import type {
 import type { UsageCall } from "./usage.ts";
 import { aggregateUsage } from "./usageAnalytics.ts";
 import { aggregateTtlMisses } from "./ttlMissAnalytics.ts";
+import { aggregateOverview } from "./overviewAnalytics.ts";
 import { contextRange } from "../shared/contextMetrics.ts";
 import { openArchiveDatabase, sqlitePath } from "./database.ts";
 import { SessionRepository } from "./sessionRepository.ts";
@@ -388,6 +389,31 @@ function listSessions(
   };
 }
 
+function overviewSessions(start: number, harness: string) {
+  const harnesses = harness === "all"
+    ? (["opencode", "claude-code", "pi", "codex"] as const)
+    : [harness as SessionSummary["harness"]];
+  const sessions: SessionDetail[] = [];
+  for (const name of harnesses) {
+    const source = repositoryForHarness(name);
+    if (!source) continue;
+    const pageSize = 100;
+    for (let page = 1;; page++) {
+      const result = source.listSessions(page, pageSize);
+      for (const summary of result.items) {
+        if (summary.updatedAt < start) continue;
+        const detail = source.getSession(summary.id);
+        if (detail) sessions.push(priceSessionDetail(detail));
+      }
+      if (
+        page >= result.pagination.totalPages ||
+        result.items.every((session) => session.updatedAt < start)
+      ) break;
+    }
+  }
+  return sessions;
+}
+
 app.get("/api/ttl-misses", (context) => {
   const harness = context.req.query("harness") ?? "all";
   if (!["all", "opencode", "claude-code", "pi", "codex"].includes(harness)) {
@@ -422,6 +448,36 @@ app.get("/api/ttl-misses", (context) => {
   }
 
   return context.json(aggregateTtlMisses(usageCalls, start, range));
+});
+
+app.get("/api/overview", (context) => {
+  const harness = context.req.query("harness") ?? "all";
+  if (!["all", "opencode", "claude-code", "pi", "codex"].includes(harness)) {
+    return context.json({ error: "Invalid harness" }, 400);
+  }
+  const rangeParam = context.req.query("range") ?? "90";
+  const range = Math.min(
+    365,
+    Math.max(1, Number.parseInt(rangeParam, 10) || 90),
+  );
+  const start = new Date(
+    new Date().setHours(0, 0, 0, 0) - (range - 1) * 86_400_000,
+  ).getTime();
+  const end = Date.now();
+  const coverage = harness === "pi" || harness === "codex"
+    ? "none"
+    : harness === "all"
+    ? "partial"
+    : "full";
+  return context.json(
+    aggregateOverview(
+      overviewSessions(start, harness),
+      start,
+      end,
+      range,
+      coverage,
+    ),
+  );
 });
 
 app.get("/api/usage", (context) => {
