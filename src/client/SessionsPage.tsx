@@ -19,7 +19,6 @@ import openCodeIcon from "./assets/icons/opencode-logo-light.svg";
 import piIcon from "./assets/icons/pi-logo.svg";
 import { UsageChart } from "./UsageChart.tsx";
 import { TtlMissCard } from "./TtlMissCard.tsx";
-import { Overview } from "./Overview.tsx";
 
 const route = getRouteApi("/");
 const integer = new Intl.NumberFormat("en-US");
@@ -1700,8 +1699,6 @@ export function SessionsPage() {
           See where tokens went, what was reused, and what each model call cost.
         </p>
       </header>
-
-      <Overview data={overview} error={overviewError} />
 
       <div className="homepage-metrics">
         <TtlMissCard

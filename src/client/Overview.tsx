@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import type { OverviewResponse } from "../shared/sessionSchemas.ts";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -42,14 +41,12 @@ function modelName(model: string) {
 
 function MetricRow({
   label,
-  description,
   values,
   format = decimal.format,
   partial = false,
   tooltip,
 }: {
   label: string;
-  description?: string;
   values?: Distribution;
   format?: (value: number) => string;
   partial?: boolean;
@@ -63,215 +60,11 @@ function MetricRow({
   );
   return (
     <tr>
-      <th scope="row" title={tooltip}>
-        {label}
-        {description && <small>{description}</small>}
-      </th>
+      <th scope="row" title={tooltip}>{label}</th>
       <td>{values ? value(values.median) : "-"}</td>
       <td>{values ? value(values.average) : "-"}</td>
       <td>{values ? value(values.p90) : "-"}</td>
     </tr>
-  );
-}
-
-function MetricTable({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
-  return (
-    <div className="overview-table-block">
-      <h3>{title}</h3>
-      <div className="overview-table-wrap">
-        <table className="overview-table">
-          <thead>
-            <tr>
-              <th>Metric</th>
-              <th>Median</th>
-              <th>Average</th>
-              <th>P90</th>
-            </tr>
-          </thead>
-          <tbody>{children}</tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-export function Overview({
-  data,
-  error,
-}: {
-  data?: OverviewResponse;
-  error?: string;
-}) {
-  return (
-    <section className="overview-panel">
-      <div className="overview-heading">
-        <div>
-          <p className="eyebrow">Working profile</p>
-          <h2>Overview</h2>
-        </div>
-        <span>Last 90 days</span>
-      </div>
-      {error && <div className="overview-message">{error}</div>}
-      {!data && !error && (
-        <div className="overview-message">Loading overview...</div>
-      )}
-      {data && (
-        <>
-          <div className="overview-summary">
-            <div>
-              <strong>{integer.format(data.activeDays)}</strong>
-              <span>Active days</span>
-            </div>
-            <div>
-              <strong>{integer.format(data.activeWeekdays)}</strong>
-              <span>Active weekdays</span>
-            </div>
-            <div>
-              <strong>{integer.format(data.weekendDays)}</strong>
-              <span>Weekend days</span>
-            </div>
-            <div>
-              <strong>{percent(data.weekdayActivityRate)}</strong>
-              <span>Weekday activity</span>
-            </div>
-            <div>
-              <strong>{integer.format(data.sessions)}</strong>
-              <span>Sessions worked on</span>
-            </div>
-          </div>
-
-          <div className="overview-matrices">
-            <MetricTable title="Activity per active day">
-              <MetricRow
-                label="Sessions worked on"
-                values={data.activity.sessions}
-              />
-              <MetricRow
-                label="Peak concurrent sessions"
-                values={data.activity.peakConcurrentSessions}
-                tooltip={`Distribution of each active day's peak root sessions executing or within ${data.rotationInactivityMinutes} minutes after recorded completion`}
-              />
-              <MetricRow label="Turns" values={data.activity.turns} />
-              <MetricRow
-                label="Spend"
-                values={data.activity.spend}
-                format={currency.format}
-                partial={data.activity.hasUnpricedCost}
-              />
-            </MetricTable>
-            <MetricTable title="Session profile">
-              <MetricRow label="Turns" values={data.sessionProfile.turns} />
-              <MetricRow
-                label="Input processed"
-                values={data.sessionProfile.input}
-                format={compact.format}
-              />
-              <MetricRow
-                label="Peak context"
-                values={data.sessionProfile.peakContext}
-                format={compact.format}
-              />
-              <MetricRow
-                label="Session duration"
-                description="First turn to final model call"
-                values={data.sessionProfile.elapsed}
-                format={duration}
-              />
-              <MetricRow
-                label="Spend"
-                values={data.sessionProfile.spend}
-                format={currency.format}
-                partial={data.sessionProfile.hasUnpricedCost}
-              />
-              <MetricRow
-                label="Efficiency"
-                values={data.sessionProfile.efficiency}
-                format={percent}
-              />
-            </MetricTable>
-          </div>
-
-          <div className="overview-secondary">
-            <div>
-              <span>Overall efficiency</span>
-              <strong>{percent(data.sessionProfile.overallEfficiency)}</strong>
-              <small>Token-weighted reuse</small>
-            </div>
-            <div>
-              <span>Multi-day sessions</span>
-              <strong>{percent(data.multiDaySessionRate)}</strong>
-              <small>{integer.format(data.multiDaySessions)} sessions</small>
-            </div>
-            <div>
-              <span>Average active span</span>
-              <strong>{days(data.averageActiveSpan)}</strong>
-              <small>Distinct dates per session</small>
-            </div>
-          </div>
-
-          <div className="overview-models">
-            <h3>Top models by spend</h3>
-            <div className="overview-table-wrap">
-              <table className="overview-table model-table">
-                <thead>
-                  <tr>
-                    <th>Model</th>
-                    <th>Spend</th>
-                    <th>Share</th>
-                    <th>Input</th>
-                    <th>Sessions</th>
-                    <th>Efficiency</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.models.map((model) => (
-                    <tr key={`${model.model}:${model.isOther}`}>
-                      <th scope="row" title={model.model}>
-                        {modelName(model.model)}
-                      </th>
-                      <td>
-                        {currency.format(model.spend)}
-                        {model.hasUnpricedCost && (
-                          <sup title="Some calls could not be priced">*</sup>
-                        )}
-                      </td>
-                      <td>{percent(model.spendShare)}</td>
-                      <td title={integer.format(model.input)}>
-                        {compact.format(model.input)}
-                      </td>
-                      <td>{integer.format(model.sessions)}</td>
-                      <td>{percent(model.efficiency)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {(data.activity.hasUnpricedCost ||
-            data.subagentCoverage !== "full") && (
-            <p className="overview-note">
-              {data.activity.hasUnpricedCost && (
-                <span>Spend and spend share use known prices only.</span>
-              )}
-              {data.subagentCoverage !== "full" &&
-                (
-                  <span>
-                    Subagent coverage is {data.subagentCoverage}{" "}
-                    for this harness selection.
-                  </span>
-                )}
-            </p>
-          )}
-        </>
-      )}
-    </section>
   );
 }
 
@@ -423,13 +216,12 @@ export function CompactOverview({
           {data.activity.hasUnpricedCost && (
             <span>* Spend and spend share use known prices only.</span>
           )}
-          {data.subagentCoverage !== "full" &&
-            (
-              <span>
-                Subagent coverage is {data.subagentCoverage}{" "}
-                for this harness selection.
-              </span>
-            )}
+          {data.subagentCoverage !== "full" && (
+            <span>
+              Subagent coverage is {data.subagentCoverage}{" "}
+              for this harness selection.
+            </span>
+          )}
         </p>
       )}
     </div>
