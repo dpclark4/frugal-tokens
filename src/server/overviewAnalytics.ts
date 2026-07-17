@@ -195,11 +195,11 @@ export function aggregateOverview(
   const rankedModels = [...models.values()].sort((a, b) =>
     b.spend - a.spend || b.input - a.input || a.model.localeCompare(b.model)
   );
-  const topModels = rankedModels.slice(0, 3).map((model) =>
+  const topModels = rankedModels.slice(0, 5).map((model) =>
     modelResult(model, totalSpend)
   );
-  if (rankedModels.length > 3) {
-    const other = rankedModels.slice(3).reduce<ModelBucket>(
+  if (rankedModels.length > 5) {
+    const other = rankedModels.slice(5).reduce<ModelBucket>(
       (result, model) => {
         model.sessions.forEach((session) => result.sessions.add(session));
         result.input += model.input;

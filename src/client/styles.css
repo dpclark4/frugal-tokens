@@ -359,6 +359,10 @@ h1 {
   font: 9px/1.5 var(--mono);
 }
 
+.overview-note span {
+  display: block;
+}
+
 .homepage-metrics .usage-chart {
   min-width: 0;
   margin-bottom: 0;
@@ -469,10 +473,20 @@ h1 {
   padding-bottom: 5px;
 }
 
-.compact-overview-table .overview-table .section-start th,
-.compact-overview-table .overview-table .section-start td {
-  padding-top: 10px;
+.compact-overview-table .compact-metric-group th {
+  padding: 10px 0 4px;
   border-top: 1px solid var(--panel-border);
+  border-bottom: 0;
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 500;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.compact-overview-table .compact-metric-group:first-child th {
+  padding-top: 3px;
+  border-top: 0;
 }
 
 .compact-models {
@@ -492,6 +506,24 @@ h1 {
 .compact-model-list {
   display: grid;
   gap: 7px;
+}
+
+.compact-model-header {
+  display: grid;
+  grid-template-columns: minmax(95px, 1.4fr) minmax(60px, 1fr) 44px 64px;
+  gap: 9px;
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-size: 8px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.compact-model-header small,
+.compact-model-header strong {
+  font-size: inherit;
+  font-weight: 500;
+  text-align: right;
 }
 
 .compact-model-row {
@@ -535,6 +567,10 @@ h1 {
   padding: 0 28px 13px;
   color: var(--muted);
   font-size: 8px;
+}
+
+.compact-overview-note span {
+  display: block;
 }
 
 .ttl-miss-lead {

@@ -28,6 +28,10 @@ function duration(value: number) {
   return `${decimal.format(minutes / 60)} hr`;
 }
 
+function days(value: number) {
+  return `${decimal.format(value)} ${value === 1 ? "day" : "days"}`;
+}
+
 function modelName(model: string) {
   if (model === "Other") return model;
   return model.replace(/[-_]20\d{6}$/, "").split(/[-_]/).map((part) => {
@@ -42,14 +46,14 @@ function MetricRow({
   values,
   format = decimal.format,
   partial = false,
-  sectionStart = false,
+  tooltip,
 }: {
   label: string;
   description?: string;
   values?: Distribution;
   format?: (value: number) => string;
   partial?: boolean;
-  sectionStart?: boolean;
+  tooltip?: string;
 }) {
   const value = (number: number) => (
     <>
@@ -58,8 +62,8 @@ function MetricRow({
     </>
   );
   return (
-    <tr className={sectionStart ? "section-start" : undefined}>
-      <th scope="row">
+    <tr>
+      <th scope="row" title={tooltip}>
         {label}
         {description && <small>{description}</small>}
       </th>
@@ -169,7 +173,7 @@ export function Overview({
                 format={compact.format}
               />
               <MetricRow
-                label="Elapsed duration"
+                label="Session duration"
                 description="First turn to final model call"
                 values={data.sessionProfile.elapsed}
                 format={duration}
@@ -201,7 +205,7 @@ export function Overview({
             </div>
             <div>
               <span>Average active span</span>
-              <strong>{decimal.format(data.averageActiveSpan)} days</strong>
+              <strong>{days(data.averageActiveSpan)}</strong>
               <small>Distinct dates per session</small>
             </div>
           </div>
@@ -248,10 +252,16 @@ export function Overview({
           {(data.activity.hasUnpricedCost ||
             data.subagentCoverage !== "full") && (
             <p className="overview-note">
-              {data.activity.hasUnpricedCost &&
-                "Spend statistics use known prices only. "}
+              {data.activity.hasUnpricedCost && (
+                <span>Spend and spend share use known prices only.</span>
+              )}
               {data.subagentCoverage !== "full" &&
-                `Subagent coverage is ${data.subagentCoverage} for this harness selection.`}
+                (
+                  <span>
+                    Subagent coverage is {data.subagentCoverage}{" "}
+                    for this harness selection.
+                  </span>
+                )}
             </p>
           )}
         </>
@@ -284,8 +294,7 @@ export function CompactOverview({
         </div>
         <div>
           <strong>{integer.format(data.sessions)}</strong>
-          <span>Sessions</span>
-          <small>Worked on</small>
+          <span>Sessions worked on</span>
         </div>
         <div>
           <strong>
@@ -293,7 +302,7 @@ export function CompactOverview({
             {hasUnpricedSpend && <sup>*</sup>}
           </strong>
           <span>Spend</span>
-          <small>Known prices</small>
+          <small>Known-price total</small>
         </div>
         <div>
           <strong>{percent(data.sessionProfile.overallEfficiency)}</strong>
@@ -306,9 +315,9 @@ export function CompactOverview({
           <small>{integer.format(data.multiDaySessions)} sessions</small>
         </div>
         <div>
-          <strong>{decimal.format(data.averageActiveSpan)} days</strong>
-          <span>Avg active span</span>
-          <small>Distinct dates</small>
+          <strong>{days(data.averageActiveSpan)}</strong>
+          <span>Active span</span>
+          <small>Avg distinct dates / session</small>
         </div>
       </div>
       <div className="compact-overview-table">
@@ -322,27 +331,26 @@ export function CompactOverview({
             </tr>
           </thead>
           <tbody>
+            <tr className="compact-metric-group">
+              <th colSpan={4}>Activity per active day</th>
+            </tr>
             <MetricRow
-              label="Sessions / active day"
+              label="Sessions worked on"
               values={data.activity.sessions}
             />
+            <MetricRow label="Turns" values={data.activity.turns} />
             <MetricRow
-              label="Turns / active day"
-              values={data.activity.turns}
-            />
-            <MetricRow
-              label="Spend / active day"
+              label="Spend"
               values={data.activity.spend}
               format={currency.format}
               partial={data.activity.hasUnpricedCost}
             />
+            <tr className="compact-metric-group">
+              <th colSpan={4}>Session profile</th>
+            </tr>
+            <MetricRow label="Turns" values={data.sessionProfile.turns} />
             <MetricRow
-              label="Turns / session"
-              values={data.sessionProfile.turns}
-              sectionStart
-            />
-            <MetricRow
-              label="Input / session"
+              label="Input processed"
               values={data.sessionProfile.input}
               format={compact.format}
             />
@@ -352,12 +360,13 @@ export function CompactOverview({
               format={compact.format}
             />
             <MetricRow
-              label="Elapsed duration"
+              label="Session duration"
               values={data.sessionProfile.elapsed}
               format={duration}
+              tooltip="First turn to final model call"
             />
             <MetricRow
-              label="Spend / session"
+              label="Spend"
               values={data.sessionProfile.spend}
               format={currency.format}
               partial={data.sessionProfile.hasUnpricedCost}
@@ -373,6 +382,12 @@ export function CompactOverview({
       {data.models.length > 0 && (
         <div className="compact-models">
           <h3>Top models by spend</h3>
+          <div className="compact-model-header">
+            <span>Model</span>
+            <i />
+            <small>Share</small>
+            <strong>Spend</strong>
+          </div>
           <div className="compact-model-list">
             {data.models.map((model) => (
               <div
@@ -395,9 +410,16 @@ export function CompactOverview({
       )}
       {(data.activity.hasUnpricedCost || data.subagentCoverage !== "full") && (
         <p className="compact-overview-note">
-          {data.activity.hasUnpricedCost && "* Known priced spend only. "}
+          {data.activity.hasUnpricedCost && (
+            <span>* Spend and spend share use known prices only.</span>
+          )}
           {data.subagentCoverage !== "full" &&
-            `${data.subagentCoverage} subagent coverage.`}
+            (
+              <span>
+                Subagent coverage is {data.subagentCoverage}{" "}
+                for this harness selection.
+              </span>
+            )}
         </p>
       )}
     </div>
