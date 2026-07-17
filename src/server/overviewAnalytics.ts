@@ -17,6 +17,10 @@ type ModelBucket = {
   hasUnpricedCost: boolean;
 };
 
+type Interval = { start: number; end: number };
+
+export const ROTATION_INACTIVITY_MINUTES = 30;
+
 function dateKey(value: number) {
   const date = new Date(value);
   return [
@@ -49,6 +53,66 @@ function sessionTree(session: SessionDetail): SessionDetail[] {
     session,
     ...session.subagents.flatMap((subagent) => sessionTree(subagent)),
   ];
+}
+
+function turnExecutionEnd(turn: SessionDetail["turns"][number]) {
+  let end = turn.startedAt;
+  for (const call of turn.calls) {
+    end = Math.max(end, call.completedAt ?? call.startedAt);
+    for (const tool of call.activity.tools) {
+      end = Math.max(
+        end,
+        tool.completedAt ?? tool.startedAt ?? call.completedAt ??
+          call.startedAt,
+      );
+    }
+  }
+  return end;
+}
+
+function mergeIntervals(intervals: Interval[]) {
+  const merged: Interval[] = [];
+  for (const interval of intervals.toSorted((a, b) => a.start - b.start)) {
+    const previous = merged.at(-1);
+    if (previous && interval.start <= previous.end) {
+      previous.end = Math.max(previous.end, interval.end);
+    } else {
+      merged.push({ ...interval });
+    }
+  }
+  return merged;
+}
+
+function localDayBounds(date: string): Interval {
+  const [year, month, day] = date.split("-").map(Number);
+  return {
+    start: new Date(year, month - 1, day).getTime(),
+    end: new Date(year, month - 1, day + 1).getTime(),
+  };
+}
+
+function dailyRotationPeaks(
+  activeDates: Set<string>,
+  intervalsBySession: Map<string, Interval[]>,
+) {
+  const merged = [...intervalsBySession.values()].flatMap(mergeIntervals);
+  return [...activeDates].map((date) => {
+    const day = localDayBounds(date);
+    const events: Array<{ at: number; delta: number }> = [];
+    for (const interval of merged) {
+      if (interval.end <= day.start || interval.start >= day.end) continue;
+      events.push({ at: Math.max(interval.start, day.start), delta: 1 });
+      events.push({ at: Math.min(interval.end, day.end), delta: -1 });
+    }
+    events.sort((a, b) => a.at - b.at || a.delta - b.delta);
+    let active = 0;
+    let peak = 0;
+    for (const event of events) {
+      active += event.delta;
+      peak = Math.max(peak, active);
+    }
+    return peak;
+  });
 }
 
 function modelResult(
@@ -102,6 +166,8 @@ export function aggregateOverview(
   const profileEfficiency: number[] = [];
   const activeSpans: number[] = [];
   const models = new Map<string, ModelBucket>();
+  const rotationIntervals = new Map<string, Interval[]>();
+  const rotationTail = ROTATION_INACTIVITY_MINUTES * 60_000;
   let sessions = 0;
   let multiDaySessions = 0;
   let overallInput = 0;
@@ -110,16 +176,19 @@ export function aggregateOverview(
 
   for (const root of roots) {
     const rootKey = `${root.harness}:${root.id}`;
-    const turns = sessionTree(root).flatMap((session) =>
-      session.turns.filter((turn) =>
-        turn.startedAt >= start && turn.startedAt <= end
-      )
+    const allTurns = sessionTree(root).flatMap((session) => session.turns);
+    const intervals = allTurns.map((turn) => ({
+      start: turn.startedAt,
+      end: turnExecutionEnd(turn) + rotationTail,
+    })).filter((interval) => interval.end > start && interval.start <= end);
+    if (intervals.length > 0) rotationIntervals.set(rootKey, intervals);
+    const turns = allTurns.filter((turn) =>
+      turn.startedAt >= start && turn.startedAt <= end
     );
     if (turns.length === 0) continue;
     sessions++;
 
     const sessionDates = new Set<string>();
-    const calls = turns.flatMap((turn) => turn.calls);
     let sessionInput = 0;
     let sessionCacheRead = 0;
     let sessionSpend = 0;
@@ -227,9 +296,11 @@ export function aggregateOverview(
   const dailySpendValues = [...activeDates].map((date) =>
     dailySpend.get(date) ?? 0
   );
+  const rotationPeaks = dailyRotationPeaks(activeDates, rotationIntervals);
 
   return {
     rangeDays,
+    rotationInactivityMinutes: ROTATION_INACTIVITY_MINUTES,
     sessions,
     activeDays: activeDates.size,
     activeWeekdays: activeWeekdays.size,
@@ -241,6 +312,7 @@ export function aggregateOverview(
     subagentCoverage,
     activity: {
       sessions: distribution(dailySessionValues),
+      peakConcurrentSessions: distribution(rotationPeaks),
       turns: distribution(dailyTurnValues),
       spend: distribution(dailySpendValues),
       hasUnpricedCost,

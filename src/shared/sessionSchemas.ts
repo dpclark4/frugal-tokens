@@ -239,6 +239,7 @@ const distributionSchema = z.object({
 
 export const overviewResponseSchema = z.object({
   rangeDays: z.number().int().positive(),
+  rotationInactivityMinutes: z.number().int().positive(),
   sessions: z.number().int().nonnegative(),
   activeDays: z.number().int().nonnegative(),
   activeWeekdays: z.number().int().nonnegative(),
@@ -248,6 +249,7 @@ export const overviewResponseSchema = z.object({
   subagentCoverage: z.enum(["full", "partial", "none"]),
   activity: z.object({
     sessions: distributionSchema.optional(),
+    peakConcurrentSessions: distributionSchema.optional(),
     turns: distributionSchema.optional(),
     spend: distributionSchema.optional(),
     hasUnpricedCost: z.boolean(),

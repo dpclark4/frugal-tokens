@@ -152,6 +152,11 @@ export function Overview({
                 label="Sessions worked on"
                 values={data.activity.sessions}
               />
+              <MetricRow
+                label="Peak concurrent sessions"
+                values={data.activity.peakConcurrentSessions}
+                tooltip={`Distribution of each active day's peak root sessions executing or within ${data.rotationInactivityMinutes} minutes after recorded completion`}
+              />
               <MetricRow label="Turns" values={data.activity.turns} />
               <MetricRow
                 label="Spend"
@@ -337,6 +342,11 @@ export function CompactOverview({
             <MetricRow
               label="Sessions worked on"
               values={data.activity.sessions}
+            />
+            <MetricRow
+              label="Peak concurrent sessions"
+              values={data.activity.peakConcurrentSessions}
+              tooltip={`Distribution of each active day's peak root sessions executing or within ${data.rotationInactivityMinutes} minutes after recorded completion`}
             />
             <MetricRow label="Turns" values={data.activity.turns} />
             <MetricRow

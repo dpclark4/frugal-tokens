@@ -167,3 +167,99 @@ Deno.test("keeps known spend when some calls are unpriced", () => {
   strictEqual(result.activity.spend!.median, 5);
   strictEqual(result.sessionProfile.spend!.median, 2.5);
 });
+
+Deno.test("counts overlapping root sessions in rotation without double-counting subagents", () => {
+  const day = new Date(2026, 6, 10).getTime();
+  const rootStart = day + 9 * 3_600_000;
+  const child = session("child", [{
+    startedAt: rootStart + 10 * 60_000,
+    input: 100,
+    cacheRead: 0,
+    cost: 1,
+  }]);
+  const result = aggregateOverview(
+    [
+      session("root", [{
+        startedAt: rootStart,
+        input: 100,
+        cacheRead: 0,
+        cost: 1,
+      }], [child]),
+      session("other-root", [{
+        startedAt: rootStart + 20 * 60_000,
+        input: 100,
+        cacheRead: 0,
+        cost: 1,
+      }]),
+    ],
+    day,
+    day + 86_400_000 - 1,
+    1,
+  );
+
+  strictEqual(result.rotationInactivityMinutes, 30);
+  deepStrictEqual(result.activity.peakConcurrentSessions, {
+    average: 2,
+    median: 2,
+    p90: 2,
+  });
+});
+
+Deno.test("expires rotation tails but retains observed tool execution", () => {
+  const day = new Date(2026, 6, 10).getTime();
+  const startedAt = day + 9 * 3_600_000;
+  const executing = session("executing", [{
+    startedAt,
+    input: 100,
+    cacheRead: 0,
+    cost: 1,
+  }]);
+  executing.turns[0].calls[0].activity.tools.push({
+    name: "long-running",
+    status: "completed",
+    startedAt,
+    completedAt: startedAt + 60 * 60_000,
+  });
+  const result = aggregateOverview(
+    [
+      executing,
+      session("overlapping", [{
+        startedAt: startedAt + 45 * 60_000,
+        input: 100,
+        cacheRead: 0,
+        cost: 1,
+      }]),
+      session("after-expiry", [{
+        startedAt: startedAt + 92 * 60_000,
+        input: 100,
+        cacheRead: 0,
+        cost: 1,
+      }]),
+    ],
+    day,
+    day + 86_400_000 - 1,
+    1,
+  );
+
+  strictEqual(result.activity.peakConcurrentSessions!.median, 2);
+});
+
+Deno.test("does not create an active day from a cross-midnight tail", () => {
+  const day = new Date(2026, 6, 10).getTime();
+  const result = aggregateOverview(
+    [
+      session("late", [{
+        startedAt: day + 23 * 3_600_000 + 50 * 60_000,
+        input: 100,
+        cacheRead: 0,
+        cost: 1,
+      }]),
+    ],
+    day,
+    day + 36 * 3_600_000,
+    2,
+  );
+
+  strictEqual(result.activeDays, 1);
+  strictEqual(result.activity.peakConcurrentSessions!.median, 1);
+});

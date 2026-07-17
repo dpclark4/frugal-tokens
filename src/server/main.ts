@@ -19,7 +19,10 @@ import type {
 import type { UsageCall } from "./usage.ts";
 import { aggregateUsage } from "./usageAnalytics.ts";
 import { aggregateTtlMisses } from "./ttlMissAnalytics.ts";
-import { aggregateOverview } from "./overviewAnalytics.ts";
+import {
+  aggregateOverview,
+  ROTATION_INACTIVITY_MINUTES,
+} from "./overviewAnalytics.ts";
 import { contextRange } from "../shared/contextMetrics.ts";
 import { openArchiveDatabase, sqlitePath } from "./database.ts";
 import { SessionRepository } from "./sessionRepository.ts";
@@ -471,7 +474,10 @@ app.get("/api/overview", (context) => {
     : "full";
   return context.json(
     aggregateOverview(
-      overviewSessions(start, harness),
+      overviewSessions(
+        start - ROTATION_INACTIVITY_MINUTES * 60_000,
+        harness,
+      ),
       start,
       end,
       range,
