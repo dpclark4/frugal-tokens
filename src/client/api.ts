@@ -1,4 +1,5 @@
 import {
+  overviewResponseSchema,
   sessionDetailSchema,
   sessionListResponseSchema,
   ttlMissMetricsSchema,
@@ -20,6 +21,12 @@ async function getJson(path: string) {
 export async function getUsage(range: number | "all", harness: string) {
   return usageResponseSchema.parse(
     await getJson(`/api/usage?range=${range}&harness=${harness}`),
+  );
+}
+
+export async function getOverview(range: number, harness: string) {
+  return overviewResponseSchema.parse(
+    await getJson(`/api/overview?range=${range}&harness=${harness}`),
   );
 }
 

@@ -1,8 +1,16 @@
 import { useEffect, useState } from "react";
-import type { TtlMissMetrics } from "../shared/sessionSchemas.ts";
+import type {
+  OverviewResponse,
+  TtlMissMetrics,
+} from "../shared/sessionSchemas.ts";
 import { getTtlMissMetrics } from "./api.ts";
+import { CompactOverview } from "./Overview.tsx";
 
 const integer = new Intl.NumberFormat();
+const compactInteger = new Intl.NumberFormat(undefined, {
+  notation: "compact",
+  maximumFractionDigits: 2,
+});
 const percent = new Intl.NumberFormat(undefined, {
   style: "percent",
   maximumFractionDigits: 1,
@@ -18,8 +26,16 @@ function share(value: number, total: number) {
   return percent.format(total === 0 ? 0 : value / total);
 }
 
-export function TtlMissCard({ harness }: { harness: string }) {
-  const [view, setView] = useState<"ttl" | "cost">("ttl");
+export function TtlMissCard({
+  harness,
+  overview,
+  overviewError,
+}: {
+  harness: string;
+  overview?: OverviewResponse;
+  overviewError?: string;
+}) {
+  const [view, setView] = useState<"overview" | "ttl" | "cost">("overview");
   const [metrics, setMetrics] = useState<TtlMissMetrics>();
   const [error, setError] = useState<string>();
 
@@ -44,13 +60,25 @@ export function TtlMissCard({ harness }: { harness: string }) {
   }, [harness]);
 
   return (
-    <section className="ttl-miss-card" aria-labelledby="ttl-miss-title">
+    <section
+      className="ttl-miss-card"
+      aria-label="Overview and cache efficiency"
+    >
       <div className="ttl-analytics-toolbar">
         <div
           className="chart-tabs"
           role="tablist"
-          aria-label="Cache efficiency view"
+          aria-label="Overview and cache efficiency view"
         >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "overview"}
+            className={view === "overview" ? "active" : undefined}
+            onClick={() => setView("overview")}
+          >
+            Overview
+          </button>
           <button
             type="button"
             role="tab"
@@ -58,7 +86,7 @@ export function TtlMissCard({ harness }: { harness: string }) {
             className={view === "ttl" ? "active" : undefined}
             onClick={() => setView("ttl")}
           >
-            TTL misses
+            TTL expiry
           </button>
           <button
             type="button"
@@ -72,61 +100,46 @@ export function TtlMissCard({ harness }: { harness: string }) {
         </div>
         <span>Last 90 days</span>
       </div>
-      <div className="ttl-miss-heading">
-        <div>
-          <p className="eyebrow">Cache efficiency</p>
-          <h2 id="ttl-miss-title">
-            {view === "ttl" ? "TTL misses" : "Full and partial misses"}
-          </h2>
-        </div>
-      </div>
-      {!metrics && !error && (
+      {view === "overview" && (
+        <CompactOverview data={overview} error={overviewError} />
+      )}
+      {view !== "overview" && !metrics && !error && (
         <div className="ttl-miss-message">Analyzing session gaps...</div>
       )}
-      {error && <div className="ttl-miss-message chart-error">{error}</div>}
+      {view !== "overview" && error && (
+        <div className="ttl-miss-message chart-error">{error}</div>
+      )}
       {metrics && view === "ttl" && (
         <>
           <div className="ttl-miss-lead">
             <strong>{integer.format(metrics.affectedSessions)}</strong>
             <div>
-              <span>of {integer.format(metrics.sessions)} sessions</span>
+              <span>affected root sessions</span>
               <b>
-                {share(metrics.affectedSessions, metrics.sessions)} affected
+                {share(metrics.affectedSessions, metrics.sessions)} of{" "}
+                {integer.format(metrics.sessions)} analyzed
               </b>
             </div>
           </div>
           <div className="ttl-cost-summary">
             <div>
-              <span>All spend in range</span>
-              <strong>{money.format(metrics.totalCost)}</strong>
-              <small>
-                Root + subagents
-                {metrics.hasUnpricedTotalCost ? " · known prices only" : ""}
-              </small>
-            </div>
-            <div>
-              <span>Root spend analyzed</span>
+              <span>Root-session spend</span>
               <strong>{money.format(metrics.totalSessionCost)}</strong>
               <small>
-                {share(metrics.totalSessionCost, metrics.totalCost)}{" "}
-                of all spend
-                {metrics.hasUnpricedSessionCost ? " · known prices only" : ""}
+                {share(metrics.totalSessionCost, metrics.totalCost)} of total
               </small>
             </div>
             <div>
-              <span>Affected root-session spend</span>
+              <span>Affected-session spend</span>
               <strong>{money.format(metrics.affectedSessionCost)}</strong>
               <small>
                 {share(metrics.affectedSessionCost, metrics.totalSessionCost)}
                 {" "}
                 of root spend
-                {metrics.hasUnpricedAffectedSessionCost
-                  ? " · known prices only"
-                  : ""}
               </small>
             </div>
             <div>
-              <span>Estimated TTL-attributed cost</span>
+              <span>Attributed TTL miss cost</span>
               <strong>{money.format(metrics.misses.attributedCost)}</strong>
               <small>
                 {share(
@@ -138,7 +151,7 @@ export function TtlMissCard({ harness }: { harness: string }) {
           </div>
           <div className="ttl-miss-breakdown">
             <div className="ttl-miss-breakdown-title">
-              <span>Root-session gap</span>
+              <span>Root session gap</span>
               <strong>{integer.format(metrics.misses.total)} misses</strong>
             </div>
             {([
@@ -168,11 +181,14 @@ export function TtlMissCard({ harness }: { harness: string }) {
               </div>
             ))}
           </div>
-          {metrics.misses.unpriced > 0 && (
+          {(metrics.hasUnpricedSessionCost || metrics.misses.unpriced > 0) && (
             <p className="ttl-pricing-note">
-              {integer.format(metrics.misses.unpriced)}{" "}
-              miss{metrics.misses.unpriced === 1 ? "" : "es"}{" "}
-              could not be priced.
+              Costs use known prices only
+              {metrics.misses.unpriced > 0
+                ? ` and exclude ${
+                  integer.format(metrics.misses.unpriced)
+                } unpriced miss${metrics.misses.unpriced === 1 ? "" : "es"}`
+                : ""}.
             </p>
           )}
           <div className="ttl-subagent-summary">
@@ -200,45 +216,33 @@ export function TtlMissCard({ harness }: { harness: string }) {
             <div className="ttl-miss-lead">
               <strong>{integer.format(totalMisses)}</strong>
               <div>
-                <span>root-session cache misses</span>
+                <span>cache misses</span>
                 <b>
                   {integer.format(cacheMisses.affectedSessions)} of{" "}
-                  {integer.format(metrics.sessions)} sessions affected
+                  {integer.format(metrics.sessions)} root sessions affected
                 </b>
               </div>
             </div>
             <div className="ttl-cost-summary">
               <div>
-                <span>All spend in range</span>
-                <strong>{money.format(metrics.totalCost)}</strong>
-                <small>
-                  Root + subagents{metrics.hasUnpricedTotalCost
-                    ? " · known prices only"
-                    : ""}
-                </small>
-              </div>
-              <div>
-                <span>Root spend analyzed</span>
+                <span>Root-session spend</span>
                 <strong>{money.format(metrics.totalSessionCost)}</strong>
                 <small>
-                  {share(metrics.totalSessionCost, metrics.totalCost)}{" "}
-                  of all spend
+                  {share(metrics.totalSessionCost, metrics.totalCost)} of total
                 </small>
               </div>
               <div>
-                <span>Affected root-session spend</span>
+                <span>Affected-session spend</span>
                 <strong>{money.format(cacheMisses.affectedSessionCost)}</strong>
                 <small>
                   {share(
                     cacheMisses.affectedSessionCost,
                     metrics.totalSessionCost,
-                  )} of root spend{cacheMisses.hasUnpricedAffectedSessionCost
-                    ? " · known prices only"
-                    : ""}
+                  )} of root spend
                 </small>
               </div>
               <div>
-                <span>Estimated miss-attributed cost</span>
+                <span>Attributed miss cost</span>
                 <strong>{money.format(attributedCost)}</strong>
                 <small>
                   {share(attributedCost, cacheMisses.affectedSessionCost)}{" "}
@@ -263,7 +267,7 @@ export function TtlMissCard({ harness }: { harness: string }) {
                 return (
                   <div className="cache-miss-cost-row" role="row" key={type}>
                     <strong role="cell">
-                      {type === "full" ? "Full misses" : "Partial misses"}
+                      {type === "full" ? "Full" : "Partial"}
                     </strong>
                     <span role="cell">{integer.format(category.misses)}</span>
                     <span role="cell">
@@ -276,25 +280,20 @@ export function TtlMissCard({ harness }: { harness: string }) {
                       {money.format(category.estimatedExtraCost)}
                     </span>
                     <small>
-                      {integer.format(category.missedTokens)}{" "}
-                      reusable tokens missed ·{" "}
-                      {money.format(category.expectedReadCost)}{" "}
-                      expected read cost
+                      {compactInteger.format(category.missedTokens)}{" "}
+                      reusable tokens missed
                     </small>
                   </div>
                 );
               })}
             </div>
-            {unpriced > 0 && (
-              <p className="ttl-pricing-note">
-                {integer.format(unpriced)} miss{unpriced === 1 ? "" : "es"}{" "}
-                could not be priced.
-              </p>
-            )}
             <p className="cache-miss-cost-note">
-              Includes TTL and compaction-related misses. Extra cost compares
-              observed miss billing with the cache-read cost expected for
-              reusable tokens.
+              Includes TTL and compaction-related misses
+              {unpriced > 0
+                ? `. Costs exclude ${integer.format(unpriced)} unpriced miss${
+                  unpriced === 1 ? "" : "es"
+                }`
+                : ""}.
             </p>
           </>
         );
