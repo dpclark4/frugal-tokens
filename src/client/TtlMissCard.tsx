@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
-import type { TtlMissMetrics } from "../shared/sessionSchemas.ts";
+import type {
+  OverviewResponse,
+  TtlMissMetrics,
+} from "../shared/sessionSchemas.ts";
 import { getTtlMissMetrics } from "./api.ts";
+import { CompactOverview } from "./Overview.tsx";
 
 const integer = new Intl.NumberFormat();
 const compactInteger = new Intl.NumberFormat(undefined, {
@@ -22,8 +26,16 @@ function share(value: number, total: number) {
   return percent.format(total === 0 ? 0 : value / total);
 }
 
-export function TtlMissCard({ harness }: { harness: string }) {
-  const [view, setView] = useState<"ttl" | "cost">("ttl");
+export function TtlMissCard({
+  harness,
+  overview,
+  overviewError,
+}: {
+  harness: string;
+  overview?: OverviewResponse;
+  overviewError?: string;
+}) {
+  const [view, setView] = useState<"overview" | "ttl" | "cost">("overview");
   const [metrics, setMetrics] = useState<TtlMissMetrics>();
   const [error, setError] = useState<string>();
 
@@ -48,13 +60,27 @@ export function TtlMissCard({ harness }: { harness: string }) {
   }, [harness]);
 
   return (
-    <section className="ttl-miss-card" aria-label="Cache efficiency">
+    <section
+      className={`ttl-miss-card${
+        view === "overview" ? " overview-active" : ""
+      }`}
+      aria-label="Overview and cache efficiency"
+    >
       <div className="ttl-analytics-toolbar">
         <div
           className="chart-tabs"
           role="tablist"
-          aria-label="Cache efficiency view"
+          aria-label="Overview and cache efficiency view"
         >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "overview"}
+            className={view === "overview" ? "active" : undefined}
+            onClick={() => setView("overview")}
+          >
+            Overview
+          </button>
           <button
             type="button"
             role="tab"
@@ -76,10 +102,15 @@ export function TtlMissCard({ harness }: { harness: string }) {
         </div>
         <span>Last 90 days</span>
       </div>
-      {!metrics && !error && (
+      {view === "overview" && (
+        <CompactOverview data={overview} error={overviewError} />
+      )}
+      {view !== "overview" && !metrics && !error && (
         <div className="ttl-miss-message">Analyzing session gaps...</div>
       )}
-      {error && <div className="ttl-miss-message chart-error">{error}</div>}
+      {view !== "overview" && error && (
+        <div className="ttl-miss-message chart-error">{error}</div>
+      )}
       {metrics && view === "ttl" && (
         <>
           <div className="ttl-miss-lead">

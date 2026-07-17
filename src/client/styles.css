@@ -347,7 +347,7 @@ h1 {
   text-overflow: ellipsis;
 }
 
-.model-table sup {
+.overview-table sup {
   color: var(--danger);
 }
 
@@ -369,6 +369,10 @@ h1 {
   border: 1px solid var(--panel-border);
   background: var(--panel);
   box-shadow: 0 18px 60px rgba(57, 51, 40, .08);
+}
+
+.ttl-miss-card.overview-active {
+  min-height: 650px;
 }
 
 .ttl-analytics-toolbar {
@@ -399,6 +403,138 @@ h1 {
   place-items: center;
   color: var(--muted);
   font: 11px var(--mono);
+}
+
+.compact-overview {
+  font-family: var(--mono);
+}
+
+.compact-overview-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-bottom: 1px solid var(--row-border);
+  background: var(--surface-1);
+}
+
+.compact-overview-summary > div {
+  display: grid;
+  gap: 4px;
+  padding: 13px 14px;
+}
+
+.compact-overview-summary > div + div {
+  border-left: 1px solid var(--row-border);
+}
+
+.compact-overview-summary > div:nth-child(n + 4) {
+  border-top: 1px solid var(--row-border);
+}
+
+.compact-overview-summary > div:nth-child(4) {
+  border-left: 0;
+}
+
+.compact-overview-summary strong {
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+
+.compact-overview-summary span {
+  color: var(--muted);
+  font-size: 8px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.compact-overview-summary small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact-overview-summary sup,
+.compact-model-row sup {
+  color: var(--danger);
+}
+
+.compact-overview-table {
+  padding: 14px 28px 10px;
+}
+
+.compact-overview-table .overview-table th,
+.compact-overview-table .overview-table td {
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+.compact-overview-table .overview-table .section-start th,
+.compact-overview-table .overview-table .section-start td {
+  padding-top: 10px;
+  border-top: 1px solid var(--panel-border);
+}
+
+.compact-models {
+  padding: 8px 28px 12px;
+  border-top: 1px solid var(--row-border);
+}
+
+.compact-models h3 {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.compact-model-list {
+  display: grid;
+  gap: 7px;
+}
+
+.compact-model-row {
+  display: grid;
+  grid-template-columns: minmax(95px, 1.4fr) minmax(60px, 1fr) 44px 64px;
+  gap: 9px;
+  align-items: center;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.compact-model-row > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compact-model-row i {
+  height: 4px;
+  overflow: hidden;
+  background: var(--row-border);
+}
+
+.compact-model-row i b {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.compact-model-row small,
+.compact-model-row strong {
+  text-align: right;
+}
+
+.compact-model-row small {
+  color: var(--muted);
+}
+
+.compact-overview-note {
+  margin: 0;
+  padding: 0 28px 13px;
+  color: var(--muted);
+  font-size: 8px;
 }
 
 .ttl-miss-lead {
@@ -593,6 +729,52 @@ h1 {
 
   .ttl-analytics-toolbar > span {
     display: none;
+  }
+
+  .ttl-analytics-toolbar .chart-tabs {
+    gap: 16px;
+  }
+
+  .compact-overview-summary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .compact-overview-summary > div:nth-child(3) {
+    border-top: 1px solid var(--row-border);
+    border-left: 0;
+  }
+
+  .compact-overview-summary > div:nth-child(4) {
+    border-top: 1px solid var(--row-border);
+  }
+
+  .compact-overview-summary > div:nth-child(5) {
+    border-top: 1px solid var(--row-border);
+    border-left: 0;
+  }
+
+  .compact-overview-summary > div:nth-child(6) {
+    border-top: 1px solid var(--row-border);
+  }
+
+  .compact-overview-table {
+    padding-right: 18px;
+    padding-left: 18px;
+    overflow-x: auto;
+  }
+
+  .compact-overview-table .overview-table {
+    min-width: 430px;
+  }
+
+  .compact-overview-note {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+
+  .compact-models {
+    padding-right: 18px;
+    padding-left: 18px;
   }
 
   .ttl-cost-summary {

@@ -1,6 +1,5 @@
-import { type ReactNode, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import type { OverviewResponse } from "../shared/sessionSchemas.ts";
-import { getOverview } from "./api.ts";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 const decimal = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
@@ -42,21 +41,31 @@ function MetricRow({
   description,
   values,
   format = decimal.format,
+  partial = false,
+  sectionStart = false,
 }: {
   label: string;
   description?: string;
   values?: Distribution;
   format?: (value: number) => string;
+  partial?: boolean;
+  sectionStart?: boolean;
 }) {
+  const value = (number: number) => (
+    <>
+      {format(number)}
+      {partial && <sup title="Known priced spend only">*</sup>}
+    </>
+  );
   return (
-    <tr>
+    <tr className={sectionStart ? "section-start" : undefined}>
       <th scope="row">
         {label}
         {description && <small>{description}</small>}
       </th>
-      <td>{values ? format(values.average) : "-"}</td>
-      <td>{values ? format(values.median) : "-"}</td>
-      <td>{values ? format(values.p90) : "-"}</td>
+      <td>{values ? value(values.median) : "-"}</td>
+      <td>{values ? value(values.average) : "-"}</td>
+      <td>{values ? value(values.p90) : "-"}</td>
     </tr>
   );
 }
@@ -76,8 +85,8 @@ function MetricTable({
           <thead>
             <tr>
               <th>Metric</th>
-              <th>Average</th>
               <th>Median</th>
+              <th>Average</th>
               <th>P90</th>
             </tr>
           </thead>
@@ -88,30 +97,13 @@ function MetricTable({
   );
 }
 
-export function Overview({ harness }: { harness: string }) {
-  const [data, setData] = useState<OverviewResponse>();
-  const [error, setError] = useState<string>();
-
-  useEffect(() => {
-    let active = true;
-    setData(undefined);
-    setError(undefined);
-    getOverview(90, harness).then((result) => active && setData(result)).catch(
-      (reason) => {
-        if (active) {
-          setError(
-            reason instanceof Error
-              ? reason.message
-              : "Unable to load overview",
-          );
-        }
-      },
-    );
-    return () => {
-      active = false;
-    };
-  }, [harness]);
-
+export function Overview({
+  data,
+  error,
+}: {
+  data?: OverviewResponse;
+  error?: string;
+}) {
   return (
     <section className="overview-panel">
       <div className="overview-heading">
@@ -161,6 +153,7 @@ export function Overview({ harness }: { harness: string }) {
                 label="Spend"
                 values={data.activity.spend}
                 format={currency.format}
+                partial={data.activity.hasUnpricedCost}
               />
             </MetricTable>
             <MetricTable title="Session profile">
@@ -185,6 +178,7 @@ export function Overview({ harness }: { harness: string }) {
                 label="Spend"
                 values={data.sessionProfile.spend}
                 format={currency.format}
+                partial={data.sessionProfile.hasUnpricedCost}
               />
               <MetricRow
                 label="Efficiency"
@@ -255,7 +249,7 @@ export function Overview({ harness }: { harness: string }) {
             data.subagentCoverage !== "full") && (
             <p className="overview-note">
               {data.activity.hasUnpricedCost &&
-                "Spend per day is unavailable when calls cannot be priced; session spend excludes those sessions. "}
+                "Spend statistics use known prices only. "}
               {data.subagentCoverage !== "full" &&
                 `Subagent coverage is ${data.subagentCoverage} for this harness selection.`}
             </p>
@@ -263,5 +257,149 @@ export function Overview({ harness }: { harness: string }) {
         </>
       )}
     </section>
+  );
+}
+
+export function CompactOverview({
+  data,
+  error,
+}: {
+  data?: OverviewResponse;
+  error?: string;
+}) {
+  if (error) return <div className="ttl-miss-message chart-error">{error}</div>;
+  if (!data) return <div className="ttl-miss-message">Loading overview...</div>;
+  const knownSpend = data.models.reduce((sum, model) => sum + model.spend, 0);
+  const hasUnpricedSpend = data.models.some((model) => model.hasUnpricedCost);
+  return (
+    <div className="compact-overview">
+      <div className="compact-overview-summary">
+        <div>
+          <strong>{integer.format(data.activeDays)}</strong>
+          <span>Active days</span>
+          <small>
+            {integer.format(data.activeWeekdays)} weekdays ·{" "}
+            {integer.format(data.weekendDays)} weekend
+          </small>
+        </div>
+        <div>
+          <strong>{integer.format(data.sessions)}</strong>
+          <span>Sessions</span>
+          <small>Worked on</small>
+        </div>
+        <div>
+          <strong>
+            {currency.format(knownSpend)}
+            {hasUnpricedSpend && <sup>*</sup>}
+          </strong>
+          <span>Spend</span>
+          <small>Known prices</small>
+        </div>
+        <div>
+          <strong>{percent(data.sessionProfile.overallEfficiency)}</strong>
+          <span>Token reuse</span>
+          <small>Weighted efficiency</small>
+        </div>
+        <div>
+          <strong>{percent(data.multiDaySessionRate)}</strong>
+          <span>Multi-day</span>
+          <small>{integer.format(data.multiDaySessions)} sessions</small>
+        </div>
+        <div>
+          <strong>{decimal.format(data.averageActiveSpan)} days</strong>
+          <span>Avg active span</span>
+          <small>Distinct dates</small>
+        </div>
+      </div>
+      <div className="compact-overview-table">
+        <table className="overview-table">
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>P50</th>
+              <th>Avg</th>
+              <th>P90</th>
+            </tr>
+          </thead>
+          <tbody>
+            <MetricRow
+              label="Sessions / active day"
+              values={data.activity.sessions}
+            />
+            <MetricRow
+              label="Turns / active day"
+              values={data.activity.turns}
+            />
+            <MetricRow
+              label="Spend / active day"
+              values={data.activity.spend}
+              format={currency.format}
+              partial={data.activity.hasUnpricedCost}
+            />
+            <MetricRow
+              label="Turns / session"
+              values={data.sessionProfile.turns}
+              sectionStart
+            />
+            <MetricRow
+              label="Input / session"
+              values={data.sessionProfile.input}
+              format={compact.format}
+            />
+            <MetricRow
+              label="Peak context"
+              values={data.sessionProfile.peakContext}
+              format={compact.format}
+            />
+            <MetricRow
+              label="Elapsed duration"
+              values={data.sessionProfile.elapsed}
+              format={duration}
+            />
+            <MetricRow
+              label="Spend / session"
+              values={data.sessionProfile.spend}
+              format={currency.format}
+              partial={data.sessionProfile.hasUnpricedCost}
+            />
+            <MetricRow
+              label="Efficiency"
+              values={data.sessionProfile.efficiency}
+              format={percent}
+            />
+          </tbody>
+        </table>
+      </div>
+      {data.models.length > 0 && (
+        <div className="compact-models">
+          <h3>Top models by spend</h3>
+          <div className="compact-model-list">
+            {data.models.map((model) => (
+              <div
+                className="compact-model-row"
+                key={`${model.model}:${model.isOther}`}
+              >
+                <span title={model.model}>{modelName(model.model)}</span>
+                <i>
+                  <b style={{ width: `${model.spendShare * 100}%` }} />
+                </i>
+                <small>{percent(model.spendShare)}</small>
+                <strong>
+                  {currency.format(model.spend)}
+                  {model.hasUnpricedCost && <sup>*</sup>}
+                </strong>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {(data.activity.hasUnpricedCost || data.subagentCoverage !== "full") && (
+        <p className="compact-overview-note">
+          {data.activity.hasUnpricedCost && "* Known priced spend only. "}
+          {data.subagentCoverage !== "full" &&
+            `${data.subagentCoverage} subagent coverage.`}
+        </p>
+      )}
+    </div>
   );
 }

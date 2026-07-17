@@ -141,3 +141,29 @@ Deno.test("keeps overall efficiency token-weighted", () => {
   ok(Math.abs(result.sessionProfile.efficiency!.average - 0.5) < 1e-10);
   ok(Math.abs(result.sessionProfile.efficiency!.median - 0.5) < 1e-10);
 });
+
+Deno.test("keeps known spend when some calls are unpriced", () => {
+  const startedAt = new Date(2026, 6, 10, 9).getTime();
+  const result = aggregateOverview(
+    [
+      session("priced", [{
+        startedAt,
+        input: 100,
+        cacheRead: 0,
+        cost: 5,
+      }]),
+      session("unpriced", [{
+        startedAt: startedAt + 60_000,
+        input: 100,
+        cacheRead: 0,
+      }]),
+    ],
+    new Date(2026, 6, 10).getTime(),
+    startedAt + 3_600_000,
+    1,
+  );
+
+  strictEqual(result.activity.hasUnpricedCost, true);
+  strictEqual(result.activity.spend!.median, 5);
+  strictEqual(result.sessionProfile.spend!.median, 2.5);
+});

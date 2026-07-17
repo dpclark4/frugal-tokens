@@ -123,7 +123,6 @@ export function aggregateOverview(
     let sessionInput = 0;
     let sessionCacheRead = 0;
     let sessionSpend = 0;
-    let sessionHasUnpricedCost = false;
     let peakContext = 0;
     let firstTurn = Number.POSITIVE_INFINITY;
     let lastCall = Number.NEGATIVE_INFINITY;
@@ -149,7 +148,6 @@ export function aggregateOverview(
         peakContext = Math.max(peakContext, input);
         lastCall = Math.max(lastCall, call.completedAt ?? call.startedAt);
         if (cost === undefined) {
-          sessionHasUnpricedCost = true;
           hasUnpricedCost = true;
         } else {
           sessionSpend += cost;
@@ -180,7 +178,7 @@ export function aggregateOverview(
     if (Number.isFinite(firstTurn) && Number.isFinite(lastCall)) {
       profileElapsed.push(Math.max(0, lastCall - firstTurn));
     }
-    if (!sessionHasUnpricedCost) profileSpend.push(sessionSpend);
+    profileSpend.push(sessionSpend);
     if (sessionInput > 0) {
       profileEfficiency.push(sessionCacheRead / sessionInput);
     }
@@ -226,9 +224,9 @@ export function aggregateOverview(
   const dailyTurnValues = [...activeDates].map((date) =>
     dailyTurns.get(date) ?? 0
   );
-  const dailySpendValues = hasUnpricedCost
-    ? []
-    : [...activeDates].map((date) => dailySpend.get(date) ?? 0);
+  const dailySpendValues = [...activeDates].map((date) =>
+    dailySpend.get(date) ?? 0
+  );
 
   return {
     rangeDays,

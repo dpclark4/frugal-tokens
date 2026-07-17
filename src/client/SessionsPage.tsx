@@ -5,13 +5,14 @@ import type {
   CacheIssue,
   CacheSummary,
   ModelCall,
+  OverviewResponse,
   SessionDetail,
   SessionListResponse,
   SessionSummary,
   TokenUsage,
 } from "../shared/sessionSchemas.ts";
 import { contextRange, contextSize } from "../shared/contextMetrics.ts";
-import { getSession, getSessions } from "./api.ts";
+import { getOverview, getSession, getSessions } from "./api.ts";
 import claudeCodeIcon from "./assets/icons/claudecode-color.svg";
 import codexIcon from "./assets/icons/codex-logo-light.svg";
 import openCodeIcon from "./assets/icons/opencode-logo-light.svg";
@@ -1543,6 +1544,8 @@ export function SessionsPage() {
   const { harness } = route.useSearch();
   const navigate = route.useNavigate();
   const [data, setData] = useState<SessionListResponse>();
+  const [overview, setOverview] = useState<OverviewResponse>();
+  const [overviewError, setOverviewError] = useState<string>();
   const [expandedIDs, setExpandedIDs] = useState<Set<string>>(
     () => new Set(),
   );
@@ -1554,6 +1557,25 @@ export function SessionsPage() {
   const loadingMoreRef = useRef(false);
   const harnessRef = useRef(harness);
   harnessRef.current = harness;
+
+  useEffect(() => {
+    let active = true;
+    setOverview(undefined);
+    setOverviewError(undefined);
+    getOverview(90, harness).then((result) => active && setOverview(result))
+      .catch((reason) => {
+        if (active) {
+          setOverviewError(
+            reason instanceof Error
+              ? reason.message
+              : "Unable to load overview",
+          );
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [harness]);
 
   useEffect(() => {
     let active = true;
@@ -1679,10 +1701,14 @@ export function SessionsPage() {
         </p>
       </header>
 
-      <Overview harness={harness} />
+      <Overview data={overview} error={overviewError} />
 
       <div className="homepage-metrics">
-        <TtlMissCard harness={harness} />
+        <TtlMissCard
+          harness={harness}
+          overview={overview}
+          overviewError={overviewError}
+        />
         <UsageChart harness={harness} />
       </div>
 
