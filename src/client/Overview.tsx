@@ -100,7 +100,7 @@ export function CompactOverview({
             {currency.format(knownSpend)}
             {hasUnpricedSpend && <sup>*</sup>}
           </strong>
-          <span>Known-price spend</span>
+          <span>Priced spend</span>
         </div>
         <div title="Token-weighted efficiency">
           <strong>{percent(data.sessionProfile.overallEfficiency)}</strong>
@@ -119,7 +119,7 @@ export function CompactOverview({
         <table className="overview-table">
           <thead>
             <tr>
-              <th>Activity / active day</th>
+              <th>Activity per active day</th>
               <th>P50</th>
               <th>Avg</th>
               <th>P90</th>
@@ -142,7 +142,10 @@ export function CompactOverview({
             <tr className="compact-metric-group">
               <th colSpan={4}>Session profile</th>
             </tr>
-            <MetricRow label="Turns" values={data.sessionProfile.turns} />
+            <MetricRow
+              label="Turns / session"
+              values={data.sessionProfile.turns}
+            />
             <MetricRow
               label="Input processed"
               values={data.sessionProfile.input}
@@ -160,7 +163,7 @@ export function CompactOverview({
               tooltip="First turn to final model call"
             />
             <MetricRow
-              label="Spend"
+              label="Spend / session"
               values={data.sessionProfile.spend}
               format={currency.format}
               partial={data.sessionProfile.hasUnpricedCost}

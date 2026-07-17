@@ -283,7 +283,7 @@ h1 {
 }
 
 .compact-overview-table {
-  padding: 12px 28px 8px;
+  padding: 6px 28px 8px;
 }
 
 .compact-overview-table .overview-table th,
@@ -304,7 +304,7 @@ h1 {
 }
 
 .compact-models {
-  padding: 8px 28px 12px;
+  padding: 4px 28px 12px;
   border-top: 1px solid var(--row-border);
 }
 
