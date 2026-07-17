@@ -28,7 +28,8 @@ function duration(value: number) {
 }
 
 function days(value: number) {
-  return `${decimal.format(value)} ${value === 1 ? "day" : "days"}`;
+  const formatted = decimal.format(value);
+  return `${formatted} ${formatted === decimal.format(1) ? "day" : "days"}`;
 }
 
 function modelName(model: string) {
@@ -82,59 +83,50 @@ export function CompactOverview({
   return (
     <div className="compact-overview">
       <div className="compact-overview-summary">
-        <div>
+        <div
+          title={`${integer.format(data.activeWeekdays)} weekdays, ${
+            integer.format(data.weekendDays)
+          } weekend days`}
+        >
           <strong>{integer.format(data.activeDays)}</strong>
           <span>Active days</span>
-          <small>
-            {integer.format(data.activeWeekdays)} weekdays ·{" "}
-            {integer.format(data.weekendDays)} weekend
-          </small>
         </div>
         <div>
           <strong>{integer.format(data.sessions)}</strong>
           <span>Sessions</span>
         </div>
-        <div>
+        <div title="Spend using known model prices">
           <strong>
             {currency.format(knownSpend)}
             {hasUnpricedSpend && <sup>*</sup>}
           </strong>
           <span>Known-price spend</span>
         </div>
-        <div>
+        <div title="Token-weighted efficiency">
           <strong>{percent(data.sessionProfile.overallEfficiency)}</strong>
           <span>Token reuse</span>
-          <small>Weighted efficiency</small>
         </div>
-        <div>
+        <div title={`${integer.format(data.multiDaySessions)} sessions`}>
           <strong>{percent(data.multiDaySessionRate)}</strong>
           <span>Multi-day</span>
-          <small>{integer.format(data.multiDaySessions)} sessions</small>
         </div>
-        <div>
+        <div title="Average distinct active dates per session">
           <strong>{days(data.averageActiveSpan)}</strong>
-          <span>Avg active days</span>
-          <small>Distinct dates / session</small>
+          <span>Days / session</span>
         </div>
       </div>
       <div className="compact-overview-table">
         <table className="overview-table">
           <thead>
             <tr>
-              <th>Metric</th>
+              <th>Activity / active day</th>
               <th>P50</th>
               <th>Avg</th>
               <th>P90</th>
             </tr>
           </thead>
           <tbody>
-            <tr className="compact-metric-group">
-              <th colSpan={4}>Activity per active day</th>
-            </tr>
-            <MetricRow
-              label="Sessions worked on"
-              values={data.activity.sessions}
-            />
+            <MetricRow label="Sessions" values={data.activity.sessions} />
             <MetricRow
               label="Peak concurrent sessions"
               values={data.activity.peakConcurrentSessions}
@@ -183,10 +175,8 @@ export function CompactOverview({
       </div>
       {data.models.length > 0 && (
         <div className="compact-models">
-          <h3>Top models by spend</h3>
-          <div className="compact-model-header">
-            <span>Model</span>
-            <i />
+          <div className="compact-model-heading">
+            <h3>Top models by spend</h3>
             <small>Share</small>
             <strong>Spend</strong>
           </div>
@@ -212,15 +202,12 @@ export function CompactOverview({
       )}
       {(data.activity.hasUnpricedCost || data.subagentCoverage !== "full") && (
         <p className="compact-overview-note">
-          {data.activity.hasUnpricedCost && (
-            <span>* Spend and spend share use known prices only.</span>
-          )}
-          {data.subagentCoverage !== "full" && (
-            <span>
-              Subagent coverage is {data.subagentCoverage}{" "}
-              for this harness selection.
-            </span>
-          )}
+          {data.activity.hasUnpricedCost &&
+            "* Spend and share use known prices"}
+          {data.activity.hasUnpricedCost && data.subagentCoverage !== "full" &&
+            " · "}
+          {data.subagentCoverage === "partial" && "Partial subagent coverage"}
+          {data.subagentCoverage === "none" && "No subagent coverage"}
         </p>
       )}
     </div>

@@ -61,9 +61,7 @@ export function TtlMissCard({
 
   return (
     <section
-      className={`ttl-miss-card${
-        view === "overview" ? " overview-active" : ""
-      }`}
+      className="ttl-miss-card"
       aria-label="Overview and cache efficiency"
     >
       <div className="ttl-analytics-toolbar">
