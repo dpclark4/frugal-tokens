@@ -6,36 +6,77 @@ import type { UsageCall } from "./usage.ts";
 const TWO_HOURS_MS = 2 * 60 * 60 * 1_000;
 const EIGHT_HOURS_MS = 8 * 60 * 60 * 1_000;
 
-type TtlMiss = { gap: number; attributedCost?: number };
+type CacheMiss = {
+  gap: number;
+  status: "full-miss" | "partial-hit";
+  ttl: boolean;
+  attributedCost?: number;
+  expectedReadCost?: number;
+  estimatedExtraCost?: number;
+  missedTokens?: number;
+};
 
-function ttlMisses(calls: UsageCall[]) {
-  const misses: TtlMiss[] = [];
+function cacheMisses(calls: UsageCall[]) {
+  const misses: CacheMiss[] = [];
   for (
     const chain of Map.groupBy(calls, (call) => call.cacheChainID).values()
   ) {
     let previous: UsageCall | undefined;
     for (const call of chain.sort((a, b) => a.startedAt - b.startedAt)) {
       const assessment = assessCache(previous, call);
-      const miss = assessment.status === "partial-hit" ||
-        assessment.status === "full-miss";
       if (
-        miss && !call.followsCompaction && previous &&
-        ttlExpired(previous, call)
+        previous && (assessment.status === "partial-hit" ||
+          assessment.status === "full-miss")
       ) {
+        const estimate = estimateModelCacheMissCost(
+          previous.tokens,
+          call.tokens,
+          call.model,
+          call.startedAt,
+        );
         misses.push({
           gap: call.startedAt - previous.startedAt,
-          attributedCost: estimateModelCacheMissCost(
-            previous.tokens,
-            call.tokens,
-            call.model,
-            call.startedAt,
-          )?.actualMissedCost,
+          status: assessment.status,
+          ttl: !call.followsCompaction && ttlExpired(previous, call),
+          attributedCost: estimate?.actualMissedCost,
+          expectedReadCost: estimate?.expectedReadCost,
+          estimatedExtraCost: estimate?.estimatedExtraCost,
+          missedTokens: estimate?.missedTokens,
         });
       }
       previous = call;
     }
   }
   return misses;
+}
+
+function emptyCacheMissCategory(): TtlMissMetrics["cacheMisses"]["full"] {
+  return {
+    affectedSessions: 0,
+    misses: 0,
+    attributedCost: 0,
+    expectedReadCost: 0,
+    estimatedExtraCost: 0,
+    missedTokens: 0,
+    unpriced: 0,
+  };
+}
+
+function addCacheMisses(
+  category: TtlMissMetrics["cacheMisses"]["full"],
+  misses: CacheMiss[],
+) {
+  if (misses.length > 0) category.affectedSessions++;
+  category.misses += misses.length;
+  for (const miss of misses) {
+    if (miss.attributedCost === undefined) category.unpriced++;
+    else {
+      category.attributedCost += miss.attributedCost;
+      category.expectedReadCost += miss.expectedReadCost!;
+      category.estimatedExtraCost += miss.estimatedExtraCost!;
+      category.missedTokens += miss.missedTokens!;
+    }
+  }
 }
 
 export function aggregateTtlMisses(
@@ -70,6 +111,13 @@ export function aggregateTtlMisses(
       eightHoursOrMoreCost: 0,
     },
     subagents: { affectedSessions: 0, misses: 0 },
+    cacheMisses: {
+      affectedSessions: 0,
+      affectedSessionCost: 0,
+      hasUnpricedAffectedSessionCost: false,
+      full: emptyCacheMissCategory(),
+      partial: emptyCacheMissCategory(),
+    },
   };
 
   for (const call of rangedCalls) {
@@ -86,7 +134,14 @@ export function aggregateTtlMisses(
     const rootCalls = calls.filter((call) =>
       call.session.id === call.session.rootID
     );
-    const rootMisses = ttlMisses(rootCalls);
+    const allRootMisses = cacheMisses(rootCalls);
+    const rootMisses = allRootMisses.filter((miss) => miss.ttl);
+    const fullMisses = allRootMisses.filter((miss) =>
+      miss.status === "full-miss"
+    );
+    const partialMisses = allRootMisses.filter((miss) =>
+      miss.status === "partial-hit"
+    );
     let rootSessionCost = 0;
     let hasUnpricedRootSessionCost = false;
     for (const call of rootCalls) {
@@ -100,6 +155,14 @@ export function aggregateTtlMisses(
     }
     result.totalSessionCost += rootSessionCost;
     result.hasUnpricedSessionCost ||= hasUnpricedRootSessionCost;
+    addCacheMisses(result.cacheMisses.full, fullMisses);
+    addCacheMisses(result.cacheMisses.partial, partialMisses);
+    if (allRootMisses.length > 0) {
+      result.cacheMisses.affectedSessions++;
+      result.cacheMisses.affectedSessionCost += rootSessionCost;
+      result.cacheMisses.hasUnpricedAffectedSessionCost ||=
+        hasUnpricedRootSessionCost;
+    }
     if (rootMisses.length > 0) {
       result.affectedSessions++;
       result.affectedSessionCost += rootSessionCost;
@@ -121,9 +184,9 @@ export function aggregateTtlMisses(
       }
     }
 
-    const subagentMisses = ttlMisses(
+    const subagentMisses = cacheMisses(
       calls.filter((call) => call.session.id !== call.session.rootID),
-    );
+    ).filter((miss) => miss.ttl);
     if (subagentMisses.length > 0) result.subagents.affectedSessions++;
     result.subagents.misses += subagentMisses.length;
   }

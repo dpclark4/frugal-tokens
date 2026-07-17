@@ -256,6 +256,29 @@ export const ttlMissMetricsSchema = z.object({
     affectedSessions: z.number().int().nonnegative(),
     misses: z.number().int().nonnegative(),
   }),
+  cacheMisses: z.object({
+    affectedSessions: z.number().int().nonnegative(),
+    affectedSessionCost: z.number().nonnegative(),
+    hasUnpricedAffectedSessionCost: z.boolean(),
+    full: z.object({
+      affectedSessions: z.number().int().nonnegative(),
+      misses: z.number().int().nonnegative(),
+      attributedCost: z.number().nonnegative(),
+      expectedReadCost: z.number().nonnegative(),
+      estimatedExtraCost: z.number(),
+      missedTokens: z.number().int().nonnegative(),
+      unpriced: z.number().int().nonnegative(),
+    }),
+    partial: z.object({
+      affectedSessions: z.number().int().nonnegative(),
+      misses: z.number().int().nonnegative(),
+      attributedCost: z.number().nonnegative(),
+      expectedReadCost: z.number().nonnegative(),
+      estimatedExtraCost: z.number(),
+      missedTokens: z.number().int().nonnegative(),
+      unpriced: z.number().int().nonnegative(),
+    }),
+  }),
 });
 
 export type ModelCall = z.infer<typeof modelCallSchema>;

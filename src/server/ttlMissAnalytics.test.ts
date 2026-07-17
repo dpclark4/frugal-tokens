@@ -100,6 +100,29 @@ Deno.test("counts every root TTL miss in its elapsed-time bucket", () => {
       eightHoursOrMoreCost: 0,
     },
     subagents: { affectedSessions: 0, misses: 0 },
+    cacheMisses: {
+      affectedSessions: 1,
+      affectedSessionCost: 0.0015,
+      hasUnpricedAffectedSessionCost: false,
+      full: {
+        affectedSessions: 1,
+        misses: 3,
+        attributedCost: 0.0011250000000000001,
+        expectedReadCost: 0.00009,
+        estimatedExtraCost: 0.001035,
+        missedTokens: 300,
+        unpriced: 0,
+      },
+      partial: {
+        affectedSessions: 0,
+        misses: 0,
+        attributedCost: 0,
+        expectedReadCost: 0,
+        estimatedExtraCost: 0,
+        missedTokens: 0,
+        unpriced: 0,
+      },
+    },
   });
 });
 
@@ -139,6 +162,29 @@ Deno.test("separates subagent misses and excludes compactions and old sessions",
       eightHoursOrMoreCost: 0,
     },
     subagents: { affectedSessions: 1, misses: 1 },
+    cacheMisses: {
+      affectedSessions: 1,
+      affectedSessionCost: 0.00075,
+      hasUnpricedAffectedSessionCost: false,
+      full: {
+        affectedSessions: 1,
+        misses: 1,
+        attributedCost: 0.000375,
+        expectedReadCost: 0.00003,
+        estimatedExtraCost: 0.000345,
+        missedTokens: 100,
+        unpriced: 0,
+      },
+      partial: {
+        affectedSessions: 0,
+        misses: 0,
+        attributedCost: 0,
+        expectedReadCost: 0,
+        estimatedExtraCost: 0,
+        missedTokens: 0,
+        unpriced: 0,
+      },
+    },
   });
 });
 
@@ -162,4 +208,31 @@ Deno.test("reports incomplete affected-session and miss pricing", () => {
   strictEqual(result.misses.total, 1);
   strictEqual(result.misses.attributedCost, 0);
   strictEqual(result.misses.unpriced, 1);
+  strictEqual(result.cacheMisses.full.misses, 1);
+  strictEqual(result.cacheMisses.full.unpriced, 1);
+});
+
+Deno.test("separates full and partial miss costs", () => {
+  const before = call("mixed", start);
+  before.tokens.cacheRead = 900;
+  before.tokens.cacheWrite = 100;
+  before.tokens.cacheWrite5m = 100;
+  before.tokens.processed = 1_000;
+  const partial = call("mixed", start + MINUTE);
+  partial.tokens.cacheRead = 500;
+  partial.tokens.cacheWrite = 500;
+  partial.tokens.cacheWrite5m = 500;
+  partial.tokens.processed = 1_000;
+  const full = call("mixed", start + 2 * MINUTE);
+  full.tokens.cacheWrite = 1_000;
+  full.tokens.cacheWrite5m = 1_000;
+  full.tokens.processed = 1_000;
+
+  const result = aggregateTtlMisses([before, partial, full], start, 90);
+
+  strictEqual(result.cacheMisses.affectedSessions, 1);
+  strictEqual(result.cacheMisses.partial.misses, 1);
+  strictEqual(result.cacheMisses.partial.missedTokens, 500);
+  strictEqual(result.cacheMisses.full.misses, 1);
+  strictEqual(result.cacheMisses.full.missedTokens, 1_000);
 });
