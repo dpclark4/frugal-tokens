@@ -92,15 +92,14 @@ export function CompactOverview({
         </div>
         <div>
           <strong>{integer.format(data.sessions)}</strong>
-          <span>Sessions worked on</span>
+          <span>Sessions</span>
         </div>
         <div>
           <strong>
             {currency.format(knownSpend)}
             {hasUnpricedSpend && <sup>*</sup>}
           </strong>
-          <span>Spend</span>
-          <small>Known-price total</small>
+          <span>Known-price spend</span>
         </div>
         <div>
           <strong>{percent(data.sessionProfile.overallEfficiency)}</strong>
@@ -114,8 +113,8 @@ export function CompactOverview({
         </div>
         <div>
           <strong>{days(data.averageActiveSpan)}</strong>
-          <span>Active span</span>
-          <small>Avg distinct dates / session</small>
+          <span>Avg active days</span>
+          <small>Distinct dates / session</small>
         </div>
       </div>
       <div className="compact-overview-table">
