@@ -6,6 +6,13 @@ export function contextSize(
   return tokens.uncachedInput + tokens.cacheRead + (tokens.cacheWrite ?? 0);
 }
 
+/** Whether this call can describe or participate in an input context chain. */
+export function hasInputContext(
+  tokens: Pick<TokenUsage, "uncachedInput" | "cacheRead" | "cacheWrite">,
+) {
+  return contextSize(tokens) > 0;
+}
+
 export function contextRange<T extends Pick<ModelCall, "startedAt" | "tokens">>(
   calls: T[],
 ) {
@@ -13,6 +20,9 @@ export function contextRange<T extends Pick<ModelCall, "startedAt" | "tokens">>(
   let latest: T | undefined;
   let peak: T | undefined;
   for (const call of calls) {
+    // Opaque usage records can report processed tokens without the input-side
+    // categories required to describe a request context.
+    if (!hasInputContext(call.tokens)) continue;
     if (!first || call.startedAt < first.startedAt) first = call;
     if (!latest || call.startedAt >= latest.startedAt) latest = call;
     if (!peak || contextSize(call.tokens) > contextSize(peak.tokens)) peak = call;

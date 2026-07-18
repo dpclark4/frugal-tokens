@@ -1,5 +1,6 @@
 import type { UsageResponse } from "../shared/sessionSchemas.ts";
 import { assessCache } from "./cacheAnalysis.ts";
+import { hasInputContext } from "../shared/contextMetrics.ts";
 import type { UsageCall } from "./usage.ts";
 
 function dateKey(value: number) {
@@ -196,7 +197,7 @@ export function aggregateUsage(
         let previous: UsageCall | undefined;
         return chain.sort((a, b) => a.startedAt - b.startedAt).map((call) => {
           const status = assessCache(previous, call).status;
-          previous = call;
+          if (hasInputContext(call.tokens)) previous = call;
           return status;
         });
       });

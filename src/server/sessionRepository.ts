@@ -865,17 +865,12 @@ export class SessionRepository {
       ordinal: number;
       started_at: number;
     }>).map((turn) => {
-      const calls = (this.db.prepare(`
+      const calls = this.db.prepare(`
         SELECT ${callColumns}
         FROM model_calls mc
         JOIN models m ON m.id = mc.model_id
         WHERE mc.turn_id = ? ORDER BY mc.ordinal
-      `).all(turn.id) as CallRow[]).filter((call) => {
-        // Codex persists compaction machinery as an opaque model call. Its
-        // importer tags only that call; all other calls hydrate normally.
-        return row.harness !== "codex" ||
-          !call.source_call_id?.startsWith("context-operation:");
-      });
+      `).all(turn.id) as CallRow[];
       const tools = calls.length === 0 ? [] : this.db.prepare(`
         SELECT te.model_call_id, te.name, te.status, te.started_at,
           te.completed_at,

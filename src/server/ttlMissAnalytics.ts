@@ -1,5 +1,6 @@
 import type { TtlMissMetrics } from "../shared/sessionSchemas.ts";
 import { assessCache, ttlExpired } from "./cacheAnalysis.ts";
+import { hasInputContext } from "../shared/contextMetrics.ts";
 import { computeModelCallCost, estimateModelCacheMissCost } from "./pricing.ts";
 import type { UsageCall } from "./usage.ts";
 
@@ -44,7 +45,7 @@ function cacheMisses(calls: UsageCall[]) {
           missedTokens: estimate?.missedTokens,
         });
       }
-      previous = call;
+      if (hasInputContext(call.tokens)) previous = call;
     }
   }
   return misses;

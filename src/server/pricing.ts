@@ -3,6 +3,7 @@ import type {
   TokenUsage,
 } from "../shared/sessionSchemas.ts";
 import { contextSize } from "../shared/contextMetrics.ts";
+import { rollupCosts } from "../shared/costMetrics.ts";
 import {
   type CacheMissTokens,
   estimateCacheMissCost,
@@ -150,12 +151,12 @@ export function priceSessionDetail(session: SessionDetail): SessionDetail {
       ),
     })),
   }));
-  const costs = turns.flatMap((turn) => turn.calls.map((call) => call.computedCost));
+  const cost = rollupCosts(
+    turns.flatMap((turn) => turn.calls.map((call) => call.computedCost)),
+  );
   return {
     ...session,
-    computedCost: costs.length > 0 && costs.every((cost) => cost !== undefined)
-      ? costs.reduce((sum, cost) => sum + cost!, 0)
-      : undefined,
+    computedCost: cost.cost,
     turns,
     subagents: session.subagents.map(priceSessionDetail),
   };

@@ -13,6 +13,7 @@ import type {
   TokenUsage,
 } from "../shared/sessionSchemas.ts";
 import { contextRange, contextSize } from "../shared/contextMetrics.ts";
+import { rollupCosts } from "../shared/costMetrics.ts";
 import { getOverview, getSession, getSessions } from "./api.ts";
 import claudeCodeIcon from "./assets/icons/claudecode-color.svg";
 import codexIcon from "./assets/icons/codex-logo-light.svg";
@@ -265,6 +266,7 @@ const cacheAssessmentReasonLabels = {
   "no-predecessor": "No preceding comparable call",
   "model-change": "New cache chain: provider or model changed",
   "no-reusable-cache": "No reusable cache in the preceding call",
+  "no-input-context": "Usage record has no input context",
 } as const;
 
 function CacheAssessmentBadge(
@@ -636,8 +638,7 @@ function turnMetrics(calls: ModelCall[]) {
   let processed = 0;
   let reportedCost = 0;
   let hasReported = false;
-  let computedCost = 0;
-  let hasComputed = true;
+  const computedCosts: (number | undefined)[] = [];
   let start: number | undefined;
   let end: number | undefined;
 
@@ -663,8 +664,7 @@ function turnMetrics(calls: ModelCall[]) {
       reportedCost += call.reportedCost;
       hasReported = true;
     }
-    if (call.computedCost === undefined) hasComputed = false;
-    else computedCost += call.computedCost;
+    computedCosts.push(call.computedCost);
     start = start === undefined
       ? call.startedAt
       : Math.min(start, call.startedAt);
@@ -672,6 +672,7 @@ function turnMetrics(calls: ModelCall[]) {
     end = end === undefined ? callEnd : Math.max(end, callEnd);
   }
 
+  const computed = rollupCosts(computedCosts);
   return {
     uncachedInput,
     cacheRead,
@@ -682,7 +683,7 @@ function turnMetrics(calls: ModelCall[]) {
     reasoning,
     processed,
     reportedCost: hasReported ? reportedCost : undefined,
-    computedCost: hasComputed && calls.length > 0 ? computedCost : undefined,
+    computedCost: computed.cost,
     duration: duration(start, end),
   };
 }
@@ -693,7 +694,7 @@ function sessionTree(session: SessionDetail): SessionDetail[] {
 
 function aggregateSessionTrees(sessions: SessionDetail[]) {
   const tree = sessions.flatMap(sessionTree);
-  const computedCosts = tree.map((session) => session.computedCost);
+  const computed = rollupCosts(tree.map((session) => session.computedCost));
   const reportedCosts = tree.map((session) => session.reportedCost);
   return {
     userTurns: tree.reduce((total, session) => total + session.userTurns, 0),
@@ -722,9 +723,7 @@ function aggregateSessionTrees(sessions: SessionDetail[]) {
       (total, session) => total + session.tokens.processed,
       0,
     ),
-    computedCost: computedCosts.every((cost) => cost !== undefined)
-      ? computedCosts.reduce((total, cost) => total + cost!, 0)
-      : undefined,
+    computedCost: computed.cost,
     reportedCost: reportedCosts.every((cost) => cost !== undefined)
       ? reportedCosts.reduce((total, cost) => total + cost!, 0)
       : undefined,
@@ -1135,12 +1134,11 @@ function CallTable({
             const subagents = callSubagents(call, session);
             const subagentTotals = aggregateSessionTrees(subagents);
             const hasSubagents = subagents.length > 0;
-            const inclusiveComputedCost = hasSubagents
-              ? call.computedCost !== undefined &&
-                  subagentTotals.computedCost !== undefined
-                ? call.computedCost + subagentTotals.computedCost
-                : undefined
-              : call.computedCost;
+            const inclusiveComputed = rollupCosts([
+              call.computedCost,
+              ...(hasSubagents ? [subagentTotals.computedCost] : []),
+            ]);
+            const inclusiveComputedCost = inclusiveComputed.cost;
             const inclusiveReportedCost = hasSubagents
               ? call.reportedCost !== undefined &&
                   subagentTotals.reportedCost !== undefined
@@ -1432,11 +1430,11 @@ function SessionBreakdown({
                 (metrics.cacheWrite ?? 0);
               const nestedInput = nestedMetrics.uncachedInput +
                 nestedMetrics.cacheRead + nestedMetrics.cacheWrite;
-              const inclusiveComputedCost =
-                metrics.computedCost !== undefined &&
-                  nestedMetrics.computedCost !== undefined
-                  ? metrics.computedCost + nestedMetrics.computedCost
-                  : undefined;
+              const inclusiveComputed = rollupCosts([
+                metrics.computedCost,
+                nestedMetrics.computedCost,
+              ]);
+              const inclusiveComputedCost = inclusiveComputed.cost;
               const inclusiveReportedCost =
                 metrics.reportedCost !== undefined &&
                   nestedMetrics.reportedCost !== undefined

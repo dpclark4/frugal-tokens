@@ -45,6 +45,7 @@ export const cacheAssessmentReasonSchema = z.enum([
   "no-predecessor",
   "model-change",
   "no-reusable-cache",
+  "no-input-context",
 ]);
 
 export const cacheAssessmentSchema = z.object({

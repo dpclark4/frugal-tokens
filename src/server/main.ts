@@ -24,6 +24,7 @@ import {
   ROTATION_INACTIVITY_MINUTES,
 } from "./overviewAnalytics.ts";
 import { contextRange } from "../shared/contextMetrics.ts";
+import { rollupCosts } from "../shared/costMetrics.ts";
 import { openArchiveDatabase, sqlitePath } from "./database.ts";
 import { SessionRepository } from "./sessionRepository.ts";
 import { syncPiSessions } from "./piImporter.ts";
@@ -301,7 +302,7 @@ function sessionTreeMetrics(session: SessionDetail): SessionTreeMetrics {
     ),
   ];
   const reportedCosts = sessions.map((item) => item.reportedCost);
-  const computedCosts = sessions.map((item) => item.computedCost);
+  const computed = rollupCosts(sessions.map((item) => item.computedCost));
   return {
     sessions,
     userTurns: sessions.reduce((total, item) => total + item.userTurns, 0),
@@ -314,9 +315,7 @@ function sessionTreeMetrics(session: SessionDetail): SessionTreeMetrics {
     reportedCost: reportedCosts.every((cost) => cost !== undefined)
       ? reportedCosts.reduce((total, cost) => total + cost!, 0)
       : undefined,
-    computedCost: computedCosts.every((cost) => cost !== undefined)
-      ? computedCosts.reduce((total, cost) => total + cost!, 0)
-      : undefined,
+    computedCost: computed.cost,
   };
 }
 

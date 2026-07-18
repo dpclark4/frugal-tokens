@@ -71,6 +71,44 @@ Deno.test("assesses cache retention from the preceding comparable call", () => {
   });
 });
 
+Deno.test("does not count opaque zero-context usage as a cache miss", () => {
+  const first = call("first", 80_000, 20_000);
+  first.startedAt = 1;
+  const opaque = call("opaque", 0);
+  opaque.startedAt = 2;
+  opaque.tokens = {
+    uncachedInput: 0,
+    cacheRead: 0,
+    freshPrompt: 0,
+    output: 0,
+    reasoning: 0,
+    processed: 4_291,
+  };
+  const resumed = call("resumed", 95_000);
+  resumed.startedAt = 3;
+
+  const actual = analyzeSessionCache(session("opaque", [
+    first,
+    opaque,
+    resumed,
+  ]));
+
+  deepStrictEqual(
+    actual.turns[0].calls.map((item) => item.cacheAssessment),
+    [
+      { status: "baseline", reason: "no-predecessor" },
+      { status: "not-comparable", reason: "no-input-context" },
+      {
+        status: "hit",
+        retainedRatio: 95_000 / 100_000,
+        previousReusableTokens: 100_000,
+      },
+    ],
+  );
+  strictEqual(actual.turns[0].cacheSummary?.fullMisses, 0);
+  strictEqual(actual.turns[0].cacheSummary?.notComparable, 1);
+});
+
 Deno.test("tracks an OpenAI miss and implicit cache recovery across turns", () => {
   function openAICall(id: string, uncachedInput: number, cacheRead: number) {
     const value = call(id, cacheRead, undefined, "gpt-5.5", "openai");

@@ -6,6 +6,7 @@ import type {
   SessionDetail,
   TurnCacheSummary,
 } from "../shared/sessionSchemas.ts";
+import { hasInputContext } from "../shared/contextMetrics.ts";
 
 export const CACHE_HIT_RATIO = 0.9;
 export const CACHE_FULL_MISS_RATIO = 0.1;
@@ -16,6 +17,9 @@ export function assessCache(
   previous: Pick<ModelCall, "provider" | "model" | "tokens"> | undefined,
   current: Pick<ModelCall, "provider" | "model" | "tokens">,
 ): CacheAssessment {
+  if (!hasInputContext(current.tokens)) {
+    return { status: "not-comparable", reason: "no-input-context" };
+  }
   if (!previous) return { status: "baseline", reason: "no-predecessor" };
   if (
     previous.provider !== current.provider || previous.model !== current.model
@@ -157,7 +161,9 @@ export function analyzeSessionCache(session: SessionDetail): SessionDetail {
         : isMiss(rawAssessment) && previous && ttlExpired(previous, call)
         ? { ...rawAssessment, cause: "ttl" as const }
         : rawAssessment;
-      previous = call;
+      // A contextless/opaque usage record must not break the chain between
+      // the real requests on either side of it.
+      if (hasInputContext(call.tokens)) previous = call;
       return { ...call, cacheAssessment };
     });
     const cacheAssessment = calls.reduce<CacheAssessment | undefined>(
