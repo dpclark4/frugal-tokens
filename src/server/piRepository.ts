@@ -277,7 +277,9 @@ function decodeRecords(records: Record[]) {
       cacheWrite5m,
       cacheWrite1h: cacheWrite === undefined ? undefined : cacheWrite1h,
       freshPrompt: source.input + (cacheWrite ?? 0),
-      output: source.output,
+      // Pi's output includes provider-reported reasoning tokens. Split them so
+      // the shared pricing formula (output + reasoning) bills them once.
+      output: Math.max(0, source.output - source.reasoning),
       reasoning: source.reasoning,
       processed: source.totalTokens ??
         source.input + source.cacheRead + source.cacheWrite + source.output +
