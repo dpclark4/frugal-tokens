@@ -523,61 +523,6 @@ function TurnCacheStatus({ turn }: { turn: SessionDetail["turns"][number] }) {
   );
 }
 
-function CacheMetric({
-  read,
-  write,
-  share,
-  summary,
-  peak,
-}: {
-  read: number;
-  write?: number;
-  share?: number;
-  summary?: CacheSummary;
-  peak?: number;
-}) {
-  const title = [
-    `${integer.format(read)} cached tokens read`,
-    write === undefined
-      ? "Cache write not reported"
-      : `${integer.format(write)} cache write tokens`,
-    share === undefined
-      ? undefined
-      : `${(share * 100).toFixed(1)}% cached input`,
-    summary === undefined ? undefined : cacheSummaryTitle(summary),
-    peak === undefined || peak === read
-      ? undefined
-      : `${integer.format(peak)} peak cached tokens read`,
-  ].filter(Boolean).join(" · ");
-  return (
-    <span className="metric-stack cache-metric" title={title}>
-      <span>
-        <TokenValue value={read} /> <span className="cache-unit">read</span>
-      </span>
-      {write !== undefined && (
-        <small>
-          <TokenValue value={write} /> write
-        </small>
-      )}
-      <small>
-        {share === undefined
-          ? "Coverage unavailable"
-          : `${(share * 100).toFixed(1)}% cached input`}
-      </small>
-      {hasCacheOutcome(summary) && (
-        <small>
-          <CacheSummaryBadge summary={summary} />
-        </small>
-      )}
-      {peak !== undefined && peak !== read && (
-        <small>
-          Peak <TokenValue value={peak} />
-        </small>
-      )}
-    </span>
-  );
-}
-
 function duration(startedAt?: number, completedAt?: number) {
   if (startedAt === undefined || completedAt === undefined) return undefined;
   const milliseconds = completedAt - startedAt;
@@ -782,53 +727,102 @@ function SubagentSummary({
 }) {
   const total = aggregateSessionTrees([session]);
   const nested = aggregateSessionTrees(session.subagents);
-  const input = total.uncachedInput + total.cacheRead + total.cacheWrite;
-  const reused = input === 0 ? undefined : total.cacheRead / input;
+  const calls = session.turns.flatMap((turn) => turn.calls);
+  const context = contextRange(calls);
   const elapsed = total.start === undefined || total.end === undefined
     ? undefined
     : duration(total.start, total.end);
   const hasDescendants = session.subagents.length > 0;
   return (
-    <div className={`subagent-summary${expanded ? " is-expanded" : ""}`}>
-      <button
-        type="button"
-        className="subagent-summary-toggle"
-        aria-expanded={expanded}
-        onClick={onToggle}
-      >
-        <span className="subagent-summary-marker">{expanded ? "▾" : "▸"}</span>
-        <span className="subagent-summary-body">
-          <span className="subagent-summary-title">
-            <strong>Subagent · {session.agent ?? "agent"}</strong>
-            <span>{session.title}</span>
-          </span>
-          <small>
-            {total.userTurns} turn{total.userTurns === 1 ? "" : "s"} ·{"  "}
-            {hasDescendants
-              ? `${session.modelCalls} direct calls · ${session.subagents.length} nested subagent${
-                session.subagents.length === 1 ? "" : "s"
-              }`
-              : `${total.modelCalls} calls`}
-            {elapsed ? ` · ${elapsed}` : ""}
-          </small>
-          <small>
-            <TokenValue value={total.processed} /> processed ·{"  "}
-            {reused === undefined
-              ? "reuse unavailable"
-              : `${(reused * 100).toFixed(1)}% reused`}
-          </small>
-        </span>
-        <span className="subagent-summary-cost">
-          <CostCell
-            reported={total.reportedCost}
-            computed={total.computedCost}
-            direct={hasDescendants ? session.computedCost : undefined}
-            subagents={hasDescendants ? nested.computedCost : undefined}
-            turn
-          />
-        </span>
-      </button>
-      {expanded && <SessionBreakdown session={session} nested hideHeading />}
+    <div className={`trace-subagent-summary${expanded ? " is-expanded" : ""}`}>
+      <table className="data-table turn-table subagent-summary-table">
+        <colgroup>
+          <col className="turn-column" />
+          <col className="started-column" />
+          <col className="turn-elapsed-column" />
+          <col className="turn-activity-column" />
+          <col className="turn-context-column" />
+          <col className="turn-input-column" />
+          <col className="turn-image-column" />
+          <col className="turn-cache-column" />
+          <col className="turn-output-column" />
+          <col className="turn-cost-column" />
+        </colgroup>
+        <tbody>
+          <tr className="subagent-summary-row">
+            <td className="subagent-summary-identity">
+              <button
+                type="button"
+                className="subagent-summary-toggle"
+                aria-expanded={expanded}
+                onClick={onToggle}
+              >
+                <span className="subagent-summary-marker">
+                  {expanded ? "▾" : "▸"}
+                </span>
+                <span className="subagent-summary-body">
+                  <span className="subagent-summary-title">
+                    <strong>Subagent · {session.agent ?? "agent"}</strong>
+                    <span>{session.title}</span>
+                  </span>
+                  <small>
+                    {total.userTurns} turn{total.userTurns === 1 ? "" : "s"} ·{"  "}
+                    {hasDescendants
+                      ? `${session.modelCalls} direct calls · ${session.subagents.length} nested subagent${
+                        session.subagents.length === 1 ? "" : "s"
+                      }`
+                      : `${total.modelCalls} calls`}
+                    {elapsed ? ` · ${elapsed}` : ""}
+                  </small>
+                </span>
+              </button>
+            </td>
+            <td aria-hidden="true" />
+            <td aria-hidden="true" />
+            <td aria-hidden="true" />
+            <td>
+              <ContextMetric
+                value={context.latest?.size}
+                secondary={context.first?.size}
+                secondaryLabel="start"
+                title={context.latest && context.first && context.peak
+                  ? `First request: ${integer.format(context.first.size)} tokens · Last request: ${integer.format(context.latest.size)} tokens · Peak request: ${integer.format(context.peak.size)} tokens`
+                  : undefined}
+              />
+            </td>
+            <td className="subagent-summary-input">
+              <SessionInputMetric
+                tokens={{
+                  uncachedInput: total.uncachedInput,
+                  cacheRead: total.cacheRead,
+                  cacheWrite: total.cacheWrite,
+                }}
+                anthropic={session.providers.some((provider) =>
+                  provider.toLowerCase().includes("anthropic")
+                )}
+                label="total input"
+              />
+            </td>
+            <td aria-hidden="true" />
+            <td className="subagent-summary-cache" aria-hidden="true" />
+            <td>
+              <OutputMetric output={total.output} reasoning={total.reasoning} />
+            </td>
+            <td>
+              <span className="subagent-summary-cost">
+                <CostCell
+                  reported={total.reportedCost}
+                  computed={total.computedCost}
+                  direct={hasDescendants ? session.computedCost : undefined}
+                  subagents={hasDescendants ? nested.computedCost : undefined}
+                  turn
+                />
+              </span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      {expanded && <SessionBreakdown session={session} nested />}
     </div>
   );
 }
@@ -1107,6 +1101,7 @@ function CallTable({
           <col className="call-outcome-column" />
           <col className="call-context-column" />
           <col className="call-input-column" />
+          <col className="call-image-column" />
           <col className="call-cache-column" />
           <col className="call-output-column" />
           <col className="call-cost-column" />
@@ -1120,6 +1115,7 @@ function CallTable({
             <th>Activity</th>
             <th>Context</th>
             <th>Volume</th>
+            <th aria-label="Image input" />
             <th>Cache</th>
             <th>Output</th>
             <th>Cost</th>
@@ -1222,6 +1218,9 @@ function CallTable({
                   <td>
                     <CallInputMetric call={call} />
                   </td>
+                  <td className="image-input-cell">
+                    <ImageInputIndicator count={call.activity.images ?? 0} />
+                  </td>
                   <td>
                     {(cacheMiss || ttlMiss || compactions > 0) && (
                       <span className="cache-issue-group">
@@ -1255,7 +1254,7 @@ function CallTable({
                 </tr>
                 {expanded && (
                   <tr className="activity-detail-row">
-                    <td colSpan={10}>
+                    <td colSpan={11}>
                       <div className="activity-detail">
                         {finishWarning && (
                           <div className="activity-warning">
@@ -1332,19 +1331,15 @@ function CallTable({
 function SessionBreakdown({
   session,
   nested = false,
-  hideHeading = false,
 }: {
   session: SessionDetail;
   nested?: boolean;
-  hideHeading?: boolean;
 }) {
   const [expandedTurns, setExpandedTurns] = useState<Set<number>>(
     () => new Set(),
   );
   const [expandedCallID, setExpandedCallID] = useState<string>();
   const [expandedSubagentID, setExpandedSubagentID] = useState<string>();
-  const span = sessionSpan(session);
-
   function toggleTurn(number: number) {
     setExpandedTurns((current) => {
       const next = new Set(current);
@@ -1356,30 +1351,6 @@ function SessionBreakdown({
 
   return (
     <div className={nested ? "breakdown nested-breakdown" : "breakdown"}>
-      {nested && !hideHeading && (
-        <div className="subagent-heading">
-          <div className="subagent-identity">
-            <div className="chip-row">
-              <span className="chip">Subagent</span>
-              {session.agent && (
-                <span className="chip chip-muted">{session.agent}</span>
-              )}
-            </div>
-            <strong>{session.title}</strong>
-            <code className="session-id">{session.id}</code>
-          </div>
-          <div className="subagent-stats">
-            <span>{session.userTurns} turns</span>
-            <span>{session.modelCalls} calls</span>
-            {span?.label && <span>{span.label}</span>}
-            <CostCell
-              reported={session.reportedCost}
-              computed={session.computedCost}
-            />
-          </div>
-        </div>
-      )}
-
       <div className="turn-table-wrap">
         <table className="data-table turn-table">
           <colgroup>

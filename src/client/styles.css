@@ -1538,8 +1538,7 @@ table.data-table {
 .breakdown {
   background: var(--surface-1);
   color: var(--ink);
-  padding: 10px 0 14px 12px;
-  border-left: 3px solid var(--rail);
+  padding: 10px 0 14px;
 }
 
 .subagent-badge {
@@ -1752,6 +1751,10 @@ table.data-table {
   width: clamp(210px, 19vw, 270px);
 }
 
+.call-table .call-image-column {
+  width: 36px;
+}
+
 .call-table .call-cache-column {
   width: 132px;
 }
@@ -1784,8 +1787,17 @@ table.data-table {
   text-align: center;
 }
 
+.call-table th:nth-child(9),
+.call-table td:nth-child(9) {
+  text-align: center;
+}
+
 .call-table tbody > tr:not(.activity-detail-row) > td {
   vertical-align: top;
+}
+
+.call-table .call-row > .image-input-cell {
+  vertical-align: middle;
 }
 
 .call-table-wrap {
@@ -1859,11 +1871,9 @@ table.data-table {
 }
 
 .activity-detail {
-  padding: 12px 14px 14px;
+  padding: 12px 0 0;
   color: #55594f;
   white-space: normal;
-  border-left: 3px solid #d2cfc4;
-  margin-left: 8px;
 }
 
 .activity-detail p {
@@ -1955,25 +1965,29 @@ table.data-table {
   background: var(--surface-1);
 }
 
-.subagent-summary {
+.trace-subagent-summary {
+  display: block;
+  width: 100%;
   margin-top: 8px;
-  border-left: 2px solid #8fa58b;
+}
+
+.subagent-summary-table {
+  border-top: 1px solid #d0d5cb;
   background: var(--surface-0);
 }
 
 .subagent-summary-toggle {
   display: grid;
-  grid-template-columns: 16px minmax(0, 1fr) auto;
+  grid-template-columns: 18px minmax(0, 1fr);
   align-items: start;
-  gap: 8px;
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #d0d5cb;
-  border-left: 0;
+  width: 520px;
+  max-width: calc(100vw - 300px);
+  padding: 0;
+  border: 0;
   color: var(--ink);
   background: transparent;
   cursor: pointer;
-  font: 10px var(--mono);
+  font: inherit;
   text-align: left;
 }
 
@@ -1981,10 +1995,28 @@ table.data-table {
   color: var(--accent);
 }
 
-.subagent-summary-body,
 .subagent-summary-cost {
+  display: inline-flex;
+  justify-content: flex-end;
+  width: 100%;
+}
+
+.subagent-summary-body {
   display: grid;
   gap: 3px;
+  min-width: 0;
+}
+
+.subagent-summary-table .subagent-summary-identity {
+  text-align: left;
+}
+
+.subagent-summary-table .subagent-summary-input {
+  text-align: left;
+}
+
+.subagent-summary-table .subagent-summary-cache {
+  text-align: center;
 }
 
 .subagent-summary-title {
@@ -2006,11 +2038,6 @@ table.data-table {
   font-size: 9px;
 }
 
-.subagent-summary-cost {
-  justify-items: end;
-  white-space: nowrap;
-}
-
 .subagent-summary-cost .cost-cell {
   font-size: 11px;
   font-weight: 700;
@@ -2028,12 +2055,48 @@ table.data-table {
   font-size: 11px;
 }
 
-.subagent-summary > .nested-breakdown {
+.trace-subagent-summary > .nested-breakdown {
   margin-top: 0;
   border: 0;
-  border-right: 1px solid #d0d5cb;
   border-bottom: 1px solid #d0d5cb;
-  background: var(--surface-1);
+  background: var(--surface-0);
+}
+
+/* Tighten only the subagent metric gutter without affecting outer tables. */
+.subagent-summary-table th:nth-child(5),
+.subagent-summary-table td:nth-child(5),
+.nested-breakdown .turn-table th:nth-child(5),
+.nested-breakdown .turn-table td:nth-child(5) {
+  padding-right: 0;
+}
+
+.subagent-summary-table th:nth-child(6),
+.subagent-summary-table td:nth-child(6),
+.nested-breakdown .turn-table th:nth-child(6),
+.nested-breakdown .turn-table td:nth-child(6) {
+  padding-left: 0;
+  text-align: left;
+}
+
+.subagent-summary-table th:nth-child(5),
+.subagent-summary-table td:nth-child(5),
+.nested-breakdown .turn-table th:nth-child(5),
+.nested-breakdown .turn-table td:nth-child(5) {
+  position: relative;
+  left: 33px;
+}
+
+.subagent-summary-table th:nth-child(6),
+.subagent-summary-table td:nth-child(6),
+.nested-breakdown .turn-table th:nth-child(6),
+.nested-breakdown .turn-table td:nth-child(6) {
+  position: relative;
+  left: 10px;
+}
+
+.nested-breakdown .turn-table th:nth-child(4),
+.nested-breakdown .turn-table td:nth-child(4) {
+  text-align: left;
 }
 
 .tool-events {
@@ -2120,11 +2183,10 @@ table.data-table {
 
 .nested-breakdown {
   grid-column: 1 / -1;
-  margin-top: 4px;
-  padding: 12px;
-  border: 1px solid #d0d5cb;
-  background: var(--surface-3);
-  border-left: 3px solid #8fa58b;
+  margin-top: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .subagent-heading {
