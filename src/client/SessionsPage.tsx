@@ -457,19 +457,26 @@ function SessionCacheStatus({
   );
 }
 
-function TurnCacheStatus({ turn }: { turn: SessionDetail["turns"][number] }) {
-  const full = turn.calls.filter((call) =>
+function TurnCacheStatus({
+  turn,
+  subagents = [],
+}: {
+  turn: SessionDetail["turns"][number];
+  subagents?: SessionDetail[];
+}) {
+  const calls = [...turn.calls, ...callsFromSessionTrees(subagents)];
+  const full = calls.filter((call) =>
     call.cacheAssessment?.status === "full-miss" &&
     call.cacheAssessment.cause === undefined
   );
-  const partial = turn.calls.filter((call) =>
+  const partial = calls.filter((call) =>
     call.cacheAssessment?.status === "partial-hit" &&
     call.cacheAssessment.cause === undefined
   );
-  const ttl = turn.calls.filter((call) =>
+  const ttl = calls.filter((call) =>
     call.cacheAssessment?.cause === "ttl"
   );
-  const compactions = turn.calls.reduce(
+  const compactions = calls.reduce(
     (total, call) =>
       total +
       (call.contextEventsBefore ?? []).filter((event) =>
@@ -638,6 +645,12 @@ function sessionTree(session: SessionDetail): SessionDetail[] {
   return [session, ...session.subagents.flatMap(sessionTree)];
 }
 
+function callsFromSessionTrees(sessions: SessionDetail[]) {
+  return sessions.flatMap(sessionTree).flatMap((session) =>
+    session.turns.flatMap((turn) => turn.calls)
+  );
+}
+
 function aggregateSessionTrees(sessions: SessionDetail[]) {
   const tree = sessions.flatMap(sessionTree);
   const computed = rollupCosts(tree.map((session) => session.computedCost));
@@ -728,6 +741,25 @@ function SubagentSummary({
   const total = aggregateSessionTrees([session]);
   const nested = aggregateSessionTrees(session.subagents);
   const calls = session.turns.flatMap((turn) => turn.calls);
+  const cacheCalls = callsFromSessionTrees([session]);
+  const fullMisses = cacheCalls.filter((call) =>
+    call.cacheAssessment?.status === "full-miss" &&
+    call.cacheAssessment.cause === undefined
+  );
+  const partialMisses = cacheCalls.filter((call) =>
+    call.cacheAssessment?.status === "partial-hit" &&
+    call.cacheAssessment.cause === undefined
+  );
+  const ttlMisses = cacheCalls.filter((call) =>
+    call.cacheAssessment?.cause === "ttl"
+  );
+  const compactions = cacheCalls.reduce(
+    (total, call) =>
+      total + (call.contextEventsBefore ?? []).filter((event) =>
+        event.type === "compaction"
+      ).length,
+    0,
+  );
   const context = contextRange(calls);
   const elapsed = total.start === undefined || total.end === undefined
     ? undefined
@@ -804,7 +836,25 @@ function SubagentSummary({
               />
             </td>
             <td aria-hidden="true" />
-            <td className="subagent-summary-cache" aria-hidden="true" />
+            <td className="subagent-summary-cache">
+              {(fullMisses.length > 0 || partialMisses.length > 0 ||
+                ttlMisses.length > 0 || compactions > 0) && (
+                <span className="cache-issue-group">
+                  {fullMisses.length > 0 && (
+                    <CacheAssessmentBadge
+                      assessment={fullMisses[0].cacheAssessment}
+                    />
+                  )}
+                  {partialMisses.length > 0 && (
+                    <CacheAssessmentBadge
+                      assessment={partialMisses[0].cacheAssessment}
+                    />
+                  )}
+                  <TtlMissBadge count={ttlMisses.length} />
+                  <CompactionBadge count={compactions} />
+                </span>
+              )}
+            </td>
             <td>
               <OutputMetric output={total.output} reasoning={total.reasoning} />
             </td>
@@ -1059,18 +1109,6 @@ function turnSubagents(
   return children;
 }
 
-function SubagentBadge({ count }: { count: number }) {
-  if (count <= 0) return null;
-  return (
-    <span
-      className="subagent-badge"
-      title={`${count} subagent${count === 1 ? "" : "s"} spawned`}
-    >
-      {count} sub
-    </span>
-  );
-}
-
 function CallTable({
   calls,
   session,
@@ -1126,14 +1164,26 @@ function CallTable({
             const expanded = expandedCallID === call.id;
             const callDuration = duration(call.startedAt, call.completedAt);
             const callContext = contextSize(call.tokens);
-            const cacheMiss = call.cacheAssessment?.cause === undefined &&
-              (call.cacheAssessment?.status === "partial-hit" ||
-                call.cacheAssessment?.status === "full-miss");
-            const ttlMiss = call.cacheAssessment?.cause === "ttl";
-            const compactions = (call.contextEventsBefore ?? []).filter((
-              event,
-            ) => event.type === "compaction").length;
             const subagents = callSubagents(call, session);
+            const cacheCalls = [call, ...callsFromSessionTrees(subagents)];
+            const fullMisses = cacheCalls.filter((relatedCall) =>
+              relatedCall.cacheAssessment?.status === "full-miss" &&
+              relatedCall.cacheAssessment.cause === undefined
+            );
+            const partialMisses = cacheCalls.filter((relatedCall) =>
+              relatedCall.cacheAssessment?.status === "partial-hit" &&
+              relatedCall.cacheAssessment.cause === undefined
+            );
+            const ttlMisses = cacheCalls.filter((relatedCall) =>
+              relatedCall.cacheAssessment?.cause === "ttl"
+            );
+            const compactions = cacheCalls.reduce(
+              (total, relatedCall) =>
+                total + (relatedCall.contextEventsBefore ?? []).filter((event) =>
+                  event.type === "compaction"
+                ).length,
+              0,
+            );
             const subagentTotals = aggregateSessionTrees(subagents);
             const hasSubagents = subagents.length > 0;
             const inclusiveComputed = rollupCosts([
@@ -1191,7 +1241,6 @@ function CallTable({
                     >
                       <span className="activity-summary-line">
                         <span title={call.preview}>{outcome}</span>
-                        <SubagentBadge count={subagents.length} />
                       </span>
                       {(secondaryMechanics || subagents.length > 0) && (
                         <small>
@@ -1221,15 +1270,21 @@ function CallTable({
                   <td className="image-input-cell">
                     <ImageInputIndicator count={call.activity.images ?? 0} />
                   </td>
-                  <td>
-                    {(cacheMiss || ttlMiss || compactions > 0) && (
+                  <td className="call-cache-cell">
+                    {(fullMisses.length > 0 || partialMisses.length > 0 ||
+                      ttlMisses.length > 0 || compactions > 0) && (
                       <span className="cache-issue-group">
-                        {cacheMiss && (
+                        {fullMisses.length > 0 && (
                           <CacheAssessmentBadge
-                            assessment={call.cacheAssessment}
+                            assessment={fullMisses[0].cacheAssessment}
                           />
                         )}
-                        <TtlMissBadge count={ttlMiss ? 1 : 0} />
+                        {partialMisses.length > 0 && (
+                          <CacheAssessmentBadge
+                            assessment={partialMisses[0].cacheAssessment}
+                          />
+                        )}
+                        <TtlMissBadge count={ttlMisses.length} />
                         <CompactionBadge count={compactions} />
                       </span>
                     )}
@@ -1514,7 +1569,7 @@ function SessionBreakdown({
                       <ImageInputIndicator count={inputImages} />
                     </td>
                     <td className="turn-cache-cell">
-                      <TurnCacheStatus turn={turn} />
+                      <TurnCacheStatus turn={turn} subagents={subs} />
                     </td>
                     <td>
                       <OutputMetric

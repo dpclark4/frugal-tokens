@@ -1541,22 +1541,6 @@ table.data-table {
   padding: 10px 0 14px;
 }
 
-.subagent-badge {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 6px;
-  padding: 1px 6px;
-  border: 1px solid #c5d0c2;
-  background: #eef3eb;
-  color: var(--green);
-  font-family: var(--mono);
-  font-size: 9px;
-  font-weight: 500;
-  letter-spacing: .04em;
-  text-transform: uppercase;
-  vertical-align: middle;
-}
-
 .turn-label-line,
 .activity-summary-line {
   display: inline-flex;
@@ -1800,6 +1784,10 @@ table.data-table {
   vertical-align: middle;
 }
 
+.call-table .call-row > .call-cache-cell {
+  vertical-align: middle;
+}
+
 .call-table-wrap {
   border-top: 1px solid #e0dbd0;
 }
@@ -2019,6 +2007,10 @@ table.data-table {
   text-align: center;
 }
 
+.subagent-summary-cache .cache-issue-group {
+  justify-items: start;
+}
+
 .subagent-summary-title {
   display: flex;
   align-items: baseline;
@@ -2079,24 +2071,41 @@ table.data-table {
 }
 
 .subagent-summary-table th:nth-child(5),
-.subagent-summary-table td:nth-child(5),
-.nested-breakdown .turn-table th:nth-child(5),
-.nested-breakdown .turn-table td:nth-child(5) {
-  position: relative;
-  left: 33px;
+.nested-breakdown .turn-table th:nth-child(5) {
+  text-indent: 25px;
 }
 
 .subagent-summary-table th:nth-child(6),
-.subagent-summary-table td:nth-child(6),
-.nested-breakdown .turn-table th:nth-child(6),
-.nested-breakdown .turn-table td:nth-child(6) {
-  position: relative;
-  left: 10px;
+.nested-breakdown .turn-table th:nth-child(6) {
+  text-indent: 10px;
+}
+
+.subagent-summary-table td:nth-child(5) > .context-metric,
+.nested-breakdown .turn-table td:nth-child(5) > .context-metric {
+  transform: translateX(25px);
+}
+
+.subagent-summary-table td:nth-child(6) > .session-input-metric,
+.nested-breakdown .turn-table td:nth-child(6) > .session-input-metric,
+.nested-breakdown .turn-table td:nth-child(6) > .turn-nested-input {
+  transform: translateX(10px);
 }
 
 .nested-breakdown .turn-table th:nth-child(4),
 .nested-breakdown .turn-table td:nth-child(4) {
   text-align: left;
+}
+
+/* Nested call tables omit the turn-table image column before context. */
+.nested-breakdown .call-table th:nth-child(6) {
+  text-indent: 38px;
+}
+
+.nested-breakdown .call-table td:nth-child(6) > .context-metric {
+  display: flex;
+  width: max-content;
+  margin-left: auto;
+  align-items: flex-end;
 }
 
 .tool-events {
