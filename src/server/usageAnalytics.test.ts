@@ -117,20 +117,21 @@ Deno.test("aggregates subagent adoption, calls, and cost share", () => {
   }]);
 });
 
-Deno.test("retains known costs when a day and model also has unpriced calls", () => {
+Deno.test("falls back to reported cost when a computed price is unavailable", () => {
   const startedAt = new Date(2026, 6, 10).getTime();
   const priced = usageCall("priced", startedAt, 100);
   priced.computedCost = 2;
-  const unpriced = usageCall("unpriced", startedAt, 100);
+  const reported = usageCall("reported", startedAt, 100);
+  reported.reportedCost = 3;
 
-  const response = aggregateUsage([priced, unpriced]).response;
+  const response = aggregateUsage([priced, reported]).response;
 
   deepStrictEqual(response.days, [{
     date: "2026-07-10",
     models: [{
       model: "claude-sonnet-4-5",
       input: 200,
-      cost: 2,
+      cost: 5,
     }],
   }]);
   deepStrictEqual(response.hasUnpricedCost, true);

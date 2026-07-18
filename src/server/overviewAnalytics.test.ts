@@ -21,6 +21,7 @@ function session(
     input: number;
     cacheRead: number;
     cost?: number;
+    reportedCost?: number;
     model?: string;
   }>,
   subagents: SessionDetail[] = [],
@@ -56,6 +57,7 @@ function session(
         startedAt: turn.startedAt,
         completedAt: turn.startedAt + 60_000,
         computedCost: turn.cost,
+        reportedCost: turn.reportedCost,
         tokens: tokens(turn.input, turn.cacheRead),
         activity: { hasText: true, hasReasoning: false, tools: [] },
       }],
@@ -140,6 +142,28 @@ Deno.test("keeps overall efficiency token-weighted", () => {
   ok(Math.abs(result.sessionProfile.overallEfficiency! - 0.1) < 1e-10);
   ok(Math.abs(result.sessionProfile.efficiency!.average - 0.5) < 1e-10);
   ok(Math.abs(result.sessionProfile.efficiency!.median - 0.5) < 1e-10);
+});
+
+Deno.test("falls back to reported cost when a computed price is unavailable", () => {
+  const startedAt = new Date(2026, 6, 10, 9).getTime();
+  const result = aggregateOverview(
+    [
+      session("reported", [{
+        startedAt,
+        input: 100,
+        cacheRead: 0,
+        reportedCost: 5,
+      }]),
+    ],
+    new Date(2026, 6, 10).getTime(),
+    startedAt + 3_600_000,
+    1,
+  );
+
+  strictEqual(result.activity.hasUnpricedCost, false);
+  strictEqual(result.activity.spend!.median, 5);
+  strictEqual(result.sessionProfile.spend!.median, 5);
+  strictEqual(result.models[0].spend, 5);
 });
 
 Deno.test("keeps known spend when some calls are unpriced", () => {

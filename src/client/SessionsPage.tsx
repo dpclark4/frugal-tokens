@@ -854,7 +854,10 @@ function CostCell({
   turn?: boolean;
 }) {
   const mismatch = costsMismatch(reported, computed);
-  const primary = computed === undefined
+  const usesReportedFallback = computed === undefined && reported !== undefined;
+  const primary = usesReportedFallback
+    ? turnDollars.format(reported)
+    : computed === undefined
     ? "-"
     : (session ? sessionDollars : turn ? turnDollars : dollars).format(
       computed,
@@ -870,7 +873,9 @@ function CostCell({
     : `Calculated total: ${formattedCost(computed)} · Direct: ${
       formattedCost(direct)
     } · Subagents: ${formattedCost(subagents)}`;
-  const title = mismatch
+  const title = usesReportedFallback
+    ? `Missing computed cost · ${reportedLabel}`
+    : mismatch
     ? `${costBreakdown} · ${reportedLabel} (mismatch)`
     : `${costBreakdown} · ${reportedLabel}`;
 
@@ -878,13 +883,13 @@ function CostCell({
     <span
       className={`cost-cell${session ? " session-cost" : ""}${
         mismatch ? " cost-mismatch" : ""
-      }`}
+      }${usesReportedFallback ? " cost-reported-fallback" : ""}`}
       title={title}
     >
       {mismatch && (
         <span className="cost-mismatch-icon" aria-label="Cost mismatch">!</span>
       )}
-      {subagents !== undefined
+      {subagents !== undefined && !usesReportedFallback
         ? (
           <SubagentCostBreakdown
             total={computed}

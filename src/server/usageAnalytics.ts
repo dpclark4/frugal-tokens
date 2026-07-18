@@ -171,9 +171,10 @@ export function aggregateUsage(
     };
     bucket.input += call.tokens.uncachedInput + call.tokens.cacheRead +
       (call.tokens.cacheWrite ?? 0);
-    bucket.hasPricedCost ||= call.computedCost !== undefined;
+    bucket.hasPricedCost ||= call.computedCost !== undefined ||
+      call.reportedCost !== undefined;
     hasUnpricedCost ||= call.computedCost === undefined;
-    bucket.cost += call.computedCost ?? 0;
+    bucket.cost += call.computedCost ?? call.reportedCost ?? 0;
     models.set(call.model, bucket);
     days.set(date, models);
   }

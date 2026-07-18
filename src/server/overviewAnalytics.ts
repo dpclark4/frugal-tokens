@@ -211,7 +211,7 @@ export function aggregateOverview(
 
       for (const call of turn.calls) {
         const input = contextSize(call.tokens);
-        const cost = call.computedCost;
+        const cost = call.computedCost ?? call.reportedCost;
         sessionInput += input;
         sessionCacheRead += call.tokens.cacheRead;
         peakContext = Math.max(peakContext, input);

@@ -140,9 +140,6 @@ export function SpendInputChart({ usage, metric, range }: {
           )}
         </div>
       )}
-      {metric === "cost" && usage.hasUnpricedCost && (
-        <p className="chart-note">Some calls have no matching price and are omitted from cost totals.</p>
-      )}
     </>
   );
 }

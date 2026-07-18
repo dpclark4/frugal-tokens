@@ -1518,6 +1518,10 @@ table.data-table {
   color: var(--danger);
 }
 
+.cost-reported-fallback {
+  color: var(--accent);
+}
+
 .cost-mismatch-icon {
   display: inline-flex;
   align-items: center;
