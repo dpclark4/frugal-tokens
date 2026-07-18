@@ -19,7 +19,7 @@ const views: Array<{ value: View; label: string }> = [
 
 export function UsageChart({ harness }: { harness: string }) {
   const [view, setView] = useState<View>("spend");
-  const [range, setRange] = useState<Range>(30);
+  const [range, setRange] = useState<Range>(90);
   const [usage, setUsage] = useState<UsageResponse>();
   const [error, setError] = useState<string>();
 
@@ -86,7 +86,6 @@ export function UsageChart({ harness }: { harness: string }) {
         <SpendInputChart
           usage={usage}
           metric={view === "spend" ? "cost" : "input"}
-          range={range}
         />
       )}
       {usage && view === "session-input" && (

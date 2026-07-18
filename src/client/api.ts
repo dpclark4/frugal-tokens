@@ -24,13 +24,13 @@ export async function getUsage(range: number | "all", harness: string) {
   );
 }
 
-export async function getOverview(range: number, harness: string) {
+export async function getOverview(range: number | "all", harness: string) {
   return overviewResponseSchema.parse(
     await getJson(`/api/overview?range=${range}&harness=${harness}`),
   );
 }
 
-export async function getTtlMissMetrics(range: number, harness: string) {
+export async function getTtlMissMetrics(range: number | "all", harness: string) {
   return ttlMissMetricsSchema.parse(
     await getJson(`/api/ttl-misses?range=${range}&harness=${harness}`),
   );

@@ -51,7 +51,7 @@ body::before {
 main {
   width: min(1600px, calc(100% - 48px));
   margin: 0 auto;
-  padding: 60px 0 80px;
+  padding: 20px 0 80px;
   position: relative;
 }
 
@@ -111,10 +111,9 @@ main {
 
 .page-header {
   display: flex;
-  justify-content: space-between;
-  align-items: end;
-  gap: 40px;
-  margin-bottom: 42px;
+  align-items: baseline;
+  gap: 14px;
+  margin-bottom: 16px;
 }
 
 .eyebrow {
@@ -123,13 +122,13 @@ main {
   font-size: 12px;
   letter-spacing: .12em;
   text-transform: uppercase;
-  margin: 0 0 10px;
+  margin: 0;
 }
 
 h1 {
-  font-size: clamp(42px, 6vw, 76px);
-  letter-spacing: -.06em;
-  line-height: .92;
+  font-size: clamp(32px, 3vw, 42px);
+  letter-spacing: -.045em;
+  line-height: 1;
   margin: 0;
 }
 
@@ -230,11 +229,8 @@ h1 {
   gap: 24px;
 }
 
-.ttl-analytics-toolbar > span {
-  color: var(--muted);
-  font: 10px var(--mono);
-  letter-spacing: .05em;
-  text-transform: uppercase;
+.ttl-analytics-toolbar .segmented {
+  flex: none;
 }
 
 .ttl-miss-message {
@@ -690,10 +686,6 @@ h1 {
     padding: 0 18px;
   }
 
-  .ttl-analytics-toolbar > span {
-    display: none;
-  }
-
   .ttl-analytics-toolbar .chart-tabs {
     gap: 16px;
   }
@@ -806,7 +798,7 @@ h1 {
   justify-content: space-between;
   align-items: flex-start;
   gap: 24px;
-  padding: 22px 28px 12px;
+  padding: 16px 28px 4px;
 }
 
 .usage-chart-heading .eyebrow {
@@ -2342,17 +2334,14 @@ table.data-table {
 @media (max-width: 760px) {
   main {
     width: min(100% - 24px, 1600px);
-    padding-top: 32px;
+    padding-top: 20px;
   }
 
   .page-header {
-    display: block;
-    margin-bottom: 26px;
-  }
-
-  .intro {
-    margin-top: 20px;
-    font-size: 14px;
+    align-items: start;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 16px;
   }
 
   .overview-table {

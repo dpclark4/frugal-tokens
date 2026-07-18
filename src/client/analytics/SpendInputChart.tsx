@@ -53,10 +53,9 @@ function UsageTooltip({ active, label, payload, metric }: {
   );
 }
 
-export function SpendInputChart({ usage, metric, range }: {
+export function SpendInputChart({ usage, metric }: {
   usage: UsageResponse;
   metric: Metric;
-  range: 7 | 30 | 90 | "all";
 }) {
   const models = [...new Set(usage.days.flatMap((entry) => entry.models.map(({ model }) => model)))].sort();
   const series = models.map((model, index) => ({
@@ -83,14 +82,7 @@ export function SpendInputChart({ usage, metric, range }: {
   return (
     <>
       <div className="usage-chart-heading">
-        <div>
-          <p className="eyebrow">Usage pulse</p>
-          <h2>{metric === "cost" ? "Cost over time" : "Input by model"}</h2>
-          <p className="chart-total">
-            <strong>{formatValue(metric, total)}</strong>
-            <span>{range === "all" ? "All time" : `Last ${range} days`}</span>
-          </p>
-        </div>
+        <p className="chart-total"><strong>{formatValue(metric, total)}</strong></p>
       </div>
       <div className="usage-chart-body">
         {data.length === 0

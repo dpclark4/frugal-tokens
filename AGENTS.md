@@ -17,3 +17,16 @@ Conserve tool calls and tokens during implementation.
   run it.
 - In the final response, report verification performed and explicitly mention
   relevant checks that were not run.
+
+## Commit Messages
+
+When asked to commit, use a concise imperative title followed by a factual
+bullet-point body:
+
+- Context: the observed problem or motivation.
+- Changes: the essential implementation changes.
+- Outcome: the resulting behavior or user-facing effect.
+
+Keep each bullet to one sentence. Use only established facts; do not invent
+backstory. Apply this format to every commit, including when the user only
+says "commit."

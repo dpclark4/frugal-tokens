@@ -439,13 +439,14 @@ app.get("/api/ttl-misses", (context) => {
     return context.json({ error: "Invalid harness" }, 400);
   }
   const rangeParam = context.req.query("range") ?? "90";
-  const range = Math.min(
-    365,
-    Math.max(1, Number.parseInt(rangeParam, 10) || 90),
-  );
-  const start = new Date(
-    new Date().setHours(0, 0, 0, 0) - (range - 1) * 86_400_000,
-  ).getTime();
+  const range = rangeParam === "all"
+    ? Math.ceil(Date.now() / 86_400_000)
+    : Math.min(365, Math.max(1, Number.parseInt(rangeParam, 10) || 90));
+  const start = rangeParam === "all"
+    ? 0
+    : new Date(
+      new Date().setHours(0, 0, 0, 0) - (range - 1) * 86_400_000,
+    ).getTime();
   const usageCalls: UsageCall[] = [];
 
   if (archiveRepository) {
@@ -475,13 +476,14 @@ app.get("/api/overview", (context) => {
     return context.json({ error: "Invalid harness" }, 400);
   }
   const rangeParam = context.req.query("range") ?? "90";
-  const range = Math.min(
-    365,
-    Math.max(1, Number.parseInt(rangeParam, 10) || 90),
-  );
-  const start = new Date(
-    new Date().setHours(0, 0, 0, 0) - (range - 1) * 86_400_000,
-  ).getTime();
+  const range = rangeParam === "all"
+    ? Math.ceil(Date.now() / 86_400_000)
+    : Math.min(365, Math.max(1, Number.parseInt(rangeParam, 10) || 90));
+  const start = rangeParam === "all"
+    ? 0
+    : new Date(
+      new Date().setHours(0, 0, 0, 0) - (range - 1) * 86_400_000,
+    ).getTime();
   const end = Date.now();
   const coverage = harness === "pi" || harness === "codex"
     ? "none"

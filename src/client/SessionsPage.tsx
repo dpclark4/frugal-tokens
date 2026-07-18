@@ -63,6 +63,7 @@ const sessionStarted = new Intl.DateTimeFormat(undefined, {
 });
 
 const COST_EPSILON = 0.0001;
+type Range = 7 | 30 | 90 | "all";
 
 function TokenValue({ value }: { value: number }) {
   return <span title={integer.format(value)}>{compact.format(value)}</span>;
@@ -1600,6 +1601,7 @@ export function SessionsPage() {
   const [data, setData] = useState<SessionListResponse>();
   const [overview, setOverview] = useState<OverviewResponse>();
   const [overviewError, setOverviewError] = useState<string>();
+  const [overviewRange, setOverviewRange] = useState<Range>(90);
   const [expandedIDs, setExpandedIDs] = useState<Set<string>>(
     () => new Set(),
   );
@@ -1616,7 +1618,7 @@ export function SessionsPage() {
     let active = true;
     setOverview(undefined);
     setOverviewError(undefined);
-    getOverview(90, harness).then((result) => active && setOverview(result))
+    getOverview(overviewRange, harness).then((result) => active && setOverview(result))
       .catch((reason) => {
         if (active) {
           setOverviewError(
@@ -1629,7 +1631,7 @@ export function SessionsPage() {
     return () => {
       active = false;
     };
-  }, [harness]);
+  }, [harness, overviewRange]);
 
   useEffect(() => {
     let active = true;
@@ -1750,9 +1752,6 @@ export function SessionsPage() {
           <p className="eyebrow">Local agent economics</p>
           <h1>Frugal Tokens</h1>
         </div>
-        <p className="intro">
-          See where tokens went, what was reused, and what each model call cost.
-        </p>
       </header>
 
       <div className="homepage-metrics">
@@ -1760,6 +1759,8 @@ export function SessionsPage() {
           harness={harness}
           overview={overview}
           overviewError={overviewError}
+          range={overviewRange}
+          onRangeChange={setOverviewRange}
         />
         <UsageChart harness={harness} />
       </div>

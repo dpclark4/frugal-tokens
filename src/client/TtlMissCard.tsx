@@ -17,6 +17,7 @@ const money = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
+type Range = 7 | 30 | 90 | "all";
 
 function share(value: number, total: number) {
   return percent.format(total === 0 ? 0 : value / total);
@@ -165,10 +166,14 @@ export function TtlMissCard({
   harness,
   overview,
   overviewError,
+  range,
+  onRangeChange,
 }: {
   harness: string;
   overview?: OverviewResponse;
   overviewError?: string;
+  range: Range;
+  onRangeChange: (range: Range) => void;
 }) {
   const [view, setView] = useState<"overview" | "cache">("overview");
   const [metrics, setMetrics] = useState<TtlMissMetrics>();
@@ -178,7 +183,7 @@ export function TtlMissCard({
     let active = true;
     setMetrics(undefined);
     setError(undefined);
-    getTtlMissMetrics(90, harness).then((result) => {
+    getTtlMissMetrics(range, harness).then((result) => {
       if (active) setMetrics(result);
     }).catch((reason) => {
       if (active) {
@@ -192,7 +197,7 @@ export function TtlMissCard({
     return () => {
       active = false;
     };
-  }, [harness]);
+  }, [harness, range]);
 
   return (
     <section className="ttl-miss-card" aria-label="Overview and cache misses">
@@ -221,7 +226,19 @@ export function TtlMissCard({
             Cache misses
           </button>
         </div>
-        <span>Last 90 days</span>
+        <div className="segmented" aria-label="Overview range">
+          {([7, 30, 90, "all"] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              className={range === value ? "active" : undefined}
+              aria-pressed={range === value}
+              onClick={() => onRangeChange(value)}
+            >
+              {value === "all" ? "All" : `${value}D`}
+            </button>
+          ))}
+        </div>
       </div>
       {view === "overview" && (
         <CompactOverview data={overview} error={overviewError} />
