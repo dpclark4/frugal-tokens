@@ -44,18 +44,15 @@ function MetricRow({
   label,
   values,
   format = decimal.format,
-  partial = false,
   tooltip,
 }: {
   label: string;
   values?: Distribution;
   format?: (value: number) => string;
-  partial?: boolean;
   tooltip?: string;
 }) {
   const value = (number: number) => (
     <>
-      {partial && <sup title="Known priced spend only">*</sup>}
       {format(number)}
     </>
   );
@@ -79,7 +76,6 @@ export function CompactOverview({
   if (error) return <div className="ttl-miss-message chart-error">{error}</div>;
   if (!data) return <div className="ttl-miss-message">Loading overview...</div>;
   const knownSpend = data.models.reduce((sum, model) => sum + model.spend, 0);
-  const hasUnpricedSpend = data.models.some((model) => model.hasUnpricedCost);
   return (
     <div className="compact-overview">
       <div className="compact-overview-summary">
@@ -95,12 +91,9 @@ export function CompactOverview({
           <strong>{integer.format(data.sessions)}</strong>
           <span>Sessions</span>
         </div>
-        <div title="Spend using known model prices">
-          <strong>
-            {hasUnpricedSpend && <sup>*</sup>}
-            {currency.format(knownSpend)}
-          </strong>
-          <span>Priced spend</span>
+        <div>
+          <strong>{currency.format(knownSpend)}</strong>
+          <span>Spend</span>
         </div>
         <div title="Token-weighted efficiency">
           <strong>{percent(data.sessionProfile.overallEfficiency)}</strong>
@@ -137,7 +130,6 @@ export function CompactOverview({
               label="Spend"
               values={data.activity.spend}
               format={currency.format}
-              partial={data.activity.hasUnpricedCost}
             />
             <tr className="compact-metric-group">
               <th colSpan={4}>Session profile</th>
@@ -166,7 +158,6 @@ export function CompactOverview({
               label="Spend / session"
               values={data.sessionProfile.spend}
               format={currency.format}
-              partial={data.sessionProfile.hasUnpricedCost}
             />
             <MetricRow
               label="Efficiency"
@@ -194,24 +185,11 @@ export function CompactOverview({
                   <b style={{ width: `${model.spendShare * 100}%` }} />
                 </i>
                 <small>{percent(model.spendShare)}</small>
-                <strong>
-                  {model.hasUnpricedCost && <sup>*</sup>}
-                  {currency.format(model.spend)}
-                </strong>
+                <strong>{currency.format(model.spend)}</strong>
               </div>
             ))}
           </div>
         </div>
-      )}
-      {(data.activity.hasUnpricedCost || data.subagentCoverage !== "full") && (
-        <p className="compact-overview-note">
-          {data.activity.hasUnpricedCost &&
-            "* Spend and share use known prices"}
-          {data.activity.hasUnpricedCost && data.subagentCoverage !== "full" &&
-            " · "}
-          {data.subagentCoverage === "partial" && "Partial subagent coverage"}
-          {data.subagentCoverage === "none" && "No subagent coverage"}
-        </p>
       )}
     </div>
   );
