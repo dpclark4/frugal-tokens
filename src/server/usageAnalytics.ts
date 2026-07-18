@@ -1,6 +1,4 @@
 import type { UsageResponse } from "../shared/sessionSchemas.ts";
-import { assessCache } from "./cacheAnalysis.ts";
-import { hasInputContext } from "../shared/contextMetrics.ts";
 import type { UsageCall } from "./usage.ts";
 
 function dateKey(value: number) {
@@ -185,23 +183,8 @@ export function aggregateUsage(
     ),
     (call) => `${call.harness}:${call.session.rootID}`,
   );
-  const cacheDays = new Map<
-    string,
-    { clean: number; partial: number; fullMiss: number; notComparable: number }
-  >();
   const sessionInputs = new Map<string, number[]>();
   for (const calls of sessionCalls.values()) {
-    const statuses = [
-      ...Map.groupBy(calls, (call) => call.cacheChainID).values(),
-    ]
-      .flatMap((chain) => {
-        let previous: UsageCall | undefined;
-        return chain.sort((a, b) => a.startedAt - b.startedAt).map((call) => {
-          const status = assessCache(previous, call).status;
-          if (hasInputContext(call.tokens)) previous = call;
-          return status;
-        });
-      });
     const date = dateKey(calls[0].sessionStartedAt);
     const inputs = sessionInputs.get(date) ?? [];
     inputs.push(calls.reduce(
@@ -211,17 +194,6 @@ export function aggregateUsage(
       0,
     ));
     sessionInputs.set(date, inputs);
-    const bucket = cacheDays.get(date) ?? {
-      clean: 0,
-      partial: 0,
-      fullMiss: 0,
-      notComparable: 0,
-    };
-    if (statuses.includes("full-miss")) bucket.fullMiss++;
-    else if (statuses.includes("partial-hit")) bucket.partial++;
-    else if (statuses.includes("hit")) bucket.clean++;
-    else bucket.notComparable++;
-    cacheDays.set(date, bucket);
   }
 
   const sessionInputWeeks = new Map<string, number[]>();
@@ -260,8 +232,6 @@ export function aggregateUsage(
             .toString(),
         }),
       ),
-      cacheDays: [...cacheDays.entries()].sort(([a], [b]) => a.localeCompare(b))
-        .map(([date, bucket]) => ({ date, ...bucket })),
       days: [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(
         ([date, models]) => ({
           date,

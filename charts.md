@@ -104,22 +104,6 @@ Recommended behavior:
 - Exclude baseline-only sessions from the distribution
 - Show sample size in the tooltip
 - Overlay or label the median
-Sessions With Cache Misses
-This is particularly valuable and aligned with your stated interest.
-I’d show two related rates:
-- Any degradation: percentage of comparable sessions with at least one partial or full miss
-- Full miss: percentage with at least one full cache miss
-A stacked or paired line chart could show:
-No misses       62%
-Partial miss    23%
-Full miss       15%
-The categories should be mutually exclusive:
-- Full miss: session had at least one full miss
-- Partial only: had partial misses but no full miss
-- Clean: all comparable calls were hits
-- Not comparable: no meaningful cache opportunity
-Keeping “not comparable” visible prevents baseline-heavy cohorts from making cache performance appear better than it is.
-I might prioritize this above the box plot because it is easier to understand and directly actionable.
 Session Duration Percentiles
 Average, median, and p90 are useful, but plotting all three as independent lines could become noisy.
 Recommended display:
@@ -211,12 +195,10 @@ For each harness:
 - Median cost
 A compact comparison table with bars may work better than separate charts.
 Recommended Priority
-1. Sessions with partial/full cache misses
-2. Median and p90 model input volume
-3. Median and p90 session wall-clock span
-4. Sessions using subagents
-5. Main-agent versus subagent cost composition
-6. Cache-efficiency box plot
-7. Context growth by turn
-8. Cost concentration and threshold exceedance
-The cache-miss session rate is probably the strongest next chart: it reflects a concrete failure mode, is easy to interpret, and avoids some of the statistical complexity of box plots.
+1. Median and p90 model input volume
+2. Median and p90 session wall-clock span
+3. Sessions using subagents
+4. Main-agent versus subagent cost composition
+5. Cache-efficiency box plot
+6. Context growth by turn
+7. Cost concentration and threshold exceedance

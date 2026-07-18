@@ -216,13 +216,6 @@ export const usageResponseSchema = z.object({
     average: z.number().nonnegative(),
     sessions: z.number().int().positive(),
   })),
-  cacheDays: z.array(z.object({
-    date: z.string(),
-    clean: z.number().int().nonnegative(),
-    partial: z.number().int().nonnegative(),
-    fullMiss: z.number().int().nonnegative(),
-    notComparable: z.number().int().nonnegative(),
-  })),
   days: z.array(z.object({
     date: z.string(),
     models: z.array(z.object({
