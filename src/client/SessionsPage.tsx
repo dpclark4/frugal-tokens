@@ -66,6 +66,24 @@ function TokenValue({ value }: { value: number }) {
   return <span title={integer.format(value)}>{compact.format(value)}</span>;
 }
 
+function OutputMetric({
+  output,
+  reasoning,
+}: Pick<TokenUsage, "output" | "reasoning">) {
+  const title = [
+    `${integer.format(output)} visible output tokens`,
+    reasoning > 0 ? `${integer.format(reasoning)} reasoning tokens` : undefined,
+  ].filter(Boolean).join(" · ");
+  return (
+    <span className="metric-stack output-metric" title={title}>
+      <span><TokenValue value={output} /></span>
+      {reasoning > 0 && (
+        <small><TokenValue value={reasoning} /> reasoning</small>
+      )}
+    </span>
+  );
+}
+
 function ContextMetric({
   value,
   secondary,
@@ -672,8 +690,11 @@ function aggregateSessionTrees(sessions: SessionDetail[]) {
       0,
     ),
     output: tree.reduce(
-      (total, session) =>
-        total + session.tokens.output + session.tokens.reasoning,
+      (total, session) => total + session.tokens.output,
+      0,
+    ),
+    reasoning: tree.reduce(
+      (total, session) => total + session.tokens.reasoning,
       0,
     ),
     processed: tree.reduce(
@@ -1190,8 +1211,9 @@ function CallTable({
                     )}
                   </td>
                   <td>
-                    <TokenValue
-                      value={call.tokens.output + call.tokens.reasoning}
+                    <OutputMetric
+                      output={call.tokens.output}
+                      reasoning={call.tokens.reasoning}
                     />
                   </td>
                   <td>
@@ -1490,9 +1512,9 @@ function SessionBreakdown({
                       <TurnCacheStatus turn={turn} />
                     </td>
                     <td>
-                      <TokenValue
-                        value={metrics.output + metrics.reasoning +
-                          nestedMetrics.output}
+                      <OutputMetric
+                        output={metrics.output + nestedMetrics.output}
+                        reasoning={metrics.reasoning + nestedMetrics.reasoning}
                       />
                     </td>
                     <td>
@@ -1906,8 +1928,9 @@ export function SessionsPage() {
                             />
                           </td>
                           <td>
-                            <TokenValue
-                              value={tokens.output + tokens.reasoning}
+                            <OutputMetric
+                              output={tokens.output}
+                              reasoning={tokens.reasoning}
                             />
                           </td>
                           <td>

@@ -2028,7 +2028,8 @@ table.data-table {
   align-items: center;
 }
 
-.cache-metric {
+.cache-metric,
+.output-metric {
   align-items: flex-end;
 }
 
