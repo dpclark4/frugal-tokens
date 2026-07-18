@@ -7,10 +7,6 @@ import { getTtlMissMetrics } from "./api.ts";
 import { CompactOverview } from "./Overview.tsx";
 
 const integer = new Intl.NumberFormat();
-const compactInteger = new Intl.NumberFormat(undefined, {
-  notation: "compact",
-  maximumFractionDigits: 2,
-});
 const percent = new Intl.NumberFormat(undefined, {
   style: "percent",
   maximumFractionDigits: 1,
@@ -26,6 +22,145 @@ function share(value: number, total: number) {
   return percent.format(total === 0 ? 0 : value / total);
 }
 
+function CacheMissOverview({ metrics }: { metrics: TtlMissMetrics }) {
+  const { cacheMisses } = metrics;
+  const totalMisses = cacheMisses.full.misses + cacheMisses.partial.misses;
+  const attributedCost = cacheMisses.full.attributedCost +
+    cacheMisses.partial.attributedCost;
+  const unexpected = cacheMisses.unexpected;
+  const unexpectedMisses = unexpected.full.misses + unexpected.partial.misses;
+  const unexpectedCost = unexpected.full.attributedCost +
+    unexpected.partial.attributedCost;
+  const rows = [
+    { label: "Compaction-related", category: cacheMisses.compaction },
+    { label: "Unexpected — full", category: unexpected.full },
+    { label: "Unexpected — partial", category: unexpected.partial },
+  ];
+
+  return (
+    <div className="cache-miss-overview">
+      <div className="compact-overview-summary cache-miss-summary">
+        <div>
+          <strong>
+            {integer.format(cacheMisses.affectedSessions)} ({
+              share(cacheMisses.affectedSessions, metrics.sessions)
+            })
+          </strong>
+          <span>Affected root sessions</span>
+        </div>
+        <div>
+          <strong>{integer.format(totalMisses)}</strong>
+          <span>Total cache misses</span>
+        </div>
+        <div>
+          <strong>
+            {money.format(cacheMisses.affectedSessionCost)} ({
+              share(cacheMisses.affectedSessionCost, metrics.totalSessionCost)
+            })
+          </strong>
+          <span>Affected session spend</span>
+        </div>
+        <div>
+          <strong>
+            {money.format(attributedCost)} ({
+              share(attributedCost, cacheMisses.affectedSessionCost)
+            })
+          </strong>
+          <span>Cache-miss cost</span>
+        </div>
+      </div>
+
+      <div className="cache-miss-details">
+        <section className="cache-miss-section">
+          <div className="cache-miss-section-heading">
+            <h3>TTL expiry</h3>
+            <span>
+              {integer.format(metrics.misses.total)} misses ·{" "}
+              {integer.format(metrics.affectedSessions)} sessions ·{" "}
+              {money.format(metrics.misses.attributedCost)}
+            </span>
+          </div>
+          <div
+            className="ttl-expiry-table"
+            role="table"
+            aria-label="TTL expiry misses by return gap"
+          >
+            <div className="ttl-expiry-header" role="row">
+              <span role="columnheader">Root-session return</span>
+              <span role="columnheader">Misses</span>
+              <span role="columnheader">Miss cost</span>
+            </div>
+            {([
+              [
+                "Near-expiry return (<2 hours)",
+                metrics.misses.underTwoHours,
+                metrics.misses.underTwoHoursCost,
+              ],
+              [
+                "Same-day return (2–8 hours)",
+                metrics.misses.twoToEightHours,
+                metrics.misses.twoToEightHoursCost,
+              ],
+              [
+                "Next work period (8+ hours)",
+                metrics.misses.eightHoursOrMore,
+                metrics.misses.eightHoursOrMoreCost,
+              ],
+            ] as const).map(([label, count, cost]) => (
+              <div className="ttl-expiry-row" role="row" key={label}>
+                <span role="cell">{label}</span>
+                <small role="cell">
+                  {integer.format(count)} · {share(count, metrics.misses.total)}
+                </small>
+                <strong role="cell">{money.format(cost)}</strong>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="cache-miss-section">
+          <div className="cache-miss-section-heading">
+            <h3>Other cache misses</h3>
+            <span>
+              {integer.format(
+                cacheMisses.compaction.misses + unexpectedMisses,
+              )} misses · {money.format(
+                cacheMisses.compaction.attributedCost + unexpectedCost,
+              )}
+            </span>
+          </div>
+          <div
+            className="cache-miss-cost-table"
+            role="table"
+            aria-label="Non-TTL cache miss costs by cause"
+          >
+            <div className="cache-miss-cost-header" role="row">
+              <span role="columnheader">Cause</span>
+              <span role="columnheader">Misses</span>
+              <span role="columnheader">Sessions</span>
+              <span role="columnheader">Miss cost</span>
+              <span role="columnheader">Extra cost</span>
+            </div>
+            {rows.map(({ label, category }) => (
+              <div className="cache-miss-cost-row" role="row" key={label}>
+                <strong role="cell">{label}</strong>
+                <span role="cell">{integer.format(category.misses)}</span>
+                <span role="cell">
+                  {integer.format(category.affectedSessions)}
+                </span>
+                <span role="cell">{money.format(category.attributedCost)}</span>
+                <span role="cell">
+                  {money.format(category.estimatedExtraCost)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 export function TtlMissCard({
   harness,
   overview,
@@ -35,7 +170,7 @@ export function TtlMissCard({
   overview?: OverviewResponse;
   overviewError?: string;
 }) {
-  const [view, setView] = useState<"overview" | "ttl" | "cost">("overview");
+  const [view, setView] = useState<"overview" | "cache">("overview");
   const [metrics, setMetrics] = useState<TtlMissMetrics>();
   const [error, setError] = useState<string>();
 
@@ -50,7 +185,7 @@ export function TtlMissCard({
         setError(
           reason instanceof Error
             ? reason.message
-            : "Unable to load TTL metrics",
+            : "Unable to load cache miss metrics",
         );
       }
     });
@@ -60,15 +195,12 @@ export function TtlMissCard({
   }, [harness]);
 
   return (
-    <section
-      className="ttl-miss-card"
-      aria-label="Overview and cache efficiency"
-    >
+    <section className="ttl-miss-card" aria-label="Overview and cache misses">
       <div className="ttl-analytics-toolbar">
         <div
           className="chart-tabs"
           role="tablist"
-          aria-label="Overview and cache efficiency view"
+          aria-label="Overview and cache miss view"
         >
           <button
             type="button"
@@ -82,20 +214,11 @@ export function TtlMissCard({
           <button
             type="button"
             role="tab"
-            aria-selected={view === "ttl"}
-            className={view === "ttl" ? "active" : undefined}
-            onClick={() => setView("ttl")}
+            aria-selected={view === "cache"}
+            className={view === "cache" ? "active" : undefined}
+            onClick={() => setView("cache")}
           >
-            TTL expiry
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={view === "cost"}
-            className={view === "cost" ? "active" : undefined}
-            onClick={() => setView("cost")}
-          >
-            Miss cost
+            Cache misses
           </button>
         </div>
         <span>Last 90 days</span>
@@ -103,201 +226,13 @@ export function TtlMissCard({
       {view === "overview" && (
         <CompactOverview data={overview} error={overviewError} />
       )}
-      {view !== "overview" && !metrics && !error && (
-        <div className="ttl-miss-message">Analyzing session gaps...</div>
+      {view === "cache" && !metrics && !error && (
+        <div className="ttl-miss-message">Analyzing cache misses...</div>
       )}
-      {view !== "overview" && error && (
+      {view === "cache" && error && (
         <div className="ttl-miss-message chart-error">{error}</div>
       )}
-      {metrics && view === "ttl" && (
-        <>
-          <div className="ttl-miss-lead">
-            <strong>{integer.format(metrics.affectedSessions)}</strong>
-            <div>
-              <span>affected root sessions</span>
-              <b>
-                {share(metrics.affectedSessions, metrics.sessions)} of{" "}
-                {integer.format(metrics.sessions)} analyzed
-              </b>
-            </div>
-          </div>
-          <div className="ttl-cost-summary">
-            <div>
-              <span>Root-session spend</span>
-              <strong>{money.format(metrics.totalSessionCost)}</strong>
-              <small>
-                {share(metrics.totalSessionCost, metrics.totalCost)} of total
-              </small>
-            </div>
-            <div>
-              <span>Affected-session spend</span>
-              <strong>{money.format(metrics.affectedSessionCost)}</strong>
-              <small>
-                {share(metrics.affectedSessionCost, metrics.totalSessionCost)}
-                {" "}
-                of root spend
-              </small>
-            </div>
-            <div>
-              <span>Attributed TTL miss cost</span>
-              <strong>{money.format(metrics.misses.attributedCost)}</strong>
-              <small>
-                {share(
-                  metrics.misses.attributedCost,
-                  metrics.affectedSessionCost,
-                )} of affected spend
-              </small>
-            </div>
-          </div>
-          <div className="ttl-miss-breakdown">
-            <div className="ttl-miss-breakdown-title">
-              <span>Root session gap</span>
-              <strong>{integer.format(metrics.misses.total)} misses</strong>
-            </div>
-            {([
-              [
-                "Quick return (<2 hours)",
-                metrics.misses.underTwoHours,
-                metrics.misses.underTwoHoursCost,
-              ],
-              [
-                "Later return (2–8 hours)",
-                metrics.misses.twoToEightHours,
-                metrics.misses.twoToEightHoursCost,
-              ],
-              [
-                "Long-gap return (8+ hours)",
-                metrics.misses.eightHoursOrMore,
-                metrics.misses.eightHoursOrMoreCost,
-              ],
-            ] as const).map(([label, count, cost]) => (
-              <div className="ttl-miss-row" key={label}>
-                <span>{label}</span>
-                <i />
-                <strong>{money.format(cost)}</strong>
-                <small>
-                  {integer.format(count)} · {share(count, metrics.misses.total)}
-                </small>
-              </div>
-            ))}
-          </div>
-          {(metrics.hasUnpricedSessionCost || metrics.misses.unpriced > 0) && (
-            <p className="ttl-pricing-note">
-              Costs use known prices only
-              {metrics.misses.unpriced > 0
-                ? ` and exclude ${
-                  integer.format(metrics.misses.unpriced)
-                } unpriced miss${metrics.misses.unpriced === 1 ? "" : "es"}`
-                : ""}.
-            </p>
-          )}
-          <div className="ttl-subagent-summary">
-            <div>
-              <span>Subagent TTL misses</span>
-              <small>Reported separately from user-session resumptions</small>
-            </div>
-            <strong>{integer.format(metrics.subagents.misses)} misses</strong>
-            <span>
-              {integer.format(metrics.subagents.affectedSessions)} sessions
-            </span>
-          </div>
-        </>
-      )}
-      {metrics && view === "cost" && (() => {
-        const { cacheMisses } = metrics;
-        const totalMisses = cacheMisses.full.misses +
-          cacheMisses.partial.misses;
-        const attributedCost = cacheMisses.full.attributedCost +
-          cacheMisses.partial.attributedCost;
-        const unpriced = cacheMisses.full.unpriced +
-          cacheMisses.partial.unpriced;
-        return (
-          <>
-            <div className="ttl-miss-lead">
-              <strong>{integer.format(totalMisses)}</strong>
-              <div>
-                <span>cache misses</span>
-                <b>
-                  {integer.format(cacheMisses.affectedSessions)} of{" "}
-                  {integer.format(metrics.sessions)} root sessions affected
-                </b>
-              </div>
-            </div>
-            <div className="ttl-cost-summary">
-              <div>
-                <span>Root-session spend</span>
-                <strong>{money.format(metrics.totalSessionCost)}</strong>
-                <small>
-                  {share(metrics.totalSessionCost, metrics.totalCost)} of total
-                </small>
-              </div>
-              <div>
-                <span>Affected-session spend</span>
-                <strong>{money.format(cacheMisses.affectedSessionCost)}</strong>
-                <small>
-                  {share(
-                    cacheMisses.affectedSessionCost,
-                    metrics.totalSessionCost,
-                  )} of root spend
-                </small>
-              </div>
-              <div>
-                <span>Attributed miss cost</span>
-                <strong>{money.format(attributedCost)}</strong>
-                <small>
-                  {share(attributedCost, cacheMisses.affectedSessionCost)}{" "}
-                  of affected spend
-                </small>
-              </div>
-            </div>
-            <div
-              className="cache-miss-cost-table"
-              role="table"
-              aria-label="Full and partial cache miss costs"
-            >
-              <div className="cache-miss-cost-header" role="row">
-                <span role="columnheader">Type</span>
-                <span role="columnheader">Misses</span>
-                <span role="columnheader">Sessions</span>
-                <span role="columnheader">Attributed</span>
-                <span role="columnheader">Extra cost</span>
-              </div>
-              {(["full", "partial"] as const).map((type) => {
-                const category = cacheMisses[type];
-                return (
-                  <div className="cache-miss-cost-row" role="row" key={type}>
-                    <strong role="cell">
-                      {type === "full" ? "Full" : "Partial"}
-                    </strong>
-                    <span role="cell">{integer.format(category.misses)}</span>
-                    <span role="cell">
-                      {integer.format(category.affectedSessions)}
-                    </span>
-                    <span role="cell">
-                      {money.format(category.attributedCost)}
-                    </span>
-                    <span role="cell">
-                      {money.format(category.estimatedExtraCost)}
-                    </span>
-                    <small>
-                      {compactInteger.format(category.missedTokens)}{" "}
-                      reusable tokens missed
-                    </small>
-                  </div>
-                );
-              })}
-            </div>
-            <p className="cache-miss-cost-note">
-              Includes TTL and compaction-related misses
-              {unpriced > 0
-                ? `. Costs exclude ${integer.format(unpriced)} unpriced miss${
-                  unpriced === 1 ? "" : "es"
-                }`
-                : ""}.
-            </p>
-          </>
-        );
-      })()}
+      {metrics && view === "cache" && <CacheMissOverview metrics={metrics} />}
     </section>
   );
 }

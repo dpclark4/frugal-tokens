@@ -11,6 +11,7 @@ type CacheMiss = {
   gap: number;
   status: "full-miss" | "partial-hit";
   ttl: boolean;
+  compaction: boolean;
   attributedCost?: number;
   expectedReadCost?: number;
   estimatedExtraCost?: number;
@@ -39,6 +40,7 @@ function cacheMisses(calls: UsageCall[]) {
           gap: call.startedAt - previous.startedAt,
           status: assessment.status,
           ttl: !call.followsCompaction && ttlExpired(previous, call),
+          compaction: call.followsCompaction === true,
           attributedCost: estimate?.actualMissedCost,
           expectedReadCost: estimate?.expectedReadCost,
           estimatedExtraCost: estimate?.estimatedExtraCost,
@@ -116,6 +118,14 @@ export function aggregateTtlMisses(
       affectedSessions: 0,
       affectedSessionCost: 0,
       hasUnpricedAffectedSessionCost: false,
+      compaction: emptyCacheMissCategory(),
+      unexpected: {
+        affectedSessions: 0,
+        affectedSessionCost: 0,
+        hasUnpricedAffectedSessionCost: false,
+        full: emptyCacheMissCategory(),
+        partial: emptyCacheMissCategory(),
+      },
       full: emptyCacheMissCategory(),
       partial: emptyCacheMissCategory(),
     },
@@ -137,6 +147,10 @@ export function aggregateTtlMisses(
     );
     const allRootMisses = cacheMisses(rootCalls);
     const rootMisses = allRootMisses.filter((miss) => miss.ttl);
+    const compactionMisses = allRootMisses.filter((miss) => miss.compaction);
+    const unexpectedMisses = allRootMisses.filter((miss) =>
+      !miss.ttl && !miss.compaction
+    );
     const fullMisses = allRootMisses.filter((miss) =>
       miss.status === "full-miss"
     );
@@ -158,10 +172,25 @@ export function aggregateTtlMisses(
     result.hasUnpricedSessionCost ||= hasUnpricedRootSessionCost;
     addCacheMisses(result.cacheMisses.full, fullMisses);
     addCacheMisses(result.cacheMisses.partial, partialMisses);
+    addCacheMisses(result.cacheMisses.compaction, compactionMisses);
+    addCacheMisses(
+      result.cacheMisses.unexpected.full,
+      unexpectedMisses.filter((miss) => miss.status === "full-miss"),
+    );
+    addCacheMisses(
+      result.cacheMisses.unexpected.partial,
+      unexpectedMisses.filter((miss) => miss.status === "partial-hit"),
+    );
     if (allRootMisses.length > 0) {
       result.cacheMisses.affectedSessions++;
       result.cacheMisses.affectedSessionCost += rootSessionCost;
       result.cacheMisses.hasUnpricedAffectedSessionCost ||=
+        hasUnpricedRootSessionCost;
+    }
+    if (unexpectedMisses.length > 0) {
+      result.cacheMisses.unexpected.affectedSessions++;
+      result.cacheMisses.unexpected.affectedSessionCost += rootSessionCost;
+      result.cacheMisses.unexpected.hasUnpricedAffectedSessionCost ||=
         hasUnpricedRootSessionCost;
     }
     if (rootMisses.length > 0) {

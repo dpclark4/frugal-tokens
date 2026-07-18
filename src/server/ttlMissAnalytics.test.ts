@@ -104,6 +104,38 @@ Deno.test("counts every root TTL miss in its elapsed-time bucket", () => {
       affectedSessions: 1,
       affectedSessionCost: 0.0015,
       hasUnpricedAffectedSessionCost: false,
+      compaction: {
+        affectedSessions: 0,
+        misses: 0,
+        attributedCost: 0,
+        expectedReadCost: 0,
+        estimatedExtraCost: 0,
+        missedTokens: 0,
+        unpriced: 0,
+      },
+      unexpected: {
+        affectedSessions: 0,
+        affectedSessionCost: 0,
+        hasUnpricedAffectedSessionCost: false,
+        full: {
+          affectedSessions: 0,
+          misses: 0,
+          attributedCost: 0,
+          expectedReadCost: 0,
+          estimatedExtraCost: 0,
+          missedTokens: 0,
+          unpriced: 0,
+        },
+        partial: {
+          affectedSessions: 0,
+          misses: 0,
+          attributedCost: 0,
+          expectedReadCost: 0,
+          estimatedExtraCost: 0,
+          missedTokens: 0,
+          unpriced: 0,
+        },
+      },
       full: {
         affectedSessions: 1,
         misses: 3,
@@ -126,7 +158,7 @@ Deno.test("counts every root TTL miss in its elapsed-time bucket", () => {
   });
 });
 
-Deno.test("separates subagent misses and excludes compactions and old sessions", () => {
+Deno.test("separates subagent misses and keeps compactions outside TTL", () => {
   const calls = [
     call("root", start),
     call("root", start + 10 * MINUTE, { followsCompaction: true }),
@@ -166,6 +198,38 @@ Deno.test("separates subagent misses and excludes compactions and old sessions",
       affectedSessions: 1,
       affectedSessionCost: 0.00075,
       hasUnpricedAffectedSessionCost: false,
+      compaction: {
+        affectedSessions: 1,
+        misses: 1,
+        attributedCost: 0.000375,
+        expectedReadCost: 0.00003,
+        estimatedExtraCost: 0.000345,
+        missedTokens: 100,
+        unpriced: 0,
+      },
+      unexpected: {
+        affectedSessions: 0,
+        affectedSessionCost: 0,
+        hasUnpricedAffectedSessionCost: false,
+        full: {
+          affectedSessions: 0,
+          misses: 0,
+          attributedCost: 0,
+          expectedReadCost: 0,
+          estimatedExtraCost: 0,
+          missedTokens: 0,
+          unpriced: 0,
+        },
+        partial: {
+          affectedSessions: 0,
+          misses: 0,
+          attributedCost: 0,
+          expectedReadCost: 0,
+          estimatedExtraCost: 0,
+          missedTokens: 0,
+          unpriced: 0,
+        },
+      },
       full: {
         affectedSessions: 1,
         misses: 1,
