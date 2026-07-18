@@ -55,8 +55,8 @@ function MetricRow({
 }) {
   const value = (number: number) => (
     <>
-      {format(number)}
       {partial && <sup title="Known priced spend only">*</sup>}
+      {format(number)}
     </>
   );
   return (
@@ -97,8 +97,8 @@ export function CompactOverview({
         </div>
         <div title="Spend using known model prices">
           <strong>
-            {currency.format(knownSpend)}
             {hasUnpricedSpend && <sup>*</sup>}
+            {currency.format(knownSpend)}
           </strong>
           <span>Priced spend</span>
         </div>
@@ -195,8 +195,8 @@ export function CompactOverview({
                 </i>
                 <small>{percent(model.spendShare)}</small>
                 <strong>
-                  {currency.format(model.spend)}
                   {model.hasUnpricedCost && <sup>*</sup>}
+                  {currency.format(model.spend)}
                 </strong>
               </div>
             ))}

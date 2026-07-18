@@ -278,9 +278,14 @@ h1 {
   text-transform: uppercase;
 }
 
-.compact-overview-summary sup,
-.compact-model-row sup {
+.compact-overview sup {
+  position: relative;
+  top: -.35em;
+  margin-right: 1px;
   color: var(--danger);
+  font-size: .75em;
+  line-height: 0;
+  vertical-align: baseline;
 }
 
 .compact-overview-table {
