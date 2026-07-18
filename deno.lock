@@ -8,6 +8,7 @@
     "npm:concurrently@10.0.3": "10.0.3",
     "npm:dbmate@^2.28.0": "2.33.0",
     "npm:hono@4.12.29": "4.12.29",
+    "npm:lucide-react@1.25.0": "1.25.0_react@19.2.7",
     "npm:react-dom@19.2.7": "19.2.7_react@19.2.7",
     "npm:react@19.2.7": "19.2.7",
     "npm:recharts@3.3.0": "3.3.0_react@19.2.7_react-dom@19.2.7__react@19.2.7_react-is@19.2.7_@types+react@19.2.17_redux@5.0.1",
@@ -517,6 +518,12 @@
         "lightningcss-win32-x64-msvc"
       ]
     },
+    "lucide-react@1.25.0_react@19.2.7": {
+      "integrity": "sha512-/mdJTRbiwcLOQ1NZZK1amZF9rIZyvO18D6r9TngE6TG1NmqHgFuT4eE7Xrkm9UsXMbBJD1NlfwHVltCDWHrOTw==",
+      "dependencies": [
+        "react"
+      ]
+    },
     "nanoid@3.3.15": {
       "integrity": "sha512-y7Wygv/7mEOvxTuEQDB8StXdMRBWf1kR/tlhAzBRUFkB2jfcLOAxO/SHmOO2zgz1pVgK29/kyupn059/bCHdjA==",
       "bin": true
@@ -751,6 +758,7 @@
       "npm:@types/react@19.2.17",
       "npm:@vitejs/plugin-react@6.0.3",
       "npm:hono@4.12.29",
+      "npm:lucide-react@1.25.0",
       "npm:react-dom@19.2.7",
       "npm:react@19.2.7",
       "npm:recharts@3.3.0",

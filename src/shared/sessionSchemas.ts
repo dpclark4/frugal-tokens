@@ -98,6 +98,7 @@ export const sessionSummarySchema = z.object({
   inclusiveModelCalls: z.number().int().nonnegative().optional(),
   inclusiveReportedCost: z.number().nonnegative().optional(),
   inclusiveComputedCost: z.number().nonnegative().optional(),
+  inclusiveImageInputs: z.number().int().nonnegative().optional(),
   inclusiveTokens: tokenUsageSchema.optional(),
   reportedCost: z.number().nonnegative().optional(),
   computedCost: z.number().nonnegative().optional(),

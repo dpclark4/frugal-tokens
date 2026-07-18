@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { getRouteApi } from "@tanstack/react-router";
+import { Image } from "lucide-react";
 import type {
   CacheAssessment,
   CacheIssue,
@@ -64,6 +65,26 @@ const COST_EPSILON = 0.0001;
 
 function TokenValue({ value }: { value: number }) {
   return <span title={integer.format(value)}>{compact.format(value)}</span>;
+}
+
+function imageInputLabel(count: number) {
+  return `${count} image input${count === 1 ? "" : "s"} included`;
+}
+
+function ImageInputIndicator({ count }: { count: number }) {
+  if (count === 0) return null;
+  const label = imageInputLabel(count);
+  return (
+    <span
+      className="input-image-indicator"
+      role="img"
+      aria-label={label}
+      title={label}
+    >
+      <Image size={19} strokeWidth={1.75} aria-hidden="true" />
+      {count > 1 && <small>{count}</small>}
+    </span>
+  );
 }
 
 function OutputMetric({
@@ -1364,6 +1385,7 @@ function SessionBreakdown({
             <col className="turn-activity-column" />
             <col className="turn-context-column" />
             <col className="turn-input-column" />
+            <col className="turn-image-column" />
             <col className="turn-cache-column" />
             <col className="turn-output-column" />
             <col className="turn-cost-column" />
@@ -1376,6 +1398,7 @@ function SessionBreakdown({
               <th>Activity</th>
               <th>Context</th>
               <th>Volume</th>
+              <th aria-label="Image input" />
               <th>Cache</th>
               <th>Output</th>
               <th>Cost</th>
@@ -1390,6 +1413,10 @@ function SessionBreakdown({
               const nestedMetrics = aggregateSessionTrees(subs);
               const toolCalls = turn.calls.reduce(
                 (total, call) => total + call.activity.tools.length,
+                0,
+              );
+              const inputImages = turn.calls.reduce(
+                (total, call) => total + (call.activity.images ?? 0),
                 0,
               );
               const directEnd = turn.calls.reduce(
@@ -1508,7 +1535,10 @@ function SessionBreakdown({
                           </span>
                         )}
                     </td>
-                    <td>
+                    <td className="image-input-cell">
+                      <ImageInputIndicator count={inputImages} />
+                    </td>
+                    <td className="turn-cache-cell">
                       <TurnCacheStatus turn={turn} />
                     </td>
                     <td>
@@ -1539,7 +1569,7 @@ function SessionBreakdown({
                   </tr>
                   {open && (
                     <tr className="turn-detail-row">
-                      <td colSpan={9}>
+                      <td colSpan={10}>
                         <CallTable
                           calls={turn.calls}
                           session={session}
@@ -1779,6 +1809,7 @@ export function SessionsPage() {
                   <col className="activity-column" />
                   <col className="context-column" />
                   <col className="input-column" />
+                  <col className="session-image-column" />
                   <col className="cache-column" />
                   <col className="output-column" />
                   <col className="cost-column" />
@@ -1791,6 +1822,7 @@ export function SessionsPage() {
                     <th>Activity</th>
                     <th>Context</th>
                     <th>Volume</th>
+                    <th aria-label="Image input" />
                     <th title="Full and partial cache misses">Cache</th>
                     <th>Output</th>
                     <th title="Computed cost; ! if reported is non-zero and differs">
@@ -1804,6 +1836,7 @@ export function SessionsPage() {
                     const detail = details[session.id];
                     const span = sessionSpan(detail ?? session);
                     const tokens = session.inclusiveTokens ?? session.tokens;
+                    const imageInputs = session.inclusiveImageInputs ?? 0;
                     const hasInclusiveMetrics =
                       session.inclusiveTokens !== undefined;
                     const hasSubagents = (session.subagentCount ?? 0) > 0;
@@ -1920,6 +1953,9 @@ export function SessionsPage() {
                               anthropic={anthropic}
                             />
                           </td>
+                          <td className="image-input-cell">
+                            <ImageInputIndicator count={imageInputs} />
+                          </td>
                           <td>
                             <SessionCacheStatus
                               summary={session.cacheSummary}
@@ -1951,7 +1987,7 @@ export function SessionsPage() {
                         </tr>
                         {expanded && (
                           <tr className="detail-row">
-                            <td colSpan={9}>
+                            <td colSpan={10}>
                               {detail
                                 ? <SessionBreakdown session={detail} />
                                 : (

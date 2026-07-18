@@ -276,10 +276,22 @@ type SessionTreeMetrics = {
   sessions: SessionDetail[];
   userTurns: number;
   modelCalls: number;
+  imageInputs: number;
   tokens: TokenUsage;
   reportedCost?: number;
   computedCost?: number;
 };
+
+function imageInputCount(session: Pick<SessionDetail, "turns">) {
+  return session.turns.reduce(
+    (total, turn) =>
+      total + turn.calls.reduce(
+        (callTotal, call) => callTotal + (call.activity.images ?? 0),
+        0,
+      ),
+    0,
+  );
+}
 
 function sessionTreeMetrics(session: SessionDetail): SessionTreeMetrics {
   const sessions = [
@@ -294,6 +306,10 @@ function sessionTreeMetrics(session: SessionDetail): SessionTreeMetrics {
     sessions,
     userTurns: sessions.reduce((total, item) => total + item.userTurns, 0),
     modelCalls: sessions.reduce((total, item) => total + item.modelCalls, 0),
+    imageInputs: sessions.reduce(
+      (total, item) => total + imageInputCount(item),
+      0,
+    ),
     tokens: sumTokens(sessions.map((item) => item.tokens)),
     reportedCost: reportedCosts.every((cost) => cost !== undefined)
       ? reportedCosts.reduce((total, cost) => total + cost!, 0)
@@ -376,6 +392,7 @@ function priceSummaries(items: SessionSummary[]) {
       inclusiveModelCalls: inclusive.modelCalls,
       inclusiveReportedCost: inclusive.reportedCost,
       inclusiveComputedCost: inclusive.computedCost,
+      inclusiveImageInputs: inclusive.imageInputs,
       inclusiveTokens: inclusive.tokens,
     };
   });
