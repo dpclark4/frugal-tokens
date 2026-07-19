@@ -44,14 +44,6 @@ try {
   ], { FRUGAL_TOKENS_DATABASE_URL: sourceDatabase });
 
   await run("railway", [
-    "down",
-    "--service",
-    service,
-    "--environment",
-    environment,
-    "--yes",
-  ]);
-  await run("railway", [
     "volume",
     "files",
     "--volume",
