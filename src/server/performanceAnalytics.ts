@@ -1,0 +1,176 @@
+import type { PerformanceResponse } from "../shared/sessionSchemas.ts";
+import {
+  categorizeUsageCallCache,
+  type AssessedUsageCall,
+} from "./cacheAnalysis.ts";
+import type { UsageCall } from "./usage.ts";
+
+export const PERFORMANCE_RANGE_DAYS = 90;
+
+export const PERFORMANCE_MODELS = {
+  openai: [
+    "gpt-5.2-codex",
+    "gpt-5.2-codex-low",
+    "gpt-5.2-codex-medium",
+    "gpt-5.3-codex",
+    "gpt-5.4",
+    "gpt-5.5",
+    "gpt-5.6-luna",
+    "gpt-5.6-sol",
+    "gpt-5.6-terra",
+  ],
+  anthropic: [
+    "claude-fable-5",
+    "claude-haiku-4-5",
+    "claude-haiku-4-5-20251001",
+    "claude-opus-4-5",
+    "claude-opus-4-6",
+    "claude-opus-4-7",
+    "claude-opus-4-8",
+    "claude-sonnet-4-5",
+    "claude-sonnet-4-5-20250929",
+    "claude-sonnet-5",
+  ],
+} as const;
+
+type Vendor = keyof typeof PERFORMANCE_MODELS;
+type Week = PerformanceResponse[Vendor]["weeks"][number];
+
+function vendorFor(call: UsageCall): Vendor | undefined {
+  const provider = call.provider.toLowerCase();
+  const model = call.model.toLowerCase();
+  if (provider.includes("anthropic") || model.startsWith("claude-")) {
+    return "anthropic";
+  }
+  if (provider.startsWith("openai") || model.startsWith("gpt-")) {
+    return "openai";
+  }
+  return undefined;
+}
+
+function localDate(value: number) {
+  const date = new Date(value);
+  return Temporal.PlainDate.from({
+    year: date.getFullYear(),
+    month: date.getMonth() + 1,
+    day: date.getDate(),
+  });
+}
+
+function weekKey(value: number) {
+  const date = localDate(value);
+  return date.subtract({ days: date.dayOfWeek - 1 }).toString();
+}
+
+function emptyWeek(date: string): Week {
+  return {
+    date,
+    endDate: Temporal.PlainDate.from(date).add({ days: 6 }).toString(),
+    sessions: 0,
+    sessionsWithMiss: 0,
+    turns: 0,
+    turnsWithMiss: 0,
+  };
+}
+
+function weeksBetween(start: number, end: number) {
+  const first = Temporal.PlainDate.from(weekKey(start));
+  const last = Temporal.PlainDate.from(weekKey(end));
+  const weeks = new Map<string, Week>();
+  for (
+    let date = first;
+    Temporal.PlainDate.compare(date, last) <= 0;
+    date = date.add({ weeks: 1 })
+  ) {
+    weeks.set(date.toString(), emptyWeek(date.toString()));
+  }
+  return weeks;
+}
+
+function providerResult(
+  calls: AssessedUsageCall[],
+  vendor: Vendor,
+  selectedModel: string,
+  start: number,
+  end: number,
+): PerformanceResponse[Vendor] {
+  const matching = calls.filter((call) =>
+    vendorFor(call) === vendor &&
+    (selectedModel === "all" || call.model === selectedModel) &&
+    call.sessionStartedAt >= start && call.sessionStartedAt <= end
+  );
+  const weeks = weeksBetween(start, end);
+  const sessions = Map.groupBy(
+    matching,
+    (call) => `${call.harness}:${call.session.rootID}`,
+  );
+  let sessionsWithMiss = 0;
+  let turns = 0;
+  let turnsWithMiss = 0;
+
+  for (const sessionCalls of sessions.values()) {
+    const bucket = weeks.get(weekKey(sessionCalls[0].sessionStartedAt));
+    if (!bucket) continue;
+    bucket.sessions++;
+    const sessionMiss = sessionCalls.some((call) =>
+      call.cacheAssessment.cause === undefined &&
+      (call.cacheAssessment.status === "partial-hit" ||
+        call.cacheAssessment.status === "full-miss")
+    );
+    if (sessionMiss) {
+      sessionsWithMiss++;
+      bucket.sessionsWithMiss++;
+    }
+    const sessionTurns = Map.groupBy(
+      sessionCalls,
+      (call) => `${call.session.id}:${call.turnID}`,
+    );
+    turns += sessionTurns.size;
+    bucket.turns += sessionTurns.size;
+    for (const turnCalls of sessionTurns.values()) {
+      if (turnCalls.some((call) =>
+        call.cacheAssessment.cause === undefined &&
+        (call.cacheAssessment.status === "partial-hit" ||
+          call.cacheAssessment.status === "full-miss")
+      )) {
+        turnsWithMiss++;
+        bucket.turnsWithMiss++;
+      }
+    }
+  }
+
+  return {
+    provider: vendor,
+    selectedModel,
+    sessions: sessions.size,
+    sessionsWithMiss,
+    turns,
+    turnsWithMiss,
+    weeks: [...weeks.values()],
+  };
+}
+
+export function aggregatePerformance(
+  calls: UsageCall[],
+  start: number,
+  end: number,
+  openaiModel = "all",
+  anthropicModel = "all",
+): PerformanceResponse {
+  const assessed = categorizeUsageCallCache(calls);
+  return {
+    rangeDays: PERFORMANCE_RANGE_DAYS,
+    models: {
+      openai: [...PERFORMANCE_MODELS.openai],
+      anthropic: [...PERFORMANCE_MODELS.anthropic],
+    },
+    openai: providerResult(assessed, "openai", openaiModel, start, end),
+    anthropic: providerResult(
+      assessed,
+      "anthropic",
+      anthropicModel,
+      start,
+      end,
+    ),
+  };
+}

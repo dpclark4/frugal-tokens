@@ -21,6 +21,11 @@ import type { UsageCall } from "./usage.ts";
 import { aggregateUsage } from "./usageAnalytics.ts";
 import { aggregateTtlMisses } from "./ttlMissAnalytics.ts";
 import {
+  aggregatePerformance,
+  PERFORMANCE_MODELS,
+  PERFORMANCE_RANGE_DAYS,
+} from "./performanceAnalytics.ts";
+import {
   aggregateOverview,
   ROTATION_INACTIVITY_MINUTES,
 } from "./overviewAnalytics.ts";
@@ -437,6 +442,54 @@ function overviewSessions(start: number, harness: string) {
   }
   return sessions;
 }
+
+app.get("/api/performance", (context) => {
+  const harness = context.req.query("harness") ?? "all";
+  if (!["all", "opencode", "claude-code", "pi", "codex"].includes(harness)) {
+    return context.json({ error: "Invalid harness" }, 400);
+  }
+  const openaiModel = context.req.query("openai") ?? "all";
+  const anthropicModel = context.req.query("anthropic") ?? "all";
+  if (
+    openaiModel !== "all" &&
+    !PERFORMANCE_MODELS.openai.includes(
+      openaiModel as (typeof PERFORMANCE_MODELS.openai)[number],
+    )
+  ) return context.json({ error: "Invalid OpenAI model" }, 400);
+  if (
+    anthropicModel !== "all" &&
+    !PERFORMANCE_MODELS.anthropic.includes(
+      anthropicModel as (typeof PERFORMANCE_MODELS.anthropic)[number],
+    )
+  ) return context.json({ error: "Invalid Anthropic model" }, 400);
+
+  const end = Date.now();
+  const start = new Date(
+    new Date(end).setHours(0, 0, 0, 0) -
+      (PERFORMANCE_RANGE_DAYS - 1) * 86_400_000,
+  ).getTime();
+  const calls: UsageCall[] = [];
+  if (archiveRepository) {
+    calls.push(...archiveRepository.listUsageCalls(
+      start,
+      harness === "all" ? undefined : harness as SessionSummary["harness"],
+    ));
+  } else {
+    const sources = [
+      ["opencode", repository],
+      ["claude-code", claudeRepository],
+      ["pi", piRepository],
+      ["codex", codexRepository],
+    ] as const;
+    for (const [name, source] of sources) {
+      if (!source || (harness !== "all" && harness !== name)) continue;
+      calls.push(...source.listUsageCalls(start));
+    }
+  }
+  return context.json(
+    aggregatePerformance(calls, start, end, openaiModel, anthropicModel),
+  );
+});
 
 app.get("/api/ttl-misses", (context) => {
   const harness = context.req.query("harness") ?? "all";

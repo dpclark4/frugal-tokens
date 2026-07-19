@@ -274,6 +274,35 @@ export const overviewResponseSchema = z.object({
   })),
 });
 
+const performanceWeekSchema = z.object({
+  date: z.string(),
+  endDate: z.string(),
+  sessions: z.number().int().nonnegative(),
+  sessionsWithMiss: z.number().int().nonnegative(),
+  turns: z.number().int().nonnegative(),
+  turnsWithMiss: z.number().int().nonnegative(),
+});
+
+const performanceProviderSchema = z.object({
+  provider: z.enum(["openai", "anthropic"]),
+  selectedModel: z.string(),
+  sessions: z.number().int().nonnegative(),
+  sessionsWithMiss: z.number().int().nonnegative(),
+  turns: z.number().int().nonnegative(),
+  turnsWithMiss: z.number().int().nonnegative(),
+  weeks: z.array(performanceWeekSchema),
+});
+
+export const performanceResponseSchema = z.object({
+  rangeDays: z.number().int().positive(),
+  models: z.object({
+    openai: z.array(z.string()),
+    anthropic: z.array(z.string()),
+  }),
+  openai: performanceProviderSchema,
+  anthropic: performanceProviderSchema,
+});
+
 export const ttlMissMetricsSchema = z.object({
   rangeDays: z.number().int().positive(),
   sessions: z.number().int().nonnegative(),
@@ -367,4 +396,5 @@ export type SessionSummary = z.infer<typeof sessionSummarySchema>;
 export type TokenUsage = z.infer<typeof tokenUsageSchema>;
 export type UsageResponse = z.infer<typeof usageResponseSchema>;
 export type OverviewResponse = z.infer<typeof overviewResponseSchema>;
+export type PerformanceResponse = z.infer<typeof performanceResponseSchema>;
 export type TtlMissMetrics = z.infer<typeof ttlMissMetricsSchema>;

@@ -102,6 +102,7 @@ Deno.test("removes empty turns without dropping reported cost", () => {
           parentID: undefined,
         },
         cacheChainID: "session",
+        turnID: "session:priced-user",
         sessionStartedAt: 1,
         provider,
         model,

@@ -434,6 +434,7 @@ function decodeUsageMessage(
         parentID: session.parentID,
       },
       cacheChainID: (row as UsageMessageRow).session_id,
+      turnID: "unassigned",
       sessionStartedAt: session.rootStartedAt,
       provider: message.providerID ?? "unknown",
       model: message.modelID ?? "unknown",
@@ -627,17 +628,20 @@ export class OpenCodeRepository {
       });
     }
     const sessionsWithUserTurn = new Set<string>();
+    const activeTurnIDs = new Map<string, string>();
     if (startedAt !== undefined) {
       const priorSessions = this.#db.prepare(`
-        SELECT DISTINCT session_id
+        SELECT id, session_id
         FROM message
         WHERE time_created < ?
           AND json_valid(data)
           AND json_extract(data, '$.role') = 'user'
-      `).all(startedAt) as Array<{ session_id: string }>;
-      priorSessions.forEach(({ session_id }) =>
-        sessionsWithUserTurn.add(session_id)
-      );
+        ORDER BY time_created, id
+      `).all(startedAt) as Array<{ id: string; session_id: string }>;
+      priorSessions.forEach(({ id, session_id }) => {
+        sessionsWithUserTurn.add(session_id);
+        activeTurnIDs.set(session_id, id);
+      });
     }
     const rows = startedAt === undefined
       ? this.#db.prepare(`
@@ -659,10 +663,14 @@ export class OpenCodeRepository {
       if (!decoded) continue;
       if (decoded.role === "user") {
         sessionsWithUserTurn.add(row.session_id);
+        activeTurnIDs.set(row.session_id, row.id);
         continue;
       }
       if (decoded.call && sessionsWithUserTurn.has(row.session_id)) {
-        calls.push(decoded.call);
+        calls.push({
+          ...decoded.call,
+          turnID: `${row.session_id}:${activeTurnIDs.get(row.session_id) ?? "prior"}`,
+        });
       }
     }
     return calls;

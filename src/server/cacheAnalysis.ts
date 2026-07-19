@@ -7,6 +7,7 @@ import type {
   TurnCacheSummary,
 } from "../shared/sessionSchemas.ts";
 import { hasInputContext } from "../shared/contextMetrics.ts";
+import type { UsageCall } from "./usage.ts";
 
 export const CACHE_HIT_RATIO = 0.9;
 export const CACHE_FULL_MISS_RATIO = 0.1;
@@ -83,6 +84,40 @@ export function ttlExpired(
     ) return true;
   }
   return elapsed >= CACHE_TTL_1H_MS;
+}
+
+export type AssessedUsageCall = UsageCall & {
+  cacheAssessment: CacheAssessment;
+  previousComparableCall?: UsageCall;
+};
+
+export function categorizeUsageCallCache(
+  calls: UsageCall[],
+): AssessedUsageCall[] {
+  const categorized: AssessedUsageCall[] = [];
+  for (
+    const chain of Map.groupBy(
+      calls,
+      (call) => `${call.harness}:${call.cacheChainID}`,
+    ).values()
+  ) {
+    let previous: UsageCall | undefined;
+    for (const call of chain.toSorted((a, b) => a.startedAt - b.startedAt)) {
+      const rawAssessment = assessCache(previous, call);
+      const cacheAssessment = isMiss(rawAssessment) && call.followsCompaction
+        ? { ...rawAssessment, cause: "compaction" as const }
+        : isMiss(rawAssessment) && previous && ttlExpired(previous, call)
+        ? { ...rawAssessment, cause: "ttl" as const }
+        : rawAssessment;
+      categorized.push({
+        ...call,
+        cacheAssessment,
+        ...(previous ? { previousComparableCall: previous } : {}),
+      });
+      if (hasInputContext(call.tokens)) previous = call;
+    }
+  }
+  return categorized;
 }
 
 export function summarizeTurnCache(calls: ModelCall[]): TurnCacheSummary {

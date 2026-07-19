@@ -1,5 +1,6 @@
 import {
   overviewResponseSchema,
+  performanceResponseSchema,
   sessionDetailSchema,
   sessionListResponseSchema,
   ttlMissMetricsSchema,
@@ -31,6 +32,21 @@ export async function getUsage(range: number | "all", harness: string) {
 export async function getOverview(range: number | "all", harness: string) {
   return overviewResponseSchema.parse(
     await getJson(`/api/overview?range=${range}&harness=${harness}`),
+  );
+}
+
+export async function getPerformance(
+  harness: string,
+  openaiModel: string,
+  anthropicModel: string,
+) {
+  const query = new URLSearchParams({
+    harness,
+    openai: openaiModel,
+    anthropic: anthropicModel,
+  });
+  return performanceResponseSchema.parse(
+    await getJson(`/api/performance?${query}`),
   );
 }
 
