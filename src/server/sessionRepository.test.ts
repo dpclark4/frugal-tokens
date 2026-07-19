@@ -97,6 +97,20 @@ Deno.test("stores and reads canonical sessions atomically", () => {
 
     repository.replaceSourceSession(importedSession(sourceID, "root"));
     repository.replaceSourceSession(importedSession(sourceID, "child", "root"));
+    const empty = importedSession(sourceID, "empty");
+    empty.session.userTurns = 0;
+    empty.session.modelCalls = 0;
+    empty.session.tokens = {
+      uncachedInput: 0,
+      cacheRead: 0,
+      freshPrompt: 0,
+      output: 0,
+      reasoning: 0,
+      processed: 0,
+    };
+    empty.session.turns = [];
+    empty.session.contextEvents = [];
+    repository.replaceSourceSession(empty);
     const root = importedSession(sourceID, "root");
     root.session.turns[0].calls[0].activity.tools.push({
       sourceID: "tool-1",
