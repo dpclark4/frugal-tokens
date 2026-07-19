@@ -56,22 +56,19 @@ function SessionInputTooltip({ active, payload }: {
           <span>{formatTokens(row.median)}</span>
         </div>
         <div>
-          <span>p90</span>
-          <span>{formatTokens(row.p90)}</span>
-        </div>
-        <div>
           <span>Average</span>
           <span>{formatTokens(row.average)}</span>
+        </div>
+        <div>
+          <span>p90</span>
+          <span>{formatTokens(row.p90)}</span>
         </div>
       </div>
     </div>
   );
 }
 
-export function SessionInputChart({ usage, range }: {
-  usage: UsageResponse;
-  range: 7 | 30 | 90 | "all";
-}) {
+export function SessionInputChart({ usage }: { usage: UsageResponse }) {
   const [bucket, setBucket] = useState<"day" | "week">("week");
   const cohorts = bucket === "day"
     ? usage.sessionInputDays
@@ -88,16 +85,11 @@ export function SessionInputChart({ usage, range }: {
   return (
     <>
       <div className="usage-chart-heading">
-        <div>
-          <p className="eyebrow">Usage pulse</p>
-          <h2>Model input volume per session</h2>
-          <p className="chart-total">
-            <strong>
-              {sessions} {sessions === 1 ? "session" : "sessions"}
-            </strong>
-            <span>{range === "all" ? "All time" : `Last ${range} days`}</span>
-          </p>
-        </div>
+        <p className="chart-total">
+          <strong>
+            {sessions} {sessions === 1 ? "session" : "sessions"}
+          </strong>
+        </p>
         <div className="segmented" aria-label="Session size rollup">
           {(["day", "week"] as const).map((value) => (
             <button
@@ -184,21 +176,6 @@ export function SessionInputChart({ usage, range }: {
             </ResponsiveContainer>
           )}
       </div>
-      {data.length > 0 && (
-        <div className="cache-legend" aria-label="Session input legend">
-          <span>
-            <i style={{ background: "#466244" }} />Median
-          </span>
-          <span>
-            <i style={{ background: "#c18a3d", opacity: 0.35 }} />Median to p90
-          </span>
-        </div>
-      )}
-      <p className="chart-note session-input-note">
-        Sessions are grouped by start{" "}
-        {bucket === "day" ? "date" : "week"}. Input includes uncached,
-        cache-read, and cache-write tokens.
-      </p>
     </>
   );
 }

@@ -848,35 +848,30 @@ h1 {
   letter-spacing: .05em;
 }
 
-.subagent-summary {
+.subagent-chart-summary {
   display: grid;
-  grid-template-columns: max-content auto;
-  gap: 4px 16px;
-  width: fit-content;
-  margin: 10px 0 5px;
+  grid-template-columns: max-content max-content max-content;
+  gap: 4px 10px;
+  margin: 0;
   font: 11px var(--mono);
 }
 
-.subagent-summary > div {
+.subagent-chart-summary > div {
   display: contents;
 }
 
-.subagent-summary dt {
+.subagent-chart-summary dt {
   color: var(--muted);
 }
 
-.subagent-summary dd {
+.subagent-chart-summary dd {
   margin: 0;
-  color: var(--ink);
   font-weight: 600;
   text-align: right;
 }
 
-.usage-chart-heading .subagent-summary-range {
+.subagent-chart-summary span {
   color: var(--muted);
-  font: 10px var(--mono);
-  letter-spacing: .05em;
-  text-transform: uppercase;
 }
 
 .segmented {
@@ -988,26 +983,6 @@ h1 {
   font: 10px var(--mono);
 }
 
-.cache-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 20px;
-  padding: 0 28px 18px;
-  color: var(--muted);
-  font: 10px var(--mono);
-}
-
-.cache-legend span {
-  display: inline-flex;
-  align-items: center;
-}
-
-.cache-legend i {
-  width: 8px;
-  height: 8px;
-  margin-right: 7px;
-}
-
 .model-summary-item strong {
   color: var(--ink);
   font-weight: 600;
@@ -1054,10 +1029,6 @@ h1 {
   margin: -8px 28px 18px;
   color: var(--danger);
   font: 10px var(--mono);
-}
-
-.session-input-note {
-  color: var(--muted);
 }
 
 .sessions-panel {

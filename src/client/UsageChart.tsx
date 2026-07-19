@@ -86,12 +86,8 @@ export function UsageChart({ harness }: { harness: string }) {
           metric={view === "spend" ? "cost" : "input"}
         />
       )}
-      {usage && view === "session-input" && (
-        <SessionInputChart usage={usage} range={range} />
-      )}
-      {usage && view === "subagents" && (
-        <SubagentChart usage={usage} range={range} />
-      )}
+      {usage && view === "session-input" && <SessionInputChart usage={usage} />}
+      {usage && view === "subagents" && <SubagentChart usage={usage} />}
     </section>
   );
 }

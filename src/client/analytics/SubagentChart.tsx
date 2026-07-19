@@ -14,6 +14,10 @@ const day = new Intl.DateTimeFormat(undefined, {
   month: "short",
   day: "numeric",
 });
+const shortDay = new Intl.DateTimeFormat("en-US", {
+  month: "numeric",
+  day: "numeric",
+});
 const compact = new Intl.NumberFormat("en-US", {
   notation: "compact",
   maximumFractionDigits: 1,
@@ -22,12 +26,8 @@ const money = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
   minimumFractionDigits: 2,
-  maximumFractionDigits: 4,
+  maximumFractionDigits: 2,
 });
-const costSeries = [
-  { key: "rootCost", label: "Root-agent cost", color: "#466244" },
-  { key: "subagentCost", label: "Subagent cost", color: "#786578" },
-] as const;
 
 type TooltipRow = {
   date: string;
@@ -45,33 +45,6 @@ type TooltipRow = {
 
 function percent(value: number, total: number) {
   return total === 0 ? "0%" : `${Math.round(value / total * 100)}%`;
-}
-
-function SubagentTick({ x, y, payload, shares }: {
-  x?: number | string;
-  y?: number | string;
-  payload?: { value?: number };
-  shares: Map<number, string>;
-}) {
-  const timestamp = payload?.value;
-  if (timestamp === undefined) return null;
-  return (
-    <text
-      x={Number(x ?? 0)}
-      y={Number(y ?? 0)}
-      fill="#78736b"
-      fontSize={10}
-      textAnchor="middle"
-      pointerEvents="none"
-    >
-      <tspan x={Number(x ?? 0)} dy={14}>
-        {day.format(new Date(timestamp))}
-      </tspan>
-      <tspan x={Number(x ?? 0)} dy={13} fill="#786578" fontWeight={600}>
-        {shares.get(timestamp)}
-      </tspan>
-    </text>
-  );
 }
 
 function SubagentTooltip({ active, payload }: {
@@ -143,10 +116,7 @@ function SubagentTooltip({ active, payload }: {
   );
 }
 
-export function SubagentChart({ usage, range }: {
-  usage: UsageResponse;
-  range: 7 | 30 | 90 | "all";
-}) {
+export function SubagentChart({ usage }: { usage: UsageResponse }) {
   const [bucket, setBucket] = useState<"day" | "week">("week");
   const allCohorts = bucket === "day"
     ? usage.subagentDays
@@ -157,7 +127,6 @@ export function SubagentChart({ usage, range }: {
     timestamp: new Date(`${entry.date}T00:00:00`).getTime(),
     rootCost: entry.totalCost - entry.subagentCost,
   }));
-  const hasUnpricedCohort = allCohorts.some((entry) => entry.hasUnpricedCost);
   const totalSubagentCost = data.reduce(
     (sum, entry) => sum + entry.subagentCost,
     0,
@@ -167,36 +136,24 @@ export function SubagentChart({ usage, range }: {
     0,
   );
   const bucketWidth = (bucket === "day" ? 1 : 7) * 86_400_000;
-  const subagentShares = new Map(data.map((entry) => [
-    entry.timestamp,
-    percent(entry.subagentCost, entry.totalCost),
-  ]));
 
   return (
     <>
       <div className="usage-chart-heading">
-        <div>
-          <p className="eyebrow">Workflow shape</p>
-          <h2>Subagent cost contribution</h2>
-          <dl className="subagent-summary">
+        {usage.subagentCoverage !== "none" && (
+          <dl className="subagent-chart-summary">
             <div>
-              <dt>Subagent spend %</dt>
-              <dd>{percent(totalSubagentCost, totalRangeCost)}</dd>
-            </div>
-            <div>
-              <dt>Subagent spend</dt>
-              <dd>{money.format(totalSubagentCost)}</dd>
-            </div>
-            <div>
-              <dt>Total spend</dt>
+              <dt>Total</dt>
               <dd>{money.format(totalRangeCost)}</dd>
+              <span aria-hidden="true" />
+            </div>
+            <div>
+              <dt>Subagent</dt>
+              <dd>{money.format(totalSubagentCost)}</dd>
+              <span>({percent(totalSubagentCost, totalRangeCost)})</span>
             </div>
           </dl>
-          <p className="subagent-summary-range">
-            {range === "all" ? "All time" : `Last ${range} days`}
-            {hasUnpricedCohort ? " · Priced calls only" : ""}
-          </p>
-        </div>
+        )}
         <div className="segmented" aria-label="Subagent rollup">
           {(["day", "week"] as const).map((value) => (
             <button
@@ -244,11 +201,12 @@ export function SubagentChart({ usage, range }: {
                     (maximum: number) => maximum + bucketWidth / 2,
                   ]}
                   ticks={data.map((entry) => entry.timestamp)}
-                  tick={<SubagentTick shares={subagentShares} />}
+                  tickFormatter={(value: number) => shortDay.format(new Date(value))}
                   tickLine={false}
                   axisLine={false}
-                  interval={0}
-                  height={42}
+                  interval="preserveStartEnd"
+                  minTickGap={12}
+                  height={26}
                 />
                 <YAxis
                   tickFormatter={(value: number) => `$${compact.format(value)}`}
@@ -290,29 +248,6 @@ export function SubagentChart({ usage, range }: {
             </ResponsiveContainer>
           )}
       </div>
-      {data.length > 0 && usage.subagentCoverage !== "none" && (
-        <div className="cache-legend" aria-label="Subagent cost legend">
-          {costSeries.map((item) => (
-            <span key={item.key}>
-              <i style={{ background: item.color }} />
-              {item.label}
-            </span>
-          ))}
-        </div>
-      )}
-      {usage.subagentCoverage !== "none" && (
-        <p className="chart-note session-input-note">
-          Costs and active sessions are grouped by call{" "}
-          {bucket}. Subagents are child sessions with model activity. Only
-          periods with subagent activity are
-          shown.{usage.subagentCoverage === "partial"
-            ? " Some selected harnesses do not expose subagent activity."
-            : ""}
-          {hasUnpricedCohort
-            ? " Cost totals include priced calls only where pricing is unavailable."
-            : ""}
-        </p>
-      )}
     </>
   );
 }
