@@ -427,6 +427,12 @@ export class SessionRepository {
       throw new RangeError("page and pageSize must be positive integers");
     }
     const filter = harness === undefined ? "" : " AND so.harness = ?";
+    const hasInput = `
+      AND (
+        s.uncached_input_tokens > 0 OR s.cache_read_tokens > 0 OR
+        COALESCE(s.cache_write_tokens, 0) > 0
+      )
+    `;
     const parameters = harness === undefined ? [] : [harness];
     const totalItems = Number(
       (this.db.prepare(`
@@ -434,7 +440,7 @@ export class SessionRepository {
       FROM sessions s
       JOIN source_sessions ss ON ss.id = s.source_session_id
       JOIN sources so ON so.id = ss.source_id
-      WHERE ss.parent_id IS NULL${filter}
+      WHERE ss.parent_id IS NULL${hasInput}${filter}
     `).get(...parameters) as { count: number }).count,
     );
     const rows = this.db.prepare(`
@@ -443,7 +449,7 @@ export class SessionRepository {
       JOIN source_sessions ss ON ss.id = s.source_session_id
       JOIN sources so ON so.id = ss.source_id
       LEFT JOIN source_sessions parent ON parent.id = ss.parent_id
-      WHERE ss.parent_id IS NULL${filter}
+      WHERE ss.parent_id IS NULL${hasInput}${filter}
       ORDER BY s.updated_at DESC, public_id DESC, so.harness DESC
       LIMIT ? OFFSET ?
     `).all(...parameters, pageSize, (page - 1) * pageSize) as SummaryRow[];
