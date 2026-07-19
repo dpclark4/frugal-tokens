@@ -37,6 +37,12 @@ With deployment values in `.env`, run `deno task deploy:demo` to publish Pages,
 to replace the demo database. Publishing data briefly takes the API down before
 replacing `/data/demo.sqlite` and redeploying it.
 
+Create a sanitized contributor database with `deno task demo:database --
+--output contributor.sqlite`. To add it to an existing sanitized demo database,
+run `deno task demo:merge -- --target demo.sqlite --source contributor.sqlite`.
+The merge modifies the target in place, requires matching schemas and sanitized
+inputs, and skips sessions whose retained source checksum is already present.
+
 ## Production Build
 
 ```sh

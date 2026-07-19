@@ -39,6 +39,7 @@
     "db:rollback": "deno run -A npm:dbmate@^2.28.0 --migrations-dir db/migrations --env FRUGAL_TOKENS_DATABASE_URL down",
     "db:status": "deno run -A npm:dbmate@^2.28.0 --migrations-dir db/migrations --env FRUGAL_TOKENS_DATABASE_URL status",
     "demo:database": "deno run --env-file=.env --allow-env=FRUGAL_TOKENS_DATABASE_URL --allow-read --allow-write --allow-run=sqlite3 scripts/createDemoDatabase.ts",
+    "demo:merge": "deno run --allow-read --allow-write scripts/mergeDemoDatabases.ts",
 
     "dev": "deno run -A npm:concurrently@10.0.3 --kill-others-on-fail --names api,web 'deno task dev:server' 'deno task dev:client'",
     "dev:server": "deno task --env-file=.env db:migrate && deno run --env-file=.env --allow-env=OPENCODE_DB_PATH,CLAUDE_CODE_PROJECT_PATH,PI_SESSION_DIR,CODEX_SESSION_DIR,FRUGAL_TOKENS_DATABASE_URL,FRUGAL_TOKENS_SYNC_INTERVAL_SECONDS,SERVE_STATIC,PORT --allow-read --allow-write --allow-net --watch=src/server,src/shared src/server/main.ts",

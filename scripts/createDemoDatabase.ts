@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { sqlitePath } from "../src/server/database.ts";
 
 const REDACTED = "[redacted]";
+const DEMO_START_AT = Date.parse("2026-01-01T00:00:00Z");
 
 const adjectives = [
   "Amber", "Autumn", "Azure", "Brisk", "Bright", "Cedar", "Clear",
@@ -101,6 +102,32 @@ function tableCount(db: DatabaseSync, table: string) {
   }).count);
 }
 
+function retainYearToDate(db: DatabaseSync) {
+  db.exec("PRAGMA foreign_keys = ON");
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    // A session's update time is the timestamp used to order it in the demo.
+    db.prepare(`
+      DELETE FROM source_sessions
+      WHERE id IN (
+        SELECT source_session_id FROM sessions WHERE updated_at < ?
+      )
+    `).run(DEMO_START_AT);
+    db.exec(`
+      DELETE FROM source_sessions
+      WHERE id NOT IN (SELECT source_session_id FROM sessions);
+      DELETE FROM sources
+      WHERE id NOT IN (SELECT source_id FROM source_sessions);
+      DELETE FROM models
+      WHERE id NOT IN (SELECT model_id FROM model_calls);
+    `);
+    db.exec("COMMIT");
+  } catch (error) {
+    db.exec("ROLLBACK");
+    throw error;
+  }
+}
+
 function redact(db: DatabaseSync) {
   db.exec("PRAGMA foreign_keys = ON");
   // The copied file must not retain replaced preview bytes in SQLite free space.
@@ -116,7 +143,6 @@ function redact(db: DatabaseSync) {
       SET external_id = 'demo-session-' || id,
           public_id = 'demo-session-' || id,
           artifact_path = NULL,
-          checksum = NULL,
           change_hint = NULL,
           last_error = NULL;
 
@@ -177,13 +203,13 @@ async function compact(path: string) {
 
 function audit(db: DatabaseSync) {
   const checks = [
+    ["sessions", "updated_at < " + DEMO_START_AT],
     ["sources", `location NOT GLOB 'demo-source-*' OR label NOT GLOB 'Demo *'`],
     [
       "source_sessions",
       `external_id NOT GLOB 'demo-session-*'
         OR public_id NOT GLOB 'demo-session-*'
         OR artifact_path IS NOT NULL
-        OR checksum IS NOT NULL
         OR change_hint IS NOT NULL
         OR last_error IS NOT NULL`,
     ],
@@ -255,6 +281,7 @@ try {
   let sessions = 0;
   let toolEvents = 0;
   try {
+    retainYearToDate(demo);
     redact(demo);
     audit(demo);
     sessions = tableCount(demo, "sessions");
