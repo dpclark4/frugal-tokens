@@ -1798,7 +1798,6 @@ export function SessionsPage() {
         <div className="panel-heading">
           <div>
             <h2>Recent sessions</h2>
-            <p>Ordered by latest activity</p>
           </div>
           <div className="session-filters">
             {data && (
