@@ -48,6 +48,17 @@ const recordSchema = z.object({
 }).passthrough();
 
 type Record = z.infer<typeof recordSchema>;
+
+const legacyUserMessageSchema = z.object({
+  type: z.literal("event_msg"),
+  timestamp: z.string(),
+  payload: z.object({
+    type: z.literal("user_message"),
+    message: z.string(),
+  }).passthrough(),
+}).passthrough();
+
+type LegacyUserMessage = z.infer<typeof legacyUserMessageSchema>;
 export type CodexSessionCandidate = {
   id: string;
   path: string;
@@ -149,6 +160,35 @@ function userText(record: Record) {
   return record.payload.content?.find((block) => block.type === "input_text")
     ?.text ??
     record.payload.content?.find((block) => block.type === "text")?.text;
+}
+
+function legacyUserMessage(record: Record): LegacyUserMessage | undefined {
+  const result = legacyUserMessageSchema.safeParse(record);
+  return result.success ? result.data : undefined;
+}
+
+function legacyUserText(record: Record) {
+  return legacyUserMessage(record)?.payload.message;
+}
+
+function tokenUsageSignature(record: Record) {
+  if (
+    record.type !== "event_msg" || record.payload?.type !== "token_count" ||
+    !record.payload.info?.last_token_usage
+  ) return undefined;
+  const usage = record.payload.info.last_token_usage;
+  if (
+    usage.input_tokens === 0 && usage.cached_input_tokens === 0 &&
+    usage.output_tokens === 0 && usage.reasoning_output_tokens === 0 &&
+    (usage.total_tokens ?? 0) === 0
+  ) return undefined;
+  return [
+    usage.input_tokens,
+    usage.cached_input_tokens,
+    usage.output_tokens,
+    usage.reasoning_output_tokens,
+    usage.total_tokens ?? 0,
+  ].join(":");
 }
 
 function toolName(record: Record) {
@@ -390,6 +430,43 @@ function decodeRecords(records: Record[]) {
   };
 }
 
+function hasLegacyUsageEvidence(records: Record[]) {
+  return records.some(legacyUserMessage) && records.some(tokenUsageSignature);
+}
+
+function decodeLegacyRecords(records: Record[]) {
+  const adapted: Record[] = [];
+  let previousUsageSignature: string | undefined;
+  for (const record of records) {
+    const legacyUser = legacyUserMessage(record);
+    if (legacyUser) {
+      adapted.push({
+        type: "event_msg",
+        timestamp: legacyUser.timestamp,
+        payload: { type: "task_started" },
+      });
+      adapted.push({
+        type: "response_item",
+        timestamp: legacyUser.timestamp,
+        payload: {
+          type: "message",
+          role: "user",
+          content: [{ type: "input_text", text: legacyUser.payload.message }],
+        },
+      });
+      previousUsageSignature = undefined;
+      continue;
+    }
+    const usageSignature = tokenUsageSignature(record);
+    if (usageSignature !== undefined) {
+      if (usageSignature === previousUsageSignature) continue;
+      previousUsageSignature = usageSignature;
+    }
+    adapted.push(record);
+  }
+  return decodeRecords(adapted);
+}
+
 export class CodexRepository {
   constructor(private directory: string) {}
 
@@ -510,9 +587,16 @@ export function discoverCodexSessions(directory: string) {
 }
 
 function codexSession(records: Record[], id: string, updatedAt: number) {
-  const decoded = decodeRecords(records);
-  const firstPrompt = records.find((record) => userText(record)?.trim());
-  const promptTitle = userText(firstPrompt ?? { type: "" })?.replace(
+  const current = decodeRecords(records);
+  const usesLegacyDecoder = current.turns.length === 0 &&
+    hasLegacyUsageEvidence(records);
+  const decoded = usesLegacyDecoder ? decodeLegacyRecords(records) : current;
+  const prompt = usesLegacyDecoder
+    ? records.map(legacyUserText).find((value) => value?.trim())
+    : userText(records.find((record) => userText(record)?.trim()) ?? {
+      type: "",
+    });
+  const promptTitle = prompt?.replace(
     /\s+/g,
     " ",
   )
