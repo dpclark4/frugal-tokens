@@ -99,7 +99,9 @@ function OutputMetric({
   ].filter(Boolean).join(" · ");
   return (
     <span className="metric-stack output-metric" title={title}>
-      <span><TokenValue value={output} /></span>
+      <span>
+        <TokenValue value={output} />
+      </span>
       {reasoning > 0 && (
         <small className="output-reasoning">
           <TokenValue value={reasoning} />
@@ -476,9 +478,7 @@ function TurnCacheStatus({
     call.cacheAssessment?.status === "partial-hit" &&
     call.cacheAssessment.cause === undefined
   );
-  const ttl = calls.filter((call) =>
-    call.cacheAssessment?.cause === "ttl"
-  );
+  const ttl = calls.filter((call) => call.cacheAssessment?.cause === "ttl");
   const compactions = calls.reduce(
     (total, call) =>
       total +
@@ -758,7 +758,8 @@ function SubagentSummary({
   );
   const compactions = cacheCalls.reduce(
     (total, call) =>
-      total + (call.contextEventsBefore ?? []).filter((event) =>
+      total +
+      (call.contextEventsBefore ?? []).filter((event) =>
         event.type === "compaction"
       ).length,
     0,
@@ -773,7 +774,7 @@ function SubagentSummary({
       <table className="data-table turn-table subagent-summary-table">
         <colgroup>
           <col className="turn-column" />
-          <col className="started-column" />
+          <col className="turn-model-column" />
           <col className="turn-elapsed-column" />
           <col className="turn-activity-column" />
           <col className="turn-context-column" />
@@ -801,8 +802,8 @@ function SubagentSummary({
                     <span>{session.title}</span>
                   </span>
                   <small>
-                    {total.userTurns} turn{total.userTurns === 1 ? "" : "s"} ·{"  "}
-                    {hasDescendants
+                    {total.userTurns} turn{total.userTurns === 1 ? "" : "s"} ·
+                    {"  "}{hasDescendants
                       ? `${session.modelCalls} direct calls · ${session.subagents.length} nested subagent${
                         session.subagents.length === 1 ? "" : "s"
                       }`
@@ -821,7 +822,13 @@ function SubagentSummary({
                 secondary={context.first?.size}
                 secondaryLabel="start"
                 title={context.latest && context.first && context.peak
-                  ? `First request: ${integer.format(context.first.size)} tokens · Last request: ${integer.format(context.latest.size)} tokens · Peak request: ${integer.format(context.peak.size)} tokens`
+                  ? `First request: ${
+                    integer.format(context.first.size)
+                  } tokens · Last request: ${
+                    integer.format(context.latest.size)
+                  } tokens · Peak request: ${
+                    integer.format(context.peak.size)
+                  } tokens`
                   : undefined}
               />
             </td>
@@ -1135,10 +1142,9 @@ function CallTable({
     <div className="call-table-wrap">
       <table className="data-table call-table">
         <colgroup>
-          <col className="call-number-column" />
-          <col className="call-started-column" />
+          <col className="call-identity-column" />
           <col className="call-model-column" />
-          <col className="call-time-column" />
+          <col className="call-elapsed-column" />
           <col className="call-outcome-column" />
           <col className="call-context-column" />
           <col className="call-input-column" />
@@ -1149,10 +1155,9 @@ function CallTable({
         </colgroup>
         <thead>
           <tr>
-            <th>#</th>
-            <th>Started</th>
+            <th>Model call</th>
             <th>Model</th>
-            <th>Time</th>
+            <th>Elapsed</th>
             <th>Activity</th>
             <th>Context</th>
             <th>Volume</th>
@@ -1182,7 +1187,8 @@ function CallTable({
             );
             const compactions = cacheCalls.reduce(
               (total, relatedCall) =>
-                total + (relatedCall.contextEventsBefore ?? []).filter((event) =>
+                total +
+                (relatedCall.contextEventsBefore ?? []).filter((event) =>
                   event.type === "compaction"
                 ).length,
               0,
@@ -1225,11 +1231,24 @@ function CallTable({
                     ? () => setExpandedCallID(expanded ? undefined : call.id)
                     : undefined}
                 >
-                  <td>{call.callWithinTurn}</td>
-                  <td title={fullTimestamp.format(call.startedAt)}>
-                    {timeOnly.format(call.startedAt)}
+                  <td
+                    className="call-identity"
+                    title={fullTimestamp.format(call.startedAt)}
+                  >
+                    <span className="metric-stack">
+                      <span className="call-identity-line">
+                        <span
+                          className="call-identity-marker"
+                          aria-hidden="true"
+                        >
+                          {hasDetails ? (expanded ? "▾" : "▸") : ""}
+                        </span>
+                        <strong>Call {call.callWithinTurn}</strong>
+                      </span>
+                      <small>{sessionStarted.format(call.startedAt)}</small>
+                    </span>
                   </td>
-                  <td>
+                  <td className="call-model-cell">
                     {modelDisplayName(call.model)}
                   </td>
                   <td className={callDuration ? undefined : "muted"}>
@@ -1312,7 +1331,7 @@ function CallTable({
                 </tr>
                 {expanded && (
                   <tr className="activity-detail-row">
-                    <td colSpan={11}>
+                    <td colSpan={10}>
                       <div className="activity-detail">
                         {finishWarning && (
                           <div className="activity-warning">
@@ -1413,7 +1432,7 @@ function SessionBreakdown({
         <table className="data-table turn-table">
           <colgroup>
             <col className="turn-column" />
-            <col className="started-column" />
+            <col className="turn-model-column" />
             <col className="turn-elapsed-column" />
             <col className="turn-activity-column" />
             <col className="turn-context-column" />
@@ -1426,7 +1445,7 @@ function SessionBreakdown({
           <thead>
             <tr>
               <th>Turn</th>
-              <th>Started</th>
+              <th>Model</th>
               <th>Elapsed</th>
               <th>Activity</th>
               <th>Context</th>
@@ -1461,6 +1480,9 @@ function SessionBreakdown({
                 ? directEnd
                 : Math.max(directEnd, nestedMetrics.end);
               const elapsed = turnDuration(turn.startedAt, turnEnd);
+              const turnModels = [
+                ...new Set(turn.calls.map((call) => call.model)),
+              ];
               const directInput = metrics.uncachedInput + metrics.cacheRead +
                 (metrics.cacheWrite ?? 0);
               const nestedInput = nestedMetrics.uncachedInput +
@@ -1481,23 +1503,31 @@ function SessionBreakdown({
                     className={`turn-row${open ? " row-open" : ""}`}
                     onClick={() => toggleTurn(turn.number)}
                   >
-                    <td className="turn-label">
-                      <span className="turn-label-line">
-                        <button
-                          type="button"
-                          className="turn-expand"
-                          aria-expanded={open}
-                          aria-label={`${
-                            open ? "Collapse" : "Expand"
-                          } turn ${turn.number}`}
-                        >
-                          {open ? "▾" : "▸"}
-                        </button>
-                        <span>Turn {turn.number}</span>
+                    <td
+                      className="turn-label"
+                      title={fullTimestamp.format(turn.startedAt)}
+                    >
+                      <span className="metric-stack turn-identity">
+                        <span className="turn-label-line">
+                          <button
+                            type="button"
+                            className="turn-expand"
+                            aria-expanded={open}
+                            aria-label={`${
+                              open ? "Collapse" : "Expand"
+                            } turn ${turn.number}`}
+                          >
+                            {open ? "▾" : "▸"}
+                          </button>
+                          <strong>Turn {turn.number}</strong>
+                        </span>
+                        <small>{sessionStarted.format(turn.startedAt)}</small>
                       </span>
                     </td>
-                    <td title={fullTimestamp.format(turn.startedAt)}>
-                      {timeOnly.format(turn.startedAt)}
+                    <td className="turn-model-cell">
+                      {turnModels.length > 0
+                        ? <ModelSummary models={turnModels} />
+                        : <span className="muted">—</span>}
                     </td>
                     <td className={elapsed ? undefined : "muted"}>
                       {elapsed ?? "—"}
@@ -1647,7 +1677,9 @@ export function SessionsPage() {
     let active = true;
     setOverview(undefined);
     setOverviewError(undefined);
-    getOverview(overviewRange, harness).then((result) => active && setOverview(result))
+    getOverview(overviewRange, harness).then((result) =>
+      active && setOverview(result)
+    )
       .catch((reason) => {
         if (active) {
           setOverviewError(

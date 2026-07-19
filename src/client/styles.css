@@ -1095,24 +1095,25 @@ h1 {
 }
 
 .session-table {
-  min-width: 1120px;
+  min-width: 1383px;
   table-layout: fixed;
 }
 
 .session-table .session-column {
-  width: 180px;
+  width: 280px;
 }
 
 .session-table .model-column {
-  width: clamp(140px, 12vw, 170px);
+  width: 170px;
 }
 
 .session-table .elapsed-column {
-  width: clamp(72px, 6vw, 82px);
+  width: 82px;
 }
 
+/* Keep the detail tables' shared metric columns on the same grid. */
 .session-table .activity-column {
-  width: 90px;
+  width: 140px;
 }
 
 .session-table .context-column {
@@ -1567,6 +1568,7 @@ table.data-table {
 
 .turn-table,
 .call-table {
+  min-width: 1383px;
   table-layout: fixed;
 }
 
@@ -1575,19 +1577,19 @@ table.data-table {
 }
 
 .turn-table .turn-column {
-  width: 8%;
+  width: 280px;
 }
 
-.turn-table .started-column {
-  width: 10%;
+.turn-table .turn-model-column {
+  width: 170px;
 }
 
 .turn-table .turn-elapsed-column {
-  width: 8%;
+  width: 82px;
 }
 
 .turn-table .turn-activity-column {
-  width: auto;
+  width: 140px;
 }
 
 .turn-table .turn-image-column {
@@ -1615,7 +1617,8 @@ table.data-table {
 }
 
 .turn-table td:first-child,
-.turn-table th:first-child {
+.turn-table th:first-child,
+.turn-table .turn-model-cell {
   text-align: left;
 }
 
@@ -1661,7 +1664,59 @@ table.data-table {
 }
 
 .turn-label {
-  font-weight: 600;
+  font-weight: 400;
+}
+
+.turn-identity,
+.call-identity .metric-stack {
+  gap: 0;
+  font-family: var(--mono);
+}
+
+.turn-identity .turn-label-line > strong,
+.call-identity-line > strong {
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.turn-identity .turn-label-line {
+  gap: 10px;
+}
+
+.turn-identity .turn-expand {
+  flex-basis: 22px;
+  width: 22px;
+}
+
+.turn-identity.metric-stack > small,
+.call-identity .metric-stack > small {
+  display: block;
+  margin-top: 4px;
+  margin-left: 32px;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: .01em;
+}
+
+.call-identity-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.call-identity-marker {
+  display: inline-flex;
+  flex: 0 0 22px;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 18px;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 16px;
+  line-height: 1;
 }
 
 .turn-expand {
@@ -1696,24 +1751,20 @@ table.data-table {
   background: #faf8f2;
 }
 
-.call-table .call-number-column {
-  width: 3%;
-}
-
-.call-table .call-started-column {
-  width: 8%;
-}
-
-.call-table .call-time-column {
-  width: 7%;
-}
-
-.call-table .call-outcome-column {
-  width: auto;
+.call-table .call-identity-column {
+  width: 280px;
 }
 
 .call-table .call-model-column {
-  width: 11%;
+  width: 170px;
+}
+
+.call-table .call-elapsed-column {
+  width: 82px;
+}
+
+.call-table .call-outcome-column {
+  width: 140px;
 }
 
 .call-table .call-context-column {
@@ -1740,28 +1791,27 @@ table.data-table {
   width: 100px;
 }
 
-.call-table th:nth-child(4),
-.call-table td:nth-child(4) {
+.call-table .call-identity,
+.call-table .call-model-cell {
+  text-align: left;
+}
+
+.call-table th:nth-child(3),
+.call-table td:nth-child(3),
+.call-table th:nth-child(5),
+.call-table td:nth-child(5) {
   text-align: right;
 }
 
 .call-table th:nth-child(6),
 .call-table td:nth-child(6) {
-  text-align: right;
-}
-
-.call-table th:nth-child(7),
-.call-table td:nth-child(7) {
   text-align: left;
 }
 
+.call-table th:nth-child(7),
+.call-table td:nth-child(7),
 .call-table th:nth-child(8),
 .call-table td:nth-child(8) {
-  text-align: center;
-}
-
-.call-table th:nth-child(9),
-.call-table td:nth-child(9) {
   text-align: center;
 }
 
@@ -1782,8 +1832,7 @@ table.data-table {
 }
 
 .call-table .activity-cell {
-  min-width: 240px;
-  max-width: 360px;
+  min-width: 0;
   text-align: left;
   white-space: normal;
 }
@@ -2085,12 +2134,12 @@ table.data-table {
   text-align: left;
 }
 
-/* Nested call tables omit the turn-table image column before context. */
-.nested-breakdown .call-table th:nth-child(6) {
+/* Nested call tables use the same context column as their parent turn. */
+.nested-breakdown .call-table th:nth-child(5) {
   text-indent: 38px;
 }
 
-.nested-breakdown .call-table td:nth-child(6) > .context-metric {
+.nested-breakdown .call-table td:nth-child(5) > .context-metric {
   display: flex;
   width: max-content;
   margin-left: auto;
