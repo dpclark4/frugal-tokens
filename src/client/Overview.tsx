@@ -123,7 +123,7 @@ export function CompactOverview({
             <MetricRow
               label="Peak concurrent sessions"
               values={data.activity.peakConcurrentSessions}
-              tooltip={`Distribution of each active day's peak root sessions executing or within ${data.rotationInactivityMinutes} minutes after recorded completion`}
+              tooltip={`Distribution of each active day's peak root sessions executing or within ${data.rotationInactivityMinutes} minutes of a recorded turn, bounded by each session's observed activity`}
             />
             <MetricRow label="Turns" values={data.activity.turns} />
             <MetricRow

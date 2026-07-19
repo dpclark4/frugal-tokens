@@ -210,7 +210,7 @@ Deno.test("counts overlapping root sessions in rotation without double-counting 
         cost: 1,
       }], [child]),
       session("other-root", [{
-        startedAt: rootStart + 20 * 60_000,
+        startedAt: rootStart + 5 * 60_000,
         input: 100,
         cacheRead: 0,
         cost: 1,
@@ -229,7 +229,122 @@ Deno.test("counts overlapping root sessions in rotation without double-counting 
   });
 });
 
-Deno.test("expires rotation tails but retains observed tool execution", () => {
+Deno.test("uses buffered turn windows instead of a continuous session lifetime", () => {
+  const day = new Date(2026, 6, 10).getTime();
+  const minute = 60_000;
+  const result = aggregateOverview(
+    [
+      session("long", [
+        6 * 60, 10 * 60, 10 * 60 + 1, 10 * 60 + 2, 10 * 60 + 10,
+        21 * 60,
+      ].map((offset) => ({
+        startedAt: day + offset * minute,
+        input: 100,
+        cacheRead: 0,
+        cost: 1,
+      }))),
+      session("morning-gap-a", [{
+        startedAt: day + 7 * 60 * minute,
+        input: 100,
+        cacheRead: 0,
+        cost: 1,
+      }]),
+      session("morning-gap-b", [{
+        startedAt: day + 7 * 60 * minute,
+        input: 100,
+        cacheRead: 0,
+        cost: 1,
+      }]),
+      session("after-final-a", [{
+        startedAt: day + (21 * 60 + 20) * minute,
+        input: 100,
+        cacheRead: 0,
+        cost: 1,
+      }]),
+      session("after-final-b", [{
+        startedAt: day + (21 * 60 + 20) * minute,
+        input: 100,
+        cacheRead: 0,
+        cost: 1,
+      }]),
+    ],
+    day,
+    day + 86_400_000 - 1,
+    1,
+  );
+
+  strictEqual(result.activity.peakConcurrentSessions!.median, 2);
+});
+
+Deno.test("counts a one-turn session within another session's active window", () => {
+  const day = new Date(2026, 6, 10).getTime();
+  const minute = 60_000;
+  const result = aggregateOverview(
+    [
+      session("long", [
+        {
+          startedAt: day + 7 * 60 * minute,
+          input: 100,
+          cacheRead: 0,
+          cost: 1,
+        },
+        {
+          startedAt: day + 8 * 60 * minute,
+          input: 100,
+          cacheRead: 0,
+          cost: 1,
+        },
+      ]),
+      session("quick", [{
+        startedAt: day + (7 * 60 + 30) * minute,
+        input: 100,
+        cacheRead: 0,
+        cost: 1,
+      }]),
+    ],
+    day,
+    day + 86_400_000 - 1,
+    1,
+  );
+
+  strictEqual(result.activity.peakConcurrentSessions!.median, 2);
+});
+
+Deno.test("buffers turns on both sides within a session's observed bounds", () => {
+  const day = new Date(2026, 6, 10).getTime();
+  const minute = 60_000;
+  const result = aggregateOverview(
+    [
+      session("spaced", [
+        {
+          startedAt: day + 6 * 60 * minute,
+          input: 100,
+          cacheRead: 0,
+          cost: 1,
+        },
+        {
+          startedAt: day + 10 * 60 * minute,
+          input: 100,
+          cacheRead: 0,
+          cost: 1,
+        },
+      ]),
+      session("before-second-turn", [{
+        startedAt: day + (9 * 60 + 45) * minute,
+        input: 100,
+        cacheRead: 0,
+        cost: 1,
+      }]),
+    ],
+    day,
+    day + 86_400_000 - 1,
+    1,
+  );
+
+  strictEqual(result.activity.peakConcurrentSessions!.median, 2);
+});
+
+Deno.test("bounds rotation windows to observed activity while retaining tool execution", () => {
   const day = new Date(2026, 6, 10).getTime();
   const startedAt = day + 9 * 3_600_000;
   const executing = session("executing", [{
@@ -268,7 +383,7 @@ Deno.test("expires rotation tails but retains observed tool execution", () => {
   strictEqual(result.activity.peakConcurrentSessions!.median, 2);
 });
 
-Deno.test("does not create an active day from a cross-midnight tail", () => {
+Deno.test("does not create an active day from a cross-midnight activity window", () => {
   const day = new Date(2026, 6, 10).getTime();
   const result = aggregateOverview(
     [

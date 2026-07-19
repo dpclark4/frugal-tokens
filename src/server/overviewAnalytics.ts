@@ -167,7 +167,7 @@ export function aggregateOverview(
   const activeSpans: number[] = [];
   const models = new Map<string, ModelBucket>();
   const rotationIntervals = new Map<string, Interval[]>();
-  const rotationTail = ROTATION_INACTIVITY_MINUTES * 60_000;
+  const rotationBuffer = ROTATION_INACTIVITY_MINUTES * 60_000;
   let sessions = 0;
   let multiDaySessions = 0;
   let overallInput = 0;
@@ -177,11 +177,23 @@ export function aggregateOverview(
   for (const root of roots) {
     const rootKey = `${root.harness}:${root.id}`;
     const allTurns = sessionTree(root).flatMap((session) => session.turns);
-    const intervals = allTurns.map((turn) => ({
+    const executionIntervals = allTurns.map((turn) => ({
       start: turn.startedAt,
-      end: turnExecutionEnd(turn) + rotationTail,
-    })).filter((interval) => interval.end > start && interval.start <= end);
-    if (intervals.length > 0) rotationIntervals.set(rootKey, intervals);
+      end: turnExecutionEnd(turn),
+    }));
+    if (executionIntervals.length > 0) {
+      const sessionStart = Math.min(
+        ...executionIntervals.map((interval) => interval.start),
+      );
+      const sessionEnd = Math.max(
+        ...executionIntervals.map((interval) => interval.end),
+      );
+      const intervals = executionIntervals.map((interval) => ({
+        start: Math.max(sessionStart, interval.start - rotationBuffer),
+        end: Math.min(sessionEnd, interval.end + rotationBuffer),
+      })).filter((interval) => interval.end > start && interval.start <= end);
+      if (intervals.length > 0) rotationIntervals.set(rootKey, intervals);
+    }
     const turns = allTurns.filter((turn) =>
       turn.startedAt >= start && turn.startedAt <= end
     );
