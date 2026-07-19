@@ -101,7 +101,10 @@ function OutputMetric({
     <span className="metric-stack output-metric" title={title}>
       <span><TokenValue value={output} /></span>
       {reasoning > 0 && (
-        <small><TokenValue value={reasoning} /> reasoning</small>
+        <small className="output-reasoning">
+          <TokenValue value={reasoning} />
+          <span>reasoning</span>
+        </small>
       )}
     </span>
   );

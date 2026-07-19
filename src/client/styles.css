@@ -2255,6 +2255,12 @@ table.data-table {
   width: 100%;
 }
 
+.output-reasoning {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
 .cache-unit {
   color: var(--muted);
   font-size: 10px;
