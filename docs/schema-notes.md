@@ -83,7 +83,12 @@ These are not current defects; they are costs of the analytics-first model.
    graph feature is built.
 4. Prefer nullable timestamps for unknown source times over using the Unix
    epoch as a sentinel.
-5. If richer content support becomes valuable, consolidate content ownership
+5. Separate normalized call semantics from source provenance. Codex currently
+   marks internal context-operation calls through `source_call_id`, which is
+   nullable and deliberately redacted in demo archives; a future migration
+   should persist a non-sensitive operation kind at import time and query that
+   instead.
+6. If richer content support becomes valuable, consolidate content ownership
    without weakening foreign keys.
 
 None of these is required for the current product.

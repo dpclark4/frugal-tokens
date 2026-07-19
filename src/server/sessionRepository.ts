@@ -527,9 +527,12 @@ export class SessionRepository {
       LEFT JOIN source_sessions parent ON parent.id = ss.parent_id
       WHERE (? IS NULL OR mc.started_at >= ?)
         AND (? IS NULL OR so.harness = ?)
+        -- TODO: Persist an operation kind instead of overloading source_call_id.
+        -- It is source provenance, so it remains nullable and is redacted in
+        -- demo archives.
         AND NOT (
           so.harness = 'codex' AND
-          mc.source_call_id LIKE 'context-operation:%'
+          COALESCE(mc.source_call_id, '') LIKE 'context-operation:%'
         )
       ORDER BY mc.started_at, mc.id
     `).all(
@@ -877,23 +880,28 @@ export class SessionRepository {
         JOIN models m ON m.id = mc.model_id
         WHERE mc.turn_id = ? ORDER BY mc.ordinal
       `).all(turn.id) as CallRow[];
-      const tools = calls.length === 0 ? [] : this.db.prepare(`
+      const visibleCalls = row.harness === "codex"
+        ? calls.filter((call) =>
+          !call.source_call_id?.startsWith("context-operation:")
+        )
+        : calls;
+      const tools = visibleCalls.length === 0 ? [] : this.db.prepare(`
         SELECT te.model_call_id, te.name, te.status, te.started_at,
           te.completed_at,
           COALESCE(child.public_id, child.external_id) AS child_public_id,
           te.input_preview, te.output_preview
         FROM tool_events te
         LEFT JOIN source_sessions child ON child.id = te.child_source_session_id
-        WHERE te.model_call_id IN (${calls.map(() => "?").join(",")})
+        WHERE te.model_call_id IN (${visibleCalls.map(() => "?").join(",")})
         ORDER BY te.model_call_id, te.ordinal
-      `).all(...calls.map((call) => call.id)) as ToolRow[];
+      `).all(...visibleCalls.map((call) => call.id)) as ToolRow[];
       const toolsByCall = Map.groupBy(tools, (tool) => tool.model_call_id);
-      const contents = calls.length === 0 ? [] : this.db.prepare(`
+      const contents = visibleCalls.length === 0 ? [] : this.db.prepare(`
         SELECT model_call_id, kind, preview
         FROM call_content
-        WHERE model_call_id IN (${calls.map(() => "?").join(",")})
+        WHERE model_call_id IN (${visibleCalls.map(() => "?").join(",")})
         ORDER BY model_call_id, ordinal
-      `).all(...calls.map((call) => call.id)) as ContentRow[];
+      `).all(...visibleCalls.map((call) => call.id)) as ContentRow[];
       const contentsByCall = Map.groupBy(
         contents,
         (content) => content.model_call_id,
@@ -901,7 +909,7 @@ export class SessionRepository {
       return {
         number: turn.ordinal,
         startedAt: turn.started_at,
-        calls: calls.map((call) => {
+        calls: visibleCalls.map((call) => {
           const callTools = toolsByCall.get(call.id) ?? [];
           return {
             id: call.source_call_id ?? String(call.id),

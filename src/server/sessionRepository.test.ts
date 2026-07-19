@@ -324,7 +324,7 @@ Deno.test("atomically replaces trees with root-scoped public child IDs", () => {
   }
 });
 
-Deno.test("hides tagged context operations for Codex only", () => {
+Deno.test("hides tagged Codex context operations without losing redacted calls", () => {
   const directory = Deno.makeTempDirSync();
   const db = openArchiveDatabase(`${directory}/archive.sqlite`);
   try {
@@ -351,6 +351,18 @@ Deno.test("hides tagged context operations for Codex only", () => {
     );
     strictEqual(repository.listUsageCalls(undefined, "pi").length, 1);
     strictEqual(repository.listUsageCalls(undefined, "codex").length, 0);
+
+    const redactedCodex = importedSession(codex.sourceID, "redacted-codex");
+    repository.replaceSourceSession(redactedCodex);
+    db.prepare(`
+      UPDATE model_calls SET source_call_id = NULL
+      WHERE turn_id IN (
+        SELECT t.id FROM turns t
+        JOIN source_sessions ss ON ss.id = t.session_id
+        WHERE ss.source_id = ? AND ss.external_id = ?
+      )
+    `).run(codex.sourceID, redactedCodex.externalID);
+    strictEqual(repository.listUsageCalls(undefined, "codex").length, 1);
   } finally {
     db.close();
     Deno.removeSync(directory, { recursive: true });
