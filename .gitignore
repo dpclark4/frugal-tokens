@@ -3,6 +3,5 @@ node_modules/
 .deno/
 .env
 .DS_Store
-*.sqlite
-*.sqlite-shm
-*.sqlite-wal
+*.sqlite*
+*.db*

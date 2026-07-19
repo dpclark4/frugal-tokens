@@ -46,7 +46,7 @@ type Options = {
 
 function usage(): never {
   throw new Error(
-    "Usage: deno task demo:database -- --output <path-to-new-demo.db>",
+    "Usage: deno task demo:database -- --output <path-to-new-demo.sqlite>",
   );
 }
 

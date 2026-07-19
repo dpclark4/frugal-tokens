@@ -234,15 +234,9 @@ const repository = archiveRepository
   : openCodePath
   ? new OpenCodeRepository(openCodePath)
   : undefined;
-const allowedOrigins = (Deno.env.get("CORS_ALLOWED_ORIGINS") ?? "")
-  .split(",")
-  .map((origin) => origin.trim())
-  .filter(Boolean);
 const serveStaticAssets = Deno.env.get("SERVE_STATIC") === "true";
 const app = new Hono();
-if (allowedOrigins.length > 0) {
-  app.use("/api/*", cors({ origin: allowedOrigins }));
-}
+app.use("/api/*", cors());
 
 app.get("/health", (context) => context.json({ status: "ok" }));
 
