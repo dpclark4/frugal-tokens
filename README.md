@@ -25,6 +25,18 @@ Open `http://localhost:5273`. The API listens on port 9000. Set `PORT` to change
 the API port; if it changes during development, update the proxy target in
 `vite.config.ts` as well.
 
+## Demo Deployment
+
+The `demo-api` Railway service must mount the `demo-api-volume` volume at
+`/data` and have `FRUGAL_TOKENS_DATABASE_URL=sqlite:/data/demo.sqlite` set in
+its production environment. Sleep configuration and the API domain are managed
+in Railway.
+
+With deployment values in `.env`, run `deno task deploy:demo` to publish Pages,
+`deno task deploy:railway` to deploy the API, and `deno task deploy:demo-data`
+to replace the demo database. Publishing data briefly takes the API down before
+replacing `/data/demo.sqlite` and redeploying it.
+
 ## Production Build
 
 ```sh

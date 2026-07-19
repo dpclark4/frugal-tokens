@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { cors } from "hono/cors";
 import { serveStatic } from "hono/deno";
 import { OpenCodeRepository } from "./opencodeRepository.ts";
 import { ClaudeCodeRepository } from "./claudeCodeRepository.ts";
@@ -233,7 +234,11 @@ const repository = archiveRepository
   : openCodePath
   ? new OpenCodeRepository(openCodePath)
   : undefined;
+const serveStaticAssets = Deno.env.get("SERVE_STATIC") === "true";
 const app = new Hono();
+app.use("/api/*", cors());
+
+app.get("/health", (context) => context.json({ status: "ok" }));
 
 function repositoryForHarness(harness: SessionSummary["harness"]) {
   if (harness === "claude-code") return claudeRepository;
@@ -684,8 +689,10 @@ app.get(
   (context) => context.json({ error: "API route not found" }, 404),
 );
 
-app.use("/assets/*", serveStatic({ root: "./dist" }));
-app.get("*", serveStatic({ root: "./dist", path: "index.html" }));
+if (serveStaticAssets) {
+  app.use("/assets/*", serveStatic({ root: "./dist" }));
+  app.get("*", serveStatic({ root: "./dist", path: "index.html" }));
+}
 
 const port = Number.parseInt(Deno.env.get("PORT") ?? "9000", 10);
 Deno.serve({

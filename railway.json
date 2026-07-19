@@ -1,0 +1,14 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "RAILPACK",
+    "buildCommand": "deno install --frozen --entrypoint src/server/main.ts"
+  },
+  "deploy": {
+    "startCommand": "deno task start:api",
+    "healthcheckPath": "/health",
+    "healthcheckTimeout": 100,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 10
+  }
+}
