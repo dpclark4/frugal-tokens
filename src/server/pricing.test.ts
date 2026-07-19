@@ -81,6 +81,38 @@ Deno.test("uses the published long-context model rates", () => {
   }
 });
 
+Deno.test("prices Codex models at their published rates", () => {
+  const expected = new Map([
+    ["gpt-5.3-codex", 15.925],
+    ["gpt-5.2-codex", 15.925],
+    ["gpt-5-codex", 11.375],
+    ["gpt-5.1-codex-max", 11.375],
+    ["gpt-5.1-codex", 11.38],
+    ["gpt-5.1-codex-mini", 2.275],
+  ]);
+  for (const [model, cost] of expected) {
+    closeTo(
+      computeModelCallCost(
+        tokens({ uncachedInput: 1_000_000, cacheRead: 1_000_000, output: 1_000_000 }),
+        model,
+        timestamp,
+      ),
+      cost,
+    );
+  }
+});
+
+Deno.test("uses the published Codex rates for long contexts", () => {
+  closeTo(
+    computeModelCallCost(
+      tokens({ uncachedInput: 272_000 }),
+      "gpt-5.3-codex",
+      timestamp,
+    ),
+    0.476,
+  );
+});
+
 Deno.test("leaves models without long-context rates unpriced", () => {
   strictEqual(
     computeModelCallCost(

@@ -37,6 +37,12 @@ const standard: Record<string, RateCard> = {
   "gpt-5.6-sol": { input: 5, cacheRead: 0.5, cacheWrite: 6.25, output: 30 },
   "gpt-5.6-terra": { input: 2.5, cacheRead: 0.25, cacheWrite: 3.125, output: 15 },
   "gpt-5.6-luna": { input: 1, cacheRead: 0.1, cacheWrite: 1.25, output: 6 },
+  "gpt-5.3-codex": { input: 1.75, cacheRead: 0.175, output: 14 },
+  "gpt-5.2-codex": { input: 1.75, cacheRead: 0.175, output: 14 },
+  "gpt-5.1-codex-max": { input: 1.25, cacheRead: 0.125, output: 10 },
+  "gpt-5.1-codex": { input: 1.25, cacheRead: 0.13, output: 10 },
+  "gpt-5.1-codex-mini": { input: 0.25, cacheRead: 0.025, output: 2 },
+  "gpt-5-codex": { input: 1.25, cacheRead: 0.125, output: 10 },
   "gpt-5.5": { input: 5, cacheRead: 0.5, output: 30 },
   "gpt-5.5-pro": { input: 30, cacheRead: 0, output: 180 },
   "gpt-5.4": { input: 2.5, cacheRead: 0.25, output: 15 },
@@ -46,6 +52,13 @@ const standard: Record<string, RateCard> = {
 };
 
 const longContext: Record<string, RateCard> = {
+  // OpenRouter publishes one rate tier for these Codex models.
+  "gpt-5.3-codex": { input: 1.75, cacheRead: 0.175, output: 14 },
+  "gpt-5.2-codex": { input: 1.75, cacheRead: 0.175, output: 14 },
+  "gpt-5.1-codex-max": { input: 1.25, cacheRead: 0.125, output: 10 },
+  "gpt-5.1-codex": { input: 1.25, cacheRead: 0.13, output: 10 },
+  "gpt-5.1-codex-mini": { input: 0.25, cacheRead: 0.025, output: 2 },
+  "gpt-5-codex": { input: 1.25, cacheRead: 0.125, output: 10 },
   "gpt-5.6-sol": {
     input: 10,
     cacheRead: 1,
