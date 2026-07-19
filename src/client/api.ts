@@ -6,8 +6,12 @@ import {
   usageResponseSchema,
 } from "../shared/sessionSchemas.ts";
 
+const apiBaseUrl = (import.meta as ImportMeta & {
+  env: { VITE_API_BASE_URL?: string };
+}).env.VITE_API_BASE_URL?.replace(/\/+$/, "") ?? "";
+
 async function getJson(path: string) {
-  const response = await fetch(path);
+  const response = await fetch(`${apiBaseUrl}${path}`);
   if (!response.ok) throw new Error(`Request failed (${response.status})`);
   const contentType = response.headers.get("content-type");
   if (!contentType?.includes("application/json")) {
