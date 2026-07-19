@@ -49,6 +49,7 @@
     "start:api": "deno task db:migrate && deno run --allow-env=OPENCODE_DB_PATH,CLAUDE_CODE_PROJECT_PATH,PI_SESSION_DIR,CODEX_SESSION_DIR,FRUGAL_TOKENS_DATABASE_URL,FRUGAL_TOKENS_SYNC_INTERVAL_SECONDS,CORS_ALLOWED_ORIGINS,SERVE_STATIC,PORT --allow-read --allow-write --allow-net src/server/main.ts",
 
     "deploy:demo": "export VITE_API_BASE_URL=$DEPLOY_API_BASE_URL && deno task build && deno run -A npm:wrangler@4 pages deploy dist --project-name=$DEPLOY_PAGES_PROJECT",
+    "deploy:demo-data": "deno run --env-file=.env --allow-env=DEPLOY_RAILWAY_SERVICE,DEPLOY_RAILWAY_VOLUME,FRUGAL_TOKENS_DATABASE_URL --allow-read --allow-write --allow-run scripts/deployDemoDatabase.ts",
     "deploy:railway": "railway up --service=\"$DEPLOY_RAILWAY_SERVICE\" --environment=production --ci -m \"Deploy demo API\""
   }
 }

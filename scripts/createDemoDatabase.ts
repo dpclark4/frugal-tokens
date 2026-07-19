@@ -3,7 +3,6 @@ import { dirname, resolve } from "node:path";
 import { sqlitePath } from "../src/server/database.ts";
 
 const REDACTED = "[redacted]";
-const DEMO_EPOCH = Date.UTC(2024, 0, 1);
 
 const adjectives = [
   "Amber", "Autumn", "Azure", "Brisk", "Bright", "Cedar", "Clear",
@@ -102,42 +101,6 @@ function tableCount(db: DatabaseSync, table: string) {
   }).count);
 }
 
-function shiftTimestamps(db: DatabaseSync) {
-  const timestampColumns = [
-    ["sources", "created_at"],
-    ["source_sessions", "first_seen_at"],
-    ["source_sessions", "last_seen_at"],
-    ["source_sessions", "imported_at"],
-    ["source_sessions", "source_modified_at"],
-    ["sessions", "updated_at"],
-    ["sessions", "started_at"],
-    ["sessions", "ended_at"],
-    ["turns", "started_at"],
-    ["model_calls", "started_at"],
-    ["model_calls", "completed_at"],
-    ["tool_events", "started_at"],
-    ["tool_events", "completed_at"],
-    ["context_events", "occurred_at"],
-  ] as const;
-  const minimumQuery = timestampColumns.map(([table, column]) =>
-    `SELECT ${column} AS value FROM ${table}`
-  ).join(" UNION ALL ");
-  const row = db.prepare(`SELECT MIN(value) AS value FROM (${minimumQuery})`)
-    .get() as { value: number | null };
-  if (row.value === null) return;
-
-  const offset = DEMO_EPOCH - row.value;
-  for (const [table, column] of timestampColumns) {
-    db.prepare(`
-      UPDATE ${table}
-      SET ${column} = CASE
-        WHEN ${column} IS NULL THEN NULL
-        ELSE ${column} + ?
-      END
-    `).run(offset);
-  }
-}
-
 function redact(db: DatabaseSync) {
   db.exec("PRAGMA foreign_keys = ON");
   // The copied file must not retain replaced preview bytes in SQLite free space.
@@ -190,7 +153,6 @@ function redact(db: DatabaseSync) {
       updateTitle.run(generatedTitle(usedTitles), id);
     }
 
-    shiftTimestamps(db);
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
