@@ -2250,6 +2250,11 @@ table.data-table {
   align-items: flex-end;
 }
 
+/* Keep output values on the column edge when a row has no reasoning line. */
+.output-metric {
+  width: 100%;
+}
+
 .cache-unit {
   color: var(--muted);
   font-size: 10px;
