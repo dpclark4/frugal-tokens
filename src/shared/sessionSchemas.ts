@@ -274,6 +274,36 @@ export const overviewResponseSchema = z.object({
   })),
 });
 
+const performanceDistributionSchema = z.object({
+  lowerWhisker: z.number().min(0).max(1),
+  q1: z.number().min(0).max(1),
+  median: z.number().min(0).max(1),
+  q3: z.number().min(0).max(1),
+  upperWhisker: z.number().min(0).max(1),
+  average: z.number().min(0).max(1),
+  sampleSize: z.number().int().positive(),
+  outliers: z.number().int().nonnegative(),
+});
+
+const cacheLossBucketSchema = z.object({
+  bucket: z.enum(["0-16k", "16-64k", "64-128k", "128k+"]),
+  requests: z.number().int().nonnegative(),
+  unretainedTokens: z.number().int().nonnegative(),
+});
+
+const cacheRetentionSchema = z.object({
+  comparableRequests: z.number().int().positive(),
+  requestsWithLoss: z.number().int().nonnegative(),
+  partialHits: z.number().int().nonnegative(),
+  fullMisses: z.number().int().nonnegative(),
+  retainedTokens: z.number().int().nonnegative(),
+  unretainedTokens: z.number().int().nonnegative(),
+  retainedShare: z.number().min(0).max(1),
+  lossRequestRate: z.number().min(0).max(1),
+  p90UnretainedTokens: z.number().nonnegative(),
+  lossBuckets: z.array(cacheLossBucketSchema),
+});
+
 const performanceWeekSchema = z.object({
   date: z.string(),
   endDate: z.string(),
@@ -281,16 +311,9 @@ const performanceWeekSchema = z.object({
   sessionsWithMiss: z.number().int().nonnegative(),
   turns: z.number().int().nonnegative(),
   turnsWithMiss: z.number().int().nonnegative(),
-  efficiency: z.object({
-    lowerWhisker: z.number().min(0).max(1),
-    q1: z.number().min(0).max(1),
-    median: z.number().min(0).max(1),
-    q3: z.number().min(0).max(1),
-    upperWhisker: z.number().min(0).max(1),
-    average: z.number().min(0).max(1),
-    sampleSize: z.number().int().positive(),
-    outliers: z.number().int().nonnegative(),
-  }).optional(),
+  efficiency: performanceDistributionSchema.optional(),
+  finalContextShare: performanceDistributionSchema.optional(),
+  cacheRetention: cacheRetentionSchema.optional(),
 });
 
 const imageCohortSchema = z.object({

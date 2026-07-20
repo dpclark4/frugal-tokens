@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { getRouteApi } from "@tanstack/react-router";
 import {
+  Bar,
+  BarChart,
   Line,
   LineChart,
   CartesianGrid,
@@ -15,9 +17,14 @@ import { SiteHeader } from "./SiteHeader.tsx";
 
 const route = getRouteApi("/performance");
 const integer = new Intl.NumberFormat("en-US");
+const compact = new Intl.NumberFormat("en-US", {
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
 const date = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
 
 type ProviderResult = PerformanceResponse["openai"];
+type DistributionKey = "efficiency" | "finalContextShare";
 type Week = ProviderResult["weeks"][number] & {
   sessionRate: number | null;
   turnRate: number | null;
@@ -72,7 +79,15 @@ function percent(value: number) {
   return `${(value * 100).toFixed(1)}%`;
 }
 
-function EfficiencyBoxPlot({ weeks }: { weeks: ProviderResult["weeks"] }) {
+function EfficiencyBoxPlot({
+  weeks,
+  distribution,
+  label,
+}: {
+  weeks: ProviderResult["weeks"];
+  distribution: DistributionKey;
+  label: string;
+}) {
   const [selected, setSelected] = useState<ProviderResult["weeks"][number]>();
   const width = 720;
   const height = 260;
@@ -84,11 +99,11 @@ function EfficiencyBoxPlot({ weeks }: { weeks: ProviderResult["weeks"] }) {
   const plotHeight = height - top - bottom;
   const step = plotWidth / Math.max(weeks.length, 1);
   const y = (value: number) => top + (1 - value) * plotHeight;
-  const selectedEfficiency = selected?.efficiency;
+  const selectedEfficiency = selected?.[distribution];
 
   return (
     <div className="efficiency-chart">
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Weekly cache efficiency distributions">
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Weekly ${label.toLowerCase()} distributions`}>
         {[0, 0.25, 0.5, 0.75, 1].map((value) => (
           <g key={value}>
             <line
@@ -98,13 +113,13 @@ function EfficiencyBoxPlot({ weeks }: { weeks: ProviderResult["weeks"] }) {
               y2={y(value)}
               className="efficiency-grid-line"
             />
-            <text x={left - 9} y={y(value) + 3} textAnchor="end" className="efficiency-axis-label">
+            <text x={left - 9} y={y(value) + 4} textAnchor="end" className="efficiency-axis-label efficiency-y-axis-label">
               {Math.round(value * 100)}%
             </text>
           </g>
         ))}
         {weeks.map((week, index) => {
-          const value = week.efficiency;
+          const value = week[distribution];
           const x = left + step * index + step / 2;
           const boxWidth = Math.min(24, step * .48);
           return (
@@ -114,7 +129,7 @@ function EfficiencyBoxPlot({ weeks }: { weeks: ProviderResult["weeks"] }) {
                   className={`efficiency-box ${value.sampleSize < 5 ? "small-sample" : ""}`}
                   tabIndex={0}
                   role="img"
-                  aria-label={`${week.date}, median ${percent(value.median)}, ${value.sampleSize} sessions`}
+                  aria-label={`${week.date}, ${label.toLowerCase()} median ${percent(value.median)}, ${value.sampleSize} sessions`}
                   onMouseEnter={() => setSelected(week)}
                   onMouseLeave={() => setSelected(undefined)}
                   onFocus={() => setSelected(week)}
@@ -176,7 +191,17 @@ function EfficiencyBoxPlot({ weeks }: { weeks: ProviderResult["weeks"] }) {
   );
 }
 
-function EfficiencyPanel({ title, result }: { title: string; result?: ProviderResult }) {
+function DistributionPanel({
+  title,
+  result,
+  distribution,
+  label,
+}: {
+  title: string;
+  result?: ProviderResult;
+  distribution: DistributionKey;
+  label: string;
+}) {
   return (
     <article className="performance-provider efficiency-panel">
       <div className="performance-provider-heading">
@@ -189,7 +214,131 @@ function EfficiencyPanel({ title, result }: { title: string; result?: ProviderRe
       </div>
       {!result
         ? <div className="performance-chart"><div className="chart-message">Loading distribution…</div></div>
-        : <EfficiencyBoxPlot weeks={result.weeks} />}
+        : <EfficiencyBoxPlot weeks={result.weeks} distribution={distribution} label={label} />}
+    </article>
+  );
+}
+
+const cacheLossBuckets = [
+  { bucket: "0-16k", key: "loss0To16k", label: "0–16k", color: "#dbad94" },
+  { bucket: "16-64k", key: "loss16To64k", label: "16–64k", color: "#c97850" },
+  { bucket: "64-128k", key: "loss64To128k", label: "64–128k", color: "#a94b2a" },
+  { bucket: "128k+", key: "loss128kPlus", label: "128k+", color: "#762d1b" },
+] as const;
+
+type CacheLossBucket = (typeof cacheLossBuckets)[number]["bucket"];
+type CacheLossWeek = ProviderResult["weeks"][number] & {
+  loss0To16k: number | null;
+  loss16To64k: number | null;
+  loss64To128k: number | null;
+  loss128kPlus: number | null;
+};
+
+function lossTokens(
+  retention: ProviderResult["weeks"][number]["cacheRetention"],
+  bucket: CacheLossBucket,
+) {
+  if (!retention) return null;
+  return retention.lossBuckets.find((entry) => entry.bucket === bucket)
+    ?.unretainedTokens ?? 0;
+}
+
+function CacheLossTooltip({ active, payload }: {
+  active?: boolean;
+  payload?: Array<{ payload?: CacheLossWeek }>;
+}) {
+  const week = payload?.[0]?.payload;
+  const retention = week?.cacheRetention;
+  if (!active || !week || !retention) return null;
+  return (
+    <div className="usage-tooltip performance-tooltip">
+      <p>
+        {date.format(new Date(`${week.date}T00:00:00`))}–
+        {date.format(new Date(`${week.endDate}T00:00:00`))}
+      </p>
+      <div className="cache-loss-tooltip-columns" aria-hidden="true">
+        <span />
+        <span>Requests</span>
+        <span>Tokens</span>
+      </div>
+      {[...retention.lossBuckets].reverse().map((bucket) => bucket.unretainedTokens > 0 && (
+        <div className="cache-loss-tooltip-row" key={bucket.bucket}>
+          <span>{cacheLossBuckets.find((entry) => entry.bucket === bucket.bucket)?.label} misses</span>
+          <strong>{integer.format(bucket.requests)}</strong>
+          <strong title={integer.format(bucket.unretainedTokens)}>
+            {compact.format(bucket.unretainedTokens)}
+          </strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CacheLossPanel({ title, result }: { title: string; result?: ProviderResult }) {
+  const rows: CacheLossWeek[] = (result?.weeks ?? []).map((week) => ({
+    ...week,
+    loss0To16k: lossTokens(week.cacheRetention, "0-16k"),
+    loss16To64k: lossTokens(week.cacheRetention, "16-64k"),
+    loss64To128k: lossTokens(week.cacheRetention, "64-128k"),
+    loss128kPlus: lossTokens(week.cacheRetention, "128k+"),
+  }));
+  const hasData = rows.some((week) =>
+    week.cacheRetention?.lossBuckets.some((bucket) => bucket.unretainedTokens > 0)
+  );
+
+  return (
+    <article className="performance-provider cache-retention-panel">
+      <div className="performance-provider-heading">
+        <h2>{title}</h2>
+        <span className="efficiency-model">
+          {formatModel(result?.selectedModel ?? "all")}
+        </span>
+      </div>
+      {!result
+        ? <div className="performance-chart"><div className="chart-message">Loading cache misses…</div></div>
+        : !hasData
+        ? <div className="image-cohort-message">No partial or full cache misses.</div>
+        : (
+          <>
+            <div className="performance-chart cache-retention-chart">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={rows} margin={{ top: 12, right: 10, bottom: 4, left: -12 }}>
+                  <CartesianGrid vertical={false} stroke="#e6e2d9" />
+                  <XAxis
+                    dataKey="date"
+                    tickFormatter={(value) => date.format(new Date(`${value}T00:00:00`))}
+                    tickLine={false}
+                    axisLine={false}
+                    minTickGap={24}
+                  />
+                  <YAxis
+                    tickFormatter={(value) => compact.format(value)}
+                    tickLine={false}
+                    axisLine={false}
+                    width={48}
+                  />
+                  <Tooltip content={<CacheLossTooltip />} />
+                  {cacheLossBuckets.map((bucket) => (
+                    <Bar
+                      key={bucket.key}
+                      dataKey={bucket.key}
+                      name={`${bucket.label} misses`}
+                      stackId="loss"
+                      fill={bucket.color}
+                    />
+                  ))}
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="performance-legend cache-retention-legend">
+              {[...cacheLossBuckets].reverse().map((bucket) => (
+                <span key={bucket.key}>
+                  <i style={{ background: bucket.color }} /> {bucket.label} misses
+                </span>
+              ))}
+            </div>
+          </>
+        )}
     </article>
   );
 }
@@ -412,10 +561,39 @@ export function PerformancePage() {
       </section>
       <section className="performance-section-heading">
         <h2>Cache efficiency</h2>
+        <p>Cached input as a percent of total session input. Higher means more context was served from cache.</p>
       </section>
       <section className="performance-grid">
-        <EfficiencyPanel title="OpenAI" result={data?.openai} />
-        <EfficiencyPanel title="Anthropic" result={data?.anthropic} />
+        <DistributionPanel
+          title="OpenAI"
+          result={data?.openai}
+          distribution="efficiency"
+          label="Cache efficiency"
+        />
+        <DistributionPanel
+          title="Anthropic"
+          result={data?.anthropic}
+          distribution="efficiency"
+          label="Cache efficiency"
+        />
+      </section>
+      <section className="performance-section-heading">
+        <h2>Context efficiency</h2>
+        <p>Final input context as a percent of total session input. Higher means less earlier context processing.</p>
+      </section>
+      <section className="performance-grid">
+        <DistributionPanel
+          title="OpenAI"
+          result={data?.openai}
+          distribution="finalContextShare"
+          label="Context efficiency"
+        />
+        <DistributionPanel
+          title="Anthropic"
+          result={data?.anthropic}
+          distribution="finalContextShare"
+          label="Context efficiency"
+        />
       </section>
       <section className="performance-section-heading">
         <h2>Miss rate by image use</h2>
@@ -423,6 +601,14 @@ export function PerformancePage() {
       <section className="performance-grid">
         <ImageCohortPanel title="OpenAI" result={data?.openai} />
         <ImageCohortPanel title="Anthropic" result={data?.anthropic} />
+      </section>
+      <section className="performance-section-heading">
+        <h2>Unexpected cache-miss volume</h2>
+        <p>Partial/full misses not attributed to compaction or cache expiry, grouped by inferred context loss.</p>
+      </section>
+      <section className="performance-grid">
+        <CacheLossPanel title="OpenAI" result={data?.openai} />
+        <CacheLossPanel title="Anthropic" result={data?.anthropic} />
       </section>
     </main>
   );

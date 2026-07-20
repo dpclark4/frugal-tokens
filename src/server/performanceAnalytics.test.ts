@@ -74,6 +74,33 @@ Deno.test("aggregates weekly session and turn cache miss rates by model", () => 
   strictEqual(result.anthropic.sessions, 0);
 });
 
+Deno.test("buckets partial and full cache misses but excludes cache hits", () => {
+  const start = new Date(2026, 2, 2).getTime();
+  const end = new Date(2026, 2, 8, 23, 59).getTime();
+  const result = aggregatePerformance([
+    call("retention", 1, start + 10, 0, 100),
+    call("retention", 2, start + 20, 80),
+    call("hit", 1, start + 25, 0, 100),
+    call("hit", 2, start + 26, 95),
+    call("compacted", 1, start + 30, 0, 100),
+    { ...call("compacted", 2, start + 40, 0), followsCompaction: true },
+  ], start, end);
+  const retention = result.openai.weeks[0].cacheRetention!;
+
+  strictEqual(retention.comparableRequests, 2);
+  strictEqual(retention.requestsWithLoss, 1);
+  strictEqual(retention.partialHits, 1);
+  strictEqual(retention.fullMisses, 0);
+  strictEqual(retention.retainedTokens, 175);
+  strictEqual(retention.unretainedTokens, 25);
+  strictEqual(retention.retainedShare, 0.875);
+  strictEqual(retention.lossRequestRate, 0.5);
+  strictEqual(retention.p90UnretainedTokens, 18.5);
+  strictEqual(retention.lossBuckets[0].requests, 1);
+  strictEqual(retention.lossBuckets[0].unretainedTokens, 20);
+  strictEqual(retention.lossBuckets[1].requests, 0);
+});
+
 Deno.test("groups image sessions into exclusive cohorts with miss rates", () => {
   const start = new Date(2026, 2, 2).getTime();
   const end = new Date(2026, 2, 8, 23, 59).getTime();
@@ -142,6 +169,22 @@ Deno.test("calculates weekly session cache-efficiency box plot values", () => {
   strictEqual(distribution.average, 0.5);
   strictEqual(distribution.sampleSize, 5);
   strictEqual(distribution.outliers, 0);
+});
+
+Deno.test("calculates final-context share from the latest request and all session input", () => {
+  const start = new Date(2026, 2, 2).getTime();
+  const end = new Date(2026, 2, 8, 23, 59).getTime();
+  const earlier = call("session", 1, start + 10, 0);
+  const latest = call("session", 2, start + 20, 100);
+  earlier.sessionStartedAt = start;
+  latest.sessionStartedAt = start;
+
+  const result = aggregatePerformance([latest, earlier], start, end);
+  const distribution = result.openai.weeks[0].finalContextShare!;
+
+  strictEqual(distribution.median, 2 / 3);
+  strictEqual(distribution.average, 2 / 3);
+  strictEqual(distribution.sampleSize, 1);
 });
 
 Deno.test("uses Tukey whiskers and reports efficiency outliers", () => {

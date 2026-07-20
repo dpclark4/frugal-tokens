@@ -8,6 +8,7 @@ import { CodexRepository } from "./codexRepository.ts";
 import { computeModelCallCost, priceSessionDetail } from "./pricing.ts";
 import {
   analyzeSessionCache,
+  CACHE_TTL_1H_MS,
   sessionCacheIssues,
   summarizeSessionCache,
 } from "./cacheAnalysis.ts";
@@ -468,10 +469,13 @@ app.get("/api/performance", (context) => {
     new Date(end).setHours(0, 0, 0, 0) -
       (PERFORMANCE_RANGE_DAYS - 1) * 86_400_000,
   ).getTime();
+  // Include the preceding cache TTL so requests at the range boundary can be
+  // compared with their immediately preceding context.
+  const cacheStart = start - CACHE_TTL_1H_MS;
   const calls: UsageCall[] = [];
   if (archiveRepository) {
     calls.push(...archiveRepository.listUsageCalls(
-      start,
+      cacheStart,
       harness === "all" ? undefined : harness as SessionSummary["harness"],
     ));
   } else {
@@ -483,7 +487,7 @@ app.get("/api/performance", (context) => {
     ] as const;
     for (const [name, source] of sources) {
       if (!source || (harness !== "all" && harness !== name)) continue;
-      calls.push(...source.listUsageCalls(start));
+      calls.push(...source.listUsageCalls(cacheStart));
     }
   }
   return context.json(

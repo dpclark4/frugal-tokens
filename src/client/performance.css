@@ -159,6 +159,32 @@
   color: var(--muted);
 }
 
+.cache-loss-tooltip-columns,
+.cache-loss-tooltip-row {
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 54px 58px;
+  gap: 8px !important;
+}
+
+.cache-loss-tooltip-columns {
+  padding-top: 9px !important;
+  color: var(--muted);
+  font-size: 8px;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+.cache-loss-tooltip-columns span:not(:first-child),
+.cache-loss-tooltip-row > span,
+.cache-loss-tooltip-row strong {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.cache-loss-tooltip-row strong {
+  white-space: nowrap;
+}
+
 .performance-legend {
   display: flex;
   justify-content: center;
@@ -198,6 +224,13 @@
   letter-spacing: -.025em;
 }
 
+.performance-section-heading p {
+  max-width: 720px;
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .efficiency-model {
   max-width: 220px;
   overflow: hidden;
@@ -230,6 +263,12 @@
 .efficiency-axis-label {
   fill: var(--muted);
   font: 9px var(--mono);
+}
+
+.efficiency-y-axis-label {
+  fill: var(--ink);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .efficiency-box {
