@@ -358,10 +358,13 @@ export const ttlMissMetricsSchema = z.object({
     attributedCost: z.number().nonnegative(),
     unpriced: z.number().int().nonnegative(),
     underTwoHours: z.number().int().nonnegative(),
+    underTwoHoursSessions: z.number().int().nonnegative(),
     underTwoHoursCost: z.number().nonnegative(),
     twoToEightHours: z.number().int().nonnegative(),
+    twoToEightHoursSessions: z.number().int().nonnegative(),
     twoToEightHoursCost: z.number().nonnegative(),
     eightHoursOrMore: z.number().int().nonnegative(),
+    eightHoursOrMoreSessions: z.number().int().nonnegative(),
     eightHoursOrMoreCost: z.number().nonnegative(),
   }),
   subagents: z.object({
@@ -370,6 +373,7 @@ export const ttlMissMetricsSchema = z.object({
   }),
   cacheMisses: z.object({
     affectedSessions: z.number().int().nonnegative(),
+    otherAffectedSessions: z.number().int().nonnegative(),
     affectedSessionCost: z.number().nonnegative(),
     hasUnpricedAffectedSessionCost: z.boolean(),
     compaction: z.object({

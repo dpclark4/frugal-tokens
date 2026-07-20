@@ -95,15 +95,19 @@ Deno.test("counts every root TTL miss in its elapsed-time bucket", () => {
       attributedCost: 0,
       unpriced: 0,
       underTwoHours: 1,
+      underTwoHoursSessions: 1,
       underTwoHoursCost: 0,
       twoToEightHours: 1,
+      twoToEightHoursSessions: 1,
       twoToEightHoursCost: 0,
       eightHoursOrMore: 1,
+      eightHoursOrMoreSessions: 1,
       eightHoursOrMoreCost: 0,
     },
     subagents: { affectedSessions: 0, misses: 0 },
     cacheMisses: {
       affectedSessions: 1,
+      otherAffectedSessions: 0,
       affectedSessionCost: 0.0015,
       hasUnpricedAffectedSessionCost: false,
       compaction: {
@@ -160,6 +164,33 @@ Deno.test("counts every root TTL miss in its elapsed-time bucket", () => {
   });
 });
 
+Deno.test("counts each session once per TTL return-gap bucket", () => {
+  const result = aggregateTtlMisses([
+    call("affected", start),
+    call("affected", start + 30 * MINUTE),
+    call("affected", start + 60 * MINUTE),
+    call("affected", start + 4 * 60 * MINUTE),
+  ], start, 90);
+
+  strictEqual(result.misses.underTwoHours, 2);
+  strictEqual(result.misses.underTwoHoursSessions, 1);
+  strictEqual(result.misses.twoToEightHours, 1);
+  strictEqual(result.misses.twoToEightHoursSessions, 1);
+  strictEqual(result.misses.eightHoursOrMoreSessions, 0);
+});
+
+Deno.test("counts a session once across other miss causes", () => {
+  const result = aggregateTtlMisses([
+    call("affected", start),
+    call("affected", start + MINUTE, { followsCompaction: true }),
+    call("affected", start + 2 * MINUTE),
+  ], start, 90);
+
+  strictEqual(result.cacheMisses.compaction.misses, 1);
+  strictEqual(result.cacheMisses.unexpected.full.misses, 1);
+  strictEqual(result.cacheMisses.otherAffectedSessions, 1);
+});
+
 Deno.test("separates subagent misses and keeps compactions outside TTL", () => {
   const calls = [
     call("root", start),
@@ -189,15 +220,19 @@ Deno.test("separates subagent misses and keeps compactions outside TTL", () => {
       attributedCost: 0,
       unpriced: 0,
       underTwoHours: 0,
+      underTwoHoursSessions: 0,
       underTwoHoursCost: 0,
       twoToEightHours: 0,
+      twoToEightHoursSessions: 0,
       twoToEightHoursCost: 0,
       eightHoursOrMore: 0,
+      eightHoursOrMoreSessions: 0,
       eightHoursOrMoreCost: 0,
     },
     subagents: { affectedSessions: 1, misses: 1 },
     cacheMisses: {
       affectedSessions: 1,
+      otherAffectedSessions: 1,
       affectedSessionCost: 0.00075,
       hasUnpricedAffectedSessionCost: false,
       compaction: {

@@ -23,6 +23,10 @@ function share(value: number, total: number) {
   return percent.format(total === 0 ? 0 : value / total);
 }
 
+function countLabel(value: number, singular: string, plural: string) {
+  return `${integer.format(value)} ${value === 1 ? singular : plural}`;
+}
+
 function CacheMissOverview({ metrics }: { metrics: TtlMissMetrics }) {
   const { cacheMisses } = metrics;
   const totalMisses = cacheMisses.full.misses + cacheMisses.partial.misses;
@@ -32,10 +36,12 @@ function CacheMissOverview({ metrics }: { metrics: TtlMissMetrics }) {
   const unexpectedMisses = unexpected.full.misses + unexpected.partial.misses;
   const unexpectedCost = unexpected.full.attributedCost +
     unexpected.partial.attributedCost;
+  const otherMisses = cacheMisses.compaction.misses + unexpectedMisses;
+  const otherCost = cacheMisses.compaction.attributedCost + unexpectedCost;
   const rows = [
-    { label: "Compaction-related", category: cacheMisses.compaction },
-    { label: "Unexpected — full", category: unexpected.full },
-    { label: "Unexpected — partial", category: unexpected.partial },
+    { label: "Compaction", category: cacheMisses.compaction },
+    { label: "Unexpected full", category: unexpected.full },
+    { label: "Unexpected partial", category: unexpected.partial },
   ];
 
   return (
@@ -47,7 +53,7 @@ function CacheMissOverview({ metrics }: { metrics: TtlMissMetrics }) {
               share(cacheMisses.affectedSessions, metrics.sessions)
             })
           </strong>
-          <span>Affected root sessions</span>
+          <span>Sessions with cache misses</span>
         </div>
         <div>
           <strong>{integer.format(totalMisses)}</strong>
@@ -59,7 +65,7 @@ function CacheMissOverview({ metrics }: { metrics: TtlMissMetrics }) {
               share(cacheMisses.affectedSessionCost, metrics.totalSessionCost)
             })
           </strong>
-          <span>Affected session spend</span>
+          <span>Spend in affected sessions</span>
         </div>
         <div>
           <strong>
@@ -74,46 +80,49 @@ function CacheMissOverview({ metrics }: { metrics: TtlMissMetrics }) {
       <div className="cache-miss-details">
         <section className="cache-miss-section">
           <div className="cache-miss-section-heading">
-            <h3>TTL expiry</h3>
+            <h3>TTL misses</h3>
             <span>
-              {integer.format(metrics.misses.total)} misses ·{" "}
-              {integer.format(metrics.affectedSessions)} sessions ·{" "}
+              {countLabel(metrics.misses.total, "miss", "misses")} across{" "}
+              {countLabel(metrics.affectedSessions, "session", "sessions")} ·{" "}
               {money.format(metrics.misses.attributedCost)}
             </span>
           </div>
           <div
             className="ttl-expiry-table"
             role="table"
-            aria-label="TTL expiry misses by return gap"
+            aria-label="TTL expiry misses by time since previous session"
           >
             <div className="ttl-expiry-header" role="row">
-              <span role="columnheader">Root-session return</span>
+              <span role="columnheader">Time since previous session</span>
               <span role="columnheader">Misses</span>
-              <span role="columnheader">Miss cost</span>
+              <span role="columnheader">Sessions</span>
+              <span role="columnheader">Cost at miss</span>
             </div>
             {([
               [
-                "Near-expiry return (<2 hours)",
+                "< 2h",
                 metrics.misses.underTwoHours,
+                metrics.misses.underTwoHoursSessions,
                 metrics.misses.underTwoHoursCost,
               ],
               [
-                "Same-day return (2–8 hours)",
+                "2–8h",
                 metrics.misses.twoToEightHours,
+                metrics.misses.twoToEightHoursSessions,
                 metrics.misses.twoToEightHoursCost,
               ],
               [
-                "Next work period (8+ hours)",
+                "8h+",
                 metrics.misses.eightHoursOrMore,
+                metrics.misses.eightHoursOrMoreSessions,
                 metrics.misses.eightHoursOrMoreCost,
               ],
-            ] as const).map(([label, count, cost]) => (
+            ] as const).map(([label, count, sessions, cost]) => (
               <div className="ttl-expiry-row" role="row" key={label}>
                 <span role="cell">{label}</span>
-                <small role="cell">
-                  {integer.format(count)} · {share(count, metrics.misses.total)}
-                </small>
-                <strong role="cell">{money.format(cost)}</strong>
+                <span role="cell">{integer.format(count)}</span>
+                <span role="cell">{integer.format(sessions)}</span>
+                <span role="cell">{money.format(cost)}</span>
               </div>
             ))}
           </div>
@@ -121,38 +130,35 @@ function CacheMissOverview({ metrics }: { metrics: TtlMissMetrics }) {
 
         <section className="cache-miss-section">
           <div className="cache-miss-section-heading">
-            <h3>Other cache misses</h3>
+            <h3>Other misses</h3>
             <span>
-              {integer.format(
-                cacheMisses.compaction.misses + unexpectedMisses,
-              )} misses · {money.format(
-                cacheMisses.compaction.attributedCost + unexpectedCost,
-              )}
+              {countLabel(otherMisses, "miss", "misses")} across{" "}
+              {countLabel(
+                cacheMisses.otherAffectedSessions,
+                "session",
+                "sessions",
+              )} · {money.format(otherCost)}
             </span>
           </div>
           <div
             className="cache-miss-cost-table"
             role="table"
-            aria-label="Non-TTL cache miss costs by cause"
+            aria-label="Other cache misses by cause"
           >
             <div className="cache-miss-cost-header" role="row">
               <span role="columnheader">Cause</span>
               <span role="columnheader">Misses</span>
               <span role="columnheader">Sessions</span>
-              <span role="columnheader">Miss cost</span>
-              <span role="columnheader">Extra cost</span>
+              <span role="columnheader">Cost at miss</span>
             </div>
             {rows.map(({ label, category }) => (
               <div className="cache-miss-cost-row" role="row" key={label}>
-                <strong role="cell">{label}</strong>
+                <span role="cell">{label}</span>
                 <span role="cell">{integer.format(category.misses)}</span>
                 <span role="cell">
                   {integer.format(category.affectedSessions)}
                 </span>
                 <span role="cell">{money.format(category.attributedCost)}</span>
-                <span role="cell">
-                  {money.format(category.estimatedExtraCost)}
-                </span>
               </div>
             ))}
           </div>

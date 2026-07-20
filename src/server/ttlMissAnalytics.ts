@@ -100,15 +100,19 @@ export function aggregateTtlMisses(
       attributedCost: 0,
       unpriced: 0,
       underTwoHours: 0,
+      underTwoHoursSessions: 0,
       underTwoHoursCost: 0,
       twoToEightHours: 0,
+      twoToEightHoursSessions: 0,
       twoToEightHoursCost: 0,
       eightHoursOrMore: 0,
+      eightHoursOrMoreSessions: 0,
       eightHoursOrMoreCost: 0,
     },
     subagents: { affectedSessions: 0, misses: 0 },
     cacheMisses: {
       affectedSessions: 0,
+      otherAffectedSessions: 0,
       affectedSessionCost: 0,
       hasUnpricedAffectedSessionCost: false,
       compaction: emptyCacheMissCategory(),
@@ -180,6 +184,9 @@ export function aggregateTtlMisses(
       result.cacheMisses.hasUnpricedAffectedSessionCost ||=
         hasUnpricedRootSessionCost;
     }
+    if (compactionMisses.length > 0 || unexpectedMisses.length > 0) {
+      result.cacheMisses.otherAffectedSessions++;
+    }
     if (unexpectedMisses.length > 0) {
       result.cacheMisses.unexpected.affectedSessions++;
       result.cacheMisses.unexpected.affectedSessionCost += rootSessionCost;
@@ -192,20 +199,29 @@ export function aggregateTtlMisses(
       result.hasUnpricedAffectedSessionCost ||= hasUnpricedRootSessionCost;
     }
     result.misses.total += rootMisses.length;
+    let hasUnderTwoHoursMiss = false;
+    let hasTwoToEightHoursMiss = false;
+    let hasEightHoursOrMoreMiss = false;
     for (const miss of rootMisses) {
       if (miss.attributedCost === undefined) result.misses.unpriced++;
       else result.misses.attributedCost += miss.attributedCost;
       if (miss.gap < TWO_HOURS_MS) {
+        hasUnderTwoHoursMiss = true;
         result.misses.underTwoHours++;
         result.misses.underTwoHoursCost += miss.attributedCost ?? 0;
       } else if (miss.gap < EIGHT_HOURS_MS) {
+        hasTwoToEightHoursMiss = true;
         result.misses.twoToEightHours++;
         result.misses.twoToEightHoursCost += miss.attributedCost ?? 0;
       } else {
+        hasEightHoursOrMoreMiss = true;
         result.misses.eightHoursOrMore++;
         result.misses.eightHoursOrMoreCost += miss.attributedCost ?? 0;
       }
     }
+    if (hasUnderTwoHoursMiss) result.misses.underTwoHoursSessions++;
+    if (hasTwoToEightHoursMiss) result.misses.twoToEightHoursSessions++;
+    if (hasEightHoursOrMoreMiss) result.misses.eightHoursOrMoreSessions++;
 
     const subagentMisses = cacheMisses(
       calls.filter((call) => call.session.id !== call.session.rootID),
