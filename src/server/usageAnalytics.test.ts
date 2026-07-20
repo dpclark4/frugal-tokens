@@ -11,6 +11,8 @@ function usageCall(
     harness: "opencode",
     session: { id: session, rootID: session },
     cacheChainID: session,
+    turnID: `${session}:${sessionStartedAt}`,
+    turnOrdinal: 1,
     sessionStartedAt,
     provider: "anthropic",
     model: "claude-sonnet-4-5",

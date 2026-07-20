@@ -1,6 +1,5 @@
 import type { TtlMissMetrics } from "../shared/sessionSchemas.ts";
-import { assessCache, ttlExpired } from "./cacheAnalysis.ts";
-import { hasInputContext } from "../shared/contextMetrics.ts";
+import { categorizeUsageCallCache } from "./cacheAnalysis.ts";
 import { computeModelCallCost, estimateModelCacheMissCost } from "./pricing.ts";
 import type { UsageCall } from "./usage.ts";
 
@@ -20,35 +19,29 @@ type CacheMiss = {
 
 function cacheMisses(calls: UsageCall[]) {
   const misses: CacheMiss[] = [];
-  for (
-    const chain of Map.groupBy(calls, (call) => call.cacheChainID).values()
-  ) {
-    let previous: UsageCall | undefined;
-    for (const call of chain.sort((a, b) => a.startedAt - b.startedAt)) {
-      const assessment = assessCache(previous, call);
-      if (
-        previous && (assessment.status === "partial-hit" ||
-          assessment.status === "full-miss")
-      ) {
-        const estimate = estimateModelCacheMissCost(
-          previous.tokens,
-          call.tokens,
-          call.model,
-          call.startedAt,
-        );
-        misses.push({
-          gap: call.startedAt - previous.startedAt,
-          status: assessment.status,
-          ttl: !call.followsCompaction && ttlExpired(previous, call),
-          compaction: call.followsCompaction === true,
-          attributedCost: estimate?.actualMissedCost,
-          expectedReadCost: estimate?.expectedReadCost,
-          estimatedExtraCost: estimate?.estimatedExtraCost,
-          missedTokens: estimate?.missedTokens,
-        });
-      }
-      if (hasInputContext(call.tokens)) previous = call;
-    }
+  for (const call of categorizeUsageCallCache(calls)) {
+    const previous = call.previousComparableCall;
+    const assessment = call.cacheAssessment;
+    if (
+      !previous || (assessment.status !== "partial-hit" &&
+        assessment.status !== "full-miss")
+    ) continue;
+    const estimate = estimateModelCacheMissCost(
+      previous.tokens,
+      call.tokens,
+      call.model,
+      call.startedAt,
+    );
+    misses.push({
+      gap: call.startedAt - previous.startedAt,
+      status: assessment.status,
+      ttl: assessment.cause === "ttl",
+      compaction: assessment.cause === "compaction",
+      attributedCost: estimate?.actualMissedCost,
+      expectedReadCost: estimate?.expectedReadCost,
+      estimatedExtraCost: estimate?.estimatedExtraCost,
+      missedTokens: estimate?.missedTokens,
+    });
   }
   return misses;
 }

@@ -21,6 +21,8 @@ function call(
     harness: "claude-code",
     session: { id: session, rootID: root },
     cacheChainID: options.chain ?? session,
+    turnID: `${session}:${startedAt}`,
+    turnOrdinal: 1,
     sessionStartedAt: options.sessionStartedAt ?? start,
     provider: "anthropic",
     model: options.model ?? "claude-sonnet-4-5",

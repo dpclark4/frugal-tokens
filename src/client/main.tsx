@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-router";
 import { z } from "zod";
 import { SessionsPage } from "./SessionsPage.tsx";
+import { PerformancePage } from "./PerformancePage.tsx";
 import "./styles.css";
 
 function AppError({ error, reset }: { error: unknown; reset: () => void }) {
@@ -64,7 +65,19 @@ const indexRoute = createRoute({
   }),
   component: SessionsPage,
 });
-const router = createRouter({ routeTree: rootRoute.addChildren([indexRoute]) });
+const performanceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/performance",
+  validateSearch: z.object({
+    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex"]).catch("all"),
+    openai: z.string().catch("all"),
+    anthropic: z.string().catch("all"),
+  }),
+  component: PerformancePage,
+});
+const router = createRouter({
+  routeTree: rootRoute.addChildren([indexRoute, performanceRoute]),
+});
 
 declare module "@tanstack/react-router" {
   interface Register {

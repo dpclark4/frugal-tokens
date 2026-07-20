@@ -21,6 +21,7 @@ import openCodeIcon from "./assets/icons/opencode-logo-light.svg";
 import piIcon from "./assets/icons/pi-logo.svg";
 import { UsageChart } from "./UsageChart.tsx";
 import { TtlMissCard } from "./TtlMissCard.tsx";
+import { SiteHeader } from "./SiteHeader.tsx";
 
 const route = getRouteApi("/");
 const integer = new Intl.NumberFormat("en-US");
@@ -1808,12 +1809,7 @@ export function SessionsPage() {
 
   return (
     <main>
-      <header className="page-header">
-        <div>
-          <p className="eyebrow">Local agent economics</p>
-          <h1>Frugal Tokens</h1>
-        </div>
-      </header>
+      <SiteHeader active="overview" />
 
       <div className="homepage-metrics">
         <TtlMissCard

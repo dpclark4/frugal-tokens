@@ -491,6 +491,7 @@ export class SessionRepository {
       root_started_at: number | null;
       root_updated_at: number;
       follows_compaction: number;
+      turn_ordinal: number;
     };
     const rows = this.db.prepare(`
       WITH RECURSIVE session_tree(id, root_id) AS (
@@ -504,7 +505,7 @@ export class SessionRepository {
         JOIN sessions child_session ON child_session.source_session_id = child.id
         JOIN session_tree ON session_tree.id = child.parent_id
       )
-      SELECT ${callColumns}, so.harness, ss.external_id,
+      SELECT ${callColumns}, t.ordinal AS turn_ordinal, so.harness, ss.external_id,
         COALESCE(ss.public_id, ss.external_id) AS public_id,
         COALESCE(root.public_id, root.external_id) AS root_public_id,
         COALESCE(parent.public_id, parent.external_id) AS parent_public_id,
@@ -550,6 +551,9 @@ export class SessionRepository {
         parentID: optional(row.parent_public_id),
       },
       cacheChainID: row.external_id,
+      turnID: `${row.public_id}:${row.turn_ordinal}`,
+      turnOrdinal: row.turn_ordinal,
+      images: optional(row.images),
       sessionStartedAt: row.root_started_at ?? row.root_updated_at,
       provider: row.provider,
       model: row.model,

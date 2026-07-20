@@ -12,6 +12,9 @@ export type UsageCall = {
     parentID?: string;
   };
   cacheChainID: string;
+  turnID: string;
+  turnOrdinal: number;
+  images?: number;
   sessionStartedAt: number;
   provider: string;
   model: string;
@@ -36,6 +39,9 @@ export function usageCallsFromSession(
           parentID: session.parentID,
         },
         cacheChainID: session.id,
+        turnID: `${session.id}:${turn.number}`,
+        turnOrdinal: turn.number,
+        images: call.activity.images,
         sessionStartedAt: root.startedAt ?? root.updatedAt,
         provider: call.provider,
         model: call.model,

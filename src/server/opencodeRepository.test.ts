@@ -84,6 +84,14 @@ Deno.test("removes empty turns without dropping reported cost", () => {
       },
     }),
   );
+  database.prepare(
+    "INSERT INTO part VALUES (?, 'session', ?, ?, ?)",
+  ).run(
+    "image-part",
+    "priced-user",
+    3,
+    JSON.stringify({ type: "file", mime: "image/png" }),
+  );
   database.close();
 
   const repository = new OpenCodeRepository(path);
@@ -93,6 +101,7 @@ Deno.test("removes empty turns without dropping reported cost", () => {
     strictEqual(session.turns[0].number, 1);
     strictEqual(session.turns[0].calls.length, 1);
     strictEqual(session.turns[0].calls[0].reportedCost, 0.25);
+    strictEqual(session.turns[0].calls[0].activity.images, 1);
     const detailCalls = session.turns.flatMap((turn) => turn.calls).map(
       ({ provider, model, startedAt, reportedCost, tokens }) => ({
         harness: "opencode",
@@ -102,6 +111,9 @@ Deno.test("removes empty turns without dropping reported cost", () => {
           parentID: undefined,
         },
         cacheChainID: "session",
+        turnID: "session:priced-user",
+        turnOrdinal: 2,
+        images: 1,
         sessionStartedAt: 1,
         provider,
         model,
