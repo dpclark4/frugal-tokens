@@ -1,4 +1,5 @@
 import type { PerformanceResponse } from "../shared/sessionSchemas.ts";
+import { contextSize } from "../shared/contextMetrics.ts";
 import {
   categorizeUsageCallCache,
   type AssessedUsageCall,
@@ -62,6 +63,37 @@ function weekKey(value: number) {
   return date.subtract({ days: date.dayOfWeek - 1 }).toString();
 }
 
+function percentile(values: number[], quantile: number) {
+  const index = (values.length - 1) * quantile;
+  const lower = Math.floor(index);
+  const remainder = index - lower;
+  return values[lower] + (values[lower + 1] - values[lower]) * remainder ||
+    values[lower];
+}
+
+function efficiencyDistribution(values: number[]) {
+  const sorted = values.toSorted((a, b) => a - b);
+  const q1 = percentile(sorted, 0.25);
+  const median = percentile(sorted, 0.5);
+  const q3 = percentile(sorted, 0.75);
+  const iqr = q3 - q1;
+  const lowerFence = q1 - 1.5 * iqr;
+  const upperFence = q3 + 1.5 * iqr;
+  const included = sorted.filter((value) =>
+    value >= lowerFence && value <= upperFence
+  );
+  return {
+    lowerWhisker: included[0],
+    q1,
+    median,
+    q3,
+    upperWhisker: included.at(-1)!,
+    average: sorted.reduce((sum, value) => sum + value, 0) / sorted.length,
+    sampleSize: sorted.length,
+    outliers: sorted.length - included.length,
+  };
+}
+
 function emptyWeek(date: string): Week {
   return {
     date,
@@ -104,14 +136,28 @@ function providerResult(
     matching,
     (call) => `${call.harness}:${call.session.rootID}`,
   );
+  const efficiencyByWeek = new Map<string, number[]>();
   let sessionsWithMiss = 0;
   let turns = 0;
   let turnsWithMiss = 0;
 
   for (const sessionCalls of sessions.values()) {
-    const bucket = weeks.get(weekKey(sessionCalls[0].sessionStartedAt));
+    const sessionWeek = weekKey(sessionCalls[0].sessionStartedAt);
+    const bucket = weeks.get(sessionWeek);
     if (!bucket) continue;
     bucket.sessions++;
+    const totalInput = sessionCalls.reduce(
+      (sum, call) => sum + contextSize(call.tokens),
+      0,
+    );
+    if (totalInput > 0) {
+      const values = efficiencyByWeek.get(sessionWeek) ?? [];
+      values.push(
+        sessionCalls.reduce((sum, call) => sum + call.tokens.cacheRead, 0) /
+          totalInput,
+      );
+      efficiencyByWeek.set(sessionWeek, values);
+    }
     const sessionMiss = sessionCalls.some((call) =>
       call.cacheAssessment.cause === undefined &&
       (call.cacheAssessment.status === "partial-hit" ||
@@ -137,6 +183,11 @@ function providerResult(
         bucket.turnsWithMiss++;
       }
     }
+  }
+
+  for (const [date, values] of efficiencyByWeek) {
+    const week = weeks.get(date);
+    if (week) week.efficiency = efficiencyDistribution(values);
   }
 
   return {

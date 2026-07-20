@@ -281,6 +281,16 @@ const performanceWeekSchema = z.object({
   sessionsWithMiss: z.number().int().nonnegative(),
   turns: z.number().int().nonnegative(),
   turnsWithMiss: z.number().int().nonnegative(),
+  efficiency: z.object({
+    lowerWhisker: z.number().min(0).max(1),
+    q1: z.number().min(0).max(1),
+    median: z.number().min(0).max(1),
+    q3: z.number().min(0).max(1),
+    upperWhisker: z.number().min(0).max(1),
+    average: z.number().min(0).max(1),
+    sampleSize: z.number().int().positive(),
+    outliers: z.number().int().nonnegative(),
+  }).optional(),
 });
 
 const performanceProviderSchema = z.object({

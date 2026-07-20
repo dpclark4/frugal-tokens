@@ -68,6 +68,132 @@ function MissTooltip({ active, payload }: {
   );
 }
 
+function percent(value: number) {
+  return `${(value * 100).toFixed(1)}%`;
+}
+
+function EfficiencyBoxPlot({ weeks }: { weeks: ProviderResult["weeks"] }) {
+  const [selected, setSelected] = useState<ProviderResult["weeks"][number]>();
+  const width = 720;
+  const height = 260;
+  const left = 52;
+  const right = 18;
+  const top = 14;
+  const bottom = 40;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+  const step = plotWidth / Math.max(weeks.length, 1);
+  const y = (value: number) => top + (1 - value) * plotHeight;
+  const selectedEfficiency = selected?.efficiency;
+
+  return (
+    <div className="efficiency-chart">
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Weekly cache efficiency distributions">
+        {[0, 0.25, 0.5, 0.75, 1].map((value) => (
+          <g key={value}>
+            <line
+              x1={left}
+              x2={width - right}
+              y1={y(value)}
+              y2={y(value)}
+              className="efficiency-grid-line"
+            />
+            <text x={left - 9} y={y(value) + 3} textAnchor="end" className="efficiency-axis-label">
+              {Math.round(value * 100)}%
+            </text>
+          </g>
+        ))}
+        {weeks.map((week, index) => {
+          const value = week.efficiency;
+          const x = left + step * index + step / 2;
+          const boxWidth = Math.min(24, step * .48);
+          return (
+            <g key={week.date}>
+              {value && (
+                <g
+                  className={`efficiency-box ${value.sampleSize < 5 ? "small-sample" : ""}`}
+                  tabIndex={0}
+                  role="img"
+                  aria-label={`${week.date}, median ${percent(value.median)}, ${value.sampleSize} sessions`}
+                  onMouseEnter={() => setSelected(week)}
+                  onMouseLeave={() => setSelected(undefined)}
+                  onFocus={() => setSelected(week)}
+                  onBlur={() => setSelected(undefined)}
+                >
+                  <line x1={x} x2={x} y1={y(value.upperWhisker)} y2={y(value.lowerWhisker)} />
+                  <line x1={x - boxWidth / 3} x2={x + boxWidth / 3} y1={y(value.upperWhisker)} y2={y(value.upperWhisker)} />
+                  <line x1={x - boxWidth / 3} x2={x + boxWidth / 3} y1={y(value.lowerWhisker)} y2={y(value.lowerWhisker)} />
+                  <rect
+                    x={x - boxWidth / 2}
+                    y={y(value.q3)}
+                    width={boxWidth}
+                    height={Math.max(1, y(value.q1) - y(value.q3))}
+                  />
+                  <line
+                    className="efficiency-median"
+                    x1={x - boxWidth / 2}
+                    x2={x + boxWidth / 2}
+                    y1={y(value.median)}
+                    y2={y(value.median)}
+                  />
+                </g>
+              )}
+              {(index % 2 === 0 || weeks.length <= 8) && (
+                <text x={x} y={height - 17} textAnchor="middle" className="efficiency-axis-label">
+                  {date.format(new Date(`${week.date}T00:00:00`))}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+      <div className="efficiency-tooltip-slot" aria-live="polite">
+        {selected && selectedEfficiency
+          ? (
+            <div className="efficiency-tooltip">
+              <div className="efficiency-tooltip-heading">
+                <p>
+                  {date.format(new Date(`${selected.date}T00:00:00`))}–
+                  {date.format(new Date(`${selected.endDate}T00:00:00`))}
+                </p>
+                <strong>{selectedEfficiency.sampleSize} sessions</strong>
+                {selectedEfficiency.sampleSize < 5 && <small>Small sample</small>}
+              </div>
+              <dl>
+                <div><dt>Lower</dt><dd>{percent(selectedEfficiency.lowerWhisker)}</dd></div>
+                <div><dt>P25</dt><dd>{percent(selectedEfficiency.q1)}</dd></div>
+                <div><dt>Median</dt><dd>{percent(selectedEfficiency.median)}</dd></div>
+                <div><dt>P75</dt><dd>{percent(selectedEfficiency.q3)}</dd></div>
+                <div><dt>Upper</dt><dd>{percent(selectedEfficiency.upperWhisker)}</dd></div>
+                <div><dt>Average</dt><dd>{percent(selectedEfficiency.average)}</dd></div>
+                <div><dt>Outliers</dt><dd>{selectedEfficiency.outliers}</dd></div>
+              </dl>
+            </div>
+          )
+          : <span className="efficiency-tooltip-hint">Hover or focus a weekly box for details</span>}
+      </div>
+    </div>
+  );
+}
+
+function EfficiencyPanel({ title, result }: { title: string; result?: ProviderResult }) {
+  return (
+    <article className="performance-provider efficiency-panel">
+      <div className="performance-provider-heading">
+        <div>
+          <h2>{title}</h2>
+        </div>
+        <span className="efficiency-model">
+          {formatModel(result?.selectedModel ?? "all")}
+        </span>
+      </div>
+      {!result
+        ? <div className="performance-chart"><div className="chart-message">Loading distribution…</div></div>
+        : <EfficiencyBoxPlot weeks={result.weeks} />}
+    </article>
+  );
+}
+
 function ProviderPanel({
   title,
   result,
@@ -240,12 +366,12 @@ export function PerformancePage() {
           onModelChange={(anthropic) => update({ anthropic })}
         />
       </section>
-      <section className="performance-next" aria-label="Planned cache efficiency comparison">
-        <div>
-          <p className="eyebrow">Next metric</p>
-          <h2>Cache efficiency distribution</h2>
-          <p>Weekly session-level box and whisker comparison.</p>
-        </div>
+      <section className="performance-section-heading">
+        <h2>Cache efficiency</h2>
+      </section>
+      <section className="performance-grid">
+        <EfficiencyPanel title="OpenAI" result={data?.openai} />
+        <EfficiencyPanel title="Anthropic" result={data?.anthropic} />
       </section>
     </main>
   );

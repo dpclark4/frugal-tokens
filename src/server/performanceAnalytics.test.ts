@@ -30,6 +30,25 @@ function call(
   };
 }
 
+function efficiencyCall(
+  session: string,
+  startedAt: number,
+  efficiency: number,
+): UsageCall {
+  const result = call(session, 1, startedAt, 0);
+  return {
+    ...result,
+    sessionStartedAt: startedAt,
+    tokens: {
+      ...result.tokens,
+      uncachedInput: 100 - efficiency * 100,
+      cacheRead: efficiency * 100,
+      freshPrompt: 100 - efficiency * 100,
+      processed: 100,
+    },
+  };
+}
+
 Deno.test("aggregates weekly session and turn cache miss rates by model", () => {
   const start = new Date(2026, 2, 2).getTime();
   const end = new Date(2026, 2, 8, 23, 59).getTime();
@@ -52,4 +71,43 @@ Deno.test("aggregates weekly session and turn cache miss rates by model", () => 
   strictEqual(result.openai.weeks.length, 1);
   strictEqual(result.openai.weeks[0].sessions, 5);
   strictEqual(result.anthropic.sessions, 0);
+});
+
+Deno.test("calculates weekly session cache-efficiency box plot values", () => {
+  const start = new Date(2026, 2, 2).getTime();
+  const end = new Date(2026, 2, 8, 23, 59).getTime();
+  const result = aggregatePerformance(
+    [0, 0.25, 0.5, 0.75, 1].map((efficiency, index) =>
+      efficiencyCall(`session-${index}`, start + index * 10, efficiency)
+    ),
+    start,
+    end,
+  );
+  const distribution = result.openai.weeks[0].efficiency!;
+
+  strictEqual(distribution.lowerWhisker, 0);
+  strictEqual(distribution.q1, 0.25);
+  strictEqual(distribution.median, 0.5);
+  strictEqual(distribution.q3, 0.75);
+  strictEqual(distribution.upperWhisker, 1);
+  strictEqual(distribution.average, 0.5);
+  strictEqual(distribution.sampleSize, 5);
+  strictEqual(distribution.outliers, 0);
+});
+
+Deno.test("uses Tukey whiskers and reports efficiency outliers", () => {
+  const start = new Date(2026, 2, 2).getTime();
+  const end = new Date(2026, 2, 8, 23, 59).getTime();
+  const result = aggregatePerformance(
+    [0, 0.5, 0.5, 0.5, 1].map((efficiency, index) =>
+      efficiencyCall(`session-${index}`, start + index * 10, efficiency)
+    ),
+    start,
+    end,
+  );
+  const distribution = result.openai.weeks[0].efficiency!;
+
+  strictEqual(distribution.lowerWhisker, 0.5);
+  strictEqual(distribution.upperWhisker, 0.5);
+  strictEqual(distribution.outliers, 2);
 });
