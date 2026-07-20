@@ -14,6 +14,7 @@ function call(
     session: { id: session, rootID: session },
     cacheChainID: session,
     turnID: `${session}:${turn}`,
+    turnOrdinal: turn,
     sessionStartedAt: startedAt - turn,
     provider: "openai",
     model: "gpt-5.4",
@@ -71,6 +72,54 @@ Deno.test("aggregates weekly session and turn cache miss rates by model", () => 
   strictEqual(result.openai.weeks.length, 1);
   strictEqual(result.openai.weeks[0].sessions, 5);
   strictEqual(result.anthropic.sessions, 0);
+});
+
+Deno.test("groups image sessions into exclusive cohorts with miss rates", () => {
+  const start = new Date(2026, 2, 2).getTime();
+  const end = new Date(2026, 2, 8, 23, 59).getTime();
+  const cohortSession = (
+    session: string,
+    imagesOn: "none" | "first" | "later",
+    miss: boolean,
+  ) => {
+    const first = call(session, 1, start + 10, 0, 100);
+    const second = call(session, 2, start + 20, miss ? 0 : 100);
+    return [
+      imagesOn === "first" ? { ...first, images: 1 } : first,
+      imagesOn === "later" || imagesOn === "first"
+        ? { ...second, images: 1 }
+        : second,
+    ];
+  };
+  const result = aggregatePerformance([
+    ...cohortSession("no-image-miss", "none", true),
+    ...cohortSession("no-image-clean", "none", false),
+    ...cohortSession("first-image-miss", "first", true),
+    ...cohortSession("first-image-clean", "first", false),
+    ...cohortSession("later-image-miss", "later", true),
+    ...cohortSession("later-image-clean", "later", false),
+  ], start, end);
+
+  for (const cohort of result.openai.imageCohorts) {
+    strictEqual(cohort.sessions, 2);
+    strictEqual(cohort.sessionsWithMiss, 1);
+  }
+});
+
+Deno.test("excludes zero-input calls from performance eligibility", () => {
+  const start = new Date(2026, 2, 2).getTime();
+  const empty = call("empty", 1, start + 10, 0);
+  empty.tokens.uncachedInput = 0;
+  empty.tokens.freshPrompt = 0;
+  empty.tokens.processed = 0;
+  const result = aggregatePerformance(
+    [empty],
+    start,
+    new Date(2026, 2, 8, 23, 59).getTime(),
+  );
+
+  strictEqual(result.openai.sessions, 0);
+  strictEqual(result.openai.turns, 0);
 });
 
 Deno.test("calculates weekly session cache-efficiency box plot values", () => {

@@ -435,6 +435,7 @@ function decodeUsageMessage(
       },
       cacheChainID: (row as UsageMessageRow).session_id,
       turnID: "unassigned",
+      turnOrdinal: 0,
       sessionStartedAt: session.rootStartedAt,
       provider: message.providerID ?? "unknown",
       model: message.modelID ?? "unknown",
@@ -627,8 +628,21 @@ export class OpenCodeRepository {
         rootStartedAt: root.time_created,
       });
     }
+    const imageRows = this.#db.prepare(`
+      SELECT message_id, COUNT(*) AS count
+      FROM part
+      WHERE json_valid(data)
+        AND json_extract(data, '$.type') = 'file'
+        AND json_extract(data, '$.mime') LIKE 'image/%'
+      GROUP BY message_id
+    `).all() as Array<{ message_id: string; count: number }>;
+    const imagesByMessage = new Map(
+      imageRows.map((row) => [row.message_id, row.count]),
+    );
     const sessionsWithUserTurn = new Set<string>();
     const activeTurnIDs = new Map<string, string>();
+    const activeTurnOrdinals = new Map<string, number>();
+    const pendingTurnImages = new Map<string, number>();
     if (startedAt !== undefined) {
       const priorSessions = this.#db.prepare(`
         SELECT id, session_id
@@ -641,6 +655,11 @@ export class OpenCodeRepository {
       priorSessions.forEach(({ id, session_id }) => {
         sessionsWithUserTurn.add(session_id);
         activeTurnIDs.set(session_id, id);
+        activeTurnOrdinals.set(
+          session_id,
+          (activeTurnOrdinals.get(session_id) ?? 0) + 1,
+        );
+        pendingTurnImages.set(session_id, imagesByMessage.get(id) ?? 0);
       });
     }
     const rows = startedAt === undefined
@@ -664,13 +683,25 @@ export class OpenCodeRepository {
       if (decoded.role === "user") {
         sessionsWithUserTurn.add(row.session_id);
         activeTurnIDs.set(row.session_id, row.id);
+        activeTurnOrdinals.set(
+          row.session_id,
+          (activeTurnOrdinals.get(row.session_id) ?? 0) + 1,
+        );
+        pendingTurnImages.set(
+          row.session_id,
+          imagesByMessage.get(row.id) ?? 0,
+        );
         continue;
       }
       if (decoded.call && sessionsWithUserTurn.has(row.session_id)) {
+        const images = pendingTurnImages.get(row.session_id) ?? 0;
         calls.push({
           ...decoded.call,
           turnID: `${row.session_id}:${activeTurnIDs.get(row.session_id) ?? "prior"}`,
+          turnOrdinal: activeTurnOrdinals.get(row.session_id) ?? 0,
+          ...(images > 0 ? { images } : {}),
         });
+        pendingTurnImages.set(row.session_id, 0);
       }
     }
     return calls;

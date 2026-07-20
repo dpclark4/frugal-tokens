@@ -76,8 +76,8 @@ function EfficiencyBoxPlot({ weeks }: { weeks: ProviderResult["weeks"] }) {
   const [selected, setSelected] = useState<ProviderResult["weeks"][number]>();
   const width = 720;
   const height = 260;
-  const left = 52;
-  const right = 18;
+  const left = 42;
+  const right = 10;
   const top = 14;
   const bottom = 40;
   const plotWidth = width - left - right;
@@ -170,7 +170,7 @@ function EfficiencyBoxPlot({ weeks }: { weeks: ProviderResult["weeks"] }) {
               </dl>
             </div>
           )
-          : <span className="efficiency-tooltip-hint">Hover or focus a weekly box for details</span>}
+          : <span className="efficiency-tooltip-hint">Hover to see details</span>}
       </div>
     </div>
   );
@@ -190,6 +190,53 @@ function EfficiencyPanel({ title, result }: { title: string; result?: ProviderRe
       {!result
         ? <div className="performance-chart"><div className="chart-message">Loading distribution…</div></div>
         : <EfficiencyBoxPlot weeks={result.weeks} />}
+    </article>
+  );
+}
+
+const imageCohortLabels = {
+  "no-image": "No image",
+  "first-turn-image": "Image in first turn",
+  "later-turn-image": "Image introduced later",
+} as const;
+
+function ImageCohortPanel({
+  title,
+  result,
+}: {
+  title: string;
+  result?: ProviderResult;
+}) {
+  return (
+    <article className="performance-provider image-cohort-panel">
+      <div className="performance-provider-heading">
+        <h2>{title}</h2>
+        <span className="efficiency-model">
+          {formatModel(result?.selectedModel ?? "all")}
+        </span>
+      </div>
+      {!result
+        ? <div className="image-cohort-message">Loading image cohorts…</div>
+        : (
+          <div className="image-cohort-list">
+            {result.imageCohorts.map((cohort) => {
+              const missRate = rate(cohort.sessionsWithMiss, cohort.sessions);
+              const title = `${cohort.sessionsWithMiss} of ${cohort.sessions} sessions`;
+              return (
+                <div className="image-cohort-row" key={cohort.cohort} title={title}>
+                  <div>
+                    <span>{imageCohortLabels[cohort.cohort]}</span>
+                    <strong>{displayRate(missRate)}</strong>
+                  </div>
+                  <i>
+                    <b style={{ width: `${missRate ?? 0}%` }} />
+                  </i>
+                  <small>{cohort.sessionsWithMiss} of {cohort.sessions}</small>
+                </div>
+              );
+            })}
+          </div>
+        )}
     </article>
   );
 }
@@ -214,7 +261,6 @@ function ProviderPanel({
     <article className="performance-provider">
       <div className="performance-provider-heading">
         <div>
-          <p className="eyebrow">Provider</p>
           <h2>{title}</h2>
         </div>
         <label>
@@ -299,8 +345,8 @@ function ProviderPanel({
           )}
       </div>
       <div className="performance-legend">
-        <span><i className="session-series" /> Sessions with any miss</span>
-        <span><i className="turn-series" /> Turns with any miss</span>
+        <span><i className="session-series" /> Sessions</span>
+        <span><i className="turn-series" /> Turns</span>
       </div>
     </article>
   );
@@ -333,9 +379,7 @@ export function PerformancePage() {
       <SiteHeader active="performance" />
       <section className="performance-intro">
         <div>
-          <p className="eyebrow">Model comparison</p>
           <h2>Cache performance</h2>
-          <p>Weekly session cohorts from the last 90 days.</p>
         </div>
         <label>
           <span>Harness</span>
@@ -372,6 +416,13 @@ export function PerformancePage() {
       <section className="performance-grid">
         <EfficiencyPanel title="OpenAI" result={data?.openai} />
         <EfficiencyPanel title="Anthropic" result={data?.anthropic} />
+      </section>
+      <section className="performance-section-heading">
+        <h2>Miss rate by image use</h2>
+      </section>
+      <section className="performance-grid">
+        <ImageCohortPanel title="OpenAI" result={data?.openai} />
+        <ImageCohortPanel title="Anthropic" result={data?.anthropic} />
       </section>
     </main>
   );

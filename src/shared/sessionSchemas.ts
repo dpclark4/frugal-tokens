@@ -293,6 +293,12 @@ const performanceWeekSchema = z.object({
   }).optional(),
 });
 
+const imageCohortSchema = z.object({
+  cohort: z.enum(["no-image", "first-turn-image", "later-turn-image"]),
+  sessions: z.number().int().nonnegative(),
+  sessionsWithMiss: z.number().int().nonnegative(),
+});
+
 const performanceProviderSchema = z.object({
   provider: z.enum(["openai", "anthropic"]),
   selectedModel: z.string(),
@@ -300,6 +306,7 @@ const performanceProviderSchema = z.object({
   sessionsWithMiss: z.number().int().nonnegative(),
   turns: z.number().int().nonnegative(),
   turnsWithMiss: z.number().int().nonnegative(),
+  imageCohorts: z.array(imageCohortSchema),
   weeks: z.array(performanceWeekSchema),
 });
 

@@ -1,5 +1,8 @@
 import type { PerformanceResponse } from "../shared/sessionSchemas.ts";
-import { contextSize } from "../shared/contextMetrics.ts";
+import {
+  contextSize,
+  hasInputContext,
+} from "../shared/contextMetrics.ts";
 import {
   categorizeUsageCallCache,
   type AssessedUsageCall,
@@ -35,6 +38,7 @@ export const PERFORMANCE_MODELS = {
 } as const;
 
 type Vendor = keyof typeof PERFORMANCE_MODELS;
+type ImageCohort = PerformanceResponse[Vendor]["imageCohorts"][number]["cohort"];
 type Week = PerformanceResponse[Vendor]["weeks"][number];
 
 function vendorFor(call: UsageCall): Vendor | undefined {
@@ -119,8 +123,25 @@ function weeksBetween(start: number, end: number) {
   return weeks;
 }
 
+function imageCohorts(calls: AssessedUsageCall[]) {
+  const cohorts = new Map<string, ImageCohort>();
+  for (const call of calls) {
+    const key = `${call.harness}:${call.session.rootID}`;
+    if (!cohorts.has(key)) cohorts.set(key, "no-image");
+    if (
+      call.session.id !== call.session.rootID || (call.images ?? 0) === 0
+    ) continue;
+    if (call.turnOrdinal === 1) cohorts.set(key, "first-turn-image");
+    else if (cohorts.get(key) !== "first-turn-image") {
+      cohorts.set(key, "later-turn-image");
+    }
+  }
+  return cohorts;
+}
+
 function providerResult(
   calls: AssessedUsageCall[],
+  cohorts: Map<string, ImageCohort>,
   vendor: Vendor,
   selectedModel: string,
   start: number,
@@ -129,7 +150,8 @@ function providerResult(
   const matching = calls.filter((call) =>
     vendorFor(call) === vendor &&
     (selectedModel === "all" || call.model === selectedModel) &&
-    call.sessionStartedAt >= start && call.sessionStartedAt <= end
+    call.sessionStartedAt >= start && call.sessionStartedAt <= end &&
+    hasInputContext(call.tokens)
   );
   const weeks = weeksBetween(start, end);
   const sessions = Map.groupBy(
@@ -137,6 +159,11 @@ function providerResult(
     (call) => `${call.harness}:${call.session.rootID}`,
   );
   const efficiencyByWeek = new Map<string, number[]>();
+  const imageResults: PerformanceResponse[Vendor]["imageCohorts"] = [
+    { cohort: "no-image", sessions: 0, sessionsWithMiss: 0 },
+    { cohort: "first-turn-image", sessions: 0, sessionsWithMiss: 0 },
+    { cohort: "later-turn-image", sessions: 0, sessionsWithMiss: 0 },
+  ];
   let sessionsWithMiss = 0;
   let turns = 0;
   let turnsWithMiss = 0;
@@ -167,6 +194,12 @@ function providerResult(
       sessionsWithMiss++;
       bucket.sessionsWithMiss++;
     }
+    const sessionKey = `${sessionCalls[0].harness}:${sessionCalls[0].session.rootID}`;
+    const imageResult = imageResults.find((result) =>
+      result.cohort === (cohorts.get(sessionKey) ?? "no-image")
+    )!;
+    imageResult.sessions++;
+    if (sessionMiss) imageResult.sessionsWithMiss++;
     const sessionTurns = Map.groupBy(
       sessionCalls,
       (call) => `${call.session.id}:${call.turnID}`,
@@ -197,6 +230,7 @@ function providerResult(
     sessionsWithMiss,
     turns,
     turnsWithMiss,
+    imageCohorts: imageResults,
     weeks: [...weeks.values()],
   };
 }
@@ -209,15 +243,24 @@ export function aggregatePerformance(
   anthropicModel = "all",
 ): PerformanceResponse {
   const assessed = categorizeUsageCallCache(calls);
+  const cohorts = imageCohorts(assessed);
   return {
     rangeDays: PERFORMANCE_RANGE_DAYS,
     models: {
       openai: [...PERFORMANCE_MODELS.openai],
       anthropic: [...PERFORMANCE_MODELS.anthropic],
     },
-    openai: providerResult(assessed, "openai", openaiModel, start, end),
+    openai: providerResult(
+      assessed,
+      cohorts,
+      "openai",
+      openaiModel,
+      start,
+      end,
+    ),
     anthropic: providerResult(
       assessed,
+      cohorts,
       "anthropic",
       anthropicModel,
       start,

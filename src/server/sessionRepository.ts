@@ -552,6 +552,8 @@ export class SessionRepository {
       },
       cacheChainID: row.external_id,
       turnID: `${row.public_id}:${row.turn_ordinal}`,
+      turnOrdinal: row.turn_ordinal,
+      images: optional(row.images),
       sessionStartedAt: row.root_started_at ?? row.root_updated_at,
       provider: row.provider,
       model: row.model,
