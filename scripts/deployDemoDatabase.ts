@@ -29,7 +29,10 @@ const volume = required("DEPLOY_RAILWAY_VOLUME");
 const sourceDatabase = required("FRUGAL_TOKENS_DATABASE_URL");
 const temporaryDirectory = await Deno.makeTempDir({ prefix: "frugal-tokens-demo-" });
 const snapshot = join(temporaryDirectory, "archive.sqlite");
-const remoteDatabase = "/demo.sqlite";
+// Upload a new file rather than overwriting the database open in the running
+// service. The previous file remains available if this deployment fails.
+const remoteDatabase = `/demo-archive-${crypto.randomUUID()}.sqlite`;
+const remoteDatabaseURL = `sqlite:/data${remoteDatabase}`;
 
 try {
   await run(Deno.execPath(), [
@@ -54,6 +57,18 @@ try {
     "--overwrite",
     "--json",
   ]);
+  // Point the next deployment at the uploaded snapshot. --skip-deploys keeps
+  // the running service on its old database until `railway up` replaces it.
+  await run("railway", [
+    "variable",
+    "set",
+    "--service",
+    service,
+    "--environment",
+    environment,
+    "--skip-deploys",
+    `FRUGAL_TOKENS_DATABASE_URL=${remoteDatabaseURL}`,
+  ]);
   await run("railway", [
     "up",
     "--service",
@@ -65,7 +80,7 @@ try {
     "Publish sanitized demo database",
   ]);
 
-  console.log(`Published sqlite:/data${remoteDatabase}.`);
+  console.log(`Published ${remoteDatabaseURL}.`);
 } finally {
   await Deno.remove(temporaryDirectory, { recursive: true });
 }

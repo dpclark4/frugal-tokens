@@ -10,7 +10,7 @@ type Row = Record<string, string | number | null>;
 
 function usage(): never {
   throw new Error(
-    "Usage: deno task demo:merge -- --target <target.sqlite> --source <sanitized-source.sqlite>",
+    "Usage: deno task demo:db:merge -- --target <target.sqlite> --source <sanitized-source.sqlite>",
   );
 }
 

@@ -28,18 +28,18 @@ the API port; if it changes during development, update the proxy target in
 ## Demo Deployment
 
 The `demo-api` Railway service must mount the `demo-api-volume` volume at
-`/data` and have `FRUGAL_TOKENS_DATABASE_URL=sqlite:/data/demo.sqlite` set in
-its production environment. Sleep configuration and the API domain are managed
-in Railway.
+`/data`. Sleep configuration and the API domain are managed in Railway.
 
-With deployment values in `.env`, run `deno task deploy:demo` to publish Pages,
-`deno task deploy:railway` to deploy the API, and `deno task deploy:demo-data`
-to replace the demo database. Publishing data briefly takes the API down before
-replacing `/data/demo.sqlite` and redeploying it.
+With deployment values in `.env`, run `deno task demo:deploy:frontend` to publish
+Pages, `deno task demo:deploy:backend` to deploy the API, and
+`deno task demo:deploy:data` to publish a new demo database. The data task
+uploads a versioned snapshot, updates the production
+`FRUGAL_TOKENS_DATABASE_URL` to point to it, and redeploys the API; the prior
+snapshot remains on the volume as a fallback.
 
-Create a sanitized contributor database with `deno task demo:database --
+Create a sanitized contributor database with `deno task demo:db:create --
 --output contributor.sqlite`. To add it to an existing sanitized demo database,
-run `deno task demo:merge -- --target demo.sqlite --source contributor.sqlite`.
+run `deno task demo:db:merge -- --target demo.sqlite --source contributor.sqlite`.
 The merge modifies the target in place, requires matching schemas and sanitized
 inputs, and skips sessions whose retained source checksum is already present.
 
