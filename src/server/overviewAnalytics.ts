@@ -331,6 +331,7 @@ export function aggregateOverview(
     },
     sessionProfile: {
       turns: distribution(profileTurns),
+      activeSpan: distribution(activeSpans),
       input: distribution(profileInput),
       peakContext: distribution(profilePeakContext),
       elapsed: distribution(profileElapsed),
@@ -343,10 +344,6 @@ export function aggregateOverview(
     },
     multiDaySessions,
     multiDaySessionRate: sessions === 0 ? 0 : multiDaySessions / sessions,
-    averageActiveSpan: activeSpans.length === 0
-      ? 0
-      : activeSpans.reduce((sum, value) => sum + value, 0) /
-        activeSpans.length,
     models: topModels,
   };
 }

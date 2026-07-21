@@ -1,4 +1,3 @@
-import { displayModelName } from "../shared/modelNames.ts";
 import type { OverviewResponse } from "../shared/sessionSchemas.ts";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -73,9 +72,9 @@ export function CompactOverview({
     <div className="compact-overview">
       <div className="compact-overview-summary">
         <div
-          title={`${integer.format(data.activeWeekdays)} weekdays, ${
-            integer.format(data.weekendDays)
-          } weekend days`}
+          title={`${integer.format(data.activeDays)} of ${integer.format(data.rangeDays)} selected days had activity; ${
+            integer.format(data.activeWeekdays)
+          } weekdays, ${integer.format(data.weekendDays)} weekend days`}
         >
           <strong>{integer.format(data.activeDays)}</strong>
           <span>Active days</span>
@@ -88,17 +87,15 @@ export function CompactOverview({
           <strong>{currency.format(knownSpend)}</strong>
           <span>Spend</span>
         </div>
-        <div title="Token-weighted efficiency">
+        <div title="Overall cache reuse across all included model calls (token-weighted)">
           <strong>{percent(data.sessionProfile.overallEfficiency)}</strong>
-          <span>Token reuse</span>
+          <span>Overall token reuse</span>
         </div>
-        <div title={`${integer.format(data.multiDaySessions)} sessions`}>
+        <div
+          title={`${integer.format(data.multiDaySessions)} of ${integer.format(data.sessions)} sessions`}
+        >
           <strong>{percent(data.multiDaySessionRate)}</strong>
-          <span>Multi-day</span>
-        </div>
-        <div title="Average distinct active dates per session">
-          <strong>{days(data.averageActiveSpan)}</strong>
-          <span>Days / session</span>
+          <span>Multi-day sessions</span>
         </div>
       </div>
       <div className="compact-overview-table">
@@ -106,8 +103,8 @@ export function CompactOverview({
           <thead>
             <tr>
               <th>Activity per active day</th>
-              <th>P50</th>
-              <th>Avg</th>
+              <th>Median</th>
+              <th>Average</th>
               <th>P90</th>
             </tr>
           </thead>
@@ -127,6 +124,12 @@ export function CompactOverview({
             <tr className="compact-metric-group">
               <th colSpan={4}>Session profile</th>
             </tr>
+            <MetricRow
+              label="Active dates / session"
+              values={data.sessionProfile.activeSpan}
+              format={days}
+              tooltip="Distinct calendar dates with activity per session"
+            />
             <MetricRow
               label="Turns / session"
               values={data.sessionProfile.turns}
@@ -153,37 +156,14 @@ export function CompactOverview({
               format={currency.format}
             />
             <MetricRow
-              label="Efficiency"
+              label="Token reuse / session"
               values={data.sessionProfile.efficiency}
               format={percent}
+              tooltip="Cache reuse calculated per session; P50, average, and P90 summarize those session-level percentages"
             />
           </tbody>
         </table>
       </div>
-      {data.models.length > 0 && (
-        <div className="compact-models">
-          <div className="compact-model-heading">
-            <h3>Top models by spend</h3>
-            <small>Share</small>
-            <strong>Spend</strong>
-          </div>
-          <div className="compact-model-list">
-            {data.models.map((model) => (
-              <div
-                className="compact-model-row"
-                key={`${model.model}:${model.isOther}`}
-              >
-                <span title={model.model}>{displayModelName(model.model)}</span>
-                <i>
-                  <b style={{ width: `${model.spendShare * 100}%` }} />
-                </i>
-                <small>{percent(model.spendShare)}</small>
-                <strong>{currency.format(model.spend)}</strong>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

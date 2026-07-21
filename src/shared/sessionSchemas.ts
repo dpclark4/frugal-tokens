@@ -251,6 +251,7 @@ export const overviewResponseSchema = z.object({
   }),
   sessionProfile: z.object({
     turns: distributionSchema.optional(),
+    activeSpan: distributionSchema.optional(),
     input: distributionSchema.optional(),
     peakContext: distributionSchema.optional(),
     elapsed: distributionSchema.optional(),
@@ -261,7 +262,6 @@ export const overviewResponseSchema = z.object({
   }),
   multiDaySessions: z.number().int().nonnegative(),
   multiDaySessionRate: z.number().min(0).max(1),
-  averageActiveSpan: z.number().nonnegative(),
   models: z.array(z.object({
     model: z.string(),
     sessions: z.number().int().nonnegative(),

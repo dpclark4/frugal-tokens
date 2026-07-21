@@ -104,7 +104,11 @@ Deno.test("aggregates active dates and inclusive subagent work", () => {
   strictEqual(result.weekdayActivityRate, 1);
   strictEqual(result.sessions, 2);
   strictEqual(result.multiDaySessions, 1);
-  strictEqual(result.averageActiveSpan, 1.5);
+  deepStrictEqual(result.sessionProfile.activeSpan, {
+    average: 1.5,
+    median: 1.5,
+    p90: 1.9,
+  });
   deepStrictEqual(result.activity.sessions, {
     average: 1.5,
     median: 1.5,

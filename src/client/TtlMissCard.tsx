@@ -206,7 +206,10 @@ export function TtlMissCard({
   }, [harness, range]);
 
   return (
-    <section className="ttl-miss-card" aria-label="Overview and cache misses">
+    <section
+      className={`ttl-miss-card ${view === "overview" ? "overview-view" : "cache-view"}`}
+      aria-label="Overview and cache misses"
+    >
       <div className="ttl-analytics-toolbar">
         <div
           className="chart-tabs"
