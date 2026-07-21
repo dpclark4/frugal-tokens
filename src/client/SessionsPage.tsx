@@ -13,6 +13,7 @@ import type {
   TokenUsage,
 } from "../shared/sessionSchemas.ts";
 import { contextRange, contextSize } from "../shared/contextMetrics.ts";
+import { displayModelName } from "../shared/modelNames.ts";
 import { rollupCosts } from "../shared/costMetrics.ts";
 import { getOverview, getSession, getSessions } from "./api.ts";
 import claudeCodeIcon from "./assets/icons/claudecode-color.svg";
@@ -145,14 +146,14 @@ function ModelSummary({ models }: { models: string[] }) {
   return (
     <span className="session-model-summary">
       <span className="session-model-name" title={primary}>
-        {modelDisplayName(primary)}
+        {displayModelName(primary)}
       </span>
       {others.length > 0 && (
         <span
           className="model-overflow"
-          title={others.map(modelDisplayName).join(", ")}
+          title={others.map(displayModelName).join(", ")}
           aria-label={`Other models: ${
-            others.map(modelDisplayName).join(", ")
+            others.map(displayModelName).join(", ")
           }`}
           tabIndex={0}
         >
@@ -161,50 +162,6 @@ function ModelSummary({ models }: { models: string[] }) {
       )}
     </span>
   );
-}
-
-const modelDisplayNames: Record<string, string> = {
-  "claude-fable-5": "Claude Fable 5",
-  "claude-mythos-5": "Claude Mythos 5",
-  "claude-opus-4-8": "Claude Opus 4.8",
-  "claude-opus-4-7": "Claude Opus 4.7",
-  "claude-opus-4-6": "Claude Opus 4.6",
-  "claude-opus-4-5": "Claude Opus 4.5",
-  "claude-opus-4-1": "Claude Opus 4.1",
-  "claude-sonnet-4-6": "Claude Sonnet 4.6",
-  "claude-sonnet-4-5": "Claude Sonnet 4.5",
-  "claude-haiku-4-5": "Claude Haiku 4.5",
-  "claude-haiku-3-5": "Claude Haiku 3.5",
-  "grok-4-5": "Grok 4.5",
-};
-
-function modelDisplayName(model: string) {
-  const mapped = modelDisplayNames[model];
-  if (mapped) return mapped;
-
-  const names: Record<string, string> = {
-    gpt: "GPT",
-    claude: "Claude",
-    codex: "Codex",
-    opus: "Opus",
-    sonnet: "Sonnet",
-    haiku: "Haiku",
-    sol: "Sol",
-    gemini: "Gemini",
-    pro: "Pro",
-    mini: "Mini",
-    nano: "Nano",
-    o1: "O1",
-    o3: "O3",
-    o4: "O4",
-  };
-  const displayModel = model.toLowerCase().includes("claude")
-    ? model.replace(/[-_]20\d{6}$/, "")
-    : model;
-  return displayModel.split(/[-_]/).map((part) =>
-    names[part.toLowerCase()] ??
-      (part.length === 0 ? part : part[0].toUpperCase() + part.slice(1))
-  ).join(" ");
 }
 
 function cacheHitRate(tokens: TokenUsage) {
@@ -1250,7 +1207,7 @@ function CallTable({
                     </span>
                   </td>
                   <td className="call-model-cell">
-                    {modelDisplayName(call.model)}
+                    {displayModelName(call.model)}
                   </td>
                   <td className={callDuration ? undefined : "muted"}>
                     {callDuration ?? "—"}

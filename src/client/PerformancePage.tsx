@@ -11,6 +11,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { displayModelName } from "../shared/modelNames.ts";
 import type { PerformanceResponse } from "../shared/sessionSchemas.ts";
 import { getPerformance } from "./api.ts";
 import { SiteHeader } from "./SiteHeader.tsx";
@@ -36,15 +37,6 @@ function rate(part: number, total: number) {
 
 function displayRate(value: number | null) {
   return value === null ? "No data" : `${value.toFixed(1)}%`;
-}
-
-function formatModel(model: string) {
-  if (model === "all") return "All models";
-  return model.split(/[-_]/).map((part) =>
-    part.toLowerCase() === "gpt"
-      ? "GPT"
-      : part ? part[0].toUpperCase() + part.slice(1) : part
-  ).join(" ");
 }
 
 function MissTooltip({ active, payload }: {
@@ -209,7 +201,7 @@ function DistributionPanel({
           <h2>{title}</h2>
         </div>
         <span className="efficiency-model">
-          {formatModel(result?.selectedModel ?? "all")}
+          {displayModelName(result?.selectedModel ?? "all")}
         </span>
       </div>
       {!result
@@ -291,7 +283,7 @@ function CacheLossPanel({ title, result }: { title: string; result?: ProviderRes
       <div className="performance-provider-heading">
         <h2>{title}</h2>
         <span className="efficiency-model">
-          {formatModel(result?.selectedModel ?? "all")}
+          {displayModelName(result?.selectedModel ?? "all")}
         </span>
       </div>
       {!result
@@ -361,7 +353,7 @@ function ImageCohortPanel({
       <div className="performance-provider-heading">
         <h2>{title}</h2>
         <span className="efficiency-model">
-          {formatModel(result?.selectedModel ?? "all")}
+          {displayModelName(result?.selectedModel ?? "all")}
         </span>
       </div>
       {!result
@@ -420,7 +412,7 @@ function ProviderPanel({
           >
             <option value="all">All models</option>
             {models.map((model) => (
-              <option key={model} value={model}>{formatModel(model)}</option>
+              <option key={model} value={model}>{displayModelName(model)}</option>
             ))}
           </select>
         </label>

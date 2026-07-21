@@ -7,6 +7,10 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import {
+  canonicalModelId,
+  displayModelName,
+} from "../../shared/modelNames.ts";
 import type { UsageResponse } from "../../shared/sessionSchemas.ts";
 
 type Metric = "cost" | "input";
@@ -57,21 +61,30 @@ export function SpendInputChart({ usage, metric }: {
   usage: UsageResponse;
   metric: Metric;
 }) {
-  const models = [...new Set(usage.days.flatMap((entry) => entry.models.map(({ model }) => model)))].sort();
+  const models = [...new Set(usage.days.flatMap((entry) =>
+    entry.models.map(({ model }) => canonicalModelId(model))
+  ))].sort();
   const series = models.map((model, index) => ({
     model,
+    label: displayModelName(model),
     key: `model${index}`,
     color: colors[index % colors.length],
-    total: usage.days.flatMap((entry) => entry.models.filter((item) => item.model === model))
-      .reduce((sum, item) => sum + (item[metric] ?? 0), 0),
+    total: usage.days.flatMap((entry) =>
+      entry.models.filter((item) => canonicalModelId(item.model) === model)
+    ).reduce((sum, item) => sum + (item[metric] ?? 0), 0),
   })).sort((a, b) => b.total - a.total || a.model.localeCompare(b.model));
   const data = usage.days.map((entry) => {
     const row: Record<string, string | number | undefined> = {
       timestamp: new Date(`${entry.date}T00:00:00`).getTime(),
     };
     for (const item of entry.models) {
-      const key = series.find(({ model }) => model === item.model)?.key;
-      if (key) row[key] = item[metric];
+      const key = series.find(({ model }) =>
+        model === canonicalModelId(item.model)
+      )?.key;
+      const value = item[metric];
+      if (key && value !== undefined) {
+        row[key] = (typeof row[key] === "number" ? row[key] : 0) + value;
+      }
     }
     return row;
   });
@@ -108,8 +121,8 @@ export function SpendInputChart({ usage, metric }: {
                 <Tooltip cursor={{ fill: "rgba(70, 98, 68, .07)" }} content={(props) => (
                   <UsageTooltip active={props.active} label={props.label} payload={props.payload as Array<{ color?: string; name?: string; value?: number }>} metric={metric} />
                 )} />
-                {series.map(({ key, model, color }) => (
-                  <Bar key={key} dataKey={key} name={model} stackId="models" fill={color} maxBarSize={48} />
+                {series.map(({ key, label, color }) => (
+                  <Bar key={key} dataKey={key} name={label} stackId="models" fill={color} maxBarSize={48} />
                 ))}
               </BarChart>
             </ResponsiveContainer>
@@ -117,15 +130,15 @@ export function SpendInputChart({ usage, metric }: {
       </div>
       {series.length > 0 && (
         <div className="model-summary" aria-label="Model totals">
-          {shownSeries.map(({ model, color, total: modelTotal }) => (
-            <span key={model} className="model-summary-item"><i style={{ background: color }} /><span>{model}</span><strong>{formatValue(metric, modelTotal)}</strong></span>
+          {shownSeries.map(({ model, label, color, total: modelTotal }) => (
+            <span key={model} className="model-summary-item"><i style={{ background: color }} /><span title={model}>{label}</span><strong>{formatValue(metric, modelTotal)}</strong></span>
           ))}
           {overflowSeries.length > 0 && (
             <span className="model-overflow">
               <button type="button" aria-label={`Show ${overflowSeries.length} more models`}>+{overflowSeries.length} more</button>
               <span className="model-overflow-popover" role="tooltip">
-                {overflowSeries.map(({ model, color, total: modelTotal }) => (
-                  <span key={model} className="model-summary-item"><i style={{ background: color }} /><span>{model}</span><strong>{formatValue(metric, modelTotal)}</strong></span>
+                {overflowSeries.map(({ model, label, color, total: modelTotal }) => (
+                  <span key={model} className="model-summary-item"><i style={{ background: color }} /><span title={model}>{label}</span><strong>{formatValue(metric, modelTotal)}</strong></span>
                 ))}
               </span>
             </span>

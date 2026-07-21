@@ -1,3 +1,4 @@
+import { displayModelName } from "../shared/modelNames.ts";
 import type { OverviewResponse } from "../shared/sessionSchemas.ts";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -30,14 +31,6 @@ function duration(value: number) {
 function days(value: number) {
   const formatted = decimal.format(value);
   return `${formatted} ${formatted === decimal.format(1) ? "day" : "days"}`;
-}
-
-function modelName(model: string) {
-  if (model === "Other") return model;
-  return model.replace(/[-_]20\d{6}$/, "").split(/[-_]/).map((part) => {
-    if (part.toLowerCase() === "gpt") return "GPT";
-    return part.length === 0 ? part : part[0].toUpperCase() + part.slice(1);
-  }).join(" ");
 }
 
 function MetricRow({
@@ -180,7 +173,7 @@ export function CompactOverview({
                 className="compact-model-row"
                 key={`${model.model}:${model.isOther}`}
               >
-                <span title={model.model}>{modelName(model.model)}</span>
+                <span title={model.model}>{displayModelName(model.model)}</span>
                 <i>
                   <b style={{ width: `${model.spendShare * 100}%` }} />
                 </i>
