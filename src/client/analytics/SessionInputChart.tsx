@@ -73,10 +73,6 @@ export function SessionInputChart({ usage }: { usage: UsageResponse }) {
   const cohorts = bucket === "day"
     ? usage.sessionInputDays
     : usage.sessionInputWeeks;
-  const sessions = cohorts.reduce(
-    (sum, entry) => sum + entry.sessions,
-    0,
-  );
   const data = cohorts.map((entry) => ({
     ...entry,
     p90Band: entry.p90 - entry.median,
@@ -85,11 +81,6 @@ export function SessionInputChart({ usage }: { usage: UsageResponse }) {
   return (
     <>
       <div className="usage-chart-heading">
-        <p className="chart-total">
-          <strong>
-            {sessions} {sessions === 1 ? "session" : "sessions"}
-          </strong>
-        </p>
         <div className="segmented" aria-label="Session size rollup">
           {(["day", "week"] as const).map((value) => (
             <button
@@ -111,7 +102,7 @@ export function SessionInputChart({ usage }: { usage: UsageResponse }) {
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart
                 data={data}
-                margin={{ top: 8, right: 8, left: 4, bottom: 0 }}
+                margin={{ top: 8, right: 24, left: 4, bottom: 0 }}
               >
                 <CartesianGrid
                   vertical={false}

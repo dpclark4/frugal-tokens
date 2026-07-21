@@ -173,13 +173,11 @@ export function TtlMissCard({
   overview,
   overviewError,
   range,
-  onRangeChange,
 }: {
   harness: string;
   overview?: OverviewResponse;
   overviewError?: string;
   range: Range;
-  onRangeChange: (range: Range) => void;
 }) {
   const [view, setView] = useState<"overview" | "cache">("overview");
   const [metrics, setMetrics] = useState<TtlMissMetrics>();
@@ -231,19 +229,6 @@ export function TtlMissCard({
           >
             Cache misses
           </button>
-        </div>
-        <div className="segmented" aria-label="Overview range">
-          {([7, 30, 90, "all"] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              className={range === value ? "active" : undefined}
-              aria-pressed={range === value}
-              onClick={() => onRangeChange(value)}
-            >
-              {value === "all" ? "All" : `${value}D`}
-            </button>
-          ))}
         </div>
       </div>
       {view === "overview" && (

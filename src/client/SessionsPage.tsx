@@ -1812,14 +1812,28 @@ export function SessionsPage() {
       <SiteHeader active="overview" />
 
       <div className="homepage-metrics">
+        <div className="metrics-toolbar">
+          <div className="segmented" aria-label="Dashboard range">
+            {([7, 30, 90, "all"] as const).map((value) => (
+              <button
+                key={value}
+                type="button"
+                className={overviewRange === value ? "active" : undefined}
+                aria-pressed={overviewRange === value}
+                onClick={() => setOverviewRange(value)}
+              >
+                {value === "all" ? "All" : `${value}D`}
+              </button>
+            ))}
+          </div>
+        </div>
         <TtlMissCard
           harness={harness}
           overview={overview}
           overviewError={overviewError}
           range={overviewRange}
-          onRangeChange={setOverviewRange}
         />
-        <UsageChart harness={harness} />
+        <UsageChart harness={harness} range={overviewRange} />
       </div>
 
       <section className="sessions-panel">

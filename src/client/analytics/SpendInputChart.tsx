@@ -75,21 +75,17 @@ export function SpendInputChart({ usage, metric }: {
     }
     return row;
   });
-  const total = series.reduce((sum, item) => sum + item.total, 0);
   const shownSeries = series.slice(0, visibleModels);
   const overflowSeries = series.slice(visibleModels);
 
   return (
     <>
-      <div className="usage-chart-heading">
-        <p className="chart-total"><strong>{formatValue(metric, total)}</strong></p>
-      </div>
       <div className="usage-chart-body">
         {data.length === 0
           ? <div className="chart-message">No usage in this range.</div>
           : (
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data} margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
+              <BarChart data={data} margin={{ top: 8, right: 24, left: 4, bottom: 0 }}>
                 <CartesianGrid vertical={false} stroke="#dfdbd1" strokeDasharray="3 5" />
                 <XAxis
                   dataKey="timestamp"
@@ -118,7 +114,7 @@ export function SpendInputChart({ usage, metric }: {
       {series.length > 0 && (
         <div className="model-summary" aria-label="Model totals">
           {shownSeries.map(({ model, color, total: modelTotal }) => (
-            <span key={model} className="model-summary-item"><i style={{ background: color }} /><span>{model}</span><strong>{formatValue(metric, modelTotal)}</strong></span>
+            <span key={model} className="model-summary-item"><i style={{ background: color }} /><span>{model}</span>{metric === "input" && <strong>{formatValue(metric, modelTotal)}</strong>}</span>
           ))}
           {overflowSeries.length > 0 && (
             <span className="model-overflow">

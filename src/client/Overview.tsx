@@ -91,7 +91,7 @@ export function CompactOverview({
           <strong>{integer.format(data.sessions)}</strong>
           <span>Sessions</span>
         </div>
-        <div>
+        <div className="stat-primary">
           <strong>{currency.format(knownSpend)}</strong>
           <span>Spend</span>
         </div>
