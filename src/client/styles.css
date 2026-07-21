@@ -1203,7 +1203,7 @@ table.data-table {
 }
 
 .session-row.row-open {
-  background: var(--surface-2);
+  background: #e8eee5;
 }
 
 .session-cell {
@@ -1520,9 +1520,13 @@ table.data-table {
 }
 
 .breakdown {
-  background: var(--surface-1);
+  background: #f4f6f1;
   color: var(--ink);
   padding: 10px 0 14px;
+}
+
+.turn-identity {
+  padding-left: 20px;
 }
 
 .turn-label-line,
@@ -1566,8 +1570,12 @@ table.data-table {
   table-layout: fixed;
 }
 
+.turn-table {
+  background: #f8faf6;
+}
+
 .turn-table th {
-  background: var(--surface-2);
+  background: #e9eee5;
 }
 
 .turn-table .turn-column {
@@ -1654,7 +1662,7 @@ table.data-table {
 }
 
 .turn-row.row-open {
-  background: var(--surface-0);
+  background: #edf2e9;
 }
 
 .turn-label {
@@ -1736,13 +1744,18 @@ table.data-table {
 
 .turn-detail-row > td {
   padding: 0;
-  background: var(--surface-0);
-  border-bottom: 1px solid var(--row-border);
+  background: #eef2eb;
+  border-top: 1px solid #d5dfd1;
+  border-bottom: 1px solid #d5dfd1;
   text-align: left;
 }
 
+.call-table {
+  background: #fffefb;
+}
+
 .call-table th {
-  background: #faf8f2;
+  background: #f1f4ee;
 }
 
 .call-table .call-identity-column {
@@ -1822,7 +1835,11 @@ table.data-table {
 }
 
 .call-table-wrap {
-  border-top: 1px solid #e0dbd0;
+  border-top: 1px solid #d5dfd1;
+}
+
+.call-identity .metric-stack {
+  padding-left: 40px;
 }
 
 .call-table .activity-cell {
@@ -1881,6 +1898,14 @@ table.data-table {
 
 .row-open > td {
   background: var(--surface-2);
+}
+
+.turn-row.row-open > td {
+  background: #edf2e9;
+}
+
+.call-row.row-open > td {
+  background: #f5f8f2;
 }
 
 .activity-detail-row > td {
@@ -2084,60 +2109,6 @@ table.data-table {
   border: 0;
   border-bottom: 1px solid #d0d5cb;
   background: var(--surface-0);
-}
-
-/* Tighten only the subagent metric gutter without affecting outer tables. */
-.subagent-summary-table th:nth-child(5),
-.subagent-summary-table td:nth-child(5),
-.nested-breakdown .turn-table th:nth-child(5),
-.nested-breakdown .turn-table td:nth-child(5) {
-  padding-right: 0;
-}
-
-.subagent-summary-table th:nth-child(6),
-.subagent-summary-table td:nth-child(6),
-.nested-breakdown .turn-table th:nth-child(6),
-.nested-breakdown .turn-table td:nth-child(6) {
-  padding-left: 0;
-  text-align: left;
-}
-
-.subagent-summary-table th:nth-child(5),
-.nested-breakdown .turn-table th:nth-child(5) {
-  text-indent: 25px;
-}
-
-.subagent-summary-table th:nth-child(6),
-.nested-breakdown .turn-table th:nth-child(6) {
-  text-indent: 10px;
-}
-
-.subagent-summary-table td:nth-child(5) > .context-metric,
-.nested-breakdown .turn-table td:nth-child(5) > .context-metric {
-  transform: translateX(25px);
-}
-
-.subagent-summary-table td:nth-child(6) > .session-input-metric,
-.nested-breakdown .turn-table td:nth-child(6) > .session-input-metric,
-.nested-breakdown .turn-table td:nth-child(6) > .turn-nested-input {
-  transform: translateX(10px);
-}
-
-.nested-breakdown .turn-table th:nth-child(4),
-.nested-breakdown .turn-table td:nth-child(4) {
-  text-align: left;
-}
-
-/* Nested call tables use the same context column as their parent turn. */
-.nested-breakdown .call-table th:nth-child(5) {
-  text-indent: 38px;
-}
-
-.nested-breakdown .call-table td:nth-child(5) > .context-metric {
-  display: flex;
-  width: max-content;
-  margin-left: auto;
-  align-items: flex-end;
 }
 
 .tool-events {

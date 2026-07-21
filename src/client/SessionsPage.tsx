@@ -1084,6 +1084,7 @@ function CallTable({
   setExpandedCallID,
   expandedSubagentID,
   setExpandedSubagentID,
+  nested = false,
 }: {
   calls: ModelCall[];
   session: SessionDetail;
@@ -1091,6 +1092,7 @@ function CallTable({
   setExpandedCallID: (id: string | undefined) => void;
   expandedSubagentID?: string;
   setExpandedSubagentID: (id: string | undefined) => void;
+  nested?: boolean;
 }) {
   if (calls.length === 0) {
     return <p className="empty-turn">No completed model calls</p>;
@@ -1113,7 +1115,7 @@ function CallTable({
         </colgroup>
         <thead>
           <tr>
-            <th>Model call</th>
+            <th>{nested ? "Subagent call" : "Model call"}</th>
             <th>Model</th>
             <th>Elapsed</th>
             <th>Activity</th>
@@ -1201,7 +1203,7 @@ function CallTable({
                         >
                           {hasDetails ? (expanded ? "▾" : "▸") : ""}
                         </span>
-                        <strong>Call {call.callWithinTurn}</strong>
+                        <strong>{nested ? "Subagent Call" : "Call"} {call.callWithinTurn}</strong>
                       </span>
                       <small>{sessionStarted.format(call.startedAt)}</small>
                     </span>
@@ -1402,7 +1404,7 @@ function SessionBreakdown({
           </colgroup>
           <thead>
             <tr>
-              <th>Turn</th>
+              <th>{nested ? "Subagent turn" : "Turn"}</th>
               <th>Model</th>
               <th>Elapsed</th>
               <th>Activity</th>
@@ -1477,7 +1479,7 @@ function SessionBreakdown({
                           >
                             {open ? "▾" : "▸"}
                           </button>
-                          <strong>Turn {turn.number}</strong>
+                          <strong>{nested ? "Subagent Turn" : "Turn"} {turn.number}</strong>
                         </span>
                         <small>{sessionStarted.format(turn.startedAt)}</small>
                       </span>
@@ -1598,6 +1600,7 @@ function SessionBreakdown({
                           setExpandedCallID={setExpandedCallID}
                           expandedSubagentID={expandedSubagentID}
                           setExpandedSubagentID={setExpandedSubagentID}
+                          nested={nested}
                         />
                       </td>
                     </tr>
