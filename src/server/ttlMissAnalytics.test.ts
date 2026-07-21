@@ -191,6 +191,17 @@ Deno.test("counts a session once across other miss causes", () => {
   strictEqual(result.cacheMisses.otherAffectedSessions, 1);
 });
 
+Deno.test("keeps a recent model-switch full miss out of unexpected metrics", () => {
+  const result = aggregateTtlMisses([
+    call("switched", start, { model: "gpt-5.6-terra" }),
+    call("switched", start + 2 * MINUTE, { model: "gpt-5.6-luna" }),
+  ], start, 90);
+
+  strictEqual(result.cacheMisses.full.misses, 1);
+  strictEqual(result.cacheMisses.unexpected.full.misses, 0);
+  strictEqual(result.cacheMisses.otherAffectedSessions, 0);
+});
+
 Deno.test("separates subagent misses and keeps compactions outside TTL", () => {
   const calls = [
     call("root", start),

@@ -11,6 +11,7 @@ type CacheMiss = {
   status: "full-miss" | "partial-hit";
   ttl: boolean;
   compaction: boolean;
+  modelChange: boolean;
   attributedCost?: number;
   expectedReadCost?: number;
   estimatedExtraCost?: number;
@@ -37,6 +38,7 @@ function cacheMisses(calls: UsageCall[]) {
       status: assessment.status,
       ttl: assessment.cause === "ttl",
       compaction: assessment.cause === "compaction",
+      modelChange: assessment.reason === "model-change",
       attributedCost: estimate?.actualMissedCost,
       expectedReadCost: estimate?.expectedReadCost,
       estimatedExtraCost: estimate?.estimatedExtraCost,
@@ -146,7 +148,7 @@ export function aggregateTtlMisses(
     const rootMisses = allRootMisses.filter((miss) => miss.ttl);
     const compactionMisses = allRootMisses.filter((miss) => miss.compaction);
     const unexpectedMisses = allRootMisses.filter((miss) =>
-      !miss.ttl && !miss.compaction
+      !miss.ttl && !miss.compaction && !miss.modelChange
     );
     const fullMisses = allRootMisses.filter((miss) =>
       miss.status === "full-miss"

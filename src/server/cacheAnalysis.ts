@@ -22,15 +22,23 @@ export function assessCache(
     return { status: "not-comparable", reason: "no-input-context" };
   }
   if (!previous) return { status: "baseline", reason: "no-predecessor" };
-  if (
-    previous.provider !== current.provider || previous.model !== current.model
-  ) return { status: "not-comparable", reason: "model-change" };
-
   const previousReusableTokens = previous.tokens.cacheRead +
     (previous.tokens.cacheWrite ??
       (previous.provider === "openai" ? previous.tokens.uncachedInput : 0));
   if (previousReusableTokens === 0) {
     return { status: "not-comparable", reason: "no-reusable-cache" };
+  }
+  if (
+    previous.provider !== current.provider || previous.model !== current.model
+  ) {
+    // Provider caches are model-scoped, so switching models loses the prior
+    // reusable prefix even though its retention ratio cannot be observed.
+    return {
+      status: "full-miss",
+      reason: "model-change",
+      retainedRatio: 0,
+      previousReusableTokens,
+    };
   }
 
   const retainedRatio = current.tokens.cacheRead / previousReusableTokens;
@@ -60,6 +68,11 @@ function assessmentSeverity(assessment: CacheAssessment): number {
 function isMiss(assessment: CacheAssessment | undefined): boolean {
   return assessment?.status === "partial-hit" ||
     assessment?.status === "full-miss";
+}
+
+function isUnexpectedMiss(assessment: CacheAssessment | undefined): boolean {
+  return isMiss(assessment) && assessment?.cause === undefined &&
+    assessment?.reason !== "model-change";
 }
 
 function isClaude(call: Pick<ModelCall, "provider" | "model">): boolean {
@@ -169,10 +182,7 @@ export function summarizeTurnCache(calls: ModelCall[]): TurnCacheSummary {
       default:
         summary.unknown++;
     }
-    if (
-      call.cacheAssessment?.status === "partial-hit" ||
-      call.cacheAssessment?.status === "full-miss"
-    ) {
+    if (isUnexpectedMiss(call.cacheAssessment)) {
       summary.unexpectedMisses++;
     }
   }
@@ -268,10 +278,7 @@ export function summarizeSessionCache(session: SessionDetail): CacheSummary {
         default:
           summary.unknown++;
       }
-      if (
-        call.cacheAssessment?.status === "partial-hit" ||
-        call.cacheAssessment?.status === "full-miss"
-      ) {
+      if (isUnexpectedMiss(call.cacheAssessment)) {
         summary.unexpectedMisses++;
       }
     }

@@ -63,7 +63,12 @@ Deno.test("assesses cache retention from the preceding comparable call", () => {
   });
   deepStrictEqual(
     assessCache(baseline, call("changed", 0, 100_000, "claude-opus-4-7")),
-    { status: "not-comparable", reason: "model-change" },
+    {
+      status: "full-miss",
+      reason: "model-change",
+      retainedRatio: 0,
+      previousReusableTokens: 100_000,
+    },
   );
   deepStrictEqual(assessCache(call("empty", 0), call("next", 0)), {
     status: "not-comparable",
@@ -367,6 +372,58 @@ Deno.test("uses a 1-hour TTL fallback for other providers", () => {
   strictEqual(actual.turns[0].cacheSummary?.fullMisses, 0);
   strictEqual(actual.turns[0].cacheSummary?.ttlRelatedMisses, 1);
   strictEqual(actual.turns[0].cacheSummary?.unexpectedMisses, 0);
+});
+
+Deno.test("records a recent model switch as a non-unexpected full miss", () => {
+  const previous = call("terra", 80_000, undefined, "gpt-5.6-terra", "openai");
+  previous.startedAt = 0;
+  const switched = call("luna", 0, undefined, "gpt-5.6-luna", "openai");
+  switched.startedAt = 2 * 60 * 1_000;
+  const base = session("recent-model-switch", []);
+  base.userTurns = 2;
+  base.modelCalls = 2;
+  base.turns = [
+    { number: 1, startedAt: previous.startedAt, calls: [previous] },
+    { number: 2, startedAt: switched.startedAt, calls: [switched] },
+  ];
+
+  const actual = analyzeSessionCache(base);
+
+  deepStrictEqual(actual.turns[1].calls[0].cacheAssessment, {
+    status: "full-miss",
+    reason: "model-change",
+    retainedRatio: 0,
+    previousReusableTokens: 80_100,
+  });
+  strictEqual(actual.turns[1].cacheSummary?.fullMisses, 1);
+  strictEqual(actual.turns[1].cacheSummary?.unexpectedMisses, 0);
+});
+
+Deno.test("attributes an expired model switch to TTL", () => {
+  const previous = call("terra", 80_000, undefined, "gpt-5.6-terra", "openai");
+  previous.startedAt = 0;
+  const switched = call("luna", 0, undefined, "gpt-5.6-luna", "openai");
+  switched.startedAt = 4 * CACHE_TTL_1H_MS;
+  const base = session("expired-model-switch", []);
+  base.userTurns = 2;
+  base.modelCalls = 2;
+  base.turns = [
+    { number: 1, startedAt: previous.startedAt, calls: [previous] },
+    { number: 2, startedAt: switched.startedAt, calls: [switched] },
+  ];
+
+  const actual = analyzeSessionCache(base);
+
+  deepStrictEqual(actual.turns[1].calls[0].cacheAssessment, {
+    status: "full-miss",
+    reason: "model-change",
+    retainedRatio: 0,
+    previousReusableTokens: 80_100,
+    cause: "ttl",
+  });
+  strictEqual(actual.turns[1].cacheSummary?.fullMisses, 0);
+  strictEqual(actual.turns[1].cacheSummary?.ttlRelatedMisses, 1);
+  strictEqual(actual.turns[1].cacheSummary?.unexpectedMisses, 0);
 });
 
 Deno.test("attributes an expired miss to compaction before TTL", () => {
