@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { serveStatic } from "hono/deno";
+import { createMiddleware } from "hono/factory";
 import { OpenCodeRepository } from "./opencodeRepository.ts";
 import { ClaudeCodeRepository } from "./claudeCodeRepository.ts";
 import { PiRepository } from "./piRepository.ts";
@@ -243,6 +244,17 @@ const repository = archiveRepository
 const serveStaticAssets = Deno.env.get("SERVE_STATIC") === "true";
 const app = new Hono();
 app.use("/api/*", cors());
+const logApiRequest = createMiddleware(async (context, next) => {
+  const startedAt = performance.now();
+  await next();
+  const url = new URL(context.req.url);
+  console.info(
+    `[request] method=${context.req.method} endpoint=${url.pathname}${url.search} status=${context.res.status} duration=${
+      (performance.now() - startedAt).toFixed(1)
+    }ms`,
+  );
+});
+app.use("/api/*", logApiRequest);
 
 app.get("/health", (context) => context.json({ status: "ok" }));
 

@@ -152,6 +152,10 @@ type CallRow = {
   has_reasoning: number;
 };
 
+type DetailCallRow = CallRow & {
+  turn_id: number;
+};
+
 type ToolRow = {
   model_call_id: number;
   name: string;
@@ -870,6 +874,41 @@ export class SessionRepository {
       sourceOrder: event.source_order,
       occurredAt: optional(event.occurred_at),
     });
+    const calls = this.db.prepare(`
+      SELECT mc.turn_id, ${callColumns}
+      FROM model_calls mc
+      JOIN turns t ON t.id = mc.turn_id
+      JOIN models m ON m.id = mc.model_id
+      WHERE t.session_id = ?
+      ORDER BY t.ordinal, mc.ordinal
+    `).all(row.source_session_id) as DetailCallRow[];
+    const visibleCalls = row.harness === "codex"
+      ? calls.filter((call) =>
+        !call.source_call_id?.startsWith("context-operation:")
+      )
+      : calls;
+    const tools = visibleCalls.length === 0 ? [] : this.db.prepare(`
+      SELECT te.model_call_id, te.name, te.status, te.started_at,
+        te.completed_at,
+        COALESCE(child.public_id, child.external_id) AS child_public_id,
+        te.input_preview, te.output_preview
+      FROM tool_events te
+      LEFT JOIN source_sessions child ON child.id = te.child_source_session_id
+      WHERE te.model_call_id IN (${visibleCalls.map(() => "?").join(",")})
+      ORDER BY te.model_call_id, te.ordinal
+    `).all(...visibleCalls.map((call) => call.id)) as ToolRow[];
+    const toolsByCall = Map.groupBy(tools, (tool) => tool.model_call_id);
+    const contents = visibleCalls.length === 0 ? [] : this.db.prepare(`
+      SELECT model_call_id, kind, preview
+      FROM call_content
+      WHERE model_call_id IN (${visibleCalls.map(() => "?").join(",")})
+      ORDER BY model_call_id, ordinal
+    `).all(...visibleCalls.map((call) => call.id)) as ContentRow[];
+    const contentsByCall = Map.groupBy(
+      contents,
+      (content) => content.model_call_id,
+    );
+    const callsByTurn = Map.groupBy(visibleCalls, (call) => call.turn_id);
     const turns = (this.db.prepare(`
       SELECT id, ordinal, started_at FROM turns
       WHERE session_id = ? ORDER BY ordinal
@@ -878,42 +917,11 @@ export class SessionRepository {
       ordinal: number;
       started_at: number;
     }>).map((turn) => {
-      const calls = this.db.prepare(`
-        SELECT ${callColumns}
-        FROM model_calls mc
-        JOIN models m ON m.id = mc.model_id
-        WHERE mc.turn_id = ? ORDER BY mc.ordinal
-      `).all(turn.id) as CallRow[];
-      const visibleCalls = row.harness === "codex"
-        ? calls.filter((call) =>
-          !call.source_call_id?.startsWith("context-operation:")
-        )
-        : calls;
-      const tools = visibleCalls.length === 0 ? [] : this.db.prepare(`
-        SELECT te.model_call_id, te.name, te.status, te.started_at,
-          te.completed_at,
-          COALESCE(child.public_id, child.external_id) AS child_public_id,
-          te.input_preview, te.output_preview
-        FROM tool_events te
-        LEFT JOIN source_sessions child ON child.id = te.child_source_session_id
-        WHERE te.model_call_id IN (${visibleCalls.map(() => "?").join(",")})
-        ORDER BY te.model_call_id, te.ordinal
-      `).all(...visibleCalls.map((call) => call.id)) as ToolRow[];
-      const toolsByCall = Map.groupBy(tools, (tool) => tool.model_call_id);
-      const contents = visibleCalls.length === 0 ? [] : this.db.prepare(`
-        SELECT model_call_id, kind, preview
-        FROM call_content
-        WHERE model_call_id IN (${visibleCalls.map(() => "?").join(",")})
-        ORDER BY model_call_id, ordinal
-      `).all(...visibleCalls.map((call) => call.id)) as ContentRow[];
-      const contentsByCall = Map.groupBy(
-        contents,
-        (content) => content.model_call_id,
-      );
+      const turnCalls = callsByTurn.get(turn.id) ?? [];
       return {
         number: turn.ordinal,
         startedAt: turn.started_at,
-        calls: visibleCalls.map((call) => {
+        calls: turnCalls.map((call) => {
           const callTools = toolsByCall.get(call.id) ?? [];
           return {
             id: call.source_call_id ?? String(call.id),
