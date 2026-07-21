@@ -102,7 +102,7 @@ export function CompactOverview({
         <table className="overview-table">
           <thead>
             <tr>
-              <th>Activity per active day</th>
+              <th className="overview-section-title">Activity per active day</th>
               <th>Median</th>
               <th>Average</th>
               <th>P90</th>

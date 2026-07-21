@@ -180,6 +180,13 @@ h1 {
   text-transform: none;
 }
 
+.overview-table thead .overview-section-title {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .01em;
+}
+
 .overview-table th:first-child {
   width: 100%;
   padding-left: 0;
@@ -296,19 +303,24 @@ h1 {
 
 .compact-overview-table .overview-table th,
 .compact-overview-table .overview-table td {
-  padding-top: 4px;
-  padding-bottom: 4px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+
+.compact-overview-table .overview-table thead th {
+  padding-top: 0;
+  padding-bottom: 7px;
 }
 
 .compact-overview-table .compact-metric-group th {
-  padding: 8px 0 3px;
+  padding: 14px 0 6px;
   border-top: 1px solid var(--panel-border);
   border-bottom: 0;
-  color: var(--muted);
-  font-size: 9px;
-  font-weight: 500;
-  letter-spacing: .05em;
-  text-transform: uppercase;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .01em;
+  text-transform: none;
 }
 
 .compact-overview-note {
