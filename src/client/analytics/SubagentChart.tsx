@@ -47,6 +47,26 @@ function percent(value: number, total: number) {
   return total === 0 ? "0%" : `${Math.round(value / total * 100)}%`;
 }
 
+function niceTicks(max: number, intervals = 4): number[] {
+  if (!(max > 0)) return [0, 1];
+  const rough = max / intervals;
+  const magnitude = 10 ** Math.floor(Math.log10(rough));
+  const normalized = rough / magnitude;
+  const step = (normalized <= 1
+    ? 1
+    : normalized <= 2
+    ? 2
+    : normalized <= 2.5
+    ? 2.5
+    : normalized <= 5
+    ? 5
+    : 10) * magnitude;
+  const top = Math.ceil(max / step) * step;
+  const ticks: number[] = [];
+  for (let value = 0; value <= top; value += step) ticks.push(value);
+  return ticks;
+}
+
 function SubagentTooltip({ active, payload }: {
   active?: boolean;
   payload?: Array<{ payload?: TooltipRow }>;
@@ -136,6 +156,12 @@ export function SubagentChart({ usage }: { usage: UsageResponse }) {
     0,
   );
   const bucketWidth = (bucket === "day" ? 1 : 7) * 86_400_000;
+  const maxCost = data.reduce(
+    (max, entry) => Math.max(max, entry.totalCost),
+    0,
+  );
+  const yTicks = niceTicks(maxCost);
+  const yTop = yTicks[yTicks.length - 1];
 
   return (
     <>
@@ -185,7 +211,7 @@ export function SubagentChart({ usage }: { usage: UsageResponse }) {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={data}
-                margin={{ top: 8, right: 8, left: 4, bottom: 0 }}
+                margin={{ top: 8, right: 24, left: 4, bottom: 0 }}
               >
                 <CartesianGrid
                   vertical={false}
@@ -213,6 +239,8 @@ export function SubagentChart({ usage }: { usage: UsageResponse }) {
                   tickLine={false}
                   axisLine={false}
                   width={42}
+                  ticks={yTicks}
+                  domain={[0, yTop]}
                 />
                 <Tooltip
                   cursor={{ fill: "rgba(120, 101, 120, .07)" }}

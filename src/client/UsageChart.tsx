@@ -15,9 +15,11 @@ const views: Array<{ value: View; label: string }> = [
   { value: "subagents", label: "Subagents" },
 ];
 
-export function UsageChart({ harness }: { harness: string }) {
+export function UsageChart({ harness, range }: {
+  harness: string;
+  range: Range;
+}) {
   const [view, setView] = useState<View>("spend");
-  const [range, setRange] = useState<Range>(90);
   const [usage, setUsage] = useState<UsageResponse>();
   const [error, setError] = useState<string>();
 
@@ -53,19 +55,6 @@ export function UsageChart({ harness }: { harness: string }) {
               onClick={() => setView(value)}
             >
               {label}
-            </button>
-          ))}
-        </div>
-        <div className="segmented" aria-label="Chart range">
-          {([7, 30, 90, "all"] as const).map((value) => (
-            <button
-              key={value}
-              type="button"
-              className={range === value ? "active" : undefined}
-              aria-pressed={range === value}
-              onClick={() => setRange(value)}
-            >
-              {value === "all" ? "All" : `${value}D`}
             </button>
           ))}
         </div>

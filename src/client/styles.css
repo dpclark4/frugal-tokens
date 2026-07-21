@@ -121,15 +121,15 @@ main {
 .eyebrow {
   color: var(--accent);
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: .12em;
   text-transform: uppercase;
   margin: 0;
 }
 
 h1 {
-  font-size: clamp(32px, 3vw, 42px);
-  letter-spacing: -.045em;
+  font-size: 26px;
+  letter-spacing: -.02em;
   line-height: 1;
   margin: 0;
 }
@@ -152,8 +152,14 @@ h1 {
 .homepage-metrics {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 24px;
+  gap: 14px 24px;
   margin-bottom: 24px;
+}
+
+.metrics-toolbar {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .overview-table {
@@ -174,7 +180,7 @@ h1 {
 .overview-table thead th {
   padding-top: 0;
   color: var(--muted);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 500;
   letter-spacing: .03em;
   text-transform: uppercase;
@@ -266,15 +272,18 @@ h1 {
 }
 
 .compact-overview-summary strong {
-  font-size: 16px;
+  font-size: 18px;
   font-variant-numeric: tabular-nums;
+}
+
+.compact-overview-summary .stat-primary strong {
+  font-size: 22px;
 }
 
 .compact-overview-summary span {
   color: var(--muted);
-  font-size: 8px;
-  letter-spacing: .04em;
-  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: .02em;
 }
 
 .compact-overview sup {
@@ -302,7 +311,7 @@ h1 {
   border-top: 1px solid var(--panel-border);
   border-bottom: 0;
   color: var(--muted);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 500;
   letter-spacing: .05em;
   text-transform: uppercase;
@@ -324,7 +333,7 @@ h1 {
   gap: 9px;
   margin-bottom: 6px;
   color: var(--muted);
-  font-size: 8px;
+  font-size: 10px;
   letter-spacing: .04em;
   text-transform: uppercase;
 }
@@ -348,7 +357,7 @@ h1 {
   grid-template-columns: minmax(95px, 1.4fr) minmax(60px, 1fr) 44px 64px;
   gap: 9px;
   align-items: center;
-  font-size: 9px;
+  font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -394,12 +403,6 @@ h1 {
 
 .cache-miss-summary {
   grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
-.cache-miss-summary span {
-  font-size: 9px;
-  letter-spacing: 0;
-  text-transform: none;
 }
 
 .cache-miss-details {
@@ -824,22 +827,8 @@ h1 {
   font-size: 13px;
 }
 
-.usage-chart-heading .chart-total {
-  display: flex;
-  align-items: baseline;
-  gap: 9px;
-}
-
-.chart-total strong {
-  color: var(--ink);
-  font: 600 18px var(--mono);
-}
-
-.chart-total span {
-  color: var(--muted);
-  font: 10px var(--mono);
-  text-transform: uppercase;
-  letter-spacing: .05em;
+.usage-chart-heading .segmented:only-child {
+  margin-left: auto;
 }
 
 .subagent-chart-summary {
