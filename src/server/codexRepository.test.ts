@@ -164,6 +164,19 @@ Deno.test("normalizes exported Codex session arrays", () => {
   deepStrictEqual(actual?.tokens.processed, 7963);
 });
 
+Deno.test("counts Codex input images without retaining data URLs", () => {
+  const actual = repository({
+    "2026/07/21/rollout-images.jsonl": `
+{"timestamp":"2026-07-21T17:57:30.000Z","type":"turn_context","payload":{"model":"gpt-5.6-terra"}}
+{"timestamp":"2026-07-21T17:57:31.000Z","type":"event_msg","payload":{"type":"task_started"}}
+{"timestamp":"2026-07-21T17:57:32.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"<image name=[Image #1]>"},{"type":"input_image","image_url":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUg=="},{"type":"input_text","text":"</image>"}]}}
+{"timestamp":"2026-07-21T17:57:33.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":1,"reasoning_output_tokens":0}}}}
+`,
+  }).getSession("2026/07/21/rollout-images");
+
+  strictEqual(actual?.turns[0].calls[0].activity.images, 1);
+});
+
 Deno.test("falls back to legacy Codex user-message records", () => {
   const actual = repository({
     "2026/02/05/rollout-legacy.jsonl": `

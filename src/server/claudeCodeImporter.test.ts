@@ -17,7 +17,7 @@ Deno.test("imports a Claude Code root and namespaced child tree", async () => {
   write(
     `${project}/root.jsonl`,
     `
-{"type":"user","timestamp":"2026-07-14T10:00:00Z","promptSource":"typed","origin":{"kind":"human"},"message":{"content":"${longPrompt}"}}
+{"type":"user","timestamp":"2026-07-14T10:00:00Z","promptSource":"typed","origin":{"kind":"human"},"message":{"content":[{"type":"text","text":"${longPrompt}"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBORw0KGgoAAAANSUhEUg=="}}]}}
 {"type":"assistant","timestamp":"2026-07-14T10:00:01Z","message":{"id":"root-call","model":"claude-opus","stop_reason":"tool_use","content":[{"type":"thinking","thinking":"secret reasoning"},{"type":"text","text":"Calling child"},{"type":"tool_use","id":"tool-1","name":"Agent","input":{"prompt":"investigate"}}],"usage":{"input_tokens":2,"cache_read_input_tokens":3,"cache_creation_input_tokens":4,"output_tokens":5}}}
 {"type":"user","timestamp":"2026-07-14T10:00:02Z","message":{"content":[{"type":"tool_result","tool_use_id":"tool-1","content":"child output"}]},"toolUseResult":{"agentId":"child"}}
 {"type":"user","timestamp":"2026-07-14T10:00:03Z","message":{"content":[{"type":"tool_result","tool_use_id":"unknown","content":"plain output"}]},"toolUseResult":"plain output"}
@@ -72,10 +72,18 @@ Deno.test("imports a Claude Code root and namespaced child tree", async () => {
       childIdentity.external_id,
       "project/root::project/root/subagents/agent-child.jsonl",
     );
-    const input = db.prepare("SELECT preview, original_length FROM turn_inputs")
-      .get()!;
+    const input = db.prepare(`
+      SELECT preview, original_length FROM turn_inputs WHERE kind = 'text'
+    `).get()!;
     strictEqual(input.preview, longPrompt.slice(0, 512));
     strictEqual(input.original_length, 600);
+    strictEqual(
+      db.prepare(`
+        SELECT mime_type FROM turn_inputs WHERE kind = 'image'
+      `).get()!.mime_type,
+      "image/png",
+    );
+    strictEqual(detail.turns[0].calls[0].activity.images, 1);
     strictEqual(
       db.prepare("SELECT preview FROM call_content WHERE kind = 'text'").get()!
         .preview,

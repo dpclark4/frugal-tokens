@@ -49,8 +49,8 @@ Deno.test("imports Codex sessions for SQLite reads", async () => {
     strictEqual(repository.listSessions(1, 10, "codex").items[0].id, id);
     const detail = repository.getSession("codex", id)!;
     strictEqual(detail.title, "Import Codex");
-    // The opaque Codex operation remains inspectable, while usage analytics
-    // continue to omit explicitly tagged compaction machinery.
+    // Canonical storage retains the opaque operation, but session reads and
+    // usage analytics hide explicitly tagged compaction machinery.
     strictEqual(repository.listUsageCalls(undefined, "codex").length, 2);
     strictEqual(
       (db.prepare("SELECT preview FROM turn_inputs").get() as {
@@ -72,7 +72,7 @@ Deno.test("imports Codex sessions for SQLite reads", async () => {
     strictEqual(tool.input_preview, "ls");
     strictEqual(tool.output_preview, "ok");
     deepStrictEqual(
-      detail.turns[2].calls[0].contextEventsBefore,
+      detail.turns[1].calls[0].contextEventsBefore,
       [{
         type: "compaction",
         sourceOrder: 14,
@@ -92,28 +92,24 @@ Deno.test("imports Codex sessions for SQLite reads", async () => {
       `).get()!.source_call_id,
       "context-operation:2-1",
     );
-    strictEqual(detail.turns.length, 3);
-    strictEqual(detail.userTurns, 3);
-    strictEqual(detail.modelCalls, 3);
-    strictEqual(detail.turns[1].calls[0].id, "context-operation:2-1");
+    strictEqual(detail.turns.length, 2);
+    strictEqual(detail.userTurns, 2);
+    strictEqual(detail.modelCalls, 2);
+    strictEqual(detail.turns[0].calls[0].id, "1-1");
+    strictEqual(detail.turns[1].calls[0].id, "3-1");
 
     const priced = priceSessionDetail(detail);
-    strictEqual(priced.turns[1].calls[0].computedCost, undefined);
     strictEqual(
       priced.computedCost,
       priced.turns[0].calls[0].computedCost! +
-        priced.turns[2].calls[0].computedCost!,
+        priced.turns[1].calls[0].computedCost!,
     );
     const context = contextRange(priced.turns.flatMap((turn) => turn.calls));
     strictEqual(context.latest?.size, 90);
 
     const analyzed = analyzeSessionCache(priced);
-    deepStrictEqual(analyzed.turns[1].calls[0].cacheAssessment, {
-      status: "not-comparable",
-      reason: "no-input-context",
-    });
-    strictEqual(analyzed.turns[2].calls[0].cacheAssessment?.status, "partial-hit");
-    strictEqual(analyzed.turns[2].calls[0].cacheAssessment?.cause, "compaction");
+    strictEqual(analyzed.turns[1].calls[0].cacheAssessment?.status, "partial-hit");
+    strictEqual(analyzed.turns[1].calls[0].cacheAssessment?.cause, "compaction");
     strictEqual(
       db.prepare(`
         SELECT COUNT(*) AS count FROM call_content

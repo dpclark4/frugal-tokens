@@ -28,6 +28,9 @@ const contentBlockSchema = z.object({
   is_error: z.boolean().optional(),
   input: z.unknown().optional(),
   content: z.unknown().optional(),
+  source: z.object({
+    media_type: z.string().optional(),
+  }).passthrough().optional(),
 }).passthrough();
 
 const recordSchema = z.object({
@@ -189,6 +192,17 @@ function userText(record: Record) {
   return content?.find((block) => block.type === "text")?.text;
 }
 
+function userInputs(record: Record): SessionContentImport[] {
+  const text = userText(record);
+  const inputs = text === undefined ? [] : [preview(text)];
+  for (const block of blocks(record)) {
+    if (block.type === "image") {
+      inputs.push({ kind: "image", mimeType: block.source?.media_type });
+    }
+  }
+  return inputs;
+}
+
 function startsTurn(record: Record, hasTurns: boolean) {
   if (record.type !== "user" || record.isMeta) return false;
   const text = userText(record);
@@ -218,7 +232,7 @@ function sessionBounds(
 }
 
 function decodeRecords(records: Record[]) {
-  const turns: SessionTurnImport[] = [];
+  const turns: Array<SessionTurnImport & { images?: number }> = [];
   const calls = new Map<
     string,
     { call: SessionCallImport; blocks: ReturnType<typeof blocks> }
@@ -246,13 +260,14 @@ function decodeRecords(records: Record[]) {
     }
     if (record.type === "user") {
       const content = record.message?.content;
-      const text = userText(record);
       if (startsTurn(record, turns.length > 0)) {
+        const inputs = userInputs(record);
         turns.push({
           number: turns.length + 1,
           startedAt: timestamp,
           calls: [],
-          inputs: text === undefined ? [] : [preview(text)],
+          inputs,
+          images: inputs.filter((input) => input.kind === "image").length,
         });
       }
       if (Array.isArray(content)) {
@@ -322,6 +337,9 @@ function decodeRecords(records: Record[]) {
         activity: { hasText: false, hasReasoning: false, tools: [] },
         content: [],
       };
+      if (turn.images && turn.calls.length === 0) {
+        call.activity.images = turn.images;
+      }
       turn.calls.push(call);
       for (const event of pendingContextEvents) {
         event.affectedCallReference = call;

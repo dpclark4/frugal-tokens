@@ -19,6 +19,7 @@ const contentPreviewLimit = 512;
 const contentBlockSchema = z.object({
   type: z.string(),
   text: z.string().optional(),
+  image_url: z.string().optional(),
 }).passthrough();
 
 const recordSchema = z.object({
@@ -143,9 +144,12 @@ function serializedPreview(value: unknown) {
 }
 
 function messageContent(record: Record): SessionContentImport[] {
-  return (record.payload?.content ?? []).flatMap((block) =>
-    block.text === undefined ? [] : [preview(block.text)]
-  );
+  return (record.payload?.content ?? []).flatMap((block) => {
+    if (block.text !== undefined) return [preview(block.text)];
+    if (block.type !== "input_image") return [];
+    const mimeType = block.image_url?.match(/^data:([^;,]+)[;,]/)?.[1];
+    return [{ kind: "image", mimeType }];
+  });
 }
 
 function timestamp(record: Record) {
@@ -365,6 +369,9 @@ function decodeRecords(records: Record[]) {
     if (callTokens.processed === 0) continue;
 
     const turn = turns.at(-1)!;
+    const images = turn.calls.length === 0
+      ? turn.inputs?.filter((input) => input.kind === "image").length
+      : 0;
     const call: SessionCallImport = {
       id: `${turn.number}-${turn.calls.length + 1}`,
       callWithinTurn: turn.calls.length + 1,
@@ -380,6 +387,7 @@ function decodeRecords(records: Record[]) {
       completedAt: time,
       tokens: callTokens,
       activity: {
+        ...(images ? { images } : {}),
         hasText: pendingHasText,
         hasReasoning: source.reasoning_output_tokens > 0,
         tools: pendingTools,
