@@ -45,17 +45,35 @@ const genericNames: Record<string, string> = {
   o4: "O4",
 };
 
-function withoutDateSuffix(model: string) {
-  // Anthropic model IDs can append a release date; keep the base ID as the
-  // lookup key so new dated revisions do not need individual entries.
-  return model.toLowerCase().startsWith("claude-")
-    ? model.replace(/[-_]\d{8}$/, "")
-    : model;
+function withoutProviderPrefix(model: string) {
+  const normalized = model.toLowerCase();
+  // Bedrock IDs can be routed through a region or inference profile, e.g.
+  // "us.anthropic.claude-opus-4-7". Keep the model portion for display and
+  // grouping without changing the persisted ID.
+  return normalized.replace(/^.*?(?=(?:claude|gpt|grok)-)/, "");
 }
 
-/** Remove a release-date suffix without changing the persisted model ID. */
+function withoutReleaseSuffix(model: string) {
+  // Anthropic model IDs can append a release date; Bedrock IDs can also append
+  // a provider revision such as "-v1:0". Keep the base ID as the lookup key.
+  return model
+    .replace(/[-_]\d{8}(?:-v\d+(?::\d+)?)?$/, "")
+    .replace(/-v\d+(?::\d+)?$/, "");
+}
+
+function withoutVersionSeparator(model: string) {
+  // Some provider aliases use "4.7" where Anthropic IDs use "4-7".
+  return model.replace(
+    /^(claude-(?:opus|sonnet|haiku)-\d+)\.(\d+)$/,
+    "$1-$2",
+  );
+}
+
+/** Normalize provider aliases without changing the persisted model ID. */
 export function canonicalModelId(model: string) {
-  return withoutDateSuffix(model);
+  return withoutVersionSeparator(
+    withoutReleaseSuffix(withoutProviderPrefix(model)),
+  );
 }
 
 /** Return the user-facing name for a persisted provider model ID. */

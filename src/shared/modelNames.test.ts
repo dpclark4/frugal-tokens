@@ -1,4 +1,4 @@
-import { displayModelName } from "./modelNames.ts";
+import { canonicalModelId, displayModelName } from "./modelNames.ts";
 
 Deno.test("formats known model IDs consistently", () => {
   const cases = {
@@ -22,5 +22,26 @@ Deno.test("formats known model IDs consistently", () => {
 Deno.test("formats unknown IDs without losing their identity", () => {
   if (displayModelName("gpt-9.1-future") !== "GPT 9.1 Future") {
     throw new Error("unknown model IDs should receive a readable fallback");
+  }
+});
+
+Deno.test("formats Bedrock Anthropic IDs as their base model", () => {
+  const cases = {
+    "anthropic.claude-opus-4-7": "Claude Opus 4.7",
+    "us.anthropic.claude-opus-4-8": "Claude Opus 4.8",
+    "us.anthropic.claude-opus-4-7-v1:0": "Claude Opus 4.7",
+    "anthropic/claude-opus-4.8": "Claude Opus 4.8",
+  };
+
+  for (const [model, expected] of Object.entries(cases)) {
+    if (displayModelName(model) !== expected) {
+      throw new Error(
+        `${model} formatted as ${displayModelName(model)}, expected ${expected}`,
+      );
+    }
+  }
+
+  if (canonicalModelId("us.anthropic.claude-opus-4-7") !== "claude-opus-4-7") {
+    throw new Error("Bedrock IDs should canonicalize to the base model ID");
   }
 });
