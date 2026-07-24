@@ -36,4 +36,5 @@ await run(Deno.execPath(), [
   "dist",
   `--project-name=${project}`,
   "--branch=main",
+  "--commit-dirty=true",
 ], environment);

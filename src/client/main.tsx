@@ -1,5 +1,5 @@
 import { createRoot } from "react-dom/client";
-import { version as reactVersion } from "react";
+import { lazy, Suspense, version as reactVersion } from "react";
 import {
   createRootRoute,
   createRoute,
@@ -8,9 +8,18 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { z } from "zod";
-import { SessionsPage } from "./SessionsPage.tsx";
-import { PerformancePage } from "./PerformancePage.tsx";
 import "./styles.css";
+
+const SessionsPage = lazy(() =>
+  import("./SessionsPage.tsx").then(({ SessionsPage }) => ({
+    default: SessionsPage,
+  }))
+);
+const PerformancePage = lazy(() =>
+  import("./PerformancePage.tsx").then(({ PerformancePage }) => ({
+    default: PerformancePage,
+  }))
+);
 
 function AppError({ error, reset }: { error: unknown; reset: () => void }) {
   const message = error instanceof Error ? error.message : String(error);
@@ -53,7 +62,11 @@ function AppError({ error, reset }: { error: unknown; reset: () => void }) {
 }
 
 const rootRoute = createRootRoute({
-  component: () => <Outlet />,
+  component: () => (
+    <Suspense fallback={<main>Loading…</main>}>
+      <Outlet />
+    </Suspense>
+  ),
   errorComponent: AppError,
 });
 const indexRoute = createRoute({
