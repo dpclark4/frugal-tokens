@@ -102,7 +102,7 @@ export function SpendInputChart({ usage, metric }: {
           ? <div className="chart-message">No usage in this range.</div>
           : (
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data} margin={{ top: 8, right: 8, left: 4, bottom: 0 }}>
+              <BarChart data={data} margin={{ top: 8, right: 24, left: 4, bottom: 0 }}>
                 <CartesianGrid vertical={false} stroke="#dfdbd1" strokeDasharray="3 5" />
                 <XAxis
                   dataKey="timestamp"

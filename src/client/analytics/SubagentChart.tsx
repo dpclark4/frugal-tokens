@@ -185,7 +185,7 @@ export function SubagentChart({ usage }: { usage: UsageResponse }) {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={data}
-                margin={{ top: 8, right: 8, left: 4, bottom: 0 }}
+                margin={{ top: 8, right: 24, left: 4, bottom: 0 }}
               >
                 <CartesianGrid
                   vertical={false}

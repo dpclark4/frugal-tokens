@@ -294,7 +294,7 @@ function CacheLossPanel({ title, result }: { title: string; result?: ProviderRes
           <>
             <div className="performance-chart cache-retention-chart">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={rows} margin={{ top: 12, right: 10, bottom: 4, left: -12 }}>
+                <BarChart data={rows} margin={{ top: 12, right: 24, bottom: 4, left: -12 }}>
                   <CartesianGrid vertical={false} stroke="#e6e2d9" />
                   <XAxis
                     dataKey="date"
@@ -444,7 +444,7 @@ function ProviderPanel({
           ? <div className="chart-message">Loading comparison…</div>
           : (
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={rows} margin={{ top: 12, right: 10, bottom: 4, left: -12 }}>
+              <LineChart data={rows} margin={{ top: 12, right: 24, bottom: 4, left: -12 }}>
                 <CartesianGrid vertical={false} stroke="#e6e2d9" />
                 <XAxis
                   dataKey="date"
