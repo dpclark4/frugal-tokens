@@ -33,7 +33,11 @@ import {
 } from "./overviewAnalytics.ts";
 import { contextRange } from "../shared/contextMetrics.ts";
 import { rollupCosts } from "../shared/costMetrics.ts";
-import { openArchiveDatabase, sqlitePath } from "./database.ts";
+import {
+  expandHomePath,
+  openArchiveDatabase,
+  sqlitePath,
+} from "./database.ts";
 import { SessionRepository } from "./sessionRepository.ts";
 import { syncPiSessions } from "./piImporter.ts";
 import { syncCodexSessions } from "./codexImporter.ts";
@@ -46,11 +50,12 @@ function configuredPath<T>(
   type: "file" | "directory",
   create: (path: string) => T,
 ): T | undefined {
-  const path = Deno.env.get(variable);
-  if (!path) {
+  const configured = Deno.env.get(variable);
+  if (!configured) {
     console.warn(`[config] ${harness} disabled: ${variable} is not set`);
     return undefined;
   }
+  const path = expandHomePath(configured);
   try {
     const stat = Deno.statSync(path);
     if (type === "file" ? !stat.isFile : !stat.isDirectory) {

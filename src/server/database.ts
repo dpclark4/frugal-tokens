@@ -1,5 +1,19 @@
 import { DatabaseSync } from "node:sqlite";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
+
+function homeDirectory() {
+  const home = Deno.env.get("HOME") || Deno.env.get("USERPROFILE");
+  if (!home) throw new Error("Cannot expand ~ because no home directory is set");
+  return home;
+}
+
+export function expandHomePath(path: string) {
+  if (path === "~") return homeDirectory();
+  if (path.startsWith("~/") || path.startsWith("~\\")) {
+    return join(homeDirectory(), path.slice(2));
+  }
+  return path;
+}
 
 export function sqlitePath(databaseURL: string) {
   if (!databaseURL.startsWith("sqlite:")) {
@@ -7,7 +21,7 @@ export function sqlitePath(databaseURL: string) {
   }
   const path = decodeURIComponent(databaseURL.slice("sqlite:".length));
   if (!path) throw new Error("FRUGAL_TOKENS_DATABASE_URL has no database path");
-  return path;
+  return expandHomePath(path);
 }
 
 export function openArchiveDatabase(path: string) {

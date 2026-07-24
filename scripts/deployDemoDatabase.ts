@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { sqlitePath } from "../src/server/database.ts";
 
 const environment = "production";
 
@@ -37,14 +38,16 @@ const remoteDatabaseURL = `sqlite:/data${remoteDatabase}`;
 try {
   await run(Deno.execPath(), [
     "run",
-    "--allow-env=FRUGAL_TOKENS_DATABASE_URL",
+    "--allow-env=FRUGAL_TOKENS_DATABASE_URL,HOME,USERPROFILE",
     "--allow-read",
     "--allow-write",
     "--allow-run=sqlite3",
     "scripts/createDemoDatabase.ts",
     "--output",
     snapshot,
-  ], { FRUGAL_TOKENS_DATABASE_URL: sourceDatabase });
+  ], {
+    FRUGAL_TOKENS_DATABASE_URL: `sqlite:${sqlitePath(sourceDatabase)}`,
+  });
 
   await run("railway", [
     "volume",
