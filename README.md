@@ -3,8 +3,6 @@
 A local, read-only view of token usage and reported cost in OpenCode, Claude
 Code, PI, and Codex sessions.
 
-## Development
-
 Requires Deno 2.9 or newer.
 
 ```sh
@@ -12,43 +10,8 @@ cp .env.example .env
 deno task dev
 ```
 
-Configure any session sources you use: `OPENCODE_DB_PATH` for the OpenCode
-SQLite database, `CLAUDE_CODE_PROJECT_PATH` for the Claude Code projects directory,
-`PI_SESSION_DIR` for the PI session root (usually `~/.pi/agent/sessions`), and
-`CODEX_SESSION_DIR` for the Codex session root (usually `~/.codex/sessions`). Paths
-starting with `~` are expanded to your home directory.
-Pi session JSONL files may be directly in `PI_SESSION_DIR` or grouped one level
-below it in project directories.
-Missing or inaccessible sources are disabled with a startup warning. Local
-development loads these values from the ignored `.env` file.
+Then open <http://localhost:5273>.
 
-Open `http://localhost:5273`. The API listens on port 9000. Set `PORT` to change
-the API port; if it changes during development, update the proxy target in
-`vite.config.ts` as well.
+Edit `.env` to set the sources you use; unavailable paths are ignored.
 
-## Demo Deployment
-
-The `demo-api` Railway service must mount the `demo-api-volume` volume at
-`/data`. Sleep configuration and the API domain are managed in Railway.
-
-With deployment values in `.env`, run `deno task demo:deploy:frontend` to publish
-Pages, `deno task demo:deploy:backend` to deploy the API, and
-`deno task demo:deploy:data` to publish a new demo database. The data task
-uploads a versioned snapshot, updates the production
-`FRUGAL_TOKENS_DATABASE_URL` to point to it, and redeploys the API; the prior
-snapshot remains on the volume as a fallback.
-
-Create a sanitized contributor database with `deno task demo:db:create --
---output contributor.sqlite`. To add it to an existing sanitized demo database,
-run `deno task demo:db:merge -- --target demo.sqlite --source contributor.sqlite`.
-The merge modifies the target in place, requires matching schemas and sanitized
-inputs, and skips sessions whose retained source checksum is already present.
-
-## Production Build
-
-```sh
-deno task build
-deno task start
-```
-
-Open `http://localhost:9000`.
+See the [demo deployment guide](docs/demo-deployment.md) for hosted demo maintenance.

@@ -2,6 +2,7 @@ dist/
 node_modules/
 .deno/
 .env
+.env.demo
 .DS_Store
 *.sqlite*
 *.db*

@@ -38,7 +38,7 @@
     "db:rollback": "deno run -A scripts/runDbmate.ts down",
     "db:status": "deno run -A scripts/runDbmate.ts status",
 
-    "demo:db:create": "deno run --env-file=.env --allow-env=FRUGAL_TOKENS_DATABASE_URL,HOME,USERPROFILE --allow-read --allow-write --allow-run=sqlite3 scripts/createDemoDatabase.ts",
+    "demo:db:create": "deno run --env-file=.env.demo --allow-env=FRUGAL_TOKENS_DATABASE_URL,HOME,USERPROFILE --allow-read --allow-write --allow-run=sqlite3 scripts/createDemoDatabase.ts",
     "demo:db:merge": "deno run --allow-read --allow-write scripts/mergeDemoDatabases.ts",
 
     "dev": "deno run -A npm:concurrently@10.0.3 --kill-others-on-fail --names api,web 'deno task dev:server' 'deno task dev:client'",
@@ -49,8 +49,8 @@
     "start": "export SERVE_STATIC=true && deno task --env-file=.env db:migrate && deno run --env-file=.env --allow-env=OPENCODE_DB_PATH,CLAUDE_CODE_PROJECT_PATH,PI_SESSION_DIR,CODEX_SESSION_DIR,FRUGAL_TOKENS_DATABASE_URL,FRUGAL_TOKENS_SYNC_INTERVAL_SECONDS,SERVE_STATIC,PORT,HOME,USERPROFILE --allow-read --allow-write --allow-net src/server/main.ts",
     "start:api": "deno task db:migrate && deno run --allow-env=OPENCODE_DB_PATH,CLAUDE_CODE_PROJECT_PATH,PI_SESSION_DIR,CODEX_SESSION_DIR,FRUGAL_TOKENS_DATABASE_URL,FRUGAL_TOKENS_SYNC_INTERVAL_SECONDS,SERVE_STATIC,PORT,HOME,USERPROFILE --allow-read --allow-write --allow-net src/server/main.ts",
 
-    "demo:deploy:frontend": "deno run --env-file=.env --allow-env --allow-run=deno scripts/deployDemoFrontend.ts",
-    "demo:deploy:backend": "deno run --env-file=.env --allow-env=DEPLOY_RAILWAY_SERVICE --allow-run=railway scripts/deployDemoBackend.ts",
-    "demo:deploy:data": "deno run --env-file=.env --allow-env=DEPLOY_RAILWAY_SERVICE,DEPLOY_RAILWAY_VOLUME,FRUGAL_TOKENS_DATABASE_URL --allow-read --allow-write --allow-run scripts/deployDemoDatabase.ts"
+    "demo:deploy:frontend": "deno run --env-file=.env.demo --allow-env --allow-run=deno scripts/deployDemoFrontend.ts",
+    "demo:deploy:backend": "deno run --env-file=.env.demo --allow-env=DEPLOY_RAILWAY_SERVICE --allow-run=railway scripts/deployDemoBackend.ts",
+    "demo:deploy:data": "deno run --env-file=.env.demo --allow-env=DEPLOY_RAILWAY_SERVICE,DEPLOY_RAILWAY_VOLUME,FRUGAL_TOKENS_DATABASE_URL,HOME,USERPROFILE --allow-read --allow-write --allow-run scripts/deployDemoDatabase.ts"
   }
 }
