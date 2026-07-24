@@ -1800,7 +1800,6 @@ export function SessionsPage() {
                 onChange={(event) =>
                   navigate({
                     search: {
-                      page: 1,
                       harness: event.target.value as typeof harness,
                     },
                   })}

@@ -60,7 +60,6 @@ const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   validateSearch: z.object({
-    page: z.coerce.number().int().positive().catch(1),
     harness: z.enum(["all", "opencode", "claude-code", "pi", "codex"]).catch("all"),
   }),
   component: SessionsPage,
