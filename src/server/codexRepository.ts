@@ -520,6 +520,16 @@ function decodeRecords(records: Record[]) {
           sourceOrder: recordIndex + 1,
           ...(time === 0 ? {} : { observedAt: time }),
         };
+        // Codex emits task_started before the turn_context that contains the
+        // setting for that same turn. Attach the setting to the open turn so
+        // turn-level summaries do not lag one turn behind.
+        const currentTurn = turns.at(-1);
+        if (currentTurn?.calls.length === 0) {
+          currentTurn.reasoningSetting = {
+            ...activeReasoningSetting,
+            provenance: "inherited" as const,
+          };
+        }
       }
       continue;
     }

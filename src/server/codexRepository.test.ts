@@ -53,6 +53,12 @@ Deno.test("normalizes Codex JSONL sessions from token count events", () => {
     turns: [{
       number: 1,
       startedAt: Date.parse("2026-07-11T14:00:01.000Z"),
+      inputs: [{
+        kind: "text",
+        preview: "Inspect Codex usage",
+        originalLength: 19,
+        truncated: false,
+      }],
       calls: [
         {
           id: "1-1",
@@ -116,6 +122,32 @@ Deno.test("normalizes Codex JSONL sessions from token count events", () => {
   };
 
   deepStrictEqual(actual, expected);
+});
+
+Deno.test("applies Codex reasoning settings to the turn that changes them", () => {
+  const actual = repository({
+    "2026/07/25/rollout-thinking.jsonl": `
+{"timestamp":"2026-07-25T18:00:00.000Z","type":"event_msg","payload":{"type":"task_started"}}
+{"timestamp":"2026-07-25T18:00:00.001Z","type":"turn_context","payload":{"model":"gpt-5.6-luna","collaboration_mode":{"settings":{"reasoning_effort":"low"}}}}
+{"timestamp":"2026-07-25T18:00:00.002Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"first"}]}}
+{"timestamp":"2026-07-25T18:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":1,"reasoning_output_tokens":0}}}}
+{"timestamp":"2026-07-25T18:00:02.000Z","type":"event_msg","payload":{"type":"task_started"}}
+{"timestamp":"2026-07-25T18:00:02.001Z","type":"turn_context","payload":{"model":"gpt-5.6-luna","collaboration_mode":{"settings":{"reasoning_effort":"medium"}}}}
+{"timestamp":"2026-07-25T18:00:02.002Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"second"}]}}
+{"timestamp":"2026-07-25T18:00:03.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":1,"reasoning_output_tokens":0}}}}
+`,
+  }).getSession("2026/07/25/rollout-thinking")!;
+
+  deepStrictEqual(
+    actual.turns.map((turn) => turn.reasoningSetting?.settingValue),
+    ["low", "medium"],
+  );
+  deepStrictEqual(
+    actual.turns.flatMap((turn) =>
+      turn.calls.map((call) => call.reasoningSetting?.settingValue)
+    ),
+    ["low", "medium"],
+  );
 });
 
 Deno.test("infers Codex model-call timing around tool loops", () => {
