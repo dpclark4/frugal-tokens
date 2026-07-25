@@ -1720,6 +1720,80 @@ table.data-table {
   text-align: left;
 }
 
+.turn-detail {
+  background: #eef2eb;
+}
+
+.turn-input-summary {
+  padding: 12px 20px 13px 40px;
+  border-bottom: 1px solid #d5dfd1;
+  background: #f5f8f2;
+  color: var(--ink);
+}
+
+.turn-input-heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.turn-input-label {
+  color: var(--muted);
+  font: 500 9px var(--mono);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.turn-input-meta {
+  color: var(--muted-2);
+  font: 10px var(--mono);
+}
+
+.turn-input-preview {
+  display: -webkit-box;
+  max-width: min(900px, 100%);
+  margin-top: 6px;
+  padding-left: 12px;
+  overflow: hidden;
+  border-left: 2px solid var(--accent);
+  color: var(--ink);
+  font: 12px/1.5 var(--mono);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.turn-input-preview-expanded {
+  display: block;
+  -webkit-line-clamp: unset;
+}
+
+.turn-input-placeholder {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.turn-input-toggle {
+  margin-top: 7px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font: 10px var(--mono);
+}
+
+.turn-input-toggle:hover {
+  text-decoration: underline;
+}
+
+.turn-input-toggle:focus-visible {
+  outline: 1px solid currentColor;
+  outline-offset: 2px;
+}
+
 .call-table {
   background: #fffefb;
 }

@@ -16,7 +16,7 @@ import type {
   SourceSessionImport,
 } from "./sessionRepository.ts";
 
-const contentPreviewLimit = 512;
+const contentPreviewLimit = 2_048;
 
 const contentBlockSchema = z.object({
   type: z.string(),

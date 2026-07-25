@@ -136,6 +136,8 @@ Deno.test("stores and reads canonical sessions atomically", () => {
       "child",
     );
     strictEqual(detail.turns[0].calls[0].preview, "answer");
+    strictEqual(detail.turns[0].inputs?.[0].preview, "hello");
+    strictEqual(detail.turns[0].inputs?.[0].truncated, false);
     deepStrictEqual(detail.turns[0].calls[0].contextEventsBefore, [{
       type: "compaction",
       sourceOrder: 2,

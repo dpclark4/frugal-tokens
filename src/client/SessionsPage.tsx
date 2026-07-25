@@ -11,6 +11,7 @@ import type {
   SessionListResponse,
   SessionSummary,
   TokenUsage,
+  TurnInput,
 } from "../shared/sessionSchemas.ts";
 import { contextRange, contextSize } from "../shared/contextMetrics.ts";
 import { displayModelName } from "../shared/modelNames.ts";
@@ -1088,6 +1089,65 @@ function CallInputMetric({ call }: { call: ModelCall }) {
   );
 }
 
+function TurnInputSummary({ inputs }: { inputs?: TurnInput[] }) {
+  const [expanded, setExpanded] = useState(false);
+  if (inputs === undefined || inputs.length === 0) return null;
+  const textInputs = inputs.filter((input) => input.kind === "text");
+  const textPreview = textInputs.map((input) => input.preview).filter(
+    (preview): preview is string => preview !== undefined && preview.length > 0,
+  ).join("\n");
+  const textLength = textInputs.reduce(
+    (total, input) =>
+      total + (input.originalLength ?? input.preview?.length ?? 0),
+    0,
+  );
+  const imageCount = inputs.filter((input) => input.kind === "image").length;
+  const otherCount =
+    inputs.filter((input) => input.kind !== "text" && input.kind !== "image")
+      .length;
+  const truncated = inputs.some((input) => input.truncated);
+  const canExpand = textPreview.length > 320 || truncated;
+  const previewClassName = [
+    "turn-input-preview",
+    textPreview ? undefined : "turn-input-placeholder",
+    expanded ? "turn-input-preview-expanded" : undefined,
+  ].filter(Boolean).join(" ");
+  const meta = [
+    textInputs.length > 0 ? `${integer.format(textLength)} chars` : undefined,
+    imageCount > 0
+      ? `${imageCount} image${imageCount === 1 ? "" : "s"}`
+      : undefined,
+    otherCount > 0
+      ? `${otherCount} attachment${otherCount === 1 ? "" : "s"}`
+      : undefined,
+    truncated ? "preview truncated" : undefined,
+  ].filter(Boolean);
+
+  return (
+    <div className="turn-input-summary" aria-label="User prompt">
+      <div className="turn-input-heading">
+        <span className="turn-input-label">User prompt</span>
+        {meta.length > 0 && (
+          <span className="turn-input-meta">{meta.join(" · ")}</span>
+        )}
+      </div>
+      <div className={previewClassName}>
+        {textPreview || "Non-text input"}
+      </div>
+      {canExpand && (
+        <button
+          type="button"
+          className="turn-input-toggle"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((current) => !current)}
+        >
+          {expanded ? "Show less" : "Show more"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function callSubagents(call: ModelCall, session: SessionDetail) {
   const seen = new Set<string>();
   const children: SessionDetail[] = [];
@@ -1641,15 +1701,18 @@ function SessionBreakdown({
                   {open && (
                     <tr className="turn-detail-row">
                       <td colSpan={10}>
-                        <CallTable
-                          calls={turn.calls}
-                          session={session}
-                          expandedCallID={expandedCallID}
-                          setExpandedCallID={setExpandedCallID}
-                          expandedSubagentID={expandedSubagentID}
-                          setExpandedSubagentID={setExpandedSubagentID}
-                          nested={nested}
-                        />
+                        <div className="turn-detail">
+                          <TurnInputSummary inputs={turn.inputs} />
+                          <CallTable
+                            calls={turn.calls}
+                            session={session}
+                            expandedCallID={expandedCallID}
+                            setExpandedCallID={setExpandedCallID}
+                            expandedSubagentID={expandedSubagentID}
+                            setExpandedSubagentID={setExpandedSubagentID}
+                            nested={nested}
+                          />
+                        </div>
                       </td>
                     </tr>
                   )}

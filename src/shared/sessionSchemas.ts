@@ -152,9 +152,18 @@ export const modelCallSchema = z.object({
   cacheAssessment: cacheAssessmentSchema.optional(),
 });
 
+export const turnInputSchema = z.object({
+  kind: z.string(),
+  preview: z.string().optional(),
+  originalLength: z.number().int().nonnegative().optional(),
+  truncated: z.boolean().optional(),
+  mimeType: z.string().optional(),
+});
+
 export const userTurnSchema = z.object({
   number: z.number().int().positive(),
   startedAt: z.number(),
+  inputs: z.array(turnInputSchema).optional(),
   reasoningSetting: reasoningSettingSchema.optional(),
   calls: z.array(modelCallSchema),
   cacheAssessment: cacheAssessmentSchema.optional(),
@@ -448,6 +457,7 @@ export const ttlMissMetricsSchema = z.object({
 });
 
 export type ModelCall = z.infer<typeof modelCallSchema>;
+export type TurnInput = z.infer<typeof turnInputSchema>;
 export type ContextEvent = z.infer<typeof contextEventSchema>;
 export type CacheAssessment = z.infer<typeof cacheAssessmentSchema>;
 export type CacheSummary = z.infer<typeof cacheSummarySchema>;

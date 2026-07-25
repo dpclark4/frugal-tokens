@@ -8,6 +8,7 @@ import {
   sessionListResponseSchema,
   type SessionSummary,
   type TokenUsage,
+  type TurnInput,
 } from "../shared/sessionSchemas.ts";
 import type { UsageCall } from "./usage.ts";
 
@@ -194,6 +195,15 @@ type ContentRow = {
   model_call_id: number;
   kind: string;
   preview: string | null;
+};
+
+type TurnInputRow = {
+  turn_id: number;
+  kind: string;
+  preview: string | null;
+  original_length: number | null;
+  truncated: number;
+  mime_type: string | null;
 };
 
 type ContextEventRow = {
@@ -1060,6 +1070,15 @@ export class SessionRepository {
       (content) => content.model_call_id,
     );
     const callsByTurn = Map.groupBy(visibleCalls, (call) => call.turn_id);
+    const turnInputRows = this.db.prepare(`
+      SELECT turn_id, kind, preview, original_length, truncated, mime_type
+      FROM turn_inputs
+      WHERE turn_id IN (
+        SELECT id FROM turns WHERE session_id = ?
+      )
+      ORDER BY turn_id, ordinal
+    `).all(row.source_session_id) as TurnInputRow[];
+    const inputsByTurn = Map.groupBy(turnInputRows, (input) => input.turn_id);
     const turns = (this.db.prepare(`
       SELECT t.id, t.ordinal, t.started_at,
         rse.setting_name AS reasoning_setting_name,
@@ -1079,9 +1098,17 @@ export class SessionRepository {
       started_at: number;
     }>).map((turn) => {
       const turnCalls = callsByTurn.get(turn.id) ?? [];
+      const turnInputs = inputsByTurn.get(turn.id) ?? [];
       return {
         number: turn.ordinal,
         startedAt: turn.started_at,
+        inputs: turnInputs.map((input): TurnInput => ({
+          kind: input.kind,
+          preview: optional(input.preview),
+          originalLength: optional(input.original_length),
+          truncated: input.truncated === 1,
+          mimeType: optional(input.mime_type),
+        })),
         reasoningSetting: reasoningSetting(turn),
         calls: turnCalls.map((call) => {
           const callTools = toolsByCall.get(call.id) ?? [];

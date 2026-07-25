@@ -13,7 +13,7 @@ Deno.test("imports a Claude Code root and namespaced child tree", async () => {
   const directory = Deno.makeTempDirSync();
   const sessions = `${directory}/projects`;
   const project = `${sessions}/project`;
-  const longPrompt = "p".repeat(600);
+  const longPrompt = "p".repeat(2_600);
   write(
     `${project}/root.jsonl`,
     `
@@ -75,8 +75,8 @@ Deno.test("imports a Claude Code root and namespaced child tree", async () => {
     const input = db.prepare(`
       SELECT preview, original_length FROM turn_inputs WHERE kind = 'text'
     `).get()!;
-    strictEqual(input.preview, longPrompt.slice(0, 512));
-    strictEqual(input.original_length, 600);
+    strictEqual(input.preview, longPrompt.slice(0, 2_048));
+    strictEqual(input.original_length, 2_600);
     strictEqual(
       db.prepare(`
         SELECT mime_type FROM turn_inputs WHERE kind = 'image'
