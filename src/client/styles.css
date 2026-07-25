@@ -1219,9 +1219,28 @@ table.data-table {
   padding-left: 36px;
 }
 
+.session-model-details {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
 .session-model-harness .session-model-summary {
   color: var(--ink);
   font-weight: 600;
+}
+
+.session-thinking-summary {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.session-thinking-summary > small {
+  font: 9px/1.25 var(--mono);
 }
 
 .session-model-name {
@@ -1320,6 +1339,19 @@ table.data-table {
   align-items: baseline;
   gap: 6px;
   min-width: 0;
+}
+
+.model-thinking-stack {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.thinking-level {
+  color: var(--muted);
+  font: 9px/1.25 var(--mono);
+  white-space: nowrap;
 }
 
 .model-overflow {

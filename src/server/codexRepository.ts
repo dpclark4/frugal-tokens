@@ -7,6 +7,7 @@ import {
 } from "../shared/sessionSchemas.ts";
 import { usageCallsFromSession } from "./usage.ts";
 import type {
+  ReasoningSettingImport,
   SessionCallImport,
   SessionContentImport,
   SessionContextEventImport,
@@ -22,12 +23,27 @@ const contentBlockSchema = z.object({
   image_url: z.string().optional(),
 }).passthrough();
 
+const reasoningEffortSettingsSchema = z.object({
+  reasoning_effort: z.string().optional(),
+}).passthrough();
+
+const collaborationModeSchema = z.object({
+  settings: reasoningEffortSettingsSchema.optional(),
+}).passthrough();
+
+const threadSettingsSchema = reasoningEffortSettingsSchema.extend({
+  collaboration_mode: collaborationModeSchema.optional(),
+}).passthrough();
+
 const recordSchema = z.object({
   type: z.string().optional(),
   timestamp: z.string().optional(),
   payload: z.object({
     type: z.string().optional(),
     model: z.string().optional(),
+    effort: z.string().optional(),
+    collaboration_mode: collaborationModeSchema.optional(),
+    thread_settings: threadSettingsSchema.optional(),
     role: z.string().optional(),
     phase: z.string().nullable().optional(),
     name: z.string().optional(),
@@ -410,6 +426,45 @@ function inferCodexCallTimings(records: Record[]) {
   });
 }
 
+function codexReasoningSetting(payload: NonNullable<Record["payload"]>) {
+  if (payload.effort !== undefined) {
+    return {
+      settingName: "effort",
+      settingValue: payload.effort,
+      sourceFieldPath: "payload.effort",
+    };
+  }
+  const collaborationEffort =
+    payload.collaboration_mode?.settings?.reasoning_effort;
+  if (collaborationEffort !== undefined) {
+    return {
+      settingName: "reasoning_effort",
+      settingValue: collaborationEffort,
+      sourceFieldPath:
+        "payload.collaboration_mode.settings.reasoning_effort",
+    };
+  }
+  const threadEffort = payload.thread_settings?.reasoning_effort;
+  if (threadEffort !== undefined) {
+    return {
+      settingName: "reasoning_effort",
+      settingValue: threadEffort,
+      sourceFieldPath: "payload.thread_settings.reasoning_effort",
+    };
+  }
+  const threadCollaborationEffort = payload.thread_settings
+    ?.collaboration_mode?.settings?.reasoning_effort;
+  if (threadCollaborationEffort !== undefined) {
+    return {
+      settingName: "reasoning_effort",
+      settingValue: threadCollaborationEffort,
+      sourceFieldPath:
+        "payload.thread_settings.collaboration_mode.settings.reasoning_effort",
+    };
+  }
+  return undefined;
+}
+
 function decodeRecords(records: Record[]) {
   const turns: SessionTurnImport[] = [];
   const tokens = emptyTokens();
@@ -427,6 +482,9 @@ function decodeRecords(records: Record[]) {
   const contextEvents: PendingContextEvent[] = [];
   const pendingContextEvents: PendingContextEvent[] = [];
   let lastCall: SessionCallImport | undefined;
+  let activeReasoningSetting:
+    | Omit<ReasoningSettingImport, "provenance">
+    | undefined;
 
   for (const [recordIndex, record] of records.entries()) {
     const payload = record.payload;
@@ -453,8 +511,16 @@ function decodeRecords(records: Record[]) {
       continue;
     }
 
-    if (record.type === "turn_context" && payload?.model) {
-      currentModel = payload.model;
+    if (record.type === "turn_context" && payload) {
+      if (payload.model) currentModel = payload.model;
+      const setting = codexReasoningSetting(payload);
+      if (setting !== undefined) {
+        activeReasoningSetting = {
+          ...setting,
+          sourceOrder: recordIndex + 1,
+          ...(time === 0 ? {} : { observedAt: time }),
+        };
+      }
       continue;
     }
 
@@ -462,6 +528,12 @@ function decodeRecords(records: Record[]) {
       turns.push({
         number: turns.length + 1,
         startedAt: eventTime(record),
+        ...(activeReasoningSetting === undefined ? {} : {
+          reasoningSetting: {
+            ...activeReasoningSetting,
+            provenance: "inherited" as const,
+          },
+        }),
         calls: [],
       });
       pendingHasText = false;
@@ -566,6 +638,12 @@ function decodeRecords(records: Record[]) {
       startedAt: timing?.startedAt ?? time,
       completedAt: timing?.completedAt,
       tokens: callTokens,
+      ...(activeReasoningSetting === undefined ? {} : {
+        reasoningSetting: {
+          ...activeReasoningSetting,
+          provenance: "inherited" as const,
+        },
+      }),
       activity: {
         ...(images ? { images } : {}),
         hasText: pendingHasText,

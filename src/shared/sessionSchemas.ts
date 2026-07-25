@@ -82,6 +82,12 @@ export const turnCacheSummarySchema = cacheSummarySchema.extend({
   cachedInputShare: z.number().min(0).max(1).optional(),
 });
 
+export const thinkingSummarySchema = z.object({
+  latest: z.string().optional(),
+  values: z.array(z.string()),
+  classifiedCalls: z.number().int().nonnegative(),
+});
+
 export const sessionSummarySchema = z.object({
   id: z.string(),
   harness: harnessSchema,
@@ -93,6 +99,7 @@ export const sessionSummarySchema = z.object({
   models: z.array(z.string()),
   userTurns: z.number().int().nonnegative(),
   modelCalls: z.number().int().nonnegative(),
+  thinking: thinkingSummarySchema.optional(),
   subagentCount: z.number().int().nonnegative().optional(),
   subagentModelCalls: z.number().int().nonnegative().optional(),
   inclusiveUserTurns: z.number().int().nonnegative().optional(),
@@ -119,6 +126,15 @@ export const contextEventSchema = z.object({
   occurredAt: z.number().optional(),
 });
 
+export const reasoningSettingSchema = z.object({
+  settingName: z.string(),
+  settingValue: z.string(),
+  sourceFieldPath: z.string().optional(),
+  sourceOrder: z.number().int().positive().optional(),
+  observedAt: z.number().optional(),
+  provenance: z.enum(["explicit", "inherited", "session_fallback"]),
+});
+
 export const modelCallSchema = z.object({
   id: z.string(),
   callWithinTurn: z.number().int().positive(),
@@ -131,6 +147,7 @@ export const modelCallSchema = z.object({
   computedCost: z.number().nonnegative().optional(),
   tokens: tokenUsageSchema,
   activity: callActivitySchema,
+  reasoningSetting: reasoningSettingSchema.optional(),
   contextEventsBefore: z.array(contextEventSchema).optional(),
   cacheAssessment: cacheAssessmentSchema.optional(),
 });
@@ -138,6 +155,7 @@ export const modelCallSchema = z.object({
 export const userTurnSchema = z.object({
   number: z.number().int().positive(),
   startedAt: z.number(),
+  reasoningSetting: reasoningSettingSchema.optional(),
   calls: z.array(modelCallSchema),
   cacheAssessment: cacheAssessmentSchema.optional(),
   cacheSummary: turnCacheSummarySchema.optional(),

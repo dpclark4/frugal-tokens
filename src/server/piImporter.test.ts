@@ -41,6 +41,117 @@ Deno.test("imports PI sessions directly from the configured directory", async ()
   }
 });
 
+Deno.test("imports PI thinking levels for turns and model calls", async () => {
+  const directory = Deno.makeTempDirSync();
+  const sessions = `${directory}/sessions`;
+  Deno.mkdirSync(sessions);
+  Deno.writeTextFileSync(
+    `${sessions}/thinking.jsonl`,
+    `
+{"type":"session","version":3,"id":"thinking","timestamp":"2026-07-11T13:36:32.000Z","cwd":"/Users/test/project"}
+{"type":"thinking_level_change","timestamp":"2026-07-11T13:36:33.000Z","thinkingLevel":"low"}
+{"type":"message","id":"user-1","timestamp":"2026-07-11T13:36:34.000Z","message":{"role":"user","content":[{"type":"text","text":"Start low"}]}}
+{"type":"message","id":"assistant-1","timestamp":"2026-07-11T13:36:35.000Z","message":{"role":"assistant","content":[{"type":"text","text":"First"}],"provider":"anthropic","model":"claude-opus","usage":{"input":2,"output":3,"cacheRead":0,"cacheWrite":0,"reasoning":0}}}
+{"type":"thinking_level_change","timestamp":"2026-07-11T13:36:36.000Z","thinkingLevel":"high"}
+{"type":"message","id":"assistant-2","timestamp":"2026-07-11T13:36:37.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Second"}],"provider":"anthropic","model":"claude-opus","usage":{"input":2,"output":3,"cacheRead":0,"cacheWrite":0,"reasoning":1}}}
+{"type":"message","id":"user-2","timestamp":"2026-07-11T13:36:38.000Z","message":{"role":"user","content":[{"type":"text","text":"Continue high"}]}}
+{"type":"message","id":"assistant-3","timestamp":"2026-07-11T13:36:39.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Third"}],"provider":"anthropic","model":"claude-opus","usage":{"input":2,"output":3,"cacheRead":0,"cacheWrite":0,"reasoning":1}}}
+    `.trim(),
+  );
+
+  const db = openArchiveDatabase(`${directory}/archive.sqlite`);
+  migrateTestDatabase(db);
+  const repository = new SessionRepository(db);
+  try {
+    const result = await syncPiSessions(sessions, repository);
+    strictEqual(result.imported, 1);
+    const detail = repository.getSession("pi", "thinking")!;
+    strictEqual(detail.turns[0].reasoningSetting?.settingValue, "low");
+    strictEqual(
+      detail.turns[0].calls[0].reasoningSetting?.settingValue,
+      "low",
+    );
+    strictEqual(
+      detail.turns[0].calls[1].reasoningSetting?.settingValue,
+      "high",
+    );
+    strictEqual(detail.turns[1].reasoningSetting?.settingValue, "high");
+    deepStrictEqual(
+      repository.listSessions(1, 10, "pi").items[0].thinking,
+      {
+        latest: "high",
+        values: ["low", "high"],
+        classifiedCalls: 3,
+      },
+    );
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM reasoning_setting_events")
+        .get()!.count,
+      2,
+    );
+
+    const turnSettings = db.prepare(`
+      SELECT t.ordinal, rse.setting_name, rse.setting_value,
+             rse.source_field_path, rse.source_order, trs.provenance
+      FROM turn_reasoning_settings trs
+      JOIN turns t ON t.id = trs.turn_id
+      JOIN reasoning_setting_events rse ON rse.id = trs.setting_event_id
+      ORDER BY t.ordinal
+    `).all().map((row) => ({ ...row }));
+    deepStrictEqual(turnSettings, [
+      {
+        ordinal: 1,
+        setting_name: "thinkingLevel",
+        setting_value: "low",
+        source_field_path: "thinkingLevel",
+        source_order: 2,
+        provenance: "inherited",
+      },
+      {
+        ordinal: 2,
+        setting_name: "thinkingLevel",
+        setting_value: "high",
+        source_field_path: "thinkingLevel",
+        source_order: 5,
+        provenance: "inherited",
+      },
+    ]);
+
+    const callSettings = db.prepare(`
+      SELECT t.ordinal AS turn_ordinal, mc.ordinal AS call_ordinal,
+             rse.setting_value, mcrs.provenance
+      FROM model_call_reasoning_settings mcrs
+      JOIN model_calls mc ON mc.id = mcrs.model_call_id
+      JOIN turns t ON t.id = mc.turn_id
+      JOIN reasoning_setting_events rse ON rse.id = mcrs.setting_event_id
+      ORDER BY t.ordinal, mc.ordinal
+    `).all().map((row) => ({ ...row }));
+    deepStrictEqual(callSettings, [
+      {
+        turn_ordinal: 1,
+        call_ordinal: 1,
+        setting_value: "low",
+        provenance: "inherited",
+      },
+      {
+        turn_ordinal: 1,
+        call_ordinal: 2,
+        setting_value: "high",
+        provenance: "inherited",
+      },
+      {
+        turn_ordinal: 2,
+        call_ordinal: 1,
+        setting_value: "high",
+        provenance: "inherited",
+      },
+    ]);
+  } finally {
+    db.close();
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
 Deno.test("incrementally imports PI sessions and preserves the last good archive", async () => {
   const directory = Deno.makeTempDirSync();
   const sessions = `${directory}/sessions`;

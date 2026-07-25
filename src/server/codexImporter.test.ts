@@ -11,7 +11,7 @@ const transcript = `
 {"id":"session","timestamp":"2026-07-11T13:59:59.000Z","instructions":null,"git":null}
 {"timestamp":"2026-07-11T13:59:59.000Z","type":"response_item","payload":{"type":"reasoning","summary":[],"content":null,"encrypted_content":"ignored"}}
 {"timestamp":"2026-07-11T13:59:59.000Z","type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":null}}
-{"timestamp":"2026-07-11T14:00:00.000Z","type":"turn_context","payload":{"model":"gpt-5.6-luna"}}
+{"timestamp":"2026-07-11T14:00:00.000Z","type":"turn_context","payload":{"model":"gpt-5.6-luna","effort":"medium"}}
 {"timestamp":"2026-07-11T14:00:01.000Z","type":"event_msg","payload":{"type":"task_started"}}
 {"timestamp":"2026-07-11T14:00:02.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Import Codex"}]}}
 {"timestamp":"2026-07-11T14:00:03.000Z","type":"response_item","payload":{"type":"custom_tool_call","call_id":"call-1","name":"exec_command","input":"ls"}}
@@ -22,6 +22,7 @@ const transcript = `
 {"timestamp":"2026-07-11T14:00:06.900Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":0,"cached_input_tokens":0,"output_tokens":0,"reasoning_output_tokens":0,"total_tokens":4291}}}}
 {"timestamp":"2026-07-11T14:00:07.000Z","type":"compacted","payload":{"message":"","replacement_history":[{"type":"compaction","id":"cmp-1","encrypted_content":"sensitive-summary"}]}}
 {"timestamp":"2026-07-11T14:00:07.001Z","type":"event_msg","payload":{"type":"context_compacted"}}
+{"timestamp":"2026-07-11T14:00:07.500Z","type":"turn_context","payload":{"model":"gpt-5.6-luna","thread_settings":{"collaboration_mode":{"settings":{"reasoning_effort":"low"}}}}}
 {"timestamp":"2026-07-11T14:00:08.000Z","type":"event_msg","payload":{"type":"task_started"}}
 {"timestamp":"2026-07-11T14:00:09.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Continue"}]}}
 {"timestamp":"2026-07-11T14:00:10.000Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"Continued"}]}}
@@ -97,6 +98,21 @@ Deno.test("imports Codex sessions for SQLite reads", async () => {
     strictEqual(detail.modelCalls, 2);
     strictEqual(detail.turns[0].calls[0].id, "1-1");
     strictEqual(detail.turns[1].calls[0].id, "3-1");
+    strictEqual(detail.turns[0].reasoningSetting?.settingValue, "medium");
+    strictEqual(
+      detail.turns[0].calls[0].reasoningSetting?.sourceFieldPath,
+      "payload.effort",
+    );
+    strictEqual(detail.turns[1].reasoningSetting?.settingValue, "low");
+    strictEqual(
+      detail.turns[1].calls[0].reasoningSetting?.sourceFieldPath,
+      "payload.thread_settings.collaboration_mode.settings.reasoning_effort",
+    );
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM reasoning_setting_events")
+        .get()!.count,
+      2,
+    );
 
     const priced = priceSessionDetail(detail);
     strictEqual(

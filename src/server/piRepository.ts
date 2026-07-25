@@ -7,6 +7,7 @@ import {
 } from "../shared/sessionSchemas.ts";
 import { usageCallsFromSession } from "./usage.ts";
 import type {
+  ReasoningSettingImport,
   SessionCallImport,
   SessionContentImport,
   SessionContextEventImport,
@@ -31,6 +32,7 @@ const contentBlockSchema = z.object({
 const recordSchema = z.object({
   type: z.string(),
   id: z.string().optional(),
+  thinkingLevel: z.string().optional(),
   parentId: z.string().nullable().optional(),
   timestamp: z.string().optional(),
   cwd: z.string().optional(),
@@ -214,9 +216,25 @@ function decodeRecords(records: Record[]) {
   };
   const contextEvents: PendingContextEvent[] = [];
   const pendingContextEvents: PendingContextEvent[] = [];
+  let activeReasoningSetting:
+    | Omit<ReasoningSettingImport, "provenance">
+    | undefined;
 
   for (const [recordIndex, record] of records.entries()) {
     const timestamp = Date.parse(record.timestamp ?? "") || 0;
+    if (
+      record.type === "thinking_level_change" &&
+      record.thinkingLevel !== undefined
+    ) {
+      activeReasoningSetting = {
+        settingName: "thinkingLevel",
+        settingValue: record.thinkingLevel,
+        sourceFieldPath: "thinkingLevel",
+        sourceOrder: recordIndex + 1,
+        ...(timestamp === 0 ? {} : { observedAt: timestamp }),
+      };
+      continue;
+    }
     if (record.type === "compaction") {
       const event: PendingContextEvent = {
         type: "compaction",
@@ -238,6 +256,12 @@ function decodeRecords(records: Record[]) {
           startedAt: timestamp,
           calls: [],
           inputs: contentMetadata(record.message?.content ?? []),
+          ...(activeReasoningSetting === undefined ? {} : {
+            reasoningSetting: {
+              ...activeReasoningSetting,
+              provenance: "inherited" as const,
+            },
+          }),
           images: userImages(record),
         });
       }
@@ -306,6 +330,12 @@ function decodeRecords(records: Record[]) {
       completedAt: timestamp,
       reportedCost: cost,
       tokens: callTokens,
+      ...(activeReasoningSetting === undefined ? {} : {
+        reasoningSetting: {
+          ...activeReasoningSetting,
+          provenance: "inherited" as const,
+        },
+      }),
       activity: {
         finishReason: message.stopReason,
         ...(turn.images && turn.calls.length === 0

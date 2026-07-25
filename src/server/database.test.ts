@@ -32,10 +32,13 @@ Deno.test("opens an archive database with the required SQLite settings", () => {
           'model_calls',
           'call_content',
           'tool_events',
-          'context_events'
+          'context_events',
+          'reasoning_setting_events',
+          'turn_reasoning_settings',
+          'model_call_reasoning_settings'
         )
     `).get() as { count: number };
-    strictEqual(tables.count, 10);
+    strictEqual(tables.count, 13);
     strictEqual(first.prepare("PRAGMA foreign_keys").get()!.foreign_keys, 1);
     first.close();
   } finally {

@@ -42,6 +42,15 @@ export type SessionToolImport =
     output?: Omit<SessionContentImport, "kind" | "mimeType" | "contentHash">;
   };
 
+export type ReasoningSettingImport = {
+  settingName: string;
+  settingValue: string;
+  sourceFieldPath?: string;
+  sourceOrder?: number;
+  observedAt?: number;
+  provenance: "explicit" | "inherited" | "session_fallback";
+};
+
 export type SessionCallImport =
   & Omit<
     ModelCall,
@@ -52,6 +61,7 @@ export type SessionCallImport =
       tools: SessionToolImport[];
     };
     content?: SessionContentImport[];
+    reasoningSetting?: ReasoningSettingImport;
   };
 
 export type SessionContextEventImport = ContextEvent & {
@@ -65,6 +75,7 @@ export type SessionTurnImport = {
   number: number;
   startedAt: number;
   inputs?: SessionContentImport[];
+  reasoningSetting?: ReasoningSettingImport;
   calls: SessionCallImport[];
 };
 
@@ -125,6 +136,9 @@ type SummaryRow = {
   output_tokens: number;
   reasoning_tokens: number;
   processed_tokens: number;
+  thinking_latest: string | null;
+  thinking_values_json: string;
+  thinking_classified_calls: number;
   parent_public_id: string | null;
 };
 
@@ -152,7 +166,16 @@ type CallRow = {
   has_reasoning: number;
 };
 
-type DetailCallRow = CallRow & {
+type ReasoningSettingRow = {
+  reasoning_setting_name: string | null;
+  reasoning_setting_value: string | null;
+  reasoning_source_field_path: string | null;
+  reasoning_source_order: number | null;
+  reasoning_observed_at: number | null;
+  reasoning_provenance: ReasoningSettingImport["provenance"] | null;
+};
+
+type DetailCallRow = CallRow & ReasoningSettingRow & {
   turn_id: number;
 };
 
@@ -189,6 +212,50 @@ const summaryColumns = `
   s.cache_write_tokens, s.cache_write_5m_tokens,
   s.cache_write_1h_tokens, s.fresh_prompt_tokens, s.output_tokens,
   s.reasoning_tokens, s.processed_tokens,
+  (
+    SELECT rse.setting_value
+    FROM model_calls thinking_mc
+    JOIN turns thinking_t ON thinking_t.id = thinking_mc.turn_id
+    JOIN model_call_reasoning_settings thinking_mcrs
+      ON thinking_mcrs.model_call_id = thinking_mc.id
+    JOIN reasoning_setting_events rse
+      ON rse.id = thinking_mcrs.setting_event_id
+    WHERE thinking_t.session_id = s.source_session_id
+      AND COALESCE(thinking_mc.source_call_id, '')
+        NOT LIKE 'context-operation:%'
+    ORDER BY thinking_t.ordinal DESC, thinking_mc.ordinal DESC
+    LIMIT 1
+  ) AS thinking_latest,
+  COALESCE((
+    SELECT json_group_array(thinking_value)
+    FROM (
+      SELECT rse.setting_value AS thinking_value
+      FROM model_calls thinking_mc
+      JOIN turns thinking_t ON thinking_t.id = thinking_mc.turn_id
+      JOIN model_call_reasoning_settings thinking_mcrs
+        ON thinking_mcrs.model_call_id = thinking_mc.id
+      JOIN reasoning_setting_events rse
+        ON rse.id = thinking_mcrs.setting_event_id
+      WHERE thinking_t.session_id = s.source_session_id
+        AND COALESCE(thinking_mc.source_call_id, '')
+          NOT LIKE 'context-operation:%'
+      GROUP BY rse.setting_value
+      ORDER BY MIN(printf(
+        '%020d:%020d', thinking_t.ordinal, thinking_mc.ordinal
+      ))
+      LIMIT -1
+    )
+  ), '[]') AS thinking_values_json,
+  (
+    SELECT COUNT(*)
+    FROM model_calls thinking_mc
+    JOIN turns thinking_t ON thinking_t.id = thinking_mc.turn_id
+    JOIN model_call_reasoning_settings thinking_mcrs
+      ON thinking_mcrs.model_call_id = thinking_mc.id
+    WHERE thinking_t.session_id = s.source_session_id
+      AND COALESCE(thinking_mc.source_call_id, '')
+        NOT LIKE 'context-operation:%'
+  ) AS thinking_classified_calls,
   COALESCE(parent.public_id, parent.external_id) AS parent_public_id
 `;
 
@@ -254,6 +321,22 @@ function callPreview(contents: ContentRow[], tools: ToolRow[]) {
   return tool && target ? concisePreview(`${tool.name}: ${target}`) : undefined;
 }
 
+function reasoningSetting(row: ReasoningSettingRow) {
+  if (
+    row.reasoning_setting_name === null ||
+    row.reasoning_setting_value === null ||
+    row.reasoning_provenance === null
+  ) return undefined;
+  return {
+    settingName: row.reasoning_setting_name,
+    settingValue: row.reasoning_setting_value,
+    sourceFieldPath: optional(row.reasoning_source_field_path),
+    sourceOrder: optional(row.reasoning_source_order),
+    observedAt: optional(row.reasoning_observed_at),
+    provenance: row.reasoning_provenance,
+  };
+}
+
 function tokens(row: SummaryRow | CallRow): TokenUsage {
   return {
     uncachedInput: row.uncached_input_tokens,
@@ -280,6 +363,11 @@ function summary(row: SummaryRow): SessionSummary {
     models: JSON.parse(row.models_json),
     userTurns: row.user_turns,
     modelCalls: row.model_calls,
+    thinking: {
+      latest: optional(row.thinking_latest),
+      values: JSON.parse(row.thinking_values_json),
+      classifiedCalls: row.thinking_classified_calls,
+    },
     reportedCost: optional(row.reported_cost),
     tokens: tokens(row),
   };
@@ -722,6 +810,37 @@ export class SessionRepository {
       ...tokenValues,
     );
 
+    const reasoningSettingIDs = new Map<string, number>();
+    const reasoningSettingID = (setting: ReasoningSettingImport) => {
+      const key = JSON.stringify([
+        setting.settingName,
+        setting.settingValue,
+        setting.sourceFieldPath ?? null,
+        setting.sourceOrder ?? null,
+        setting.observedAt ?? null,
+      ]);
+      const existing = reasoningSettingIDs.get(key);
+      if (existing !== undefined) return existing;
+      const id = Number(
+        (this.db.prepare(`
+          INSERT INTO reasoning_setting_events (
+            session_id, setting_name, setting_value, source_field_path,
+            source_order, observed_at
+          ) VALUES (?, ?, ?, ?, ?, ?)
+          RETURNING id
+        `).get(
+          sourceSessionID,
+          setting.settingName,
+          setting.settingValue,
+          setting.sourceFieldPath ?? null,
+          setting.sourceOrder ?? null,
+          setting.observedAt ?? null,
+        ) as { id: number }).id,
+      );
+      reasoningSettingIDs.set(key, id);
+      return id;
+    };
+
     const callIDs = new Map<string, number>();
     for (const turn of session.turns) {
       const turnID = Number(
@@ -737,6 +856,17 @@ export class SessionRepository {
         turnID,
         turn.inputs ?? [],
       );
+      if (turn.reasoningSetting !== undefined) {
+        this.db.prepare(`
+          INSERT INTO turn_reasoning_settings (
+            turn_id, setting_event_id, provenance
+          ) VALUES (?, ?, ?)
+        `).run(
+          turnID,
+          reasoningSettingID(turn.reasoningSetting),
+          turn.reasoningSetting.provenance,
+        );
+      }
 
       for (const call of turn.calls) {
         const modelID = this.#modelID(call.provider, call.model);
@@ -767,6 +897,17 @@ export class SessionRepository {
           ) as { id: number }).id,
         );
         callIDs.set(`${turn.number}:${call.callWithinTurn}`, callID);
+        if (call.reasoningSetting !== undefined) {
+          this.db.prepare(`
+            INSERT INTO model_call_reasoning_settings (
+              model_call_id, setting_event_id, provenance
+            ) VALUES (?, ?, ?)
+          `).run(
+            callID,
+            reasoningSettingID(call.reasoningSetting),
+            call.reasoningSetting.provenance,
+          );
+        }
         this.#insertContent(
           "call_content",
           "model_call_id",
@@ -875,10 +1016,20 @@ export class SessionRepository {
       occurredAt: optional(event.occurred_at),
     });
     const calls = this.db.prepare(`
-      SELECT mc.turn_id, ${callColumns}
+      SELECT mc.turn_id, ${callColumns},
+        rse.setting_name AS reasoning_setting_name,
+        rse.setting_value AS reasoning_setting_value,
+        rse.source_field_path AS reasoning_source_field_path,
+        rse.source_order AS reasoning_source_order,
+        rse.observed_at AS reasoning_observed_at,
+        mcrs.provenance AS reasoning_provenance
       FROM model_calls mc
       JOIN turns t ON t.id = mc.turn_id
       JOIN models m ON m.id = mc.model_id
+      LEFT JOIN model_call_reasoning_settings mcrs
+        ON mcrs.model_call_id = mc.id
+      LEFT JOIN reasoning_setting_events rse
+        ON rse.id = mcrs.setting_event_id
       WHERE t.session_id = ?
       ORDER BY t.ordinal, mc.ordinal
     `).all(row.source_session_id) as DetailCallRow[];
@@ -910,9 +1061,19 @@ export class SessionRepository {
     );
     const callsByTurn = Map.groupBy(visibleCalls, (call) => call.turn_id);
     const turns = (this.db.prepare(`
-      SELECT id, ordinal, started_at FROM turns
-      WHERE session_id = ? ORDER BY ordinal
-    `).all(row.source_session_id) as Array<{
+      SELECT t.id, t.ordinal, t.started_at,
+        rse.setting_name AS reasoning_setting_name,
+        rse.setting_value AS reasoning_setting_value,
+        rse.source_field_path AS reasoning_source_field_path,
+        rse.source_order AS reasoning_source_order,
+        rse.observed_at AS reasoning_observed_at,
+        trs.provenance AS reasoning_provenance
+      FROM turns t
+      LEFT JOIN turn_reasoning_settings trs ON trs.turn_id = t.id
+      LEFT JOIN reasoning_setting_events rse
+        ON rse.id = trs.setting_event_id
+      WHERE t.session_id = ? ORDER BY t.ordinal
+    `).all(row.source_session_id) as Array<ReasoningSettingRow & {
       id: number;
       ordinal: number;
       started_at: number;
@@ -921,6 +1082,7 @@ export class SessionRepository {
       return {
         number: turn.ordinal,
         startedAt: turn.started_at,
+        reasoningSetting: reasoningSetting(turn),
         calls: turnCalls.map((call) => {
           const callTools = toolsByCall.get(call.id) ?? [];
           return {
@@ -933,6 +1095,7 @@ export class SessionRepository {
             completedAt: optional(call.completed_at),
             reportedCost: optional(call.reported_cost),
             tokens: tokens(call),
+            reasoningSetting: reasoningSetting(call),
             activity: {
               finishReason: optional(call.finish_reason),
               images: optional(call.images),

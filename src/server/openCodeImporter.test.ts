@@ -44,12 +44,30 @@ Deno.test("incrementally imports OpenCode session trees", () => {
   const insertSession = source.prepare(`
     INSERT INTO session VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
-  insertSession.run("root", null, "Root", null, "build", 1, 10);
+  insertSession.run(
+    "root",
+    null,
+    "Root",
+    JSON.stringify({
+      id: "claude",
+      providerID: "anthropic",
+      variant: "medium",
+    }),
+    "build",
+    1,
+    10,
+  );
   insertSession.run("child", "root", "Child", null, "explore", 2, 9);
   const insertMessage = source.prepare(`
     INSERT INTO message VALUES (?, ?, ?, ?, ?)
   `);
-  insertMessage.run("user", "root", 1, 1, JSON.stringify({ role: "user" }));
+  insertMessage.run(
+    "user",
+    "root",
+    1,
+    1,
+    JSON.stringify({ role: "user" }),
+  );
   insertMessage.run(
     "assistant",
     "root",
@@ -59,6 +77,7 @@ Deno.test("incrementally imports OpenCode session trees", () => {
       role: "assistant",
       providerID: "anthropic",
       modelID: "claude",
+      variant: "high",
       time: { created: 2, completed: 3 },
       cost: 0.1,
       tokens: {
@@ -111,6 +130,7 @@ Deno.test("incrementally imports OpenCode session trees", () => {
       role: "assistant",
       providerID: "anthropic",
       modelID: "claude",
+      variant: "xhigh",
       cost: 0.1,
       tokens: {
         input: 80,
@@ -228,6 +248,28 @@ Deno.test("incrementally imports OpenCode session trees", () => {
     strictEqual(first.imported, 1);
     const detail = repository.getSession("opencode", "root")!;
     strictEqual(detail.subagents[0].id, "child");
+    strictEqual(detail.turns[0].reasoningSetting?.settingValue, "high");
+    strictEqual(detail.turns[0].reasoningSetting?.provenance, "inherited");
+    strictEqual(
+      detail.turns[0].calls[0].reasoningSetting?.settingValue,
+      "high",
+    );
+    strictEqual(
+      detail.turns[1].reasoningSetting?.provenance,
+      "session_fallback",
+    );
+    strictEqual(detail.turns[2].reasoningSetting?.settingValue, "xhigh");
+    strictEqual(detail.turns[2].reasoningSetting?.provenance, "inherited");
+    strictEqual(
+      detail.turns[2].calls[0].reasoningSetting?.settingValue,
+      "xhigh",
+    );
+    strictEqual(
+      archive.prepare(
+        "SELECT COUNT(*) AS count FROM reasoning_setting_events",
+      ).get()!.count,
+      3,
+    );
     strictEqual(
       detail.turns[0].calls[0].activity.tools[0].childSessionID,
       "child",

@@ -164,6 +164,48 @@ function ModelSummary({ models }: { models: string[] }) {
   );
 }
 
+function SessionThinkingSummary(
+  { thinking, modelCalls }: Pick<SessionSummary, "thinking" | "modelCalls">,
+) {
+  const latest = thinking?.latest ?? "unknown";
+  const values = thinking?.values ?? [];
+  const otherValues = values.filter((value) => value !== latest);
+  const classified = thinking?.classifiedCalls ?? 0;
+  const title = classified === 0
+    ? "No requested thinking setting was exposed by the harness"
+    : `Latest: ${latest} · Used: ${values.join(" → ")} · ${classified} of ${modelCalls} calls classified`;
+  return (
+    <span className="session-thinking-summary" title={title}>
+      <small>Thinking: {latest}</small>
+      {otherValues.length > 0 && (
+        <span
+          className="model-overflow"
+          aria-label={`${otherValues.length} other thinking level${
+            otherValues.length === 1 ? "" : "s"
+          }`}
+        >
+          +{otherValues.length}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function ThinkingLevel(
+  { setting }: { setting?: ModelCall["reasoningSetting"] },
+) {
+  if (setting === undefined) return null;
+  const source = setting.sourceFieldPath ?? setting.settingName;
+  return (
+    <small
+      className="thinking-level"
+      title={`${setting.settingName}=${setting.settingValue} · ${setting.provenance} from ${source}`}
+    >
+      Thinking: {setting.settingValue}
+    </small>
+  );
+}
+
 function cacheHitRate(tokens: TokenUsage) {
   const input = contextSize(tokens);
   return input === 0 ? undefined : tokens.cacheRead / input;
@@ -1209,7 +1251,10 @@ function CallTable({
                     </span>
                   </td>
                   <td className="call-model-cell">
-                    {displayModelName(call.model)}
+                    <span className="model-thinking-stack">
+                      <span>{displayModelName(call.model)}</span>
+                      <ThinkingLevel setting={call.reasoningSetting} />
+                    </span>
                   </td>
                   <td className={callDuration ? undefined : "muted"}>
                     {callDuration ?? "—"}
@@ -1485,9 +1530,12 @@ function SessionBreakdown({
                       </span>
                     </td>
                     <td className="turn-model-cell">
-                      {turnModels.length > 0
-                        ? <ModelSummary models={turnModels} />
-                        : <span className="muted">—</span>}
+                      <span className="model-thinking-stack">
+                        {turnModels.length > 0
+                          ? <ModelSummary models={turnModels} />
+                          : <span className="muted">—</span>}
+                        <ThinkingLevel setting={turn.reasoningSetting} />
+                      </span>
                     </td>
                     <td className={elapsed ? undefined : "muted"}>
                       {elapsed ?? "—"}
@@ -1913,7 +1961,13 @@ export function SessionsPage() {
                           <td>
                             <span className="session-model-harness">
                               <HarnessIcon harness={session.harness} />
-                              <ModelSummary models={session.models} />
+                              <span className="session-model-details">
+                                <ModelSummary models={session.models} />
+                                <SessionThinkingSummary
+                                  thinking={session.thinking}
+                                  modelCalls={session.modelCalls}
+                                />
+                              </span>
                             </span>
                           </td>
                           <td

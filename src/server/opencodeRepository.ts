@@ -23,6 +23,7 @@ const messageDataSchema = z.object({
   role: z.string(),
   providerID: z.string().optional(),
   modelID: z.string().optional(),
+  variant: z.string().optional(),
   finish: z.string().optional(),
   cost: z.number().nonnegative().optional(),
   time: z.object({
@@ -229,6 +230,7 @@ function decodeMessages(
   rows: OpenCodeMessageRow[],
   partsByMessage = new Map<string, DecodedParts>(),
   strict = false,
+  sessionVariant?: string,
 ) {
   const turns: SessionTurnImport[] = [];
   const providers = new Set<string>();
@@ -260,6 +262,16 @@ function decodeMessages(
       continue;
     }
     const message = result.data;
+    const explicitReasoningSetting = message.variant === undefined
+      ? undefined
+      : {
+        settingName: "variant",
+        settingValue: message.variant,
+        sourceFieldPath: "message.data.variant",
+        sourceOrder: messageIndex + 1,
+        observedAt: row.time_created,
+        provenance: "explicit" as const,
+      };
 
     if (message.role === "user") {
       const parts = partsByMessage.get(row.id);
@@ -279,11 +291,29 @@ function decodeMessages(
         startedAt: row.time_created,
         calls: [],
         inputs: parts?.content ?? [],
+        reasoningSetting: explicitReasoningSetting,
       });
       continue;
     }
     if (message.role !== "assistant" || !message.tokens || turns.length === 0) {
       continue;
+    }
+
+    const reasoningSetting = explicitReasoningSetting ??
+      (sessionVariant === undefined ? undefined : {
+        settingName: "variant",
+        settingValue: sessionVariant,
+        sourceFieldPath: "session.model.variant",
+        provenance: "session_fallback" as const,
+      });
+    const turn = turns.at(-1)!;
+    if (turn.reasoningSetting === undefined && reasoningSetting !== undefined) {
+      turn.reasoningSetting = {
+        ...reasoningSetting,
+        provenance: reasoningSetting.provenance === "explicit"
+          ? "inherited"
+          : reasoningSetting.provenance,
+      };
     }
 
     const source = message.tokens;
@@ -309,7 +339,6 @@ function decodeMessages(
     const compactionOperation = operationEvents.length > 0;
     operationEvents.forEach((event) => event.operationSeen = true);
 
-    const turn = turns.at(-1)!;
     const provider = message.providerID ?? "unknown";
     const model = message.modelID ?? "unknown";
     const decodedParts = partsByMessage.get(row.id);
@@ -341,6 +370,7 @@ function decodeMessages(
       completedAt: message.time?.completed,
       reportedCost: cost,
       tokens: callTokens,
+      reasoningSetting,
       activity,
       content: compactionOperation ? [] : decodedParts?.content ?? [],
     };
@@ -449,8 +479,11 @@ function decodeUsageMessage(
 function fallbackModel(modelJson: string | null) {
   if (!modelJson) return undefined;
   try {
-    const model = z.object({ id: z.string(), providerID: z.string() })
-      .safeParse(JSON.parse(modelJson));
+    const model = z.object({
+      id: z.string(),
+      providerID: z.string(),
+      variant: z.string().optional(),
+    }).safeParse(JSON.parse(modelJson));
     return model.success ? model.data : undefined;
   } catch {
     return undefined;
@@ -524,6 +557,7 @@ export function normalizeOpenCodeSessionTree(options: {
       sessionMessages,
       decodeParts(partsBySession.get(row.id) ?? [], true),
       true,
+      fallbackModel(row.model)?.variant,
     );
     const summary = summaryFromDecoded(row, decoded);
     return {
@@ -708,12 +742,12 @@ export class OpenCodeRepository {
   }
 
   #summary(row: SessionRow): SessionSummary {
-    return this.#toSummary(row, this.#decodeSession(row.id));
+    return this.#toSummary(row, this.#decodeSession(row));
   }
 
   #detail(row: SessionRow, visited: Set<string>): unknown {
     visited.add(row.id);
-    const decoded = this.#decodeSession(row.id, true);
+    const decoded = this.#decodeSession(row, true);
     const children = this.#db.prepare(`
       SELECT id, parent_id, title, model, agent, time_updated
       FROM session
@@ -744,21 +778,29 @@ export class OpenCodeRepository {
     };
   }
 
-  #decodeSession(id: string, includeActivity = false) {
+  #decodeSession(row: SessionRow, includeActivity = false) {
     const messages = this.#db.prepare(`
       SELECT id, time_created, data
       FROM message
       WHERE session_id = ?
       ORDER BY time_created, id
-    `).all(id) as MessageRow[];
-    if (!includeActivity) return decodeMessages(messages);
+    `).all(row.id) as MessageRow[];
+    const sessionVariant = fallbackModel(row.model)?.variant;
+    if (!includeActivity) {
+      return decodeMessages(messages, undefined, false, sessionVariant);
+    }
     const parts = this.#db.prepare(`
       SELECT message_id, data
       FROM part
       WHERE session_id = ?
       ORDER BY time_created, id
-    `).all(id) as PartRow[];
-    return decodeMessages(messages, decodeParts(parts));
+    `).all(row.id) as PartRow[];
+    return decodeMessages(
+      messages,
+      decodeParts(parts),
+      false,
+      sessionVariant,
+    );
   }
 
   #toSummary(
