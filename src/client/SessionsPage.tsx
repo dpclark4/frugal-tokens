@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { getRouteApi } from "@tanstack/react-router";
-import { Image } from "lucide-react";
+import { Image, RefreshCw } from "lucide-react";
 import type {
   CacheAssessment,
   CacheIssue,
@@ -16,7 +16,7 @@ import type {
 import { contextRange, contextSize } from "../shared/contextMetrics.ts";
 import { displayModelName } from "../shared/modelNames.ts";
 import { rollupCosts } from "../shared/costMetrics.ts";
-import { getOverview, getSession, getSessions } from "./api.ts";
+import { getOverview, getSession, getSessions, syncSessions } from "./api.ts";
 import claudeCodeIcon from "./assets/icons/claudecode-color.svg";
 import codexIcon from "./assets/icons/codex-logo-light.svg";
 import openCodeIcon from "./assets/icons/opencode-logo-light.svg";
@@ -1746,6 +1746,7 @@ export function SessionsPage() {
   const [error, setError] = useState<string>();
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string>();
+  const [refreshing, setRefreshing] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const loadingMoreRef = useRef(false);
   const harnessRef = useRef(harness);
@@ -1884,6 +1885,20 @@ export function SessionsPage() {
     }
   }
 
+  async function refreshData() {
+    setRefreshing(true);
+    setError(undefined);
+    try {
+      await syncSessions();
+      window.location.reload();
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Unable to refresh sessions",
+      );
+      setRefreshing(false);
+    }
+  }
+
   return (
     <main>
       <SiteHeader active="overview" />
@@ -1928,6 +1943,16 @@ export function SessionsPage() {
                 <option value="codex">Codex</option>
               </select>
             </label>
+            <button
+              type="button"
+              className="session-refresh"
+              onClick={refreshData}
+              disabled={refreshing}
+              aria-label={refreshing ? "Refreshing sessions" : "Refresh sessions"}
+              title="Import changed sessions and reload"
+            >
+              <RefreshCw size={13} aria-hidden="true" />
+            </button>
           </div>
         </div>
         {error && <div className="error">{error}</div>}

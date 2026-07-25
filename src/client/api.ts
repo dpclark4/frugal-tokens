@@ -23,6 +23,11 @@ async function getJson(path: string) {
   return response.json();
 }
 
+export async function syncSessions() {
+  const response = await fetch(`${apiBaseUrl}/api/sync`, { method: "POST" });
+  if (!response.ok) throw new Error(`Request failed (${response.status})`);
+}
+
 export async function getUsage(range: number | "all", harness: string) {
   return usageResponseSchema.parse(
     await getJson(`/api/usage?range=${range}&harness=${harness}`),

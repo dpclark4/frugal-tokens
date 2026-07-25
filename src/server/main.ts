@@ -263,6 +263,11 @@ app.use("/api/*", logApiRequest);
 
 app.get("/health", (context) => context.json({ status: "ok" }));
 
+app.post("/api/sync", async (context) => {
+  await syncSources();
+  return context.json({ status: "ok" });
+});
+
 function repositoryForHarness(harness: SessionSummary["harness"]) {
   if (harness === "claude-code") return claudeRepository;
   if (harness === "pi") return piRepository;

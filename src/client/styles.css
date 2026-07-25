@@ -990,19 +990,23 @@ h1 {
 }
 
 .session-count {
+  grid-column: 2;
+  text-align: right;
   font-family: var(--mono);
   color: var(--green);
   font-size: 12px;
 }
 
 .session-filters {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: auto auto;
   align-items: flex-end;
-  gap: 3px;
+  gap: 3px 8px;
 }
 
 .session-filters label {
+  grid-column: 2;
+  grid-row: 2;
   display: flex;
   align-items: center;
   gap: 7px;
@@ -1020,6 +1024,30 @@ h1 {
   color: #263126;
   padding: 6px 28px 6px 9px;
   font: 12px var(--mono);
+}
+
+.session-refresh {
+  grid-column: 1;
+  grid-row: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #aab9a7;
+  border-radius: 0;
+  background: var(--surface-0);
+  color: #263126;
+  padding: 6px 7px;
+  font: 11px var(--mono);
+  cursor: pointer;
+}
+
+.session-refresh:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.session-refresh:disabled {
+  cursor: wait;
+  opacity: .6;
 }
 
 .session-table-wrap {
