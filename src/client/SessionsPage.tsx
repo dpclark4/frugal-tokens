@@ -494,7 +494,7 @@ function TurnCacheStatus({
 function duration(startedAt?: number, completedAt?: number) {
   if (startedAt === undefined || completedAt === undefined) return undefined;
   const milliseconds = completedAt - startedAt;
-  if (milliseconds < 0) return undefined;
+  if (milliseconds <= 0) return undefined;
   if (milliseconds < 1_000) return `${milliseconds}ms`;
   if (milliseconds < 60_000) return `${(milliseconds / 1_000).toFixed(1)}s`;
   const minutes = Math.floor(milliseconds / 60_000);
@@ -506,7 +506,7 @@ function duration(startedAt?: number, completedAt?: number) {
 
 function turnDuration(startedAt: number, completedAt: number) {
   const milliseconds = completedAt - startedAt;
-  if (milliseconds < 0) return undefined;
+  if (milliseconds <= 0) return undefined;
   const totalSeconds = Math.round(milliseconds / 1_000);
   if (totalSeconds < 60) return `${totalSeconds}s`;
   const minutes = Math.floor(totalSeconds / 60);
@@ -525,7 +525,7 @@ function sessionSpan(
     return {
       start: session.startedAt,
       end: session.endedAt,
-      label: duration(session.startedAt, session.endedAt),
+      label: turnDuration(session.startedAt, session.endedAt),
     };
   }
   if (!session.turns || session.turns.length === 0) return undefined;
@@ -535,7 +535,7 @@ function sessionSpan(
   );
   const start = Math.min(...starts);
   const end = ends.length > 0 ? Math.max(...ends) : session.updatedAt;
-  return { start, end, label: duration(start, end) };
+  return { start, end, label: turnDuration(start, end) };
 }
 
 function turnMetrics(calls: ModelCall[]) {
@@ -725,7 +725,7 @@ function SubagentSummary({
   const context = contextRange(calls);
   const elapsed = total.start === undefined || total.end === undefined
     ? undefined
-    : duration(total.start, total.end);
+    : turnDuration(total.start, total.end);
   const hasDescendants = session.subagents.length > 0;
   return (
     <div className={`trace-subagent-summary${expanded ? " is-expanded" : ""}`}>

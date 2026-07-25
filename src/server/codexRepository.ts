@@ -35,6 +35,13 @@ const recordSchema = z.object({
     output: z.unknown().optional(),
     call_id: z.string().optional(),
     id: z.string().optional(),
+    turn_id: z.string().optional(),
+    message: z.string().optional(),
+    status: z.string().optional(),
+    started_at: z.number().nonnegative().optional(),
+    completed_at: z.number().nonnegative().optional(),
+    duration_ms: z.number().nonnegative().optional(),
+    time_to_first_token_ms: z.number().nonnegative().optional(),
     content: z.array(contentBlockSchema).nullable().optional(),
     info: z.object({
       last_token_usage: z.object({
@@ -175,6 +182,14 @@ function legacyUserText(record: Record) {
   return legacyUserMessage(record)?.payload.message;
 }
 
+function sessionPrompt(records: Record[]) {
+  // Codex writes startup instructions as response_item user content, before
+  // the actual turn prompt. The event_msg user_message is the user-authored
+  // prompt and is therefore the better title source when it is available.
+  return records.map(legacyUserText).find((value) => value?.trim()) ??
+    records.map(userText).find((value) => value?.trim());
+}
+
 function tokenUsageSignature(record: Record) {
   if (
     record.type !== "event_msg" || record.payload?.type !== "token_count" ||
@@ -232,6 +247,169 @@ function sessionBounds(
   return { startedAt, endedAt };
 }
 
+type CodexCallTiming = {
+  startedAt: number;
+  completedAt?: number;
+};
+
+type CodexTurnTiming = {
+  startedAt: number;
+  completedAt?: number;
+  durationMs?: number;
+  calls: CodexCallTiming[];
+  tokenIndexes: number[];
+  startIndex: number;
+  inputAt?: number;
+};
+
+function eventTime(record: Record) {
+  const timestampValue = timestamp(record);
+  if (timestampValue > 0) return timestampValue;
+  const payload = record.payload;
+  if (payload?.completed_at !== undefined) return payload.completed_at * 1_000;
+  if (payload?.started_at !== undefined) return payload.started_at * 1_000;
+  return 0;
+}
+
+function taskCompleteTime(record: Record) {
+  const time = timestamp(record);
+  if (time > 0) return time;
+  const payload = record.payload;
+  if (payload?.completed_at !== undefined) return payload.completed_at * 1_000;
+  if (payload?.started_at !== undefined && payload.duration_ms !== undefined) {
+    return payload.started_at * 1_000 + payload.duration_ms;
+  }
+  return 0;
+}
+
+function maxRecordTime(records: Record[]) {
+  const times = records.map(eventTime).filter((time) => time > 0);
+  return times.length > 0 ? Math.max(...times) : undefined;
+}
+
+function maxToolOutputTime(records: Record[]) {
+  return maxRecordTime(records.filter((record) =>
+    record.type === "response_item" &&
+    (record.payload?.type === "custom_tool_call_output" ||
+      record.payload?.type === "function_call_output")
+  ));
+}
+
+function isAssistantOutput(record: Record) {
+  return record.type === "response_item" && hasText(record);
+}
+
+function inferCodexCallTimings(records: Record[]) {
+  const turns: CodexTurnTiming[] = [];
+  let current: CodexTurnTiming | undefined;
+
+  for (const [recordIndex, record] of records.entries()) {
+    const payload = record.payload;
+    const time = eventTime(record);
+
+    if (record.type === "event_msg" && payload?.type === "task_started") {
+      current = {
+        startedAt: time,
+        calls: [],
+        tokenIndexes: [],
+        startIndex: recordIndex,
+      };
+      turns.push(current);
+      continue;
+    }
+    if (!current) continue;
+
+    if (
+      record.type === "response_item" && payload?.type === "message" &&
+      payload.role === "user"
+    ) {
+      current.inputAt = time;
+    } else if (
+      record.type === "event_msg" && payload?.type === "user_message"
+    ) {
+      current.inputAt = time;
+    }
+
+    if (record.type === "event_msg" && payload?.type === "token_count") {
+      if (tokenUsageSignature(record) !== undefined) {
+        current.tokenIndexes.push(recordIndex);
+      }
+    }
+
+    if (record.type === "event_msg" && payload?.type === "task_complete") {
+      current.completedAt = taskCompleteTime(record) || undefined;
+      current.durationMs = payload.duration_ms;
+    }
+  }
+
+  return turns.map((turn) => {
+    const calls: CodexCallTiming[] = [];
+    let previousTokenIndex = -1;
+    let previousModelOutputIndex: number | undefined;
+
+    for (const [callIndex, tokenIndex] of turn.tokenIndexes.entries()) {
+      const rangeStart = callIndex === 0
+        ? turn.startIndex
+        : previousTokenIndex + 1;
+      const range = records.slice(rangeStart, tokenIndex + 1);
+      const toolRequestIndexes = range.flatMap((record, index) =>
+        record.type === "response_item" &&
+            record.payload?.type === "custom_tool_call"
+          ? [rangeStart + index]
+          : []
+      );
+      const assistantOutputIndexes = range.flatMap((record, index) =>
+        isAssistantOutput(record) ? [rangeStart + index] : []
+      );
+      const firstModelOutputIndex = [
+        ...toolRequestIndexes,
+        ...assistantOutputIndexes,
+      ].sort((a, b) => a - b)[0];
+
+      let startedAt: number | undefined;
+      if (callIndex === 0) {
+        startedAt = turn.inputAt ?? turn.startedAt;
+      } else {
+        const outputRangeStart = previousModelOutputIndex ?? turn.startIndex;
+        const outputRangeEnd = firstModelOutputIndex ?? tokenIndex;
+        startedAt = maxToolOutputTime(
+          records.slice(outputRangeStart, outputRangeEnd),
+        );
+      }
+      startedAt ??= eventTime(records[tokenIndex]);
+
+      const toolEnd = maxRecordTime(
+        toolRequestIndexes.map((index) => records[index]),
+      );
+      const assistantEnd = maxRecordTime(
+        assistantOutputIndexes.map((index) => records[index]),
+      );
+      const hasToolRequest = toolRequestIndexes.length > 0;
+      let completedAt = hasToolRequest ? toolEnd : assistantEnd;
+      if (
+        completedAt === undefined && callIndex === turn.tokenIndexes.length - 1 &&
+        !hasToolRequest
+      ) {
+        completedAt = turn.completedAt ?? (
+          turn.durationMs === undefined
+            ? undefined
+            : turn.startedAt + turn.durationMs
+        );
+      }
+      if (completedAt !== undefined && completedAt <= startedAt) {
+        completedAt = undefined;
+      }
+
+      calls.push({ startedAt, completedAt });
+      previousTokenIndex = tokenIndex;
+      previousModelOutputIndex = toolRequestIndexes.at(-1) ??
+        assistantOutputIndexes.at(-1) ?? tokenIndex;
+    }
+
+    return { ...turn, calls };
+  });
+}
+
 function decodeRecords(records: Record[]) {
   const turns: SessionTurnImport[] = [];
   const tokens = emptyTokens();
@@ -242,6 +420,7 @@ function decodeRecords(records: Record[]) {
   let pendingHasText = false;
   let pendingTools: SessionToolImport[] = [];
   let pendingContent: SessionContentImport[] = [];
+  const callTimings = inferCodexCallTimings(records);
   type PendingContextEvent = SessionContextEventImport & {
     affectedCallReference?: SessionCallImport;
   };
@@ -282,7 +461,7 @@ function decodeRecords(records: Record[]) {
     if (record.type === "event_msg" && payload?.type === "task_started") {
       turns.push({
         number: turns.length + 1,
-        startedAt: time,
+        startedAt: eventTime(record),
         calls: [],
       });
       pendingHasText = false;
@@ -369,6 +548,7 @@ function decodeRecords(records: Record[]) {
     if (callTokens.processed === 0) continue;
 
     const turn = turns.at(-1)!;
+    const timing = callTimings[turn.number - 1]?.calls[turn.calls.length];
     const images = turn.calls.length === 0
       ? turn.inputs?.filter((input) => input.kind === "image").length
       : 0;
@@ -383,8 +563,8 @@ function decodeRecords(records: Record[]) {
         }),
       provider: "openai",
       model: currentModel,
-      startedAt: time,
-      completedAt: time,
+      startedAt: timing?.startedAt ?? time,
+      completedAt: timing?.completedAt,
       tokens: callTokens,
       activity: {
         ...(images ? { images } : {}),
@@ -599,11 +779,7 @@ function codexSession(records: Record[], id: string, updatedAt: number) {
   const usesLegacyDecoder = current.turns.length === 0 &&
     hasLegacyUsageEvidence(records);
   const decoded = usesLegacyDecoder ? decodeLegacyRecords(records) : current;
-  const prompt = usesLegacyDecoder
-    ? records.map(legacyUserText).find((value) => value?.trim())
-    : userText(records.find((record) => userText(record)?.trim()) ?? {
-      type: "",
-    });
+  const prompt = sessionPrompt(records);
   const promptTitle = prompt?.replace(
     /\s+/g,
     " ",

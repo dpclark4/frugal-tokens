@@ -33,7 +33,7 @@ Deno.test("normalizes Codex JSONL sessions from token count events", () => {
     title: "Inspect Codex usage",
     updatedAt: Date.parse("2026-07-11T14:00:07.000Z"),
     startedAt: Date.parse("2026-07-11T14:00:01.000Z"),
-    endedAt: Date.parse("2026-07-11T14:00:07.000Z"),
+    endedAt: Date.parse("2026-07-11T14:00:06.000Z"),
     providers: ["openai"],
     models: ["gpt-5.6-luna"],
     userTurns: 1,
@@ -59,8 +59,8 @@ Deno.test("normalizes Codex JSONL sessions from token count events", () => {
           callWithinTurn: 1,
           provider: "openai",
           model: "gpt-5.6-luna",
-          startedAt: Date.parse("2026-07-11T14:00:04.000Z"),
-          completedAt: Date.parse("2026-07-11T14:00:04.000Z"),
+          startedAt: Date.parse("2026-07-11T14:00:02.000Z"),
+          completedAt: Date.parse("2026-07-11T14:00:03.000Z"),
           tokens: {
             uncachedInput: 750,
             cacheRead: 250,
@@ -91,8 +91,8 @@ Deno.test("normalizes Codex JSONL sessions from token count events", () => {
           preview: "Done.",
           provider: "openai",
           model: "gpt-5.6-luna",
-          startedAt: Date.parse("2026-07-11T14:00:07.000Z"),
-          completedAt: Date.parse("2026-07-11T14:00:07.000Z"),
+          startedAt: Date.parse("2026-07-11T14:00:05.000Z"),
+          completedAt: Date.parse("2026-07-11T14:00:06.000Z"),
           tokens: {
             uncachedInput: 300,
             cacheRead: 1000,
@@ -116,6 +116,75 @@ Deno.test("normalizes Codex JSONL sessions from token count events", () => {
   };
 
   deepStrictEqual(actual, expected);
+});
+
+Deno.test("infers Codex model-call timing around tool loops", () => {
+  const actual = repository({
+    "2026/07/24/rollout-timing.jsonl": `
+{"timestamp":"2026-07-24T15:00:00.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-1","started_at":1784905200,"model_context_window":258400}}
+{"timestamp":"2026-07-24T15:00:00.050Z","type":"turn_context","payload":{"model":"gpt-5.6-luna"}}
+{"timestamp":"2026-07-24T15:00:00.100Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"dealers choice"}]}}
+{"timestamp":"2026-07-24T15:00:00.100Z","type":"event_msg","payload":{"type":"user_message","message":"dealers choice"}}
+{"timestamp":"2026-07-24T15:00:01.000Z","type":"response_item","payload":{"type":"reasoning","summary":[]}}
+{"timestamp":"2026-07-24T15:00:02.000Z","type":"response_item","payload":{"type":"custom_tool_call","call_id":"call-1","name":"exec","input":"tools.exec({\\"cmd\\":\\"pwd\\"})"}}
+{"timestamp":"2026-07-24T15:00:02.200Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call-1","output":"/tmp"}}
+{"timestamp":"2026-07-24T15:00:02.200Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"cached_input_tokens":50,"output_tokens":10,"reasoning_output_tokens":2}}}}
+{"timestamp":"2026-07-24T15:00:03.000Z","type":"response_item","payload":{"type":"reasoning","summary":[]}}
+{"timestamp":"2026-07-24T15:00:04.000Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"Done."}]}}
+{"timestamp":"2026-07-24T15:00:04.010Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":120,"cached_input_tokens":100,"output_tokens":8,"reasoning_output_tokens":0}}}}
+{"timestamp":"2026-07-24T15:00:04.500Z","type":"event_msg","payload":{"type":"task_complete","turn_id":"turn-1","started_at":1784905200,"completed_at":1784905204,"duration_ms":4500,"time_to_first_token_ms":900}}
+`,
+  }).getSession("2026/07/24/rollout-timing")!;
+
+  strictEqual(actual.turns.length, 1);
+  strictEqual(actual.turns[0].calls.length, 2);
+  strictEqual(
+    actual.turns[0].calls[0].startedAt,
+    Date.parse("2026-07-24T15:00:00.100Z"),
+  );
+  strictEqual(
+    actual.turns[0].calls[0].completedAt,
+    Date.parse("2026-07-24T15:00:02.000Z"),
+  );
+  strictEqual(
+    actual.turns[0].calls[1].startedAt,
+    Date.parse("2026-07-24T15:00:02.200Z"),
+  );
+  strictEqual(
+    actual.turns[0].calls[1].completedAt,
+    Date.parse("2026-07-24T15:00:04.000Z"),
+  );
+  strictEqual(
+    actual.turns[0].calls[0].activity.tools[0].completedAt,
+    Date.parse("2026-07-24T15:00:02.200Z"),
+  );
+});
+
+Deno.test("does not invent zero-duration Codex calls without boundaries", () => {
+  const actual = repository({
+    "2026/07/24/rollout-unknown-timing.jsonl": `
+{"timestamp":"2026-07-24T15:00:00.000Z","type":"event_msg","payload":{"type":"task_started"}}
+{"timestamp":"2026-07-24T15:00:00.100Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"hello"}]}}
+{"timestamp":"2026-07-24T15:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"cached_input_tokens":50,"output_tokens":10,"reasoning_output_tokens":2}}}}
+`,
+  }).getSession("2026/07/24/rollout-unknown-timing")!;
+
+  strictEqual(actual.turns[0].calls[0].startedAt, Date.parse("2026-07-24T15:00:00.100Z"));
+  strictEqual(actual.turns[0].calls[0].completedAt, undefined);
+});
+
+Deno.test("prefers Codex user_message over startup instructions for titles", () => {
+  const actual = repository({
+    "2026/07/24/rollout-title.jsonl": `
+{"timestamp":"2026-07-24T15:18:02.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions for /Users/example/project"}]}}
+{"timestamp":"2026-07-24T15:18:02.001Z","type":"event_msg","payload":{"type":"task_started"}}
+{"timestamp":"2026-07-24T15:18:02.002Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}}
+{"timestamp":"2026-07-24T15:18:02.003Z","type":"event_msg","payload":{"type":"user_message","message":"hi","images":[]}}
+{"timestamp":"2026-07-24T15:18:02.004Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":1,"reasoning_output_tokens":0}}}}
+`,
+  }).getSession("2026/07/24/rollout-title")!;
+
+  strictEqual(actual.title, "hi");
 });
 
 Deno.test("normalizes exported Codex session arrays", () => {
