@@ -1311,9 +1311,12 @@ function CallTable({
                     </span>
                   </td>
                   <td className="call-model-cell">
-                    <span className="model-thinking-stack">
-                      <span>{displayModelName(call.model)}</span>
-                      <ThinkingLevel setting={call.reasoningSetting} />
+                    <span className="model-leading-layout">
+                      <span className="model-leading-slot" aria-hidden="true" />
+                      <span className="model-thinking-stack">
+                        <span>{displayModelName(call.model)}</span>
+                        <ThinkingLevel setting={call.reasoningSetting} />
+                      </span>
                     </span>
                   </td>
                   <td className={callDuration ? undefined : "muted"}>
@@ -1590,11 +1593,14 @@ function SessionBreakdown({
                       </span>
                     </td>
                     <td className="turn-model-cell">
-                      <span className="model-thinking-stack">
-                        {turnModels.length > 0
-                          ? <ModelSummary models={turnModels} />
-                          : <span className="muted">—</span>}
-                        <ThinkingLevel setting={turn.reasoningSetting} />
+                      <span className="model-leading-layout">
+                        <span className="model-leading-slot" aria-hidden="true" />
+                        <span className="model-thinking-stack">
+                          {turnModels.length > 0
+                            ? <ModelSummary models={turnModels} />
+                            : <span className="muted">—</span>}
+                          <ThinkingLevel setting={turn.reasoningSetting} />
+                        </span>
                       </span>
                     </td>
                     <td className={elapsed ? undefined : "muted"}>
@@ -2022,7 +2028,7 @@ export function SessionsPage() {
                             </div>
                           </td>
                           <td>
-                            <span className="session-model-harness">
+                            <span className="model-leading-layout">
                               <HarnessIcon harness={session.harness} />
                               <span className="session-model-details">
                                 <ModelSummary models={session.models} />

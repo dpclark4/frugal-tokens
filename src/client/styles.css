@@ -1207,7 +1207,7 @@ table.data-table {
   margin-bottom: 3px;
 }
 
-.session-model-harness {
+.model-leading-layout {
   display: inline-grid;
   grid-template-columns: 16px minmax(0, 1fr);
   align-items: center;
@@ -1219,6 +1219,11 @@ table.data-table {
   padding-left: 36px;
 }
 
+.turn-table th:nth-child(2),
+.call-table th:nth-child(2) {
+  padding-left: 36px;
+}
+
 .session-model-details {
   display: inline-flex;
   flex-direction: column;
@@ -1226,7 +1231,7 @@ table.data-table {
   min-width: 0;
 }
 
-.session-model-harness .session-model-summary {
+.model-leading-layout .session-model-summary {
   color: var(--ink);
   font-weight: 600;
 }
@@ -1253,6 +1258,11 @@ table.data-table {
   display: grid;
   place-items: center;
   min-width: 16px;
+  width: 16px;
+  height: 18px;
+}
+
+.model-leading-slot {
   width: 16px;
   height: 18px;
 }
