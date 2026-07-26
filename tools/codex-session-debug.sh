@@ -20,7 +20,7 @@ else
   SESSION=$(
     find "$HOME/.codex/sessions" -type f -name 'rollout-*.jsonl' -print0 2>/dev/null |
       xargs -0 ls -t 2>/dev/null |
-      head -n 1
+      awk 'NR == 1 { print }'
   )
 fi
 
@@ -44,12 +44,13 @@ jq -nr '
   foreach inputs as $e (
     {
       turn: 0,
-       call: 0,
+      call: 0,
       task_started: false,
-       action: "model",
-       images: 0,
-       prev_input: null,
+      action: "model",
+      images: 0,
+      prev_input: null,
       prev_cached: null,
+      thinking_level: null,
       row: null
     };
 
@@ -68,6 +69,21 @@ jq -nr '
         .turn += 1
         | .call = 0
         | .action = "model"
+
+      elif $e.type == "turn_context"
+      then
+        .thinking_level = (
+          if $e.payload.effort != null
+          then $e.payload.effort
+          elif $e.payload.collaboration_mode.settings.reasoning_effort != null
+          then $e.payload.collaboration_mode.settings.reasoning_effort
+          elif $e.payload.thread_settings.reasoning_effort != null
+          then $e.payload.thread_settings.reasoning_effort
+          elif $e.payload.thread_settings.collaboration_mode.settings.reasoning_effort != null
+          then $e.payload.thread_settings.collaboration_mode.settings.reasoning_effort
+          else .thinking_level
+          end
+        )
 
       elif $e.type == "response_item"
            and $e.payload.type == "message"
@@ -153,6 +169,7 @@ jq -nr '
                  else (.images | tostring) + " images + " + .action
                  end
              ),
+            .thinking_level,
             $input,
             $cached,
             ($input - $cached),
@@ -183,22 +200,25 @@ jq -nr '
 ' "$SESSION" |
   awk -F '\t' '
   BEGIN {
-    printf "%-5s %-16s %8s %8s %8s %6s %8s %8s %8s %6s %6s  %s\n",
-           "T.C", "ACTION", "INPUT", "CACHE", "MISS", "HIT",
+    printf "%-5s %-16s %-9s %8s %8s %8s %6s %8s %8s %8s %6s %6s  %s\n",
+           "T.C", "ACTION", "THINKING", "INPUT", "CACHE", "MISS", "HIT",
            "D_INPUT", "D_CACHE", "LOST", "OUT", "RSN", "FLAG"
   }
   {
     tc     = sprintf("%d.%d", $1, $2)
     action = $3
-    din    = ($8 == "" ? "-" : sprintf("%+d", $8))
-    dc     = ($9 == "" ? "-" : sprintf("%+d", $9))
-    lost   = ($10 == 0 ? "-" : $10)
-    flag   = ($13 == "" ? "-" : $13)
+    din    = ($9 == "" ? "-" : sprintf("%+d", $9))
+    dc     = ($10 == "" ? "-" : sprintf("%+d", $10))
+    lost     = ($11 == 0 ? "-" : $11)
+    thinking = ($4 == "" ? "-" : $4)
+    flag     = ($14 == "" ? "-" : $14)
 
     if (length(action) > 16)
       action = substr(action, 1, 15) "~"
+    if (length(thinking) > 9)
+      thinking = substr(thinking, 1, 8) "~"
 
-    printf "%-5s %-16s %8d %8d %8d %5.1f%% %8s %8s %8s %6d %6d  %s\n",
-           tc, action, $4, $5, $6, $7,
-           din, dc, lost, $11, $12, flag
+    printf "%-5s %-16s %-9s %8d %8d %8d %5.1f%% %8s %8s %8s %6d %6d  %s\n",
+           tc, action, thinking, $5, $6, $7, $8,
+           din, dc, lost, $12, $13, flag
   }'
