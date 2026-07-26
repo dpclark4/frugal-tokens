@@ -124,6 +124,40 @@ Deno.test("normalizes Codex JSONL sessions from token count events", () => {
   deepStrictEqual(actual, expected);
 });
 
+Deno.test("starts a turn for each Codex user message within a task", () => {
+  const actual = repository({
+    "2026/07/25/rollout-user-boundaries.jsonl": `
+{"timestamp":"2026-07-25T19:00:00.000Z","type":"turn_context","payload":{"model":"gpt-5.5","effort":"medium"}}
+{"timestamp":"2026-07-25T19:00:00.001Z","type":"event_msg","payload":{"type":"task_started"}}
+{"timestamp":"2026-07-25T19:00:00.002Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"first"}]}}
+{"timestamp":"2026-07-25T19:00:00.003Z","type":"event_msg","payload":{"type":"user_message","message":"first"}}
+{"timestamp":"2026-07-25T19:00:01.000Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"one"}]}}
+{"timestamp":"2026-07-25T19:00:01.001Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":1,"reasoning_output_tokens":0}}}}
+{"timestamp":"2026-07-25T19:00:01.002Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"second"}]}}
+{"timestamp":"2026-07-25T19:00:01.003Z","type":"event_msg","payload":{"type":"user_message","message":"second"}}
+{"timestamp":"2026-07-25T19:00:02.000Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"two"}]}}
+{"timestamp":"2026-07-25T19:00:02.001Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":11,"cached_input_tokens":0,"output_tokens":1,"reasoning_output_tokens":0}}}}
+{"timestamp":"2026-07-25T19:00:02.002Z","type":"event_msg","payload":{"type":"task_started"}}
+{"timestamp":"2026-07-25T19:00:02.003Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"third"}]}}
+{"timestamp":"2026-07-25T19:00:02.004Z","type":"event_msg","payload":{"type":"user_message","message":"third"}}
+{"timestamp":"2026-07-25T19:00:03.000Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"three"}]}}
+{"timestamp":"2026-07-25T19:00:03.001Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":12,"cached_input_tokens":0,"output_tokens":1,"reasoning_output_tokens":0}}}}
+{"timestamp":"2026-07-25T19:00:03.002Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"fourth"}]}}
+{"timestamp":"2026-07-25T19:00:03.003Z","type":"event_msg","payload":{"type":"user_message","message":"fourth"}}
+{"timestamp":"2026-07-25T19:00:04.000Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"four"}]}}
+{"timestamp":"2026-07-25T19:00:04.001Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":13,"cached_input_tokens":0,"output_tokens":1,"reasoning_output_tokens":0}}}}
+`,
+  }).getSession("2026/07/25/rollout-user-boundaries")!;
+
+  strictEqual(actual.userTurns, 4);
+  strictEqual(actual.modelCalls, 4);
+  deepStrictEqual(
+    actual.turns.map((turn) => turn.inputs?.[0]?.preview),
+    ["first", "second", "third", "fourth"],
+  );
+  deepStrictEqual(actual.turns.map((turn) => turn.calls.length), [1, 1, 1, 1]);
+});
+
 Deno.test("applies Codex reasoning settings to the turn that changes them", () => {
   const actual = repository({
     "2026/07/25/rollout-thinking.jsonl": `

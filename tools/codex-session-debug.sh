@@ -45,6 +45,7 @@ jq -nr '
     {
       turn: 0,
        call: 0,
+      task_started: false,
        action: "model",
        images: 0,
        prev_input: null,
@@ -57,9 +58,16 @@ jq -nr '
     | if $e.type == "event_msg"
          and $e.payload.type == "task_started"
        then
-         .turn += 1
-         | .call = 0
+         .task_started = true
          | .action = "model"
+
+      elif $e.type == "event_msg"
+           and $e.payload.type == "user_message"
+           and .task_started
+      then
+        .turn += 1
+        | .call = 0
+        | .action = "model"
 
       elif $e.type == "response_item"
            and $e.payload.type == "message"

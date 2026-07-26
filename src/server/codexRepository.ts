@@ -318,6 +318,7 @@ function isAssistantOutput(record: Record) {
 function inferCodexCallTimings(records: Record[]) {
   const turns: CodexTurnTiming[] = [];
   let current: CodexTurnTiming | undefined;
+  let userInputPending = false;
 
   for (const [recordIndex, record] of records.entries()) {
     const payload = record.payload;
@@ -331,6 +332,7 @@ function inferCodexCallTimings(records: Record[]) {
         startIndex: recordIndex,
       };
       turns.push(current);
+      userInputPending = false;
       continue;
     }
     if (!current) continue;
@@ -339,16 +341,40 @@ function inferCodexCallTimings(records: Record[]) {
       record.type === "response_item" && payload?.type === "message" &&
       payload.role === "user"
     ) {
+      if (current.tokenIndexes.length > 0) {
+        current = {
+          startedAt: time,
+          calls: [],
+          tokenIndexes: [],
+          startIndex: recordIndex,
+        };
+        turns.push(current);
+      }
       current.inputAt = time;
+      userInputPending = true;
     } else if (
       record.type === "event_msg" && payload?.type === "user_message"
     ) {
-      current.inputAt = time;
+      // response_item/user and event_msg/user_message are usually duplicate
+      // representations of one prompt. Only the latter may be present, so
+      // split here when a prompt was not already seen in the open turn.
+      if (current.tokenIndexes.length > 0 && !userInputPending) {
+        current = {
+          startedAt: time,
+          calls: [],
+          tokenIndexes: [],
+          startIndex: recordIndex,
+        };
+        turns.push(current);
+      }
+      if (!userInputPending) current.inputAt = time;
+      userInputPending = true;
     }
 
     if (record.type === "event_msg" && payload?.type === "token_count") {
       if (tokenUsageSignature(record) !== undefined) {
         current.tokenIndexes.push(recordIndex);
+        userInputPending = false;
       }
     }
 
@@ -558,7 +584,43 @@ function decodeRecords(records: Record[]) {
       record.type === "response_item" && payload?.type === "message" &&
       payload.role === "user"
     ) {
+      const currentTurn = turns.at(-1)!;
+      if (currentTurn.calls.length > 0) {
+        turns.push({
+          number: turns.length + 1,
+          startedAt: time,
+          ...(activeReasoningSetting === undefined ? {} : {
+            reasoningSetting: {
+              ...activeReasoningSetting,
+              provenance: "inherited" as const,
+            },
+          }),
+          calls: [],
+        });
+      }
       turns.at(-1)!.inputs = messageContent(record);
+      continue;
+    }
+
+    if (
+      record.type === "event_msg" && payload?.type === "user_message"
+    ) {
+      const currentTurn = turns.at(-1)!;
+      if (currentTurn.calls.length > 0) {
+        turns.push({
+          number: turns.length + 1,
+          startedAt: time,
+          ...(activeReasoningSetting === undefined ? {} : {
+            reasoningSetting: {
+              ...activeReasoningSetting,
+              provenance: "inherited" as const,
+            },
+          }),
+          calls: [],
+        });
+      } else if (currentTurn.inputs === undefined && payload.message?.trim()) {
+        currentTurn.inputs = [preview(payload.message)];
+      }
       continue;
     }
 
