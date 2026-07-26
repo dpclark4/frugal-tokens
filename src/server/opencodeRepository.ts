@@ -230,7 +230,6 @@ function decodeMessages(
   rows: OpenCodeMessageRow[],
   partsByMessage = new Map<string, DecodedParts>(),
   strict = false,
-  sessionVariant?: string,
 ) {
   const turns: SessionTurnImport[] = [];
   const providers = new Set<string>();
@@ -299,13 +298,10 @@ function decodeMessages(
       continue;
     }
 
-    const reasoningSetting = explicitReasoningSetting ??
-      (sessionVariant === undefined ? undefined : {
-        settingName: "variant",
-        settingValue: sessionVariant,
-        sourceFieldPath: "session.model.variant",
-        provenance: "session_fallback" as const,
-      });
+    // session.model is mutable session metadata, not a historical record of
+    // the variant used for each call. Only use variants recorded on messages;
+    // otherwise a later setting change backfills earlier calls.
+    const reasoningSetting = explicitReasoningSetting;
     const turn = turns.at(-1)!;
     if (turn.reasoningSetting === undefined && reasoningSetting !== undefined) {
       turn.reasoningSetting = {
@@ -557,7 +553,6 @@ export function normalizeOpenCodeSessionTree(options: {
       sessionMessages,
       decodeParts(partsBySession.get(row.id) ?? [], true),
       true,
-      fallbackModel(row.model)?.variant,
     );
     const summary = summaryFromDecoded(row, decoded);
     return {
@@ -785,9 +780,8 @@ export class OpenCodeRepository {
       WHERE session_id = ?
       ORDER BY time_created, id
     `).all(row.id) as MessageRow[];
-    const sessionVariant = fallbackModel(row.model)?.variant;
     if (!includeActivity) {
-      return decodeMessages(messages, undefined, false, sessionVariant);
+      return decodeMessages(messages, undefined, false);
     }
     const parts = this.#db.prepare(`
       SELECT message_id, data
@@ -799,7 +793,6 @@ export class OpenCodeRepository {
       messages,
       decodeParts(parts),
       false,
-      sessionVariant,
     );
   }
 

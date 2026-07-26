@@ -11,7 +11,7 @@ import {
   type SourceSessionCheckpoint,
 } from "./sessionRepository.ts";
 
-const parserVersion = "opencode-5";
+const parserVersion = "opencode-6";
 
 type AggregateRow = {
   session_id: string;

@@ -254,9 +254,10 @@ Deno.test("incrementally imports OpenCode session trees", () => {
       detail.turns[0].calls[0].reasoningSetting?.settingValue,
       "high",
     );
+    strictEqual(detail.turns[1].reasoningSetting, undefined);
     strictEqual(
-      detail.turns[1].reasoningSetting?.provenance,
-      "session_fallback",
+      detail.turns[1].calls[0].reasoningSetting,
+      undefined,
     );
     strictEqual(detail.turns[2].reasoningSetting?.settingValue, "xhigh");
     strictEqual(detail.turns[2].reasoningSetting?.provenance, "inherited");
@@ -268,7 +269,7 @@ Deno.test("incrementally imports OpenCode session trees", () => {
       archive.prepare(
         "SELECT COUNT(*) AS count FROM reasoning_setting_events",
       ).get()!.count,
-      3,
+      2,
     );
     strictEqual(
       detail.turns[0].calls[0].activity.tools[0].childSessionID,
