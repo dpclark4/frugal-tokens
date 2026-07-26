@@ -38,3 +38,16 @@ export function openArchiveDatabase(path: string) {
     throw error;
   }
 }
+
+export function openArchiveReader(path: string) {
+  const db = new DatabaseSync(path, { readOnly: true });
+  try {
+    db.exec("PRAGMA foreign_keys = ON");
+    db.exec("PRAGMA busy_timeout = 5000");
+    db.exec("PRAGMA query_only = ON");
+    return db;
+  } catch (error) {
+    db.close();
+    throw error;
+  }
+}
