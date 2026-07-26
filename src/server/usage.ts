@@ -1,4 +1,5 @@
 import type {
+  ModelCall,
   SessionDetail,
   SessionSummary,
   TokenUsage,
@@ -19,6 +20,7 @@ export type UsageCall = {
   provider: string;
   model: string;
   startedAt: number;
+  reasoningSetting?: ModelCall["reasoningSetting"];
   tokens: TokenUsage;
   reportedCost?: number;
   computedCost?: number;
@@ -46,6 +48,12 @@ export function usageCallsFromSession(
         provider: call.provider,
         model: call.model,
         startedAt: call.startedAt,
+        ...(call.reasoningSetting === undefined &&
+            turn.reasoningSetting === undefined
+          ? {}
+          : {
+            reasoningSetting: call.reasoningSetting ?? turn.reasoningSetting,
+          }),
         tokens: call.tokens,
         reportedCost: call.reportedCost,
         computedCost: call.computedCost,

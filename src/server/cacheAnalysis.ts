@@ -75,6 +75,17 @@ function isUnexpectedMiss(assessment: CacheAssessment | undefined): boolean {
     assessment?.reason !== "model-change";
 }
 
+export function thinkingSettingChanged(
+  previous: Pick<ModelCall, "reasoningSetting"> | undefined,
+  current: Pick<ModelCall, "reasoningSetting">,
+): boolean {
+  if (!previous?.reasoningSetting || !current.reasoningSetting) return false;
+  return previous.reasoningSetting.settingName !==
+      current.reasoningSetting.settingName ||
+    previous.reasoningSetting.settingValue !==
+      current.reasoningSetting.settingValue;
+}
+
 function isClaude(call: Pick<ModelCall, "provider" | "model">): boolean {
   return call.provider.toLowerCase().includes("anthropic") ||
     call.model.toLowerCase().includes("claude");
@@ -99,6 +110,33 @@ export function ttlExpired(
   return elapsed >= CACHE_TTL_1H_MS;
 }
 
+type CacheComparableCall = Pick<
+  ModelCall,
+  "provider" | "model" | "tokens" | "startedAt" | "reasoningSetting"
+>;
+
+function classifyCacheMiss(
+  rawAssessment: CacheAssessment,
+  previous: CacheComparableCall | undefined,
+  current: CacheComparableCall,
+  followsCompaction: boolean,
+): CacheAssessment {
+  if (!isMiss(rawAssessment)) return rawAssessment;
+  // Compaction remains the most specific context reset explanation. Among
+  // ordinary misses, TTL wins over a thinking change because the cache would
+  // have expired regardless of the requested thinking level.
+  if (followsCompaction) {
+    return { ...rawAssessment, cause: "compaction" as const };
+  }
+  if (previous && ttlExpired(previous, current)) {
+    return { ...rawAssessment, cause: "ttl" as const };
+  }
+  if (previous && thinkingSettingChanged(previous, current)) {
+    return { ...rawAssessment, cause: "thinking-change" as const };
+  }
+  return rawAssessment;
+}
+
 export type AssessedUsageCall = UsageCall & {
   cacheAssessment: CacheAssessment;
   previousComparableCall?: UsageCall;
@@ -117,11 +155,12 @@ export function categorizeUsageCallCache(
     let previous: UsageCall | undefined;
     for (const call of chain.toSorted((a, b) => a.startedAt - b.startedAt)) {
       const rawAssessment = assessCache(previous, call);
-      const cacheAssessment = isMiss(rawAssessment) && call.followsCompaction
-        ? { ...rawAssessment, cause: "compaction" as const }
-        : isMiss(rawAssessment) && previous && ttlExpired(previous, call)
-        ? { ...rawAssessment, cause: "ttl" as const }
-        : rawAssessment;
+      const cacheAssessment = classifyCacheMiss(
+        rawAssessment,
+        previous,
+        call,
+        call.followsCompaction ?? false,
+      );
       categorized.push({
         ...call,
         cacheAssessment,
@@ -143,6 +182,7 @@ export function summarizeTurnCache(calls: ModelCall[]): TurnCacheSummary {
     unknown: 0,
     compactionRelatedMisses: 0,
     ttlRelatedMisses: 0,
+    thinkingChangeRelatedMisses: 0,
     unexpectedMisses: 0,
     totalCacheRead: 0,
     peakCacheRead: 0,
@@ -161,6 +201,10 @@ export function summarizeTurnCache(calls: ModelCall[]): TurnCacheSummary {
     }
     if (call.cacheAssessment?.cause === "ttl") {
       summary.ttlRelatedMisses++;
+      continue;
+    }
+    if (call.cacheAssessment?.cause === "thinking-change") {
+      summary.thinkingChangeRelatedMisses++;
       continue;
     }
     switch (call.cacheAssessment?.status) {
@@ -197,18 +241,25 @@ export function analyzeSessionCache(session: SessionDetail): SessionDetail {
   let previous: ModelCall | undefined;
   const turns = session.turns.map((turn) => {
     const calls = turn.calls.map((call) => {
-      const rawAssessment = assessCache(previous, call);
+      // Some importers expose a setting at turn scope only. Treat it as the
+      // effective setting for calls that do not have a more specific value.
+      const effectiveCall = call.reasoningSetting === undefined &&
+          turn.reasoningSetting !== undefined
+        ? { ...call, reasoningSetting: turn.reasoningSetting }
+        : call;
+      const rawAssessment = assessCache(previous, effectiveCall);
       const followsCompaction = (call.contextEventsBefore ?? []).some((event) =>
         event.type === "compaction"
       );
-      const cacheAssessment = isMiss(rawAssessment) && followsCompaction
-        ? { ...rawAssessment, cause: "compaction" as const }
-        : isMiss(rawAssessment) && previous && ttlExpired(previous, call)
-        ? { ...rawAssessment, cause: "ttl" as const }
-        : rawAssessment;
+      const cacheAssessment = classifyCacheMiss(
+        rawAssessment,
+        previous,
+        effectiveCall,
+        followsCompaction,
+      );
       // A contextless/opaque usage record must not break the chain between
       // the real requests on either side of it.
-      if (hasInputContext(call.tokens)) previous = call;
+      if (hasInputContext(call.tokens)) previous = effectiveCall;
       return { ...call, cacheAssessment };
     });
     const cacheAssessment = calls.reduce<CacheAssessment | undefined>(
@@ -247,6 +298,7 @@ export function summarizeSessionCache(session: SessionDetail): CacheSummary {
     unknown: 0,
     compactionRelatedMisses: 0,
     ttlRelatedMisses: 0,
+    thinkingChangeRelatedMisses: 0,
     unexpectedMisses: 0,
   };
   for (const turn of session.turns) {
@@ -257,6 +309,10 @@ export function summarizeSessionCache(session: SessionDetail): CacheSummary {
       }
       if (call.cacheAssessment?.cause === "ttl") {
         summary.ttlRelatedMisses++;
+        continue;
+      }
+      if (call.cacheAssessment?.cause === "thinking-change") {
+        summary.thinkingChangeRelatedMisses++;
         continue;
       }
       switch (call.cacheAssessment?.status) {
@@ -293,6 +349,8 @@ export function summarizeSessionCache(session: SessionDetail): CacheSummary {
     summary.unknown += nested.unknown;
     summary.compactionRelatedMisses += nested.compactionRelatedMisses;
     summary.ttlRelatedMisses += nested.ttlRelatedMisses;
+    summary.thinkingChangeRelatedMisses +=
+      nested.thinkingChangeRelatedMisses;
     summary.unexpectedMisses += nested.unexpectedMisses;
   }
   return summary;
@@ -308,7 +366,7 @@ export function sessionCacheIssues(
   return [
     ...session.turns.flatMap((turn) => {
       const issues: CacheIssue[] = [];
-      for (const cause of [undefined, "ttl"] as const) {
+      for (const cause of [undefined, "ttl", "thinking-change"] as const) {
         const misses = turn.calls.filter((call) =>
           isMiss(call.cacheAssessment) &&
           call.cacheAssessment?.cause === cause

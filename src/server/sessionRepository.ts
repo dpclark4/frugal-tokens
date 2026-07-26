@@ -594,6 +594,12 @@ export class SessionRepository {
       root_updated_at: number;
       follows_compaction: number;
       turn_ordinal: number;
+      reasoning_setting_name: string | null;
+      reasoning_setting_value: string | null;
+      reasoning_source_field_path: string | null;
+      reasoning_source_order: number | null;
+      reasoning_observed_at: number | null;
+      reasoning_provenance: ReasoningSettingImport["provenance"] | null;
     };
     const rows = this.db.prepare(`
       WITH RECURSIVE session_tree(id, root_id) AS (
@@ -608,6 +614,12 @@ export class SessionRepository {
         JOIN session_tree ON session_tree.id = child.parent_id
       )
       SELECT ${callColumns}, t.ordinal AS turn_ordinal, so.harness, ss.external_id,
+        COALESCE(rse.setting_name, trse.setting_name) AS reasoning_setting_name,
+        COALESCE(rse.setting_value, trse.setting_value) AS reasoning_setting_value,
+        COALESCE(rse.source_field_path, trse.source_field_path) AS reasoning_source_field_path,
+        COALESCE(rse.source_order, trse.source_order) AS reasoning_source_order,
+        COALESCE(rse.observed_at, trse.observed_at) AS reasoning_observed_at,
+        COALESCE(mcrs.provenance, trs.provenance) AS reasoning_provenance,
         COALESCE(ss.public_id, ss.external_id) AS public_id,
         COALESCE(root.public_id, root.external_id) AS root_public_id,
         COALESCE(parent.public_id, parent.external_id) AS parent_public_id,
@@ -624,6 +636,13 @@ export class SessionRepository {
       JOIN source_sessions ss ON ss.id = s.source_session_id
       JOIN sources so ON so.id = ss.source_id
       JOIN models m ON m.id = mc.model_id
+      LEFT JOIN model_call_reasoning_settings mcrs
+        ON mcrs.model_call_id = mc.id
+      LEFT JOIN reasoning_setting_events rse
+        ON rse.id = mcrs.setting_event_id
+      LEFT JOIN turn_reasoning_settings trs ON trs.turn_id = t.id
+      LEFT JOIN reasoning_setting_events trse
+        ON trse.id = trs.setting_event_id
       JOIN session_tree tree ON tree.id = ss.id
       JOIN source_sessions root ON root.id = tree.root_id
       JOIN sessions root_session ON root_session.source_session_id = root.id
@@ -660,6 +679,20 @@ export class SessionRepository {
       provider: row.provider,
       model: row.model,
       startedAt: row.started_at,
+      ...(row.reasoning_setting_name === null ||
+          row.reasoning_setting_value === null ||
+          row.reasoning_provenance === null
+        ? {}
+        : {
+          reasoningSetting: {
+            settingName: row.reasoning_setting_name,
+            settingValue: row.reasoning_setting_value,
+            sourceFieldPath: optional(row.reasoning_source_field_path),
+            sourceOrder: optional(row.reasoning_source_order),
+            observedAt: optional(row.reasoning_observed_at),
+            provenance: row.reasoning_provenance,
+          },
+        }),
       tokens: tokens(row),
       reportedCost: optional(row.reported_cost),
       followsCompaction: row.follows_compaction === 1,

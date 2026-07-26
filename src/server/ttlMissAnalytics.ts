@@ -11,6 +11,7 @@ type CacheMiss = {
   status: "full-miss" | "partial-hit";
   ttl: boolean;
   compaction: boolean;
+  thinkingChange: boolean;
   modelChange: boolean;
   attributedCost?: number;
   expectedReadCost?: number;
@@ -38,6 +39,7 @@ function cacheMisses(calls: UsageCall[]) {
       status: assessment.status,
       ttl: assessment.cause === "ttl",
       compaction: assessment.cause === "compaction",
+      thinkingChange: assessment.cause === "thinking-change",
       modelChange: assessment.reason === "model-change",
       attributedCost: estimate?.actualMissedCost,
       expectedReadCost: estimate?.expectedReadCost,
@@ -118,6 +120,7 @@ export function aggregateTtlMisses(
       affectedSessionCost: 0,
       hasUnpricedAffectedSessionCost: false,
       compaction: emptyCacheMissCategory(),
+      thinkingChange: emptyCacheMissCategory(),
       unexpected: {
         affectedSessions: 0,
         affectedSessionCost: 0,
@@ -147,8 +150,12 @@ export function aggregateTtlMisses(
     const allRootMisses = cacheMisses(rootCalls);
     const rootMisses = allRootMisses.filter((miss) => miss.ttl);
     const compactionMisses = allRootMisses.filter((miss) => miss.compaction);
+    const thinkingChangeMisses = allRootMisses.filter((miss) =>
+      miss.thinkingChange
+    );
     const unexpectedMisses = allRootMisses.filter((miss) =>
-      !miss.ttl && !miss.compaction && !miss.modelChange
+      !miss.ttl && !miss.compaction && !miss.thinkingChange &&
+      !miss.modelChange
     );
     const fullMisses = allRootMisses.filter((miss) =>
       miss.status === "full-miss"
@@ -172,6 +179,7 @@ export function aggregateTtlMisses(
     addCacheMisses(result.cacheMisses.full, fullMisses);
     addCacheMisses(result.cacheMisses.partial, partialMisses);
     addCacheMisses(result.cacheMisses.compaction, compactionMisses);
+    addCacheMisses(result.cacheMisses.thinkingChange, thinkingChangeMisses);
     addCacheMisses(
       result.cacheMisses.unexpected.full,
       unexpectedMisses.filter((miss) => miss.status === "full-miss"),
@@ -186,7 +194,10 @@ export function aggregateTtlMisses(
       result.cacheMisses.hasUnpricedAffectedSessionCost ||=
         hasUnpricedRootSessionCost;
     }
-    if (compactionMisses.length > 0 || unexpectedMisses.length > 0) {
+    if (
+      compactionMisses.length > 0 || thinkingChangeMisses.length > 0 ||
+      unexpectedMisses.length > 0
+    ) {
       result.cacheMisses.otherAffectedSessions++;
     }
     if (unexpectedMisses.length > 0) {

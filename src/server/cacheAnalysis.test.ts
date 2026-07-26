@@ -32,6 +32,7 @@ function call(
   cacheWrite?: number,
   model = "claude-sonnet-4-5",
   provider = "anthropic",
+  thinking?: string,
 ): ModelCall {
   return {
     id,
@@ -39,6 +40,15 @@ function call(
     provider,
     model,
     startedAt: 1,
+    ...(thinking === undefined
+      ? {}
+      : {
+        reasoningSetting: {
+          settingName: "thinkingLevel",
+          settingValue: thinking,
+          provenance: "inherited" as const,
+        },
+      }),
     tokens: tokens(cacheRead, cacheWrite),
     activity: { hasText: true, hasReasoning: false, tools: [] },
   };
@@ -74,6 +84,89 @@ Deno.test("assesses cache retention from the preceding comparable call", () => {
     status: "not-comparable",
     reason: "no-reusable-cache",
   });
+});
+
+Deno.test("classifies mid-turn and cross-turn thinking changes", () => {
+  const first = call("first", 80_000, 20_000, undefined, undefined, "high");
+  const midTurn = call(
+    "mid-turn",
+    50_000,
+    undefined,
+    undefined,
+    undefined,
+    "xhigh",
+  );
+  const secondMidTurn = call(
+    "second-mid-turn",
+    0,
+    100_000,
+    undefined,
+    undefined,
+    "max",
+  );
+  const crossTurn = call(
+    "cross-turn",
+    0,
+    100_000,
+    undefined,
+    undefined,
+    "off",
+  );
+  const base = session("thinking-change", []);
+  base.userTurns = 2;
+  base.modelCalls = 4;
+  base.turns = [
+    { number: 1, startedAt: 1, calls: [first, midTurn, secondMidTurn] },
+    { number: 2, startedAt: 2, calls: [crossTurn] },
+  ];
+
+  const actual = analyzeSessionCache(base);
+
+  deepStrictEqual(
+    actual.turns.flatMap((turn) =>
+      turn.calls.map((item) => item.cacheAssessment?.cause)
+    ),
+    [undefined, "thinking-change", "thinking-change", "thinking-change"],
+  );
+  strictEqual(actual.turns[1].cacheAssessment?.cause, "thinking-change");
+  strictEqual(actual.turns[1].cacheSummary?.thinkingChangeRelatedMisses, 1);
+  strictEqual(actual.turns[1].cacheSummary?.fullMisses, 0);
+  strictEqual(actual.turns[1].cacheSummary?.unexpectedMisses, 0);
+  deepStrictEqual(sessionCacheIssues(actual), [
+    { status: "full-miss", cause: "thinking-change", turn: 1, scope: undefined },
+    { status: "full-miss", cause: "thinking-change", turn: 2, scope: undefined },
+  ]);
+});
+
+Deno.test("prioritizes TTL over a simultaneous thinking change", () => {
+  const previous = call(
+    "previous",
+    80_000,
+    20_000,
+    undefined,
+    undefined,
+    "high",
+  );
+  previous.startedAt = 0;
+  previous.tokens.cacheWrite5m = 20_000;
+  const expired = call(
+    "expired",
+    50_000,
+    undefined,
+    undefined,
+    undefined,
+    "off",
+  );
+  expired.startedAt = CACHE_TTL_5M_MS;
+
+  const actual = analyzeSessionCache(session("ttl-before-thinking", [
+    previous,
+    expired,
+  ]));
+
+  strictEqual(actual.turns[0].calls[1].cacheAssessment?.cause, "ttl");
+  strictEqual(actual.turns[0].cacheSummary?.thinkingChangeRelatedMisses, 0);
+  strictEqual(actual.turns[0].cacheSummary?.ttlRelatedMisses, 1);
 });
 
 Deno.test("does not count opaque zero-context usage as a cache miss", () => {
@@ -156,6 +249,7 @@ Deno.test("tracks an OpenAI miss and implicit cache recovery across turns", () =
     unknown: 0,
     compactionRelatedMisses: 0,
     ttlRelatedMisses: 0,
+    thinkingChangeRelatedMisses: 0,
     unexpectedMisses: 1,
     totalCacheRead: 107_520,
     peakCacheRead: 54_272,
@@ -219,6 +313,7 @@ Deno.test("summarizes turns and includes independently analyzed subagents", () =
     unknown: 0,
     compactionRelatedMisses: 0,
     ttlRelatedMisses: 0,
+    thinkingChangeRelatedMisses: 0,
     unexpectedMisses: 3,
   });
   deepStrictEqual(sessionCacheIssues(actual), [
@@ -259,6 +354,7 @@ Deno.test("tracks a partial miss after compaction without counting it as a miss"
     unknown: 0,
     compactionRelatedMisses: 1,
     ttlRelatedMisses: 0,
+    thinkingChangeRelatedMisses: 0,
     unexpectedMisses: 0,
     totalCacheRead: 50_000,
     peakCacheRead: 50_000,
@@ -275,6 +371,7 @@ Deno.test("tracks a partial miss after compaction without counting it as a miss"
     unknown: 0,
     compactionRelatedMisses: 1,
     ttlRelatedMisses: 0,
+    thinkingChangeRelatedMisses: 0,
     unexpectedMisses: 0,
   });
   deepStrictEqual(sessionCacheIssues(actual), []);

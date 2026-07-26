@@ -48,10 +48,16 @@ export const cacheAssessmentReasonSchema = z.enum([
   "no-input-context",
 ]);
 
+export const cacheMissCauseSchema = z.enum([
+  "compaction",
+  "ttl",
+  "thinking-change",
+]);
+
 export const cacheAssessmentSchema = z.object({
   status: cacheStatusSchema,
   reason: cacheAssessmentReasonSchema.optional(),
-  cause: z.enum(["compaction", "ttl"]).optional(),
+  cause: cacheMissCauseSchema.optional(),
   retainedRatio: z.number().nonnegative().optional(),
   previousReusableTokens: z.number().int().positive().optional(),
 });
@@ -65,12 +71,13 @@ export const cacheSummarySchema = z.object({
   unknown: z.number().int().nonnegative(),
   compactionRelatedMisses: z.number().int().nonnegative(),
   ttlRelatedMisses: z.number().int().nonnegative(),
+  thinkingChangeRelatedMisses: z.number().int().nonnegative(),
   unexpectedMisses: z.number().int().nonnegative(),
 });
 
 export const cacheIssueSchema = z.object({
   status: z.enum(["partial-hit", "full-miss"]),
-  cause: z.enum(["compaction", "ttl"]).optional(),
+  cause: cacheMissCauseSchema.optional(),
   turn: z.number().int().positive(),
   scope: z.string().optional(),
 });
@@ -412,6 +419,15 @@ export const ttlMissMetricsSchema = z.object({
       missedTokens: z.number().int().nonnegative(),
       unpriced: z.number().int().nonnegative(),
     }),
+    thinkingChange: z.object({
+      affectedSessions: z.number().int().nonnegative(),
+      misses: z.number().int().nonnegative(),
+      attributedCost: z.number().nonnegative(),
+      expectedReadCost: z.number().nonnegative(),
+      estimatedExtraCost: z.number(),
+      missedTokens: z.number().int().nonnegative(),
+      unpriced: z.number().int().nonnegative(),
+    }),
     unexpected: z.object({
       affectedSessions: z.number().int().nonnegative(),
       affectedSessionCost: z.number().nonnegative(),
@@ -459,6 +475,7 @@ export const ttlMissMetricsSchema = z.object({
 export type ModelCall = z.infer<typeof modelCallSchema>;
 export type TurnInput = z.infer<typeof turnInputSchema>;
 export type ContextEvent = z.infer<typeof contextEventSchema>;
+export type CacheMissCause = z.infer<typeof cacheMissCauseSchema>;
 export type CacheAssessment = z.infer<typeof cacheAssessmentSchema>;
 export type CacheSummary = z.infer<typeof cacheSummarySchema>;
 export type CacheIssue = z.infer<typeof cacheIssueSchema>;

@@ -316,7 +316,7 @@ function CacheAssessmentBadge(
 }
 
 function cacheSummaryTitle(summary: CacheSummary) {
-  return `${summary.hits} hits · ${summary.partialHits} partial hits · ${summary.fullMisses} full misses · ${summary.compactionRelatedMisses} compaction-related misses · ${summary.ttlRelatedMisses} TTL misses · ${summary.unexpectedMisses} unexpected misses · ${summary.baseline} baseline · ${summary.notComparable} not comparable · ${summary.unknown} unavailable`;
+  return `${summary.hits} hits · ${summary.partialHits} partial hits · ${summary.fullMisses} full misses · ${summary.compactionRelatedMisses} compaction-related misses · ${summary.ttlRelatedMisses} TTL misses · ${summary.thinkingChangeRelatedMisses} thinking-change misses · ${summary.unexpectedMisses} unexpected misses · ${summary.baseline} baseline · ${summary.notComparable} not comparable · ${summary.unknown} unavailable`;
 }
 
 function CompactionBadge({ count = 1 }: { count?: number }) {
@@ -343,10 +343,23 @@ function TtlMissBadge({ count = 1 }: { count?: number }) {
   );
 }
 
+function ThinkingChangeBadge({ count = 1 }: { count?: number }) {
+  if (count === 0) return null;
+  return (
+    <span
+      className="cache-issue-badge thinking-change-badge"
+      title={`${count} cache miss${count === 1 ? "" : "es"} after a thinking level change`}
+    >
+      Thinking
+    </span>
+  );
+}
+
 function hasCacheOutcome(summary?: CacheSummary) {
   return summary !== undefined &&
-    summary.hits + summary.partialHits + summary.fullMisses + summary.unknown >
-      0;
+    summary.hits + summary.partialHits + summary.fullMisses + summary.unknown +
+      summary.compactionRelatedMisses + summary.ttlRelatedMisses +
+      summary.thinkingChangeRelatedMisses > 0;
 }
 
 function CacheSummaryBadge({ summary }: { summary?: CacheSummary }) {
@@ -410,10 +423,13 @@ function SessionCacheStatus({
       issue.status === "partial-hit" && issue.cause === undefined
     ) ?? [];
   const ttl = issues?.filter((issue) => issue.cause === "ttl") ?? [];
+  const thinkingChange = issues?.filter((issue) =>
+    issue.cause === "thinking-change"
+  ) ?? [];
   if (
     !summary ||
     (full.length === 0 && partial.length === 0 && ttl.length === 0 &&
-      !compactionCount)
+      thinkingChange.length === 0 && !compactionCount)
   ) {
     return null;
   }
@@ -426,6 +442,9 @@ function SessionCacheStatus({
       : undefined,
     ttl.length > 0
       ? `TTL miss turns:\n${ttl.map(cacheIssueLabel).join("\n")}`
+      : undefined,
+    thinkingChange.length > 0
+      ? `Thinking-change miss turns:\n${thinkingChange.map(cacheIssueLabel).join("\n")}`
       : undefined,
     `Call totals: ${cacheSummaryTitle(summary)}`,
   ].filter(Boolean).join("\n\n");
@@ -451,6 +470,12 @@ function SessionCacheStatus({
         <>
           <TtlMissBadge count={ttl.length} />
           <span className="session-cache-count">x{ttl.length}</span>
+        </>
+      )}
+      {thinkingChange.length > 0 && (
+        <>
+          <ThinkingChangeBadge count={thinkingChange.length} />
+          <span className="session-cache-count">x{thinkingChange.length}</span>
         </>
       )}
       {!!compactionCount && (
@@ -480,6 +505,9 @@ function TurnCacheStatus({
     call.cacheAssessment.cause === undefined
   );
   const ttl = calls.filter((call) => call.cacheAssessment?.cause === "ttl");
+  const thinkingChange = calls.filter((call) =>
+    call.cacheAssessment?.cause === "thinking-change"
+  );
   const compactions = calls.reduce(
     (total, call) =>
       total +
@@ -504,13 +532,18 @@ function TurnCacheStatus({
         ttl.map((call) => `#${call.callWithinTurn}`).join(", ")
       }`
       : undefined,
+    thinkingChange.length > 0
+      ? `Thinking-change miss calls: ${
+        thinkingChange.map((call) => `#${call.callWithinTurn}`).join(", ")
+      }`
+      : undefined,
     turn.cacheSummary === undefined
       ? undefined
       : `Call totals: ${cacheSummaryTitle(turn.cacheSummary)}`,
   ].filter(Boolean).join("\n");
   if (
     full.length === 0 && partial.length === 0 && ttl.length === 0 &&
-    compactions === 0
+    thinkingChange.length === 0 && compactions === 0
   ) {
     return null;
   }
@@ -529,6 +562,7 @@ function TurnCacheStatus({
         />
       )}
       <TtlMissBadge count={ttl.length} />
+      <ThinkingChangeBadge count={thinkingChange.length} />
       <CompactionBadge count={compactions} />
     </span>
   );
@@ -757,6 +791,9 @@ function SubagentSummary({
   const ttlMisses = cacheCalls.filter((call) =>
     call.cacheAssessment?.cause === "ttl"
   );
+  const thinkingChangeMisses = cacheCalls.filter((call) =>
+    call.cacheAssessment?.cause === "thinking-change"
+  );
   const compactions = cacheCalls.reduce(
     (total, call) =>
       total +
@@ -849,7 +886,8 @@ function SubagentSummary({
             <td aria-hidden="true" />
             <td className="subagent-summary-cache">
               {(fullMisses.length > 0 || partialMisses.length > 0 ||
-                ttlMisses.length > 0 || compactions > 0) && (
+                ttlMisses.length > 0 || thinkingChangeMisses.length > 0 ||
+                compactions > 0) && (
                 <span className="cache-issue-group">
                   {fullMisses.length > 0 && (
                     <CacheAssessmentBadge
@@ -862,6 +900,7 @@ function SubagentSummary({
                     />
                   )}
                   <TtlMissBadge count={ttlMisses.length} />
+                  <ThinkingChangeBadge count={thinkingChangeMisses.length} />
                   <CompactionBadge count={compactions} />
                 </span>
               )}
@@ -1247,6 +1286,9 @@ function CallTable({
             const ttlMisses = cacheCalls.filter((relatedCall) =>
               relatedCall.cacheAssessment?.cause === "ttl"
             );
+            const thinkingChangeMisses = cacheCalls.filter((relatedCall) =>
+              relatedCall.cacheAssessment?.cause === "thinking-change"
+            );
             const compactions = cacheCalls.reduce(
               (total, relatedCall) =>
                 total +
@@ -1362,7 +1404,8 @@ function CallTable({
                   </td>
                   <td className="call-cache-cell">
                     {(fullMisses.length > 0 || partialMisses.length > 0 ||
-                      ttlMisses.length > 0 || compactions > 0) && (
+                      ttlMisses.length > 0 ||
+                      thinkingChangeMisses.length > 0 || compactions > 0) && (
                       <span className="cache-issue-group">
                         {fullMisses.length > 0 && (
                           <CacheAssessmentBadge
@@ -1375,6 +1418,7 @@ function CallTable({
                           />
                         )}
                         <TtlMissBadge count={ttlMisses.length} />
+                        <ThinkingChangeBadge count={thinkingChangeMisses.length} />
                         <CompactionBadge count={compactions} />
                       </span>
                     )}

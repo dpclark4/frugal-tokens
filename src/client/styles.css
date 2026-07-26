@@ -1372,6 +1372,10 @@ table.data-table {
   color: #786578;
 }
 
+.thinking-change-badge {
+  color: #8a5f2e;
+}
+
 .session-model-summary {
   display: inline-flex;
   align-items: baseline;

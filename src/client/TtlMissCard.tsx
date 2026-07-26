@@ -36,10 +36,13 @@ function CacheMissOverview({ metrics }: { metrics: TtlMissMetrics }) {
   const unexpectedMisses = unexpected.full.misses + unexpected.partial.misses;
   const unexpectedCost = unexpected.full.attributedCost +
     unexpected.partial.attributedCost;
-  const otherMisses = cacheMisses.compaction.misses + unexpectedMisses;
-  const otherCost = cacheMisses.compaction.attributedCost + unexpectedCost;
+  const otherMisses = cacheMisses.compaction.misses +
+    cacheMisses.thinkingChange.misses + unexpectedMisses;
+  const otherCost = cacheMisses.compaction.attributedCost +
+    cacheMisses.thinkingChange.attributedCost + unexpectedCost;
   const rows = [
     { label: "Compaction", category: cacheMisses.compaction },
+    { label: "Thinking change", category: cacheMisses.thinkingChange },
     { label: "Unexpected full", category: unexpected.full },
     { label: "Unexpected partial", category: unexpected.partial },
   ];

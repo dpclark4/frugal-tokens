@@ -14,6 +14,7 @@ function call(
     sessionStartedAt?: number;
     followsCompaction?: boolean;
     model?: string;
+    thinking?: string;
   } = {},
 ): UsageCall {
   const root = options.root ?? session;
@@ -28,6 +29,15 @@ function call(
     model: options.model ?? "claude-sonnet-4-5",
     startedAt,
     followsCompaction: options.followsCompaction,
+    ...(options.thinking === undefined
+      ? {}
+      : {
+        reasoningSetting: {
+          settingName: "thinkingLevel",
+          settingValue: options.thinking,
+          provenance: "inherited" as const,
+        },
+      }),
     tokens: {
       uncachedInput: 0,
       cacheRead: 0,
@@ -119,6 +129,15 @@ Deno.test("counts every root TTL miss in its elapsed-time bucket", () => {
         missedTokens: 0,
         unpriced: 0,
       },
+      thinkingChange: {
+        affectedSessions: 0,
+        misses: 0,
+        attributedCost: 0,
+        expectedReadCost: 0,
+        estimatedExtraCost: 0,
+        missedTokens: 0,
+        unpriced: 0,
+      },
       unexpected: {
         affectedSessions: 0,
         affectedSessionCost: 0,
@@ -191,6 +210,17 @@ Deno.test("counts a session once across other miss causes", () => {
   strictEqual(result.cacheMisses.otherAffectedSessions, 1);
 });
 
+Deno.test("separates thinking-change misses from unexpected metrics", () => {
+  const result = aggregateTtlMisses([
+    call("thinking", start, { thinking: "high" }),
+    call("thinking", start + MINUTE, { thinking: "off" }),
+  ], start, 90);
+
+  strictEqual(result.cacheMisses.thinkingChange.misses, 1);
+  strictEqual(result.cacheMisses.unexpected.full.misses, 0);
+  strictEqual(result.cacheMisses.otherAffectedSessions, 1);
+});
+
 Deno.test("keeps a recent model-switch full miss out of unexpected metrics", () => {
   const result = aggregateTtlMisses([
     call("switched", start, { model: "gpt-5.6-terra" }),
@@ -253,6 +283,15 @@ Deno.test("separates subagent misses and keeps compactions outside TTL", () => {
         expectedReadCost: 0.00003,
         estimatedExtraCost: 0.000345,
         missedTokens: 100,
+        unpriced: 0,
+      },
+      thinkingChange: {
+        affectedSessions: 0,
+        misses: 0,
+        attributedCost: 0,
+        expectedReadCost: 0,
+        estimatedExtraCost: 0,
+        missedTokens: 0,
         unpriced: 0,
       },
       unexpected: {
