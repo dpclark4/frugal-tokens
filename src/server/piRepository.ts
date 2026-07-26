@@ -45,6 +45,7 @@ const recordSchema = z.object({
     stopReason: z.string().optional(),
     toolCallId: z.string().optional(),
     toolName: z.string().optional(),
+    timestamp: z.number().optional(),
     isError: z.boolean().optional(),
     usage: z.object({
       input: z.number().int().nonnegative().default(0),
@@ -216,9 +217,41 @@ function decodeRecords(records: Record[]) {
   };
   const contextEvents: PendingContextEvent[] = [];
   const pendingContextEvents: PendingContextEvent[] = [];
-  let activeReasoningSetting:
-    | Omit<ReasoningSettingImport, "provenance">
-    | undefined;
+  type ReasoningSettingState = Omit<ReasoningSettingImport, "provenance">;
+  // Pi can persist a thinking-level change while an assistant response is in
+  // flight. The response record is written only after it completes, so JSONL
+  // order can put the change before the call it occurred during. Associate a
+  // timestamped change with calls by start time, using source order only when
+  // timestamps are unavailable.
+  const reasoningChanges: ReasoningSettingState[] = records.flatMap(
+    (record, recordIndex) => {
+      const timestamp = Date.parse(record.timestamp ?? "") || 0;
+      if (
+        record.type !== "thinking_level_change" ||
+        record.thinkingLevel === undefined
+      ) return [];
+      return [{
+        settingName: "thinkingLevel",
+        settingValue: record.thinkingLevel,
+        sourceFieldPath: "thinkingLevel",
+        sourceOrder: recordIndex + 1,
+        ...(timestamp === 0 ? {} : { observedAt: timestamp }),
+      }];
+    },
+  );
+  const reasoningSettingAt = (
+    timestamp: number,
+    sourceOrder: number,
+  ): ReasoningSettingState | undefined => {
+    let setting: ReasoningSettingState | undefined;
+    for (const change of reasoningChanges) {
+      const applies = change.observedAt !== undefined && timestamp > 0
+        ? change.observedAt <= timestamp
+        : (change.sourceOrder ?? 0) < sourceOrder;
+      if (applies) setting = change;
+    }
+    return setting;
+  };
 
   for (const [recordIndex, record] of records.entries()) {
     const timestamp = Date.parse(record.timestamp ?? "") || 0;
@@ -226,13 +259,6 @@ function decodeRecords(records: Record[]) {
       record.type === "thinking_level_change" &&
       record.thinkingLevel !== undefined
     ) {
-      activeReasoningSetting = {
-        settingName: "thinkingLevel",
-        settingValue: record.thinkingLevel,
-        sourceFieldPath: "thinkingLevel",
-        sourceOrder: recordIndex + 1,
-        ...(timestamp === 0 ? {} : { observedAt: timestamp }),
-      };
       continue;
     }
     if (record.type === "compaction") {
@@ -247,18 +273,23 @@ function decodeRecords(records: Record[]) {
     }
     const message = record.message;
     if (record.type !== "message" || !message?.role) continue;
+    const messageTimestamp = message.timestamp ?? timestamp;
 
     if (message.role === "user") {
       const text = userText(record);
       if (text?.trim()) {
+        const reasoningSetting = reasoningSettingAt(
+          messageTimestamp,
+          recordIndex + 1,
+        );
         turns.push({
           number: turns.length + 1,
-          startedAt: timestamp,
+          startedAt: messageTimestamp,
           calls: [],
           inputs: contentMetadata(record.message?.content ?? []),
-          ...(activeReasoningSetting === undefined ? {} : {
+          ...(reasoningSetting === undefined ? {} : {
             reasoningSetting: {
-              ...activeReasoningSetting,
+              ...reasoningSetting,
               provenance: "inherited" as const,
             },
           }),
@@ -316,6 +347,10 @@ function decodeRecords(records: Record[]) {
     const provider = message.provider ?? "unknown";
     const model = message.model ?? "unknown";
     const content = contentMetadata(message.content ?? [], true);
+    const reasoningSetting = reasoningSettingAt(
+      messageTimestamp,
+      recordIndex + 1,
+    );
     const call: SessionCallImport = {
       id: record.id ?? `${turn.number}-${turn.calls.length + 1}`,
       callWithinTurn: turn.calls.length + 1,
@@ -326,13 +361,13 @@ function decodeRecords(records: Record[]) {
         }),
       provider,
       model,
-      startedAt: timestamp,
+      startedAt: messageTimestamp,
       completedAt: timestamp,
       reportedCost: cost,
       tokens: callTokens,
-      ...(activeReasoningSetting === undefined ? {} : {
+      ...(reasoningSetting === undefined ? {} : {
         reasoningSetting: {
-          ...activeReasoningSetting,
+          ...reasoningSetting,
           provenance: "inherited" as const,
         },
       }),

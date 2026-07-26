@@ -152,6 +152,45 @@ Deno.test("imports PI thinking levels for turns and model calls", async () => {
   }
 });
 
+Deno.test("applies a mid-call PI thinking change to the next model call", async () => {
+  const directory = Deno.makeTempDirSync();
+  const sessions = `${directory}/sessions`;
+  Deno.mkdirSync(sessions);
+  Deno.writeTextFileSync(
+    `${sessions}/mid-call.jsonl`,
+    `
+{"type":"session","version":3,"id":"mid-call","timestamp":"2026-07-11T13:36:32.000Z","cwd":"/Users/test/project"}
+{"type":"thinking_level_change","id":"thinking-medium","timestamp":"2026-07-11T13:36:33.000Z","thinkingLevel":"medium"}
+{"type":"message","id":"user-1","parentId":"thinking-medium","timestamp":"2026-07-11T13:36:34.000Z","message":{"role":"user","content":[{"type":"text","text":"Start"}]}}
+{"type":"message","id":"assistant-1","parentId":"user-1","timestamp":"2026-07-11T13:36:35.000Z","message":{"role":"assistant","timestamp":1783776995000,"content":[],"provider":"openai-codex","model":"gpt-5.6-terra","usage":{"input":2,"output":3,"cacheRead":0,"cacheWrite":0,"reasoning":0,"cost":{"total":0.01}},"stopReason":"toolUse"}}
+{"type":"message","id":"tool-result-1","parentId":"assistant-1","timestamp":"2026-07-11T13:36:35.100Z","message":{"role":"toolResult","toolCallId":"tool-1","toolName":"read","content":[{"type":"text","text":"First result"}]}}
+{"type":"thinking_level_change","id":"thinking-high","parentId":"tool-result-1","timestamp":"2026-07-11T13:36:36.500Z","thinkingLevel":"high"}
+{"type":"message","id":"assistant-2","parentId":"thinking-high","timestamp":"2026-07-11T13:36:36.000Z","message":{"role":"assistant","timestamp":1783776996000,"content":[],"provider":"openai-codex","model":"gpt-5.6-terra","usage":{"input":2,"output":3,"cacheRead":0,"cacheWrite":0,"reasoning":0,"cost":{"total":0.01}},"stopReason":"toolUse"}}
+{"type":"message","id":"tool-result-2","parentId":"assistant-2","timestamp":"2026-07-11T13:36:36.100Z","message":{"role":"toolResult","toolCallId":"tool-2","toolName":"read","content":[{"type":"text","text":"Second result"}]}}
+{"type":"message","id":"assistant-3","parentId":"tool-result-2","timestamp":"2026-07-11T13:36:37.000Z","message":{"role":"assistant","timestamp":1783776997000,"content":[],"provider":"openai-codex","model":"gpt-5.6-terra","usage":{"input":2,"output":3,"cacheRead":0,"cacheWrite":0,"reasoning":0,"cost":{"total":0.01}},"stopReason":"stop"}}
+    `.trim(),
+  );
+
+  const db = openArchiveDatabase(`${directory}/archive.sqlite`);
+  migrateTestDatabase(db);
+  const repository = new SessionRepository(db);
+  try {
+    const result = await syncPiSessions(sessions, repository);
+    strictEqual(result.imported, 1);
+    const detail = repository.getSession("pi", "mid-call")!;
+    strictEqual(detail.turns[0].reasoningSetting?.settingValue, "medium");
+    deepStrictEqual(
+      detail.turns[0].calls.map((call) =>
+        call.reasoningSetting?.settingValue
+      ),
+      ["medium", "medium", "high"],
+    );
+  } finally {
+    db.close();
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
 Deno.test("incrementally imports PI sessions and preserves the last good archive", async () => {
   const directory = Deno.makeTempDirSync();
   const sessions = `${directory}/sessions`;
