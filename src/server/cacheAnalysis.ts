@@ -7,6 +7,13 @@ import type {
   TurnCacheSummary,
 } from "../shared/sessionSchemas.ts";
 import { hasInputContext } from "../shared/contextMetrics.ts";
+import {
+  computeModelCallCost,
+  estimateModelCacheMissCost,
+} from "./pricing.ts";
+import {
+  estimateCacheMissTokens,
+} from "./cacheMissPricing.ts";
 import type { UsageCall } from "./usage.ts";
 
 export const CACHE_HIT_RATIO = 0.9;
@@ -115,6 +122,23 @@ type CacheComparableCall = Pick<
   "provider" | "model" | "tokens" | "startedAt" | "reasoningSetting"
 >;
 
+export type CacheMissRecord = {
+  gap: number;
+  status: "full-miss" | "partial-hit";
+  reason?: CacheAssessment["reason"];
+  cause?: CacheAssessment["cause"];
+  retainedRatio?: number;
+  previousReusableTokens?: number;
+  previousContextTokens: number;
+  currentContextTokens: number;
+  actualCacheReadTokens: number;
+  missedTokens: number;
+  modelCallCost?: number;
+  actualMissedCost?: number;
+  expectedReadCost?: number;
+  estimatedExtraCost?: number;
+};
+
 function classifyCacheMiss(
   rawAssessment: CacheAssessment,
   previous: CacheComparableCall | undefined,
@@ -135,6 +159,87 @@ function classifyCacheMiss(
     return { ...rawAssessment, cause: "thinking-change" as const };
   }
   return rawAssessment;
+}
+
+function cacheMissRecord(
+  previous: CacheComparableCall,
+  current: CacheComparableCall,
+  assessment: CacheAssessment,
+): CacheMissRecord {
+  const tokenEstimate = estimateCacheMissTokens(
+    previous.tokens,
+    current.tokens,
+  );
+  const costEstimate = estimateModelCacheMissCost(
+    previous.tokens,
+    current.tokens,
+    current.model,
+    current.startedAt,
+  );
+  const modelCallCost = computeModelCallCost(
+    current.tokens,
+    current.model,
+    current.startedAt,
+  );
+  return {
+    gap: current.startedAt - previous.startedAt,
+    status: assessment.status === "full-miss" ? "full-miss" : "partial-hit",
+    ...(assessment.reason === undefined ? {} : { reason: assessment.reason }),
+    ...(assessment.cause === undefined ? {} : { cause: assessment.cause }),
+    ...(assessment.retainedRatio === undefined
+      ? {}
+      : { retainedRatio: assessment.retainedRatio }),
+    ...(assessment.previousReusableTokens === undefined
+      ? {}
+      : { previousReusableTokens: assessment.previousReusableTokens }),
+    previousContextTokens: tokenEstimate.previousContext,
+    currentContextTokens: tokenEstimate.currentContext,
+    actualCacheReadTokens: tokenEstimate.actualCacheRead,
+    missedTokens: tokenEstimate.missedTokens,
+    ...(modelCallCost === undefined ? {} : { modelCallCost }),
+    ...(costEstimate === undefined
+      ? {}
+      : {
+        actualMissedCost: costEstimate.actualMissedCost,
+        expectedReadCost: costEstimate.expectedReadCost,
+        estimatedExtraCost: costEstimate.estimatedExtraCost,
+      }),
+  };
+}
+
+export type CacheAnalysisCall = CacheComparableCall & {
+  id: string;
+  followsCompaction?: boolean;
+};
+
+export type CacheMissAnalysis = CacheMissRecord & {
+  callID: string;
+  previousCallID: string;
+};
+
+export function analyzeCacheMisses(
+  calls: CacheAnalysisCall[],
+): CacheMissAnalysis[] {
+  const misses: CacheMissAnalysis[] = [];
+  let previous: CacheAnalysisCall | undefined;
+  for (const current of calls) {
+    const rawAssessment = assessCache(previous, current);
+    const assessment = classifyCacheMiss(
+      rawAssessment,
+      previous,
+      current,
+      current.followsCompaction ?? false,
+    );
+    if (previous && isMiss(assessment)) {
+      misses.push({
+        ...cacheMissRecord(previous, current, assessment),
+        callID: current.id,
+        previousCallID: previous.id,
+      });
+    }
+    if (hasInputContext(current.tokens)) previous = current;
+  }
+  return misses;
 }
 
 export type AssessedUsageCall = UsageCall & {

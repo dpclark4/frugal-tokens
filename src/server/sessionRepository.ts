@@ -10,9 +10,39 @@ import {
   type TokenUsage,
   type TurnInput,
 } from "../shared/sessionSchemas.ts";
+import {
+  analyzeCacheMisses,
+  type CacheAnalysisCall,
+  type CacheMissRecord,
+} from "./cacheAnalysis.ts";
+import { computeModelCallCost } from "./pricing.ts";
 import type { UsageCall } from "./usage.ts";
 
 type Harness = SessionSummary["harness"];
+
+export type StoredCacheMiss = CacheMissRecord & {
+  harness: Harness;
+  sessionID: string;
+  rootID: string;
+  sessionStartedAt: number;
+  modelCallID: number;
+  previousModelCallID?: number;
+  turnID: number;
+};
+
+export type ModelCallCostSummary = {
+  totalCost: number;
+  hasUnpricedTotalCost: boolean;
+  totalSessionCost: number;
+  hasUnpricedSessionCost: boolean;
+  sessions: Array<{
+    harness: Harness;
+    rootID: string;
+    sessionStartedAt: number;
+    rootCost: number;
+    hasUnpricedRootCost: boolean;
+  }>;
+};
 
 export type SourceSessionCheckpoint = {
   changeHint?: string;
@@ -583,6 +613,177 @@ export class SessionRepository {
     return sessionDetailSchema.parse(this.#detail(row, new Set()));
   }
 
+  summarizeModelCallCosts(
+    startedAt: number,
+    harness?: Harness,
+  ): ModelCallCostSummary {
+    type CostRow = {
+      total_cost: number | null;
+      total_unpriced: number;
+      root_cost: number | null;
+      root_unpriced: number;
+      harness: Harness;
+      root_public_id: string;
+      root_started_at: number | null;
+      root_updated_at: number;
+    };
+    const harnessFilter = harness === undefined ? "" :
+      "\n          AND so.harness = ?";
+    const rows = this.db.prepare(`
+      WITH scoped AS (
+        SELECT mcr.session_id, mcr.root_session_id, mcr.cost,
+          so.harness,
+          COALESCE(root.public_id, root.external_id) AS root_public_id,
+          root_session.started_at AS root_started_at,
+          root_session.updated_at AS root_updated_at
+        FROM model_call_rollups mcr
+        JOIN source_sessions ss ON ss.id = mcr.session_id
+        JOIN sources so ON so.id = ss.source_id
+        JOIN source_sessions root ON root.id = mcr.root_session_id
+        JOIN sessions root_session
+          ON root_session.source_session_id = mcr.root_session_id
+        WHERE mcr.started_at >= ?${harnessFilter}
+      )
+      SELECT harness, root_public_id, root_started_at, root_updated_at,
+        SUM(cost) AS total_cost,
+        MAX(cost IS NULL) AS total_unpriced,
+        SUM(CASE WHEN session_id = root_session_id THEN cost ELSE 0 END)
+          AS root_cost,
+        MAX(CASE WHEN session_id = root_session_id AND cost IS NULL
+          THEN 1 ELSE 0 END) AS root_unpriced
+      FROM scoped
+      GROUP BY harness, root_session_id, root_public_id,
+        root_started_at, root_updated_at
+      ORDER BY root_public_id
+    `).all(
+      startedAt,
+      ...(harness === undefined ? [] : [harness]),
+    ) as CostRow[];
+
+    const sessionRows = rows.filter((row) =>
+      (row.root_started_at ?? row.root_updated_at) >= startedAt
+    );
+    return {
+      totalCost: rows.reduce((sum, row) => sum + (row.total_cost ?? 0), 0),
+      hasUnpricedTotalCost: rows.some((row) => row.total_unpriced === 1),
+      totalSessionCost: sessionRows.reduce(
+        (sum, row) => sum + (row.root_cost ?? 0),
+        0,
+      ),
+      hasUnpricedSessionCost: sessionRows.some((row) =>
+        row.root_unpriced === 1
+      ),
+      sessions: sessionRows.map((row) => ({
+        harness: row.harness,
+        rootID: row.root_public_id,
+        sessionStartedAt: row.root_started_at ?? row.root_updated_at,
+        rootCost: row.root_cost ?? 0,
+        hasUnpricedRootCost: row.root_unpriced === 1,
+      })),
+    };
+  }
+
+  listCacheMisses(startedAt?: number, harness?: Harness): StoredCacheMiss[] {
+    type CacheMissRow = {
+      model_call_id: number;
+      previous_model_call_id: number | null;
+      session_id: number;
+      turn_id: number;
+      started_at: number;
+      gap_ms: number;
+      status: StoredCacheMiss["status"];
+      reason: CacheMissRecord["reason"] | null;
+      cause: CacheMissRecord["cause"] | null;
+      retained_ratio: number | null;
+      previous_reusable_tokens: number | null;
+      previous_context_tokens: number;
+      current_context_tokens: number;
+      actual_cache_read_tokens: number;
+      missed_tokens: number;
+      model_call_cost: number | null;
+      actual_missed_cost: number | null;
+      expected_read_cost: number | null;
+      estimated_extra_cost: number | null;
+      harness: Harness;
+      session_public_id: string;
+      root_public_id: string;
+      root_started_at: number | null;
+      root_updated_at: number;
+    };
+    const filters: string[] = [];
+    const params: Array<number | string> = [];
+    if (startedAt !== undefined) {
+      filters.push("cm.started_at >= ?");
+      params.push(startedAt);
+    }
+    if (harness !== undefined) {
+      filters.push("so.harness = ?");
+      params.push(harness);
+    }
+    const where = filters.length === 0 ? "" : `WHERE ${filters.join(" AND ")}`;
+    const rows = this.db.prepare(`
+      SELECT cm.model_call_id, cm.previous_model_call_id, cm.session_id,
+        cm.turn_id, cm.started_at, cm.gap_ms, cm.status, cm.reason, cm.cause,
+        cm.retained_ratio, cm.previous_reusable_tokens,
+        cm.previous_context_tokens, cm.current_context_tokens,
+        cm.actual_cache_read_tokens, cm.missed_tokens, cm.model_call_cost,
+        cm.actual_missed_cost, cm.expected_read_cost,
+        cm.estimated_extra_cost,
+        so.harness,
+        COALESCE(ss.public_id, ss.external_id) AS session_public_id,
+        COALESCE(root.public_id, root.external_id) AS root_public_id,
+        root_session.started_at AS root_started_at,
+        root_session.updated_at AS root_updated_at
+      FROM cache_misses cm
+      JOIN model_call_rollups mcr ON mcr.model_call_id = cm.model_call_id
+      JOIN source_sessions ss ON ss.id = cm.session_id
+      JOIN sources so ON so.id = ss.source_id
+      JOIN source_sessions root ON root.id = mcr.root_session_id
+      JOIN sessions root_session
+        ON root_session.source_session_id = mcr.root_session_id
+      ${where}
+      ORDER BY cm.started_at, cm.model_call_id
+    `).all(...params) as CacheMissRow[];
+
+    return rows.map((row) => ({
+      harness: row.harness,
+      sessionID: row.session_public_id,
+      rootID: row.root_public_id,
+      sessionStartedAt: row.root_started_at ?? row.root_updated_at,
+      modelCallID: row.model_call_id,
+      ...(row.previous_model_call_id === null
+        ? {}
+        : { previousModelCallID: row.previous_model_call_id }),
+      turnID: row.turn_id,
+      gap: row.gap_ms,
+      status: row.status,
+      ...(row.reason === null ? {} : { reason: row.reason }),
+      ...(row.cause === null ? {} : { cause: row.cause }),
+      ...(row.retained_ratio === null
+        ? {}
+        : { retainedRatio: row.retained_ratio }),
+      ...(row.previous_reusable_tokens === null
+        ? {}
+        : { previousReusableTokens: row.previous_reusable_tokens }),
+      previousContextTokens: row.previous_context_tokens,
+      currentContextTokens: row.current_context_tokens,
+      actualCacheReadTokens: row.actual_cache_read_tokens,
+      missedTokens: row.missed_tokens,
+      ...(row.model_call_cost === null
+        ? {}
+        : { modelCallCost: row.model_call_cost }),
+      ...(row.actual_missed_cost === null
+        ? {}
+        : { actualMissedCost: row.actual_missed_cost }),
+      ...(row.expected_read_cost === null
+        ? {}
+        : { expectedReadCost: row.expected_read_cost }),
+      ...(row.estimated_extra_cost === null
+        ? {}
+        : { estimatedExtraCost: row.estimated_extra_cost }),
+    }));
+  }
+
   listUsageCalls(startedAt?: number, harness?: Harness): UsageCall[] {
     type UsageRow = CallRow & {
       harness: Harness;
@@ -772,7 +973,13 @@ export class SessionRepository {
         `).run(parentID, rootID, sourceID, value.externalID);
       }
 
-      for (const value of values) {
+      // Root sessions must be materialized before children because derived
+      // rollups reference the canonical root session row.
+      const orderedValues = [
+        roots[0],
+        ...values.filter((value) => value !== roots[0]),
+      ];
+      for (const value of orderedValues) {
         this.#replaceSourceSession(value, rootID);
       }
 
@@ -885,6 +1092,14 @@ export class SessionRepository {
     };
 
     const callIDs = new Map<string, number>();
+    const turnIDs = new Map<number, number>();
+    const rootSessionID = treeRootID ?? sourceSessionID;
+    const insertModelCallRollup = this.db.prepare(`
+      INSERT INTO model_call_rollups (
+        model_call_id, session_id, root_session_id, started_at, cost,
+        cost_source
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `);
     for (const turn of session.turns) {
       const turnID = Number(
         (this.db.prepare(`
@@ -893,6 +1108,7 @@ export class SessionRepository {
         `).get(sourceSessionID, turn.number, turn.startedAt) as { id: number })
           .id,
       );
+      turnIDs.set(turn.number, turnID);
       this.#insertContent(
         "turn_inputs",
         "turn_id",
@@ -940,6 +1156,23 @@ export class SessionRepository {
           ) as { id: number }).id,
         );
         callIDs.set(`${turn.number}:${call.callWithinTurn}`, callID);
+        const computedCost = computeModelCallCost(
+          call.tokens,
+          call.model,
+          call.startedAt,
+        );
+        insertModelCallRollup.run(
+          callID,
+          sourceSessionID,
+          rootSessionID,
+          call.startedAt,
+          computedCost ?? call.reportedCost ?? null,
+          computedCost !== undefined
+            ? "computed"
+            : call.reportedCost !== undefined
+            ? "inferred"
+            : null,
+        );
         if (call.reasoningSetting !== undefined) {
           this.db.prepare(`
             INSERT INTO model_call_reasoning_settings (
@@ -1011,6 +1244,70 @@ export class SessionRepository {
         event.sourceOrder,
         event.occurredAt ?? null,
         affectedCallID ?? null,
+      );
+    }
+
+    const compactionCallKeys = new Set(
+      (session.contextEvents ?? []).filter((event) =>
+        event.type === "compaction" && event.affectedCall !== undefined
+      ).map((event) =>
+        `${event.affectedCall!.turn}:${event.affectedCall!.call}`
+      ),
+    );
+    const cacheCalls: CacheAnalysisCall[] = session.turns.flatMap((turn) =>
+      turn.calls.map((call) => ({
+        id: `${turn.number}:${call.callWithinTurn}`,
+        provider: call.provider,
+        model: call.model,
+        startedAt: call.startedAt,
+        tokens: call.tokens,
+        reasoningSetting: call.reasoningSetting ?? turn.reasoningSetting,
+        followsCompaction: compactionCallKeys.has(
+          `${turn.number}:${call.callWithinTurn}`,
+        ),
+      }))
+    );
+    const cacheMisses = analyzeCacheMisses(cacheCalls);
+    const insertCacheMiss = this.db.prepare(`
+      INSERT INTO cache_misses (
+        model_call_id, previous_model_call_id, session_id, turn_id,
+        started_at, gap_ms, status, reason, cause, retained_ratio,
+        previous_reusable_tokens, previous_context_tokens, current_context_tokens,
+        actual_cache_read_tokens, missed_tokens, model_call_cost,
+        actual_missed_cost, expected_read_cost, estimated_extra_cost
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const miss of cacheMisses) {
+      const currentTurn = Number(miss.callID.split(":")[0]);
+      const modelCallID = callIDs.get(miss.callID);
+      const previousModelCallID = callIDs.get(miss.previousCallID);
+      const turnID = turnIDs.get(currentTurn);
+      if (
+        modelCallID === undefined || previousModelCallID === undefined ||
+        turnID === undefined
+      ) {
+        throw new Error(`Unknown cache miss call: ${miss.callID}`);
+      }
+      insertCacheMiss.run(
+        modelCallID,
+        previousModelCallID,
+        sourceSessionID,
+        turnID,
+        cacheCalls.find((call) => call.id === miss.callID)!.startedAt,
+        miss.gap,
+        miss.status,
+        miss.reason ?? null,
+        miss.cause ?? null,
+        miss.retainedRatio ?? null,
+        miss.previousReusableTokens ?? null,
+        miss.previousContextTokens,
+        miss.currentContextTokens,
+        miss.actualCacheReadTokens,
+        miss.missedTokens,
+        miss.modelCallCost ?? null,
+        miss.actualMissedCost ?? null,
+        miss.expectedReadCost ?? null,
+        miss.estimatedExtraCost ?? null,
       );
     }
 

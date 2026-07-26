@@ -1,5 +1,6 @@
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import {
+  analyzeCacheMisses,
   analyzeSessionCache,
   assessCache,
   CACHE_TTL_1H_MS,
@@ -167,6 +168,46 @@ Deno.test("prioritizes TTL over a simultaneous thinking change", () => {
   strictEqual(actual.turns[0].calls[1].cacheAssessment?.cause, "ttl");
   strictEqual(actual.turns[0].cacheSummary?.thinkingChangeRelatedMisses, 0);
   strictEqual(actual.turns[0].cacheSummary?.ttlRelatedMisses, 1);
+});
+
+Deno.test("produces a database-ready miss record as a pure calculation", () => {
+  const previous = call(
+    "previous",
+    80_000,
+    undefined,
+    "gpt-5.6-luna",
+    "openai",
+    "high",
+  );
+  const current = call(
+    "current",
+    50_000,
+    undefined,
+    "gpt-5.6-luna",
+    "openai",
+    "off",
+  );
+  current.startedAt = 2;
+  current.tokens = {
+    ...current.tokens,
+    uncachedInput: 30_000,
+    freshPrompt: 30_000,
+    processed: 80_010,
+  };
+
+  const misses = analyzeCacheMisses([
+    { ...previous, id: "previous" },
+    { ...current, id: "current" },
+  ]);
+
+  strictEqual(misses.length, 1);
+  strictEqual(misses[0].callID, "current");
+  strictEqual(misses[0].previousCallID, "previous");
+  strictEqual(misses[0].status, "partial-hit");
+  strictEqual(misses[0].cause, "thinking-change");
+  strictEqual(misses[0].missedTokens, 30_000);
+  strictEqual(misses[0].modelCallCost !== undefined, true);
+  strictEqual(misses[0].actualMissedCost !== undefined, true);
 });
 
 Deno.test("does not count opaque zero-context usage as a cache miss", () => {

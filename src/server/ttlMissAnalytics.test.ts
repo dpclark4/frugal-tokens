@@ -1,5 +1,6 @@
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { aggregateTtlMisses } from "./ttlMissAnalytics.ts";
+import type { StoredCacheMiss } from "./sessionRepository.ts";
 import type { UsageCall } from "./usage.ts";
 
 const MINUTE = 60 * 1_000;
@@ -181,6 +182,48 @@ Deno.test("counts every root TTL miss in its elapsed-time bucket", () => {
       },
     },
   });
+});
+
+Deno.test("aggregates precomputed cache misses without reclassifying them", () => {
+  const stored: StoredCacheMiss = {
+    harness: "claude-code",
+    sessionID: "stored",
+    rootID: "stored",
+    sessionStartedAt: start,
+    modelCallID: 2,
+    previousModelCallID: 1,
+    turnID: 1,
+    gap: 60 * MINUTE,
+    status: "full-miss",
+    cause: "ttl",
+    previousContextTokens: 100,
+    currentContextTokens: 100,
+    actualCacheReadTokens: 0,
+    missedTokens: 100,
+    actualMissedCost: 0.001,
+    expectedReadCost: 0.0001,
+    estimatedExtraCost: 0.0009,
+  };
+  const result = aggregateTtlMisses([], start, 90, [stored], {
+    totalCost: 3,
+    hasUnpricedTotalCost: false,
+    totalSessionCost: 2,
+    hasUnpricedSessionCost: false,
+    sessions: [{
+      harness: "claude-code",
+      rootID: "stored",
+      sessionStartedAt: start,
+      rootCost: 2,
+      hasUnpricedRootCost: false,
+    }],
+  });
+
+  strictEqual(result.totalCost, 3);
+  strictEqual(result.totalSessionCost, 2);
+  strictEqual(result.misses.total, 1);
+  strictEqual(result.cacheMisses.full.misses, 1);
+  strictEqual(result.cacheMisses.full.missedTokens, 100);
+  strictEqual(result.cacheMisses.unexpected.full.misses, 0);
 });
 
 Deno.test("counts each session once per TTL return-gap bucket", () => {

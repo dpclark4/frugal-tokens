@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { cors } from "hono/cors";
 import { serveStatic } from "hono/deno";
 import { createMiddleware } from "hono/factory";
@@ -33,12 +33,12 @@ import {
 } from "./overviewAnalytics.ts";
 import { contextRange } from "../shared/contextMetrics.ts";
 import { rollupCosts } from "../shared/costMetrics.ts";
+import { expandHomePath, openArchiveDatabase, sqlitePath } from "./database.ts";
 import {
-  expandHomePath,
-  openArchiveDatabase,
-  sqlitePath,
-} from "./database.ts";
-import { SessionRepository } from "./sessionRepository.ts";
+  SessionRepository,
+  type ModelCallCostSummary,
+  type StoredCacheMiss,
+} from "./sessionRepository.ts";
 import { syncPiSessions } from "./piImporter.ts";
 import { syncCodexSessions } from "./codexImporter.ts";
 import { syncClaudeCodeSessions } from "./claudeCodeImporter.ts";
@@ -441,21 +441,58 @@ function listSessions(
   };
 }
 
-function overviewSessions(start: number, harness: string) {
+type OverviewSourceTiming = {
+  listed: number;
+  qualifying: number;
+  hydrated: number;
+  listDuration: number;
+  hydrationDuration: number;
+  pricingDuration: number;
+};
+
+type OverviewSessionsResult = {
+  sessions: SessionDetail[];
+  sourceTimings: Map<string, OverviewSourceTiming>;
+};
+
+function overviewSessions(
+  start: number,
+  harness: string,
+): OverviewSessionsResult {
   const harnesses = harness === "all"
     ? (["opencode", "claude-code", "pi", "codex"] as const)
     : [harness as SessionSummary["harness"]];
   const sessions: SessionDetail[] = [];
+  const sourceTimings = new Map<string, OverviewSourceTiming>();
   for (const name of harnesses) {
     const source = repositoryForHarness(name);
     if (!source) continue;
+    const timing: OverviewSourceTiming = {
+      listed: 0,
+      qualifying: 0,
+      hydrated: 0,
+      listDuration: 0,
+      hydrationDuration: 0,
+      pricingDuration: 0,
+    };
+    sourceTimings.set(name, timing);
     const pageSize = 100;
     for (let page = 1;; page++) {
+      const listStartedAt = performance.now();
       const result = source.listSessions(page, pageSize);
+      timing.listDuration += performance.now() - listStartedAt;
+      timing.listed += result.items.length;
       for (const summary of result.items) {
         if (summary.updatedAt < start) continue;
+        timing.qualifying++;
+        const hydrationStartedAt = performance.now();
         const detail = source.getSession(summary.id);
-        if (detail) sessions.push(priceSessionDetail(detail));
+        timing.hydrationDuration += performance.now() - hydrationStartedAt;
+        if (!detail) continue;
+        timing.hydrated++;
+        const pricingStartedAt = performance.now();
+        sessions.push(priceSessionDetail(detail));
+        timing.pricingDuration += performance.now() - pricingStartedAt;
       }
       if (
         page >= result.pagination.totalPages ||
@@ -463,7 +500,7 @@ function overviewSessions(start: number, harness: string) {
       ) break;
     }
   }
-  return sessions;
+  return { sessions, sourceTimings };
 }
 
 app.get("/api/performance", (context) => {
@@ -517,7 +554,8 @@ app.get("/api/performance", (context) => {
   );
 });
 
-app.get("/api/ttl-misses", (context) => {
+const cacheMissOverview = (context: Context) => {
+  const requestStartedAt = performance.now();
   const harness = context.req.query("harness") ?? "all";
   if (!["all", "opencode", "claude-code", "pi", "codex"].includes(harness)) {
     return context.json({ error: "Invalid harness" }, 400);
@@ -526,18 +564,25 @@ app.get("/api/ttl-misses", (context) => {
   const range = rangeParam === "all"
     ? Math.ceil(Date.now() / 86_400_000)
     : Math.min(365, Math.max(1, Number.parseInt(rangeParam, 10) || 90));
-  const start = rangeParam === "all"
-    ? 0
-    : new Date(
-      new Date().setHours(0, 0, 0, 0) - (range - 1) * 86_400_000,
-    ).getTime();
+  const start = rangeParam === "all" ? 0 : new Date(
+    new Date().setHours(0, 0, 0, 0) - (range - 1) * 86_400_000,
+  ).getTime();
   const usageCalls: UsageCall[] = [];
+  let storedMisses: StoredCacheMiss[] | undefined;
+  let storedCosts: ModelCallCostSummary | undefined;
 
+  const sourceDurations = new Map<string, number>();
   if (archiveRepository) {
-    usageCalls.push(...archiveRepository.listUsageCalls(
+    const sourceStartedAt = performance.now();
+    storedMisses = archiveRepository.listCacheMisses(
       start,
       harness === "all" ? undefined : harness as SessionSummary["harness"],
-    ));
+    );
+    storedCosts = archiveRepository.summarizeModelCallCosts(
+      start,
+      harness === "all" ? undefined : harness as SessionSummary["harness"],
+    );
+    sourceDurations.set("database", performance.now() - sourceStartedAt);
   } else {
     const sources = [
       ["opencode", repository],
@@ -547,14 +592,50 @@ app.get("/api/ttl-misses", (context) => {
     ] as const;
     for (const [name, source] of sources) {
       if (!source || (harness !== "all" && harness !== name)) continue;
+      const sourceStartedAt = performance.now();
       usageCalls.push(...source.listUsageCalls(start));
+      sourceDurations.set(name, performance.now() - sourceStartedAt);
     }
   }
+  const sourceDuration = [...sourceDurations.values()].reduce(
+    (total, duration) => total + duration,
+    0,
+  );
+  const aggregationStartedAt = performance.now();
+  const metrics = aggregateTtlMisses(
+    usageCalls,
+    start,
+    range,
+    storedMisses,
+    storedCosts,
+  );
+  const aggregationDuration = performance.now() - aggregationStartedAt;
+  const totalDuration = performance.now() - requestStartedAt;
+  const sourceTimings = [...sourceDurations.entries()].map(
+    ([name, duration]) => `${name}=${duration.toFixed(1)}ms`,
+  ).join(" ");
+  context.header(
+    "Server-Timing",
+    `sources;dur=${sourceDuration.toFixed(1)}, aggregate;dur=${
+      aggregationDuration.toFixed(1)
+    }, total;dur=${totalDuration.toFixed(1)}`,
+  );
+  console.info(
+    `[cache-miss-overview] harness=${harness} range=${rangeParam} calls=${usageCalls.length} storedMisses=${storedMisses?.length ?? 0} sources=${
+      sourceDuration.toFixed(1)
+    }ms ${sourceTimings} aggregate=${aggregationDuration.toFixed(1)}ms total=${
+      totalDuration.toFixed(1)
+    }ms`,
+  );
+  return context.json(metrics);
+};
 
-  return context.json(aggregateTtlMisses(usageCalls, start, range));
-});
+app.get("/api/cache-misses/overview", cacheMissOverview);
+// Keep the old route for existing clients and bookmarks.
+app.get("/api/ttl-misses", cacheMissOverview);
 
 app.get("/api/overview", (context) => {
+  const requestStartedAt = performance.now();
   const harness = context.req.query("harness") ?? "all";
   if (!["all", "opencode", "claude-code", "pi", "codex"].includes(harness)) {
     return context.json({ error: "Invalid harness" }, 400);
@@ -563,29 +644,59 @@ app.get("/api/overview", (context) => {
   const range = rangeParam === "all"
     ? Math.ceil(Date.now() / 86_400_000)
     : Math.min(365, Math.max(1, Number.parseInt(rangeParam, 10) || 90));
-  const start = rangeParam === "all"
-    ? 0
-    : new Date(
-      new Date().setHours(0, 0, 0, 0) - (range - 1) * 86_400_000,
-    ).getTime();
+  const start = rangeParam === "all" ? 0 : new Date(
+    new Date().setHours(0, 0, 0, 0) - (range - 1) * 86_400_000,
+  ).getTime();
   const end = Date.now();
   const coverage = harness === "pi" || harness === "codex"
     ? "none"
     : harness === "all"
     ? "partial"
     : "full";
-  return context.json(
-    aggregateOverview(
-      overviewSessions(
-        start - ROTATION_INACTIVITY_MINUTES * 60_000,
-        harness,
-      ),
-      start,
-      end,
-      range,
-      coverage,
-    ),
+  const loadStartedAt = performance.now();
+  const loaded = overviewSessions(
+    start - ROTATION_INACTIVITY_MINUTES * 60_000,
+    harness,
   );
+  const loadDuration = performance.now() - loadStartedAt;
+  const aggregationStartedAt = performance.now();
+  const overview = aggregateOverview(
+    loaded.sessions,
+    start,
+    end,
+    range,
+    coverage,
+  );
+  const aggregationDuration = performance.now() - aggregationStartedAt;
+  const totalDuration = performance.now() - requestStartedAt;
+  const sourceDuration = [...loaded.sourceTimings.values()].reduce(
+    (total, timing) =>
+      total + timing.listDuration + timing.hydrationDuration +
+      timing.pricingDuration,
+    0,
+  );
+  const sourceTimings = [...loaded.sourceTimings.entries()].map(
+    ([name, timing]) =>
+      `${name}:listed=${timing.listed},qualifying=${timing.qualifying},hydrated=${timing.hydrated},list=${
+        timing.listDuration.toFixed(1)
+      }ms,hydrate=${timing.hydrationDuration.toFixed(1)}ms,price=${
+        timing.pricingDuration.toFixed(1)
+      }ms`,
+  ).join(" ");
+  context.header(
+    "Server-Timing",
+    `sources;dur=${sourceDuration.toFixed(1)}, aggregate;dur=${
+      aggregationDuration.toFixed(1)
+    }, total;dur=${totalDuration.toFixed(1)}`,
+  );
+  console.info(
+    `[overview] harness=${harness} range=${rangeParam} roots=${loaded.sessions.length} load=${
+      loadDuration.toFixed(1)
+    }ms aggregate=${aggregationDuration.toFixed(1)}ms total=${
+      totalDuration.toFixed(1)
+    }ms ${sourceTimings}`,
+  );
+  return context.json(overview);
 });
 
 app.get("/api/usage", (context) => {
@@ -604,25 +715,15 @@ app.get("/api/usage", (context) => {
       .getTime();
   const usageCalls: UsageCall[] = [];
 
-  const detailDurations = new Map<string, number>();
+  const sourceDurations = new Map<string, number>();
+  const calls: UsageCall[] = [];
   if (archiveRepository) {
-    const detailStartedAt = performance.now();
-    const calls = archiveRepository.listUsageCalls(
+    const sourceStartedAt = performance.now();
+    calls.push(...archiveRepository.listUsageCalls(
       start,
       harness === "all" ? undefined : harness as SessionSummary["harness"],
-    );
-    detailDurations.set("database", performance.now() - detailStartedAt);
-    for (const call of calls) {
-      const pricedCall = {
-        ...call,
-        computedCost: call.computedCost ?? computeModelCallCost(
-          call.tokens,
-          call.model,
-          call.startedAt,
-        ),
-      };
-      usageCalls.push(pricedCall);
-    }
+    ));
+    sourceDurations.set("database", performance.now() - sourceStartedAt);
   } else {
     const sources = [
       ["opencode", repository],
@@ -633,46 +734,54 @@ app.get("/api/usage", (context) => {
     for (const [name, source] of sources) {
       if (harness !== "all" && harness !== name) continue;
       if (!source) continue;
-      const detailStartedAt = performance.now();
-      for (const call of source.listUsageCalls(start)) {
-        const pricedCall = {
-          ...call,
-          computedCost: call.computedCost ?? computeModelCallCost(
-            call.tokens,
-            call.model,
-            call.startedAt,
-          ),
-        };
-        usageCalls.push(pricedCall);
-      }
-      detailDurations.set(name, performance.now() - detailStartedAt);
+      const sourceStartedAt = performance.now();
+      calls.push(...source.listUsageCalls(start));
+      sourceDurations.set(name, performance.now() - sourceStartedAt);
     }
   }
+  const pricingStartedAt = performance.now();
+  for (const call of calls) {
+    usageCalls.push({
+      ...call,
+      computedCost: call.computedCost ?? computeModelCallCost(
+        call.tokens,
+        call.model,
+        call.startedAt,
+      ),
+    });
+  }
+  const pricingDuration = performance.now() - pricingStartedAt;
 
   const subagentCoverage = harness === "pi" || harness === "codex"
     ? "none"
     : harness === "all"
     ? "partial"
     : "full";
+  const aggregationStartedAt = performance.now();
   const aggregated = aggregateUsage(usageCalls, start, subagentCoverage);
+  const aggregationDuration = performance.now() - aggregationStartedAt;
   const totalDuration = performance.now() - requestStartedAt;
-  const detailDuration = [...detailDurations.values()].reduce(
+  const sourceDuration = [...sourceDurations.values()].reduce(
     (total, duration) => total + duration,
     0,
   );
-  const harnessTimings = [...detailDurations.entries()].map(
+  const sourceTimings = [...sourceDurations.entries()].map(
     ([name, duration]) => `${name}=${duration.toFixed(1)}ms`,
   ).join(" ");
   context.header(
     "Server-Timing",
-    `sources;dur=${detailDuration.toFixed(1)}, total;dur=${
+    `sources;dur=${sourceDuration.toFixed(1)}, pricing;dur=${
+      pricingDuration.toFixed(1)
+    }, aggregate;dur=${aggregationDuration.toFixed(1)}, total;dur=${
       totalDuration.toFixed(1)
     }`,
   );
   console.info(
     `[usage] harness=${harness} range=${rangeParam} calls=${aggregated.callCount} days=${aggregated.dayCount} sources=${
-      detailDuration.toFixed(1)
-    }ms ${harnessTimings} total=${totalDuration.toFixed(1)}ms`,
+      sourceDuration.toFixed(1)
+    }ms ${sourceTimings} pricing=${pricingDuration.toFixed(1)}ms aggregate=${
+      aggregationDuration.toFixed(1)
+    }ms total=${totalDuration.toFixed(1)}ms`,
   );
   return context.json(aggregated.response);
 });

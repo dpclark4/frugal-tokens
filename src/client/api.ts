@@ -55,9 +55,14 @@ export async function getPerformance(
   );
 }
 
-export async function getTtlMissMetrics(range: number | "all", harness: string) {
+export async function getCacheMissOverview(
+  range: number | "all",
+  harness: string,
+) {
   return ttlMissMetricsSchema.parse(
-    await getJson(`/api/ttl-misses?range=${range}&harness=${harness}`),
+    await getJson(
+      `/api/cache-misses/overview?range=${range}&harness=${harness}`,
+    ),
   );
 }
 

@@ -3,7 +3,7 @@ import type {
   OverviewResponse,
   TtlMissMetrics,
 } from "../shared/sessionSchemas.ts";
-import { getTtlMissMetrics } from "./api.ts";
+import { getCacheMissOverview } from "./api.ts";
 import { CompactOverview } from "./Overview.tsx";
 
 const integer = new Intl.NumberFormat();
@@ -192,7 +192,7 @@ export function TtlMissCard({
     let active = true;
     setMetrics(undefined);
     setError(undefined);
-    getTtlMissMetrics(range, harness).then((result) => {
+    getCacheMissOverview(range, harness).then((result) => {
       if (active) setMetrics(result);
     }).catch((reason) => {
       if (active) {

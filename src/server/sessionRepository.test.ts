@@ -81,6 +81,102 @@ function importedSession(
   };
 }
 
+Deno.test("materializes cache misses and removes them on replacement", () => {
+  const directory = Deno.makeTempDirSync();
+  const db = openArchiveDatabase(`${directory}/archive.sqlite`);
+  try {
+    migrateTestDatabase(db);
+    const sourceID = Number(
+      (db.prepare(`
+      INSERT INTO sources (harness, kind, label, location, created_at)
+      VALUES ('pi', 'directory', 'PI', '/pi-cache', 1)
+      RETURNING id
+    `).get() as { id: number }).id,
+    );
+    const value = importedSession(sourceID, "cache");
+    value.session.providers = ["openai"];
+    value.session.models = ["gpt-5.6-luna"];
+    value.session.turns[0].calls[0].provider = "openai";
+    value.session.turns[0].calls[0].model = "gpt-5.6-luna";
+    value.session.turns[0].calls[0].reasoningSetting = {
+      settingName: "thinkingLevel",
+      settingValue: "high",
+      provenance: "inherited",
+    };
+    value.session.turns[0].calls[0].activity.hasReasoning = false;
+    value.session.turns[0].calls[0].tokens = {
+      ...tokens,
+      cacheRead: 2,
+      cacheWrite: 5,
+      freshPrompt: 8,
+    };
+    value.session.turns[0].calls[0].id = "cache-call-1";
+    value.session.turns.push({
+      number: 2,
+      startedAt: 20,
+      calls: [{
+        ...value.session.turns[0].calls[0],
+        id: "cache-call-2",
+        callWithinTurn: 1,
+        startedAt: 21,
+        completedAt: 22,
+        reasoningSetting: {
+          settingName: "thinkingLevel",
+          settingValue: "off",
+          provenance: "inherited",
+        },
+        tokens: {
+          ...tokens,
+          cacheRead: 2,
+          cacheWrite: 5,
+          freshPrompt: 8,
+        },
+      }],
+    });
+    value.session.userTurns = 2;
+    value.session.modelCalls = 2;
+    value.session.contextEvents = [];
+
+    const repository = new SessionRepository(db);
+    repository.replaceSourceSession(value);
+
+    const misses = repository.listCacheMisses(undefined, "pi");
+    strictEqual(misses.length, 1);
+    strictEqual(misses[0].status, "partial-hit");
+    strictEqual(misses[0].cause, "thinking-change");
+    strictEqual(misses[0].sessionID, "cache");
+    strictEqual(misses[0].rootID, "cache");
+    strictEqual(misses[0].previousModelCallID !== undefined, true);
+    strictEqual(misses[0].missedTokens, 8);
+    strictEqual(misses[0].modelCallCost !== undefined, true);
+    strictEqual(
+      (db.prepare("SELECT COUNT(*) AS count FROM model_call_rollups").get() as {
+        count: number;
+      }).count,
+      2,
+    );
+    strictEqual(
+      repository.summarizeModelCallCosts(0, "pi").sessions.length,
+      1,
+    );
+
+    value.session.turns = [value.session.turns[0]];
+    value.session.userTurns = 1;
+    value.session.modelCalls = 1;
+    repository.replaceSourceSession(value);
+    strictEqual(repository.listCacheMisses().length, 0);
+    strictEqual(
+      (db.prepare("SELECT COUNT(*) AS count FROM model_call_rollups").get() as {
+        count: number;
+      }).count,
+      1,
+    );
+  } finally {
+    db.close();
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
 Deno.test("stores and reads canonical sessions atomically", () => {
   const directory = Deno.makeTempDirSync();
   const db = openArchiveDatabase(`${directory}/archive.sqlite`);
@@ -260,7 +356,7 @@ Deno.test("atomically replaces trees with root-scoped public child IDs", () => {
       return [root, child];
     };
 
-    repository.replaceSourceSessionTree(tree("root-a"));
+    repository.replaceSourceSessionTree(tree("root-a").toReversed());
     repository.replaceSourceSessionTree(tree("root-b"));
 
     deepStrictEqual(
