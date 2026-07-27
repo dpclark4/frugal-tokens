@@ -4,7 +4,10 @@ import {
   SessionRepository,
   type SourceSessionImport,
 } from "./sessionRepository.ts";
-import type { TokenUsage } from "../shared/sessionSchemas.ts";
+import type {
+  SessionMissFilter,
+  TokenUsage,
+} from "../shared/sessionSchemas.ts";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
 
 const tokens: TokenUsage = {
@@ -79,6 +82,62 @@ function importedSession(
       }],
     },
   };
+}
+
+function sessionWithMiss(
+  sourceID: number,
+  externalID: string,
+  variant:
+    | "compaction"
+    | "ttl"
+    | "thinking-change"
+    | "full-miss"
+    | "partial-miss",
+): SourceSessionImport {
+  const value = importedSession(sourceID, externalID);
+  const firstCall = value.session.turns[0].calls[0];
+  const secondCall = {
+    ...firstCall,
+    id: `${externalID}-call-2`,
+    startedAt: variant === "ttl" ? 3_601_000 : 1_000,
+    completedAt: variant === "ttl" ? 3_602_000 : 1_001,
+    tokens: {
+      ...firstCall.tokens,
+      cacheRead: variant === "partial-miss" ? 2 : 0,
+    },
+  };
+  firstCall.id = `${externalID}-call-1`;
+  firstCall.startedAt = 500;
+  firstCall.completedAt = 501;
+  firstCall.reasoningSetting = variant === "thinking-change"
+    ? {
+      settingName: "thinking",
+      settingValue: "low",
+      provenance: "explicit",
+    }
+    : undefined;
+  secondCall.reasoningSetting = variant === "thinking-change"
+    ? {
+      settingName: "thinking",
+      settingValue: "high",
+      provenance: "explicit",
+    }
+    : undefined;
+  value.session.turns.push({
+    number: 2,
+    startedAt: secondCall.startedAt,
+    calls: [secondCall],
+  });
+  value.session.userTurns = 2;
+  value.session.modelCalls = 2;
+  value.session.contextEvents = variant === "compaction"
+    ? [{
+      type: "compaction",
+      sourceOrder: 2,
+      affectedCall: { turn: 2, call: 1 },
+    }]
+    : [];
+  return value;
 }
 
 Deno.test("materializes cache misses and removes them on replacement", () => {
@@ -171,6 +230,68 @@ Deno.test("materializes cache misses and removes them on replacement", () => {
       }).count,
       1,
     );
+  } finally {
+    db.close();
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
+Deno.test("filters session lists by stored miss category", () => {
+  const directory = Deno.makeTempDirSync();
+  const db = openArchiveDatabase(`${directory}/archive.sqlite`);
+  try {
+    migrateTestDatabase(db);
+    const sourceID = Number(
+      (db.prepare(`
+      INSERT INTO sources (harness, kind, label, location, created_at)
+      VALUES ('pi', 'directory', 'PI', '/pi-filter', 1)
+      RETURNING id
+    `).get() as { id: number }).id,
+    );
+    const repository = new SessionRepository(db);
+    for (
+      const variant of [
+        "compaction",
+        "ttl",
+        "thinking-change",
+        "full-miss",
+        "partial-miss",
+      ] as const
+    ) {
+      repository.replaceSourceSession(
+        sessionWithMiss(sourceID, variant, variant),
+      );
+    }
+
+    const idsFor = (filter: SessionMissFilter) =>
+      repository.listSessions(1, 10, "pi", [filter]).items.map((item) =>
+        item.id
+      )
+        .sort();
+    const idsForMany = (...filters: SessionMissFilter[]) =>
+      repository.listSessions(1, 10, "pi", filters).items.map((item) => item.id)
+        .sort();
+    strictEqual(repository.listSessions(1, 10, "pi").pagination.totalItems, 5);
+    deepStrictEqual(idsFor("compaction"), ["compaction"]);
+    deepStrictEqual(idsFor("ttl"), ["ttl"]);
+    deepStrictEqual(idsFor("thinking-change"), ["thinking-change"]);
+    deepStrictEqual(idsFor("full-miss"), ["full-miss"]);
+    deepStrictEqual(idsFor("partial-miss"), ["partial-miss"]);
+    deepStrictEqual(idsForMany("full-miss", "partial-miss"), [
+      "full-miss",
+      "partial-miss",
+    ]);
+    deepStrictEqual(
+      repository.listSessions(1, 10, "pi", []).items,
+      [],
+    );
+
+    const treeRoot = importedSession(sourceID, "tree-root");
+    treeRoot.session.contextEvents = [];
+    const treeChild = sessionWithMiss(sourceID, "tree-child", "full-miss");
+    treeChild.parentExternalID = "tree-root";
+    repository.replaceSourceSessionTree([treeRoot, treeChild]);
+    deepStrictEqual(idsFor("full-miss"), ["full-miss", "tree-root"]);
   } finally {
     db.close();
     Deno.removeSync(directory, { recursive: true });

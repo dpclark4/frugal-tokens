@@ -74,6 +74,7 @@ const indexRoute = createRoute({
   path: "/",
   validateSearch: z.object({
     harness: z.enum(["all", "opencode", "claude-code", "pi", "codex"]).catch("all"),
+    misses: z.string().optional(),
   }),
   component: SessionsPage,
 });

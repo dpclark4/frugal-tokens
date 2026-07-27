@@ -3,6 +3,7 @@ import {
   performanceResponseSchema,
   sessionDetailSchema,
   sessionListResponseSchema,
+  type SessionMissFilter,
   ttlMissMetricsSchema,
   usageResponseSchema,
 } from "../shared/sessionSchemas.ts";
@@ -66,9 +67,24 @@ export async function getCacheMissOverview(
   );
 }
 
-export async function getSessions(page: number, harness: string) {
+export async function getSessions(
+  page: number,
+  harness: string,
+  missFilters?: SessionMissFilter[],
+) {
+  const query = new URLSearchParams({
+    page: String(page),
+    pageSize: "25",
+    harness,
+  });
+  if (missFilters !== undefined) {
+    query.set(
+      "misses",
+      missFilters.length === 0 ? "none" : missFilters.join(","),
+    );
+  }
   return sessionListResponseSchema.parse(
-    await getJson(`/api/sessions?page=${page}&pageSize=25&harness=${harness}`),
+    await getJson(`/api/sessions?${query}`),
   );
 }
 

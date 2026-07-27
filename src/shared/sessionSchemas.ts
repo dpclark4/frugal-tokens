@@ -2,6 +2,27 @@ import { z } from "zod";
 
 export const harnessSchema = z.enum(["opencode", "claude-code", "pi", "codex"]);
 
+export const sessionMissFilterValues = [
+  "compaction",
+  "ttl",
+  "thinking-change",
+  "full-miss",
+  "partial-miss",
+] as const;
+
+export const sessionMissFilterSchema = z.enum(sessionMissFilterValues);
+export const sessionMissFiltersSchema = z.array(sessionMissFilterSchema);
+
+export function parseSessionMissFilters(
+  value?: string,
+): SessionMissFilter[] | undefined {
+  if (value === undefined || value === "" || value === "all") return undefined;
+  if (value === "none") return [];
+  const values = [...new Set(value.split(","))];
+  const parsed = sessionMissFiltersSchema.safeParse(values);
+  return parsed.success ? parsed.data : undefined;
+}
+
 export const tokenUsageSchema = z.object({
   uncachedInput: z.number().int().nonnegative(),
   cacheRead: z.number().int().nonnegative(),
@@ -473,6 +494,7 @@ export const ttlMissMetricsSchema = z.object({
 });
 
 export type ModelCall = z.infer<typeof modelCallSchema>;
+export type SessionMissFilter = z.infer<typeof sessionMissFilterSchema>;
 export type TurnInput = z.infer<typeof turnInputSchema>;
 export type ContextEvent = z.infer<typeof contextEventSchema>;
 export type CacheMissCause = z.infer<typeof cacheMissCauseSchema>;

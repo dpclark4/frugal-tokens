@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { getRouteApi } from "@tanstack/react-router";
-import { Image, RefreshCw } from "lucide-react";
+import { ChevronDown, Image, RefreshCw } from "lucide-react";
 import type {
   CacheAssessment,
   CacheIssue,
@@ -8,10 +8,15 @@ import type {
   ModelCall,
   OverviewResponse,
   SessionDetail,
+  SessionMissFilter,
   SessionListResponse,
   SessionSummary,
   TokenUsage,
   TurnInput,
+} from "../shared/sessionSchemas.ts";
+import {
+  parseSessionMissFilters,
+  sessionMissFilterValues,
 } from "../shared/sessionSchemas.ts";
 import { contextRange, contextSize } from "../shared/contextMetrics.ts";
 import { displayModelName } from "../shared/modelNames.ts";
@@ -1021,6 +1026,107 @@ function HarnessIcon({ harness }: { harness: SessionSummary["harness"] }) {
   );
 }
 
+const sessionMissFilterOptions: Array<{
+  value: SessionMissFilter;
+  label: string;
+}> = [
+  { value: "compaction", label: "Compaction" },
+  { value: "ttl", label: "TTL miss" },
+  { value: "thinking-change", label: "Thinking change" },
+  { value: "full-miss", label: "Full miss" },
+  { value: "partial-miss", label: "Partial miss" },
+];
+
+function SessionMissFilterControl({
+  selected,
+  onChange,
+}: {
+  selected: SessionMissFilter[];
+  onChange: (filters: SessionMissFilter[]) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const allSelected = selected.length === sessionMissFilterOptions.length;
+  const label = allSelected
+    ? "All"
+    : selected.length === 0
+    ? "None"
+    : `${selected.length} selected`;
+
+  useEffect(() => {
+    if (!open) return;
+    function closeOnOutsideClick(event: PointerEvent) {
+      if (
+        event.target instanceof Node &&
+        !menuRef.current?.contains(event.target)
+      ) {
+        setOpen(false);
+      }
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsideClick);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  function toggle(value: SessionMissFilter) {
+    onChange(
+      selected.includes(value)
+        ? selected.filter((current) => current !== value)
+        : [...selected, value],
+    );
+  }
+
+  return (
+    <div className="session-filter-control" ref={menuRef}>
+      <span className="session-control-label">Filter</span>
+      <button
+        type="button"
+        className="session-filter-trigger"
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span>{label}</span>
+        <ChevronDown size={13} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="session-filter-menu" role="dialog" aria-label="Session miss filters">
+          <label className="session-filter-option session-filter-all">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={() =>
+                onChange(
+                  allSelected
+                    ? []
+                    : sessionMissFilterOptions.map(({ value }) => value),
+                )}
+            />
+            <span>All categories</span>
+          </label>
+          <div className="session-filter-divider" />
+          {sessionMissFilterOptions.map(({ value, label: optionLabel }) => (
+            <label className="session-filter-option" key={value}>
+              <input
+                type="checkbox"
+                checked={selected.includes(value)}
+                onChange={() => toggle(value)}
+              />
+              <span>{optionLabel}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function activitySummary(call: ModelCall) {
   const imageLabel = call.activity.images === undefined
     ? ""
@@ -1777,8 +1883,15 @@ function SessionBreakdown({
 }
 
 export function SessionsPage() {
-  const { harness } = route.useSearch();
+  const { harness, misses } = route.useSearch();
   const navigate = route.useNavigate();
+  const missFilters = parseSessionMissFilters(misses);
+  const selectedMissFilters = missFilters ?? [...sessionMissFilterValues];
+  const missFilterKey = missFilters === undefined
+    ? "all"
+    : missFilters.length === 0
+    ? "none"
+    : missFilters.join(",");
   const [data, setData] = useState<SessionListResponse>();
   const [overview, setOverview] = useState<OverviewResponse>();
   const [overviewError, setOverviewError] = useState<string>();
@@ -1794,7 +1907,9 @@ export function SessionsPage() {
   const loadMoreRef = useRef<HTMLDivElement>(null);
   const loadingMoreRef = useRef(false);
   const harnessRef = useRef(harness);
+  const missFilterRef = useRef(missFilterKey);
   harnessRef.current = harness;
+  missFilterRef.current = missFilterKey;
 
   useEffect(() => {
     let active = true;
@@ -1822,9 +1937,11 @@ export function SessionsPage() {
     setData(undefined);
     setError(undefined);
     setLoadMoreError(undefined);
+    setExpandedIDs(new Set());
+    setDetails({});
     loadingMoreRef.current = false;
     setLoadingMore(false);
-    getSessions(1, harness).then((result) => active && setData(result))
+    getSessions(1, harness, missFilters).then((result) => active && setData(result))
       .catch(
         (reason) => {
           if (active) {
@@ -1839,7 +1956,7 @@ export function SessionsPage() {
     return () => {
       active = false;
     };
-  }, [harness]);
+  }, [harness, missFilterKey]);
 
   async function loadNextPage() {
     if (
@@ -1847,13 +1964,22 @@ export function SessionsPage() {
       data.pagination.page >= data.pagination.totalPages
     ) return;
     const requestedHarness = harness;
+    const requestedMissFilterKey = missFilterKey;
+    const requestedMissFilters = missFilters;
     const nextPage = data.pagination.page + 1;
     loadingMoreRef.current = true;
     setLoadingMore(true);
     setLoadMoreError(undefined);
     try {
-      const result = await getSessions(nextPage, requestedHarness);
-      if (harnessRef.current !== requestedHarness) return;
+      const result = await getSessions(
+        nextPage,
+        requestedHarness,
+        requestedMissFilters,
+      );
+      if (
+        harnessRef.current !== requestedHarness ||
+        missFilterRef.current !== requestedMissFilterKey
+      ) return;
       setData((current) => {
         if (!current) return result;
         const seen = new Set(
@@ -1870,7 +1996,10 @@ export function SessionsPage() {
         };
       });
     } catch (reason) {
-      if (harnessRef.current === requestedHarness) {
+      if (
+        harnessRef.current === requestedHarness &&
+        missFilterRef.current === requestedMissFilterKey
+      ) {
         setLoadMoreError(
           reason instanceof Error
             ? reason.message
@@ -1878,7 +2007,10 @@ export function SessionsPage() {
         );
       }
     } finally {
-      if (harnessRef.current === requestedHarness) {
+      if (
+        harnessRef.current === requestedHarness &&
+        missFilterRef.current === requestedMissFilterKey
+      ) {
         loadingMoreRef.current = false;
         setLoadingMore(false);
       }
@@ -1899,7 +2031,7 @@ export function SessionsPage() {
     );
     observer.observe(target);
     return () => observer.disconnect();
-  }, [data?.pagination.page, data?.pagination.totalPages, harness]);
+  }, [data?.pagination.page, data?.pagination.totalPages, harness, missFilterKey]);
 
   async function toggleSession(id: string) {
     if (expandedIDs.has(id)) {
@@ -1969,24 +2101,6 @@ export function SessionsPage() {
                 {integer.format(data.pagination.totalItems)} sessions
               </span>
             )}
-            <label>
-              <span>Harness</span>
-              <select
-                value={harness}
-                onChange={(event) =>
-                  navigate({
-                    search: {
-                      harness: event.target.value as typeof harness,
-                    },
-                  })}
-              >
-                <option value="all">All</option>
-                <option value="claude-code">Claude Code</option>
-                <option value="opencode">OpenCode</option>
-                <option value="pi">PI</option>
-                <option value="codex">Codex</option>
-              </select>
-            </label>
             <button
               type="button"
               className="session-refresh"
@@ -1997,6 +2111,39 @@ export function SessionsPage() {
             >
               <RefreshCw size={13} aria-hidden="true" />
             </button>
+            <SessionMissFilterControl
+              selected={selectedMissFilters}
+              onChange={(filters) =>
+                navigate({
+                  search: {
+                    harness,
+                    misses: filters.length === sessionMissFilterValues.length
+                      ? undefined
+                      : filters.length === 0
+                      ? "none"
+                      : filters.join(","),
+                  },
+                })}
+            />
+            <label className="session-control session-harness-control">
+              <span className="session-control-label">Harness</span>
+              <select
+                value={harness}
+                onChange={(event) =>
+                  navigate({
+                    search: {
+                      harness: event.target.value as typeof harness,
+                      misses: misses || undefined,
+                    },
+                  })}
+              >
+                <option value="all">All</option>
+                <option value="claude-code">Claude Code</option>
+                <option value="opencode">OpenCode</option>
+                <option value="pi">PI</option>
+                <option value="codex">Codex</option>
+              </select>
+            </label>
           </div>
         </div>
         {error && <div className="error">{error}</div>}

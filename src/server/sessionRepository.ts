@@ -4,6 +4,7 @@ import {
   type ModelCall,
   type SessionDetail,
   sessionDetailSchema,
+  type SessionMissFilter,
   type SessionListResponse,
   sessionListResponseSchema,
   type SessionSummary,
@@ -299,6 +300,34 @@ const summaryColumns = `
   COALESCE(parent.public_id, parent.external_id) AS parent_public_id
 `;
 
+function missFilterClause(filters: SessionMissFilter[]) {
+  if (filters.length === 0) return " AND 0";
+  const predicates: string[] = [];
+  if (filters.includes("compaction")) {
+    predicates.push("cm.cause = 'compaction'");
+  }
+  if (filters.includes("ttl")) predicates.push("cm.cause = 'ttl'");
+  if (filters.includes("thinking-change")) {
+    predicates.push("cm.cause = 'thinking-change'");
+  }
+  if (filters.includes("full-miss")) {
+    predicates.push("cm.status = 'full-miss' AND cm.cause IS NULL");
+  }
+  if (filters.includes("partial-miss")) {
+    predicates.push("cm.status = 'partial-hit' AND cm.cause IS NULL");
+  }
+  if (predicates.length === 0) return " AND 0";
+  return `
+    AND EXISTS (
+      SELECT 1
+      FROM cache_misses cm
+      JOIN model_call_rollups mcr ON mcr.model_call_id = cm.model_call_id
+      WHERE mcr.root_session_id = ss.id
+        AND (${predicates.join(" OR ")})
+    )
+  `;
+}
+
 const callColumns = `
   mc.id, mc.source_call_id, mc.ordinal, m.provider, m.name AS model,
   mc.started_at, mc.completed_at, mc.reported_cost,
@@ -551,6 +580,7 @@ export class SessionRepository {
     page: number,
     pageSize: number,
     harness?: Harness,
+    missFilters?: SessionMissFilter[],
   ): SessionListResponse {
     if (
       !Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) ||
@@ -559,6 +589,9 @@ export class SessionRepository {
       throw new RangeError("page and pageSize must be positive integers");
     }
     const filter = harness === undefined ? "" : " AND so.harness = ?";
+    const missFilter = missFilters === undefined
+      ? ""
+      : missFilterClause(missFilters);
     const hasInput = `
       AND (
         s.uncached_input_tokens > 0 OR s.cache_read_tokens > 0 OR
@@ -572,7 +605,7 @@ export class SessionRepository {
       FROM sessions s
       JOIN source_sessions ss ON ss.id = s.source_session_id
       JOIN sources so ON so.id = ss.source_id
-      WHERE ss.parent_id IS NULL${hasInput}${filter}
+      WHERE ss.parent_id IS NULL${hasInput}${filter}${missFilter}
     `).get(...parameters) as { count: number }).count,
     );
     const rows = this.db.prepare(`
@@ -581,7 +614,7 @@ export class SessionRepository {
       JOIN source_sessions ss ON ss.id = s.source_session_id
       JOIN sources so ON so.id = ss.source_id
       LEFT JOIN source_sessions parent ON parent.id = ss.parent_id
-      WHERE ss.parent_id IS NULL${hasInput}${filter}
+      WHERE ss.parent_id IS NULL${hasInput}${filter}${missFilter}
       ORDER BY s.updated_at DESC, public_id DESC, so.harness DESC
       LIMIT ? OFFSET ?
     `).all(...parameters, pageSize, (page - 1) * pageSize) as SummaryRow[];

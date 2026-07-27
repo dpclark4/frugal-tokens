@@ -15,9 +15,14 @@ import {
 } from "./cacheAnalysis.ts";
 import type {
   SessionDetail,
+  SessionMissFilter,
   SessionListResponse,
   SessionSummary,
   TokenUsage,
+} from "../shared/sessionSchemas.ts";
+import {
+  parseSessionMissFilters,
+  sessionMissFilterSchema,
 } from "../shared/sessionSchemas.ts";
 import type { UsageCall } from "./usage.ts";
 import { aggregateUsage } from "./usageAnalytics.ts";
@@ -441,6 +446,69 @@ function listSessions(
   };
 }
 
+function sessionMatchesMissFilters(
+  session: SessionDetail,
+  filters: SessionMissFilter[],
+) {
+  if (filters.length === 0) return false;
+  const categories = new Set<SessionMissFilter>();
+  const analyzed = analyzeSessionCache(session);
+  for (const item of sessionTreeMetrics(analyzed).sessions) {
+    for (const turn of item.turns) {
+      for (const call of turn.calls) {
+        const assessment = call.cacheAssessment;
+        if (!assessment) continue;
+        if (assessment.cause === "compaction") categories.add("compaction");
+        if (assessment.cause === "ttl") categories.add("ttl");
+        if (assessment.cause === "thinking-change") {
+          categories.add("thinking-change");
+        }
+        if (assessment.cause !== undefined) continue;
+        if (assessment.status === "full-miss") categories.add("full-miss");
+        if (assessment.status === "partial-hit") categories.add("partial-miss");
+      }
+    }
+  }
+  return filters.some((filter) => categories.has(filter));
+}
+
+function matchingSessionItems(
+  source: ReturnType<typeof repositoryForHarness>,
+  filters: SessionMissFilter[],
+) {
+  if (!source || filters.length === 0) return [];
+  const items: SessionSummary[] = [];
+  for (let page = 1;; page++) {
+    const result = source.listSessions(page, 100);
+    for (const item of result.items) {
+      const detail = source.getSession(item.id);
+      if (detail && sessionMatchesMissFilters(detail, filters)) {
+        items.push(item);
+      }
+    }
+    if (page >= result.pagination.totalPages) break;
+  }
+  return items;
+}
+
+function listFilteredSessions(
+  source: ReturnType<typeof repositoryForHarness>,
+  page: number,
+  pageSize: number,
+  filters: SessionMissFilter[],
+): SessionListResponse {
+  const items = matchingSessionItems(source, filters);
+  return {
+    items: items.slice((page - 1) * pageSize, page * pageSize),
+    pagination: {
+      page,
+      pageSize,
+      totalItems: items.length,
+      totalPages: Math.ceil(items.length / pageSize),
+    },
+  };
+}
+
 type OverviewSourceTiming = {
   listed: number;
   qualifying: number;
@@ -799,6 +867,16 @@ app.get("/api/sessions", (context) => {
   if (!["all", "opencode", "claude-code", "pi", "codex"].includes(harness)) {
     return context.json({ error: "Invalid harness" }, 400);
   }
+  const misses = context.req.query("misses");
+  const missFilters = parseSessionMissFilters(misses);
+  if (
+    misses !== undefined && misses !== "" && misses !== "all" &&
+    misses !== "none" && missFilters === undefined
+  ) {
+    return context.json({
+      error: `Invalid miss filter; expected ${sessionMissFilterSchema.options.join(", ")}`,
+    }, 400);
+  }
   const queryStartedAt = performance.now();
   let result: SessionListResponse;
   if (archiveRepository) {
@@ -806,36 +884,54 @@ app.get("/api/sessions", (context) => {
       page,
       pageSize,
       harness === "all" ? undefined : harness as SessionSummary["harness"],
+      missFilters,
     );
   } else if (harness !== "all") {
-    result = listSessions(
-      repositoryForHarness(harness as SessionSummary["harness"]),
-      page,
-      pageSize,
-    );
+    const source = repositoryForHarness(harness as SessionSummary["harness"]);
+    result = missFilters === undefined
+      ? listSessions(source, page, pageSize)
+      : listFilteredSessions(source, page, pageSize, missFilters);
   } else {
-    const openCode = listSessions(repository, 1, page * pageSize);
-    const claude = listSessions(claudeRepository, 1, page * pageSize);
-    const pi = listSessions(piRepository, 1, page * pageSize);
-    const codex = listSessions(codexRepository, 1, page * pageSize);
-    const totalItems = openCode.pagination.totalItems +
-      claude.pagination.totalItems + pi.pagination.totalItems +
-      codex.pagination.totalItems;
-    result = {
-      items: [
-        ...openCode.items,
-        ...claude.items,
-        ...pi.items,
-        ...codex.items,
-      ].sort((a, b) => b.updatedAt - a.updatedAt || b.id.localeCompare(a.id))
-        .slice((page - 1) * pageSize, page * pageSize),
-      pagination: {
-        page,
-        pageSize,
-        totalItems,
-        totalPages: Math.ceil(totalItems / pageSize),
-      },
-    };
+    if (missFilters !== undefined) {
+      const items = [
+        ...matchingSessionItems(repository, missFilters),
+        ...matchingSessionItems(claudeRepository, missFilters),
+        ...matchingSessionItems(piRepository, missFilters),
+        ...matchingSessionItems(codexRepository, missFilters),
+      ].sort((a, b) => b.updatedAt - a.updatedAt || b.id.localeCompare(a.id));
+      result = {
+        items: items.slice((page - 1) * pageSize, page * pageSize),
+        pagination: {
+          page,
+          pageSize,
+          totalItems: items.length,
+          totalPages: Math.ceil(items.length / pageSize),
+        },
+      };
+    } else {
+      const openCode = listSessions(repository, 1, page * pageSize);
+      const claude = listSessions(claudeRepository, 1, page * pageSize);
+      const pi = listSessions(piRepository, 1, page * pageSize);
+      const codex = listSessions(codexRepository, 1, page * pageSize);
+      const totalItems = openCode.pagination.totalItems +
+        claude.pagination.totalItems + pi.pagination.totalItems +
+        codex.pagination.totalItems;
+      result = {
+        items: [
+          ...openCode.items,
+          ...claude.items,
+          ...pi.items,
+          ...codex.items,
+        ].sort((a, b) => b.updatedAt - a.updatedAt || b.id.localeCompare(a.id))
+          .slice((page - 1) * pageSize, page * pageSize),
+        pagination: {
+          page,
+          pageSize,
+          totalItems,
+          totalPages: Math.ceil(totalItems / pageSize),
+        },
+      };
+    }
   }
   const queryDuration = performance.now() - queryStartedAt;
   const enrichmentStartedAt = performance.now();
