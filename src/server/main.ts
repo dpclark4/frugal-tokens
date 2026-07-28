@@ -1,11 +1,7 @@
-import { Hono, type Context } from "hono";
+import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import { serveStatic } from "hono/deno";
 import { createMiddleware } from "hono/factory";
-import { OpenCodeRepository } from "./opencodeRepository.ts";
-import { ClaudeCodeRepository } from "./claudeCodeRepository.ts";
-import { PiRepository } from "./piRepository.ts";
-import { CodexRepository } from "./codexRepository.ts";
 import { computeModelCallCost, priceSessionDetail } from "./pricing.ts";
 import {
   analyzeSessionCache,
@@ -15,8 +11,6 @@ import {
 } from "./cacheAnalysis.ts";
 import type {
   SessionDetail,
-  SessionMissFilter,
-  SessionListResponse,
   SessionSummary,
   TokenUsage,
 } from "../shared/sessionSchemas.ts";
@@ -40,11 +34,7 @@ import {
 import { contextRange } from "../shared/contextMetrics.ts";
 import { rollupCosts } from "../shared/costMetrics.ts";
 import { expandHomePath, openArchiveDatabase, sqlitePath } from "./database.ts";
-import {
-  SessionRepository,
-  type ModelCallCostSummary,
-  type StoredCacheMiss,
-} from "./sessionRepository.ts";
+import { SessionRepository } from "./sessionRepository.ts";
 import { syncPiSessions } from "./piImporter.ts";
 import { syncCodexSessions } from "./codexImporter.ts";
 import { syncClaudeCodeSessions } from "./claudeCodeImporter.ts";
@@ -103,12 +93,11 @@ const codexDirectory = configuredPath(
   (path) => path,
 );
 const archiveURL = Deno.env.get("FRUGAL_TOKENS_DATABASE_URL");
-const archiveDatabase = archiveURL
-  ? openArchiveDatabase(sqlitePath(archiveURL))
-  : undefined;
-const archiveRepository = archiveDatabase
-  ? new SessionRepository(archiveDatabase)
-  : undefined;
+if (!archiveURL) {
+  throw new Error("FRUGAL_TOKENS_DATABASE_URL is required");
+}
+const archiveDatabase = openArchiveDatabase(sqlitePath(archiveURL));
+const archiveRepository = new SessionRepository(archiveDatabase);
 const syncIntervalSeconds = (() => {
   const value = Deno.env.get("FRUGAL_TOKENS_SYNC_INTERVAL_SECONDS");
   if (value === undefined || value === "0") return undefined;
@@ -163,7 +152,6 @@ async function runSync(
 }
 
 async function syncSources() {
-  if (!archiveRepository) return;
   const startedAt = performance.now();
   if (openCodePath) {
     await runSync(
@@ -208,50 +196,6 @@ async function syncSourcesPeriodically(intervalSeconds: number) {
     }
   }
 }
-const claudeRepository = archiveRepository
-  ? {
-    listSessions: (page: number, pageSize: number) =>
-      archiveRepository.listSessions(page, pageSize, "claude-code"),
-    getSession: (id: string) => archiveRepository.getSession("claude-code", id),
-    listUsageCalls: (startedAt?: number) =>
-      archiveRepository.listUsageCalls(startedAt, "claude-code"),
-  }
-  : claudeDirectory
-  ? new ClaudeCodeRepository(claudeDirectory)
-  : undefined;
-const piRepository = archiveRepository
-  ? {
-    listSessions: (page: number, pageSize: number) =>
-      archiveRepository.listSessions(page, pageSize, "pi"),
-    getSession: (id: string) => archiveRepository.getSession("pi", id),
-    listUsageCalls: (startedAt?: number) =>
-      archiveRepository.listUsageCalls(startedAt, "pi"),
-  }
-  : piDirectory
-  ? new PiRepository(piDirectory)
-  : undefined;
-const codexRepository = archiveRepository
-  ? {
-    listSessions: (page: number, pageSize: number) =>
-      archiveRepository.listSessions(page, pageSize, "codex"),
-    getSession: (id: string) => archiveRepository.getSession("codex", id),
-    listUsageCalls: (startedAt?: number) =>
-      archiveRepository.listUsageCalls(startedAt, "codex"),
-  }
-  : codexDirectory
-  ? new CodexRepository(codexDirectory)
-  : undefined;
-const repository = archiveRepository
-  ? {
-    listSessions: (page: number, pageSize: number) =>
-      archiveRepository.listSessions(page, pageSize, "opencode"),
-    getSession: (id: string) => archiveRepository.getSession("opencode", id),
-    listUsageCalls: (startedAt?: number) =>
-      archiveRepository.listUsageCalls(startedAt, "opencode"),
-  }
-  : openCodePath
-  ? new OpenCodeRepository(openCodePath)
-  : undefined;
 const serveStaticAssets = Deno.env.get("SERVE_STATIC") === "true";
 const app = new Hono();
 app.use("/api/*", cors());
@@ -275,10 +219,11 @@ app.post("/api/sync", async (context) => {
 });
 
 function repositoryForHarness(harness: SessionSummary["harness"]) {
-  if (harness === "claude-code") return claudeRepository;
-  if (harness === "pi") return piRepository;
-  if (harness === "codex") return codexRepository;
-  return repository;
+  return {
+    listSessions: (page: number, pageSize: number) =>
+      archiveRepository.listSessions(page, pageSize, harness),
+    getSession: (id: string) => archiveRepository.getSession(harness, id),
+  };
 }
 
 type SubagentTotals = { count: number; modelCalls: number };
@@ -436,80 +381,6 @@ function priceSummaries(items: SessionSummary[]) {
   });
 }
 
-function listSessions(
-  source: ReturnType<typeof repositoryForHarness>,
-  page: number,
-  pageSize: number,
-) {
-  return source?.listSessions(page, pageSize) ?? {
-    items: [],
-    pagination: { page, pageSize, totalItems: 0, totalPages: 0 },
-  };
-}
-
-function sessionMatchesMissFilters(
-  session: SessionDetail,
-  filters: SessionMissFilter[],
-) {
-  if (filters.length === 0) return false;
-  const categories = new Set<SessionMissFilter>();
-  const analyzed = analyzeSessionCache(session);
-  for (const item of sessionTreeMetrics(analyzed).sessions) {
-    for (const turn of item.turns) {
-      for (const call of turn.calls) {
-        const assessment = call.cacheAssessment;
-        if (!assessment) continue;
-        if (assessment.cause === "compaction") categories.add("compaction");
-        if (assessment.cause === "ttl") categories.add("ttl");
-        if (assessment.cause === "thinking-change") {
-          categories.add("thinking-change");
-        }
-        if (assessment.cause !== undefined) continue;
-        if (assessment.status === "full-miss") categories.add("full-miss");
-        if (assessment.status === "partial-hit") categories.add("partial-miss");
-      }
-    }
-  }
-  return filters.some((filter) => categories.has(filter));
-}
-
-function matchingSessionItems(
-  source: ReturnType<typeof repositoryForHarness>,
-  filters: SessionMissFilter[],
-) {
-  if (!source || filters.length === 0) return [];
-  const items: SessionSummary[] = [];
-  for (let page = 1;; page++) {
-    const result = source.listSessions(page, 100);
-    for (const item of result.items) {
-      const detail = source.getSession(item.id);
-      if (detail && sessionMatchesMissFilters(detail, filters)) {
-        items.push(item);
-      }
-    }
-    if (page >= result.pagination.totalPages) break;
-  }
-  return items;
-}
-
-function listFilteredSessions(
-  source: ReturnType<typeof repositoryForHarness>,
-  page: number,
-  pageSize: number,
-  filters: SessionMissFilter[],
-): SessionListResponse {
-  const items = matchingSessionItems(source, filters);
-  return {
-    items: items.slice((page - 1) * pageSize, page * pageSize),
-    pagination: {
-      page,
-      pageSize,
-      totalItems: items.length,
-      totalPages: Math.ceil(items.length / pageSize),
-    },
-  };
-}
-
 type OverviewSourceTiming = {
   listed: number;
   qualifying: number;
@@ -590,11 +461,11 @@ app.get("/api/tool-calls", (context) => {
   const start = new Date(
     new Date(end).setHours(0, 0, 0, 0) - (range - 1) * 86_400_000,
   ).getTime();
-  const calls = archiveRepository?.listToolCalls(
+  const calls = archiveRepository.listToolCalls(
     start,
     end,
     harness === "all" ? undefined : harness as SessionSummary["harness"],
-  ) ?? [];
+  );
   return context.json(
     aggregateToolCalls(calls, range, start, end, expandParam === "true"),
   );
@@ -628,24 +499,10 @@ app.get("/api/performance", (context) => {
   // Include the preceding cache TTL so requests at the range boundary can be
   // compared with their immediately preceding context.
   const cacheStart = start - CACHE_TTL_1H_MS;
-  const calls: UsageCall[] = [];
-  if (archiveRepository) {
-    calls.push(...archiveRepository.listUsageCalls(
-      cacheStart,
-      harness === "all" ? undefined : harness as SessionSummary["harness"],
-    ));
-  } else {
-    const sources = [
-      ["opencode", repository],
-      ["claude-code", claudeRepository],
-      ["pi", piRepository],
-      ["codex", codexRepository],
-    ] as const;
-    for (const [name, source] of sources) {
-      if (!source || (harness !== "all" && harness !== name)) continue;
-      calls.push(...source.listUsageCalls(cacheStart));
-    }
-  }
+  const calls = archiveRepository.listUsageCalls(
+    cacheStart,
+    harness === "all" ? undefined : harness as SessionSummary["harness"],
+  );
   return context.json(
     aggregatePerformance(calls, start, end, openaiModel, anthropicModel),
   );
@@ -664,43 +521,24 @@ const cacheMissOverview = (context: Context) => {
   const start = rangeParam === "all" ? 0 : new Date(
     new Date().setHours(0, 0, 0, 0) - (range - 1) * 86_400_000,
   ).getTime();
-  const usageCalls: UsageCall[] = [];
-  let storedMisses: StoredCacheMiss[] | undefined;
-  let storedCosts: ModelCallCostSummary | undefined;
-
   const sourceDurations = new Map<string, number>();
-  if (archiveRepository) {
-    const sourceStartedAt = performance.now();
-    storedMisses = archiveRepository.listCacheMisses(
-      start,
-      harness === "all" ? undefined : harness as SessionSummary["harness"],
-    );
-    storedCosts = archiveRepository.summarizeModelCallCosts(
-      start,
-      harness === "all" ? undefined : harness as SessionSummary["harness"],
-    );
-    sourceDurations.set("database", performance.now() - sourceStartedAt);
-  } else {
-    const sources = [
-      ["opencode", repository],
-      ["claude-code", claudeRepository],
-      ["pi", piRepository],
-      ["codex", codexRepository],
-    ] as const;
-    for (const [name, source] of sources) {
-      if (!source || (harness !== "all" && harness !== name)) continue;
-      const sourceStartedAt = performance.now();
-      usageCalls.push(...source.listUsageCalls(start));
-      sourceDurations.set(name, performance.now() - sourceStartedAt);
-    }
-  }
+  const sourceStartedAt = performance.now();
+  const storedMisses = archiveRepository.listCacheMisses(
+    start,
+    harness === "all" ? undefined : harness as SessionSummary["harness"],
+  );
+  const storedCosts = archiveRepository.summarizeModelCallCosts(
+    start,
+    harness === "all" ? undefined : harness as SessionSummary["harness"],
+  );
+  sourceDurations.set("database", performance.now() - sourceStartedAt);
   const sourceDuration = [...sourceDurations.values()].reduce(
     (total, duration) => total + duration,
     0,
   );
   const aggregationStartedAt = performance.now();
   const metrics = aggregateTtlMisses(
-    usageCalls,
+    [],
     start,
     range,
     storedMisses,
@@ -718,7 +556,7 @@ const cacheMissOverview = (context: Context) => {
     }, total;dur=${totalDuration.toFixed(1)}`,
   );
   console.info(
-    `[cache-miss-overview] harness=${harness} range=${rangeParam} calls=${usageCalls.length} storedMisses=${storedMisses?.length ?? 0} sources=${
+    `[cache-miss-overview] harness=${harness} range=${rangeParam} calls=0 storedMisses=${storedMisses.length} sources=${
       sourceDuration.toFixed(1)
     }ms ${sourceTimings} aggregate=${aggregationDuration.toFixed(1)}ms total=${
       totalDuration.toFixed(1)
@@ -813,29 +651,12 @@ app.get("/api/usage", (context) => {
   const usageCalls: UsageCall[] = [];
 
   const sourceDurations = new Map<string, number>();
-  const calls: UsageCall[] = [];
-  if (archiveRepository) {
-    const sourceStartedAt = performance.now();
-    calls.push(...archiveRepository.listUsageCalls(
-      start,
-      harness === "all" ? undefined : harness as SessionSummary["harness"],
-    ));
-    sourceDurations.set("database", performance.now() - sourceStartedAt);
-  } else {
-    const sources = [
-      ["opencode", repository],
-      ["claude-code", claudeRepository],
-      ["pi", piRepository],
-      ["codex", codexRepository],
-    ] as const;
-    for (const [name, source] of sources) {
-      if (harness !== "all" && harness !== name) continue;
-      if (!source) continue;
-      const sourceStartedAt = performance.now();
-      calls.push(...source.listUsageCalls(start));
-      sourceDurations.set(name, performance.now() - sourceStartedAt);
-    }
-  }
+  const sourceStartedAt = performance.now();
+  const calls = archiveRepository.listUsageCalls(
+    start,
+    harness === "all" ? undefined : harness as SessionSummary["harness"],
+  );
+  sourceDurations.set("database", performance.now() - sourceStartedAt);
   const pricingStartedAt = performance.now();
   for (const call of calls) {
     usageCalls.push({
@@ -903,65 +724,18 @@ app.get("/api/sessions", (context) => {
     misses !== "none" && missFilters === undefined
   ) {
     return context.json({
-      error: `Invalid miss filter; expected ${sessionMissFilterSchema.options.join(", ")}`,
+      error: `Invalid miss filter; expected ${
+        sessionMissFilterSchema.options.join(", ")
+      }`,
     }, 400);
   }
   const queryStartedAt = performance.now();
-  let result: SessionListResponse;
-  if (archiveRepository) {
-    result = archiveRepository.listSessions(
-      page,
-      pageSize,
-      harness === "all" ? undefined : harness as SessionSummary["harness"],
-      missFilters,
-    );
-  } else if (harness !== "all") {
-    const source = repositoryForHarness(harness as SessionSummary["harness"]);
-    result = missFilters === undefined
-      ? listSessions(source, page, pageSize)
-      : listFilteredSessions(source, page, pageSize, missFilters);
-  } else {
-    if (missFilters !== undefined) {
-      const items = [
-        ...matchingSessionItems(repository, missFilters),
-        ...matchingSessionItems(claudeRepository, missFilters),
-        ...matchingSessionItems(piRepository, missFilters),
-        ...matchingSessionItems(codexRepository, missFilters),
-      ].sort((a, b) => b.updatedAt - a.updatedAt || b.id.localeCompare(a.id));
-      result = {
-        items: items.slice((page - 1) * pageSize, page * pageSize),
-        pagination: {
-          page,
-          pageSize,
-          totalItems: items.length,
-          totalPages: Math.ceil(items.length / pageSize),
-        },
-      };
-    } else {
-      const openCode = listSessions(repository, 1, page * pageSize);
-      const claude = listSessions(claudeRepository, 1, page * pageSize);
-      const pi = listSessions(piRepository, 1, page * pageSize);
-      const codex = listSessions(codexRepository, 1, page * pageSize);
-      const totalItems = openCode.pagination.totalItems +
-        claude.pagination.totalItems + pi.pagination.totalItems +
-        codex.pagination.totalItems;
-      result = {
-        items: [
-          ...openCode.items,
-          ...claude.items,
-          ...pi.items,
-          ...codex.items,
-        ].sort((a, b) => b.updatedAt - a.updatedAt || b.id.localeCompare(a.id))
-          .slice((page - 1) * pageSize, page * pageSize),
-        pagination: {
-          page,
-          pageSize,
-          totalItems,
-          totalPages: Math.ceil(totalItems / pageSize),
-        },
-      };
-    }
-  }
+  const result = archiveRepository.listSessions(
+    page,
+    pageSize,
+    harness === "all" ? undefined : harness as SessionSummary["harness"],
+    missFilters,
+  );
   const queryDuration = performance.now() - queryStartedAt;
   const enrichmentStartedAt = performance.now();
   const items = priceSummaries(result.items);
@@ -984,14 +758,14 @@ app.get("/api/sessions", (context) => {
 });
 
 app.get("/api/sessions/:id", (context) => {
-  const harness = context.req.query("harness");
-  const session = harness === "claude-code"
-    ? claudeRepository?.getSession(context.req.param("id"))
-    : harness === "pi"
-    ? piRepository?.getSession(context.req.param("id"))
-    : harness === "codex"
-    ? codexRepository?.getSession(context.req.param("id"))
-    : repository?.getSession(context.req.param("id"));
+  const harness = context.req.query("harness") ?? "opencode";
+  if (!["opencode", "claude-code", "pi", "codex"].includes(harness)) {
+    return context.json({ error: "Invalid harness" }, 400);
+  }
+  const session = archiveRepository.getSession(
+    harness as SessionSummary["harness"],
+    context.req.param("id"),
+  );
   return session
     ? context.json(analyzeSessionCache(priceSessionDetail(session)))
     : context.json({ error: "Session not found" }, 404);
@@ -1014,6 +788,6 @@ Deno.serve({
     console.log(`Frugal Tokens API listening on http://localhost:${port}`),
 }, app.fetch);
 await syncSources();
-if (archiveRepository && syncIntervalSeconds !== undefined) {
+if (syncIntervalSeconds !== undefined) {
   void syncSourcesPeriodically(syncIntervalSeconds);
 }
