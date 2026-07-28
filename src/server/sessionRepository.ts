@@ -19,6 +19,8 @@ import {
 import { computeModelCallCost } from "./pricing.ts";
 import type { UsageCall } from "./usage.ts";
 import type { ToolCallObservation } from "./toolCallAnalytics.ts";
+import type { StoredOverviewRollup } from "./overviewAnalytics.ts";
+import { buildSessionRollup, type SessionRollup } from "./sessionRollups.ts";
 
 type Harness = SessionSummary["harness"];
 
@@ -876,6 +878,28 @@ export class SessionRepository {
     }));
   }
 
+  listOverviewRollups(
+    startedAt: number,
+    harness?: Harness,
+  ): StoredOverviewRollup[] {
+    const rows = this.db.prepare(`
+      SELECT sr.root_session_id, sr.overview_json
+      FROM session_rollups sr
+      JOIN source_sessions ss ON ss.id = sr.root_session_id
+      JOIN sources so ON so.id = ss.source_id
+      WHERE sr.last_activity_at >= ?
+        AND (? IS NULL OR so.harness = ?)
+      ORDER BY sr.root_session_id
+    `).all(startedAt, harness ?? null, harness ?? null) as Array<{
+      root_session_id: number;
+      overview_json: string;
+    }>;
+    return rows.map((row) => ({
+      rootSessionID: row.root_session_id,
+      overview: JSON.parse(row.overview_json),
+    }));
+  }
+
   listInitialInputSamples(
     startedAt?: number,
     harness?: Harness,
@@ -1125,9 +1149,18 @@ export class SessionRepository {
   }
 
   replaceSourceSession(value: SourceSessionImport): void {
+    const rollup = value.parentExternalID === undefined
+      ? buildSessionRollup([value])
+      : undefined;
     this.db.exec("BEGIN IMMEDIATE");
     try {
       this.#replaceSourceSession(value, null);
+      if (rollup !== undefined) {
+        this.#insertSessionRollup(
+          this.#sourceSessionID(value.sourceID, value.externalID),
+          rollup,
+        );
+      }
       this.db.exec("COMMIT");
     } catch (error) {
       this.db.exec("ROLLBACK");
@@ -1162,6 +1195,7 @@ export class SessionRepository {
       }
     }
 
+    const rollup = buildSessionRollup(values);
     this.db.exec("BEGIN IMMEDIATE");
     try {
       const upsertIdentity = this.db.prepare(`
@@ -1216,6 +1250,7 @@ export class SessionRepository {
         currentIDs.map(() => "?").join(",")
       })
       `).run(rootID, ...currentIDs);
+      this.#insertSessionRollup(rootID, rollup);
       this.db.exec("COMMIT");
     } catch (error) {
       this.db.exec("ROLLBACK");
@@ -1726,6 +1761,77 @@ export class SessionRepository {
       ).map(contextEvent),
       subagents: children.map((child) => this.#detail(child, nextVisited)),
     };
+  }
+
+  #insertSessionRollup(rootSessionID: number, rollup: SessionRollup) {
+    const subagentTokens = this.#tokenValues(rollup.subagentTokens);
+    this.db.prepare(`
+      INSERT INTO session_rollups (
+        root_session_id, rollup_version, first_activity_at, last_activity_at,
+        computed_cost, thinking_latest, thinking_values_json,
+        thinking_classified_calls, context_latest, context_peak,
+        context_peak_turn, context_peak_call, subagent_count,
+        subagent_user_turns, subagent_model_calls, subagent_image_inputs,
+        subagent_uncached_input_tokens, subagent_cache_read_tokens,
+        subagent_cache_write_tokens, subagent_cache_write_5m_tokens,
+        subagent_cache_write_1h_tokens, subagent_fresh_prompt_tokens,
+        subagent_output_tokens, subagent_reasoning_tokens,
+        subagent_processed_tokens, subagent_reported_cost,
+        subagent_computed_cost, overview_json
+      ) VALUES (
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+        ?, ?, ?, ?, ?, ?
+      )
+      ON CONFLICT (root_session_id) DO UPDATE SET
+        rollup_version = excluded.rollup_version,
+        first_activity_at = excluded.first_activity_at,
+        last_activity_at = excluded.last_activity_at,
+        computed_cost = excluded.computed_cost,
+        thinking_latest = excluded.thinking_latest,
+        thinking_values_json = excluded.thinking_values_json,
+        thinking_classified_calls = excluded.thinking_classified_calls,
+        context_latest = excluded.context_latest,
+        context_peak = excluded.context_peak,
+        context_peak_turn = excluded.context_peak_turn,
+        context_peak_call = excluded.context_peak_call,
+        subagent_count = excluded.subagent_count,
+        subagent_user_turns = excluded.subagent_user_turns,
+        subagent_model_calls = excluded.subagent_model_calls,
+        subagent_image_inputs = excluded.subagent_image_inputs,
+        subagent_uncached_input_tokens = excluded.subagent_uncached_input_tokens,
+        subagent_cache_read_tokens = excluded.subagent_cache_read_tokens,
+        subagent_cache_write_tokens = excluded.subagent_cache_write_tokens,
+        subagent_cache_write_5m_tokens = excluded.subagent_cache_write_5m_tokens,
+        subagent_cache_write_1h_tokens = excluded.subagent_cache_write_1h_tokens,
+        subagent_fresh_prompt_tokens = excluded.subagent_fresh_prompt_tokens,
+        subagent_output_tokens = excluded.subagent_output_tokens,
+        subagent_reasoning_tokens = excluded.subagent_reasoning_tokens,
+        subagent_processed_tokens = excluded.subagent_processed_tokens,
+        subagent_reported_cost = excluded.subagent_reported_cost,
+        subagent_computed_cost = excluded.subagent_computed_cost,
+        overview_json = excluded.overview_json
+    `).run(
+      rootSessionID,
+      rollup.version,
+      rollup.firstActivityAt ?? null,
+      rollup.lastActivityAt ?? null,
+      rollup.computedCost ?? null,
+      rollup.thinkingLatest ?? null,
+      JSON.stringify(rollup.thinkingValues),
+      rollup.thinkingClassifiedCalls,
+      rollup.contextLatest ?? null,
+      rollup.contextPeak ?? null,
+      rollup.contextPeakTurn ?? null,
+      rollup.contextPeakCall ?? null,
+      rollup.subagentCount,
+      rollup.subagentUserTurns,
+      rollup.subagentModelCalls,
+      rollup.subagentImageInputs,
+      ...subagentTokens,
+      rollup.subagentReportedCost ?? null,
+      rollup.subagentComputedCost ?? null,
+      JSON.stringify(rollup.overview),
+    );
   }
 
   #sourceSessionID(sourceID: number, externalID: string): number {

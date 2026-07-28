@@ -37,10 +37,11 @@ Deno.test("opens an archive database with the required SQLite settings", () => {
           'turn_reasoning_settings',
           'model_call_reasoning_settings',
           'cache_misses',
-          'model_call_rollups'
+          'model_call_rollups',
+          'session_rollups'
         )
     `).get() as { count: number };
-    strictEqual(tables.count, 15);
+    strictEqual(tables.count, 16);
     strictEqual(first.prepare("PRAGMA foreign_keys").get()!.foreign_keys, 1);
     first.close();
   } finally {

@@ -28,7 +28,7 @@ import {
   PERFORMANCE_RANGE_DAYS,
 } from "./performanceAnalytics.ts";
 import {
-  aggregateOverview,
+  aggregateOverviewRollups,
   ROTATION_INACTIVITY_MINUTES,
 } from "./overviewAnalytics.ts";
 import { contextRange } from "../shared/contextMetrics.ts";
@@ -381,68 +381,6 @@ function priceSummaries(items: SessionSummary[]) {
   });
 }
 
-type OverviewSourceTiming = {
-  listed: number;
-  qualifying: number;
-  hydrated: number;
-  listDuration: number;
-  hydrationDuration: number;
-  pricingDuration: number;
-};
-
-type OverviewSessionsResult = {
-  sessions: SessionDetail[];
-  sourceTimings: Map<string, OverviewSourceTiming>;
-};
-
-function overviewSessions(
-  start: number,
-  harness: string,
-): OverviewSessionsResult {
-  const harnesses = harness === "all"
-    ? (["opencode", "claude-code", "pi", "codex"] as const)
-    : [harness as SessionSummary["harness"]];
-  const sessions: SessionDetail[] = [];
-  const sourceTimings = new Map<string, OverviewSourceTiming>();
-  for (const name of harnesses) {
-    const source = repositoryForHarness(name);
-    if (!source) continue;
-    const timing: OverviewSourceTiming = {
-      listed: 0,
-      qualifying: 0,
-      hydrated: 0,
-      listDuration: 0,
-      hydrationDuration: 0,
-      pricingDuration: 0,
-    };
-    sourceTimings.set(name, timing);
-    const pageSize = 100;
-    for (let page = 1;; page++) {
-      const listStartedAt = performance.now();
-      const result = source.listSessions(page, pageSize);
-      timing.listDuration += performance.now() - listStartedAt;
-      timing.listed += result.items.length;
-      for (const summary of result.items) {
-        if (summary.updatedAt < start) continue;
-        timing.qualifying++;
-        const hydrationStartedAt = performance.now();
-        const detail = source.getSession(summary.id);
-        timing.hydrationDuration += performance.now() - hydrationStartedAt;
-        if (!detail) continue;
-        timing.hydrated++;
-        const pricingStartedAt = performance.now();
-        sessions.push(priceSessionDetail(detail));
-        timing.pricingDuration += performance.now() - pricingStartedAt;
-      }
-      if (
-        page >= result.pagination.totalPages ||
-        result.items.every((session) => session.updatedAt < start)
-      ) break;
-    }
-  }
-  return { sessions, sourceTimings };
-}
-
 app.get("/api/tool-calls", (context) => {
   const harness = context.req.query("harness") ?? "all";
   if (!["all", "opencode", "claude-code", "pi", "codex"].includes(harness)) {
@@ -595,14 +533,14 @@ app.get("/api/overview", (context) => {
   );
   const initialInputDuration = performance.now() - initialInputStartedAt;
   const loadStartedAt = performance.now();
-  const loaded = overviewSessions(
+  const loaded = archiveRepository.listOverviewRollups(
     start - ROTATION_INACTIVITY_MINUTES * 60_000,
-    harness,
+    harness === "all" ? undefined : harness as SessionSummary["harness"],
   );
   const loadDuration = performance.now() - loadStartedAt;
   const aggregationStartedAt = performance.now();
-  const aggregated = aggregateOverview(
-    loaded.sessions,
+  const aggregated = aggregateOverviewRollups(
+    loaded,
     start,
     end,
     range,
@@ -614,34 +552,20 @@ app.get("/api/overview", (context) => {
   };
   const aggregationDuration = performance.now() - aggregationStartedAt;
   const totalDuration = performance.now() - requestStartedAt;
-  const sourceDuration = [...loaded.sourceTimings.values()].reduce(
-    (total, timing) =>
-      total + timing.listDuration + timing.hydrationDuration +
-      timing.pricingDuration,
-    0,
-  );
-  const sourceTimings = [...loaded.sourceTimings.entries()].map(
-    ([name, timing]) =>
-      `${name}:listed=${timing.listed},qualifying=${timing.qualifying},hydrated=${timing.hydrated},list=${
-        timing.listDuration.toFixed(1)
-      }ms,hydrate=${timing.hydrationDuration.toFixed(1)}ms,price=${
-        timing.pricingDuration.toFixed(1)
-      }ms`,
-  ).join(" ");
   context.header(
     "Server-Timing",
-    `sources;dur=${sourceDuration.toFixed(1)}, initial-input;dur=${
+    `sources;dur=${loadDuration.toFixed(1)}, initial-input;dur=${
       initialInputDuration.toFixed(1)
     }, aggregate;dur=${aggregationDuration.toFixed(1)}, total;dur=${
       totalDuration.toFixed(1)
     }`,
   );
   console.info(
-    `[overview] harness=${harness} range=${rangeParam} roots=${loaded.sessions.length} load=${
+    `[overview] harness=${harness} range=${rangeParam} roots=${loaded.length} load=${
       loadDuration.toFixed(1)
     }ms initial-input=${initialInputDuration.toFixed(1)}ms aggregate=${
       aggregationDuration.toFixed(1)
-    }ms total=${totalDuration.toFixed(1)}ms ${sourceTimings}`,
+    }ms total=${totalDuration.toFixed(1)}ms`,
   );
   return context.json(overview);
 });

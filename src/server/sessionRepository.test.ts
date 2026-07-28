@@ -506,6 +506,30 @@ Deno.test("atomically replaces trees with root-scoped public child IDs", () => {
     repository.replaceSourceSessionTree(tree("root-b"));
 
     deepStrictEqual(
+      db.prepare(`
+        SELECT sr.subagent_count, sr.subagent_user_turns,
+          sr.subagent_model_calls, sr.subagent_processed_tokens,
+          sr.computed_cost, sr.subagent_computed_cost
+        FROM session_rollups sr
+        ORDER BY sr.root_session_id
+      `).all().map((row) => ({ ...row })),
+      [{
+        subagent_count: 1,
+        subagent_user_turns: 1,
+        subagent_model_calls: 1,
+        subagent_processed_tokens: 15,
+        computed_cost: null,
+        subagent_computed_cost: null,
+      }, {
+        subagent_count: 1,
+        subagent_user_turns: 1,
+        subagent_model_calls: 1,
+        subagent_processed_tokens: 15,
+        computed_cost: null,
+        subagent_computed_cost: null,
+      }],
+    );
+    deepStrictEqual(
       repository.listSessions(1, 10, "claude-code").items.map(({ id }) => id)
         .sort(),
       ["root-a", "root-b"],
@@ -547,6 +571,25 @@ Deno.test("atomically replaces trees with root-scoped public child IDs", () => {
     strictEqual(
       repository.getSession("claude-code", "root-a")?.subagents.length,
       0,
+    );
+    deepStrictEqual(
+      {
+        ...db.prepare(`
+          SELECT sr.subagent_count, sr.subagent_user_turns,
+            sr.subagent_model_calls, sr.subagent_processed_tokens,
+            json_array_length(sr.overview_json, '$.days') AS overview_days
+          FROM session_rollups sr
+          JOIN source_sessions ss ON ss.id = sr.root_session_id
+          WHERE ss.external_id = 'root-a:root'
+        `).get(),
+      },
+      {
+        subagent_count: 0,
+        subagent_user_turns: 0,
+        subagent_model_calls: 0,
+        subagent_processed_tokens: 0,
+        overview_days: 1,
+      },
     );
     strictEqual(
       repository.getSession("claude-code", "root-b")?.subagents[0].id,
