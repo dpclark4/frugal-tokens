@@ -1,4 +1,6 @@
-export function SiteHeader({ active }: { active: "overview" | "performance" }) {
+export function SiteHeader({ active }: {
+  active: "overview" | "performance" | "tool-calls";
+}) {
   return (
     <header className="page-header site-header">
       <div>
@@ -14,6 +16,12 @@ export function SiteHeader({ active }: { active: "overview" | "performance" }) {
           href="/performance"
         >
           Performance
+        </a>
+        <a
+          className={active === "tool-calls" ? "active" : undefined}
+          href="/tool-calls"
+        >
+          Tool calls
         </a>
       </nav>
     </header>

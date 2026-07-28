@@ -18,6 +18,7 @@ import {
 } from "./cacheAnalysis.ts";
 import { computeModelCallCost } from "./pricing.ts";
 import type { UsageCall } from "./usage.ts";
+import type { ToolCallObservation } from "./toolCallAnalytics.ts";
 
 type Harness = SessionSummary["harness"];
 
@@ -814,6 +815,51 @@ export class SessionRepository {
       ...(row.estimated_extra_cost === null
         ? {}
         : { estimatedExtraCost: row.estimated_extra_cost }),
+    }));
+  }
+
+  listToolCalls(
+    startedAt: number,
+    endedAt: number,
+    harness?: Harness,
+  ): ToolCallObservation[] {
+    type ToolCallRow = {
+      model_call_id: number;
+      name: string;
+      input_preview: string | null;
+      tool_started_at: number | null;
+      tool_completed_at: number | null;
+      model_started_at: number;
+      model_completed_at: number | null;
+    };
+    const harnessFilter = harness === undefined ? "" : " AND so.harness = ?";
+    const rows = this.db.prepare(`
+      SELECT mc.id AS model_call_id, te.name, te.input_preview,
+        te.started_at AS tool_started_at,
+        te.completed_at AS tool_completed_at,
+        mc.started_at AS model_started_at,
+        mc.completed_at AS model_completed_at
+      FROM tool_events te
+      JOIN model_calls mc ON mc.id = te.model_call_id
+      JOIN turns t ON t.id = mc.turn_id
+      JOIN sessions s ON s.source_session_id = t.session_id
+      JOIN source_sessions ss ON ss.id = s.source_session_id
+      JOIN sources so ON so.id = ss.source_id
+      WHERE mc.started_at >= ? AND mc.started_at <= ?${harnessFilter}
+      ORDER BY te.id
+    `).all(
+      startedAt,
+      endedAt,
+      ...(harness === undefined ? [] : [harness]),
+    ) as ToolCallRow[];
+    return rows.map((row) => ({
+      modelCallID: row.model_call_id,
+      name: row.name,
+      inputPreview: optional(row.input_preview),
+      startedAt: optional(row.tool_started_at),
+      completedAt: optional(row.tool_completed_at),
+      modelStartedAt: row.model_started_at,
+      modelCompletedAt: optional(row.model_completed_at),
     }));
   }
 

@@ -5,6 +5,7 @@ import {
   sessionListResponseSchema,
   type SessionMissFilter,
   ttlMissMetricsSchema,
+  toolCallsResponseSchema,
   usageResponseSchema,
 } from "../shared/sessionSchemas.ts";
 
@@ -38,6 +39,21 @@ export async function getUsage(range: number | "all", harness: string) {
 export async function getOverview(range: number | "all", harness: string) {
   return overviewResponseSchema.parse(
     await getJson(`/api/overview?range=${range}&harness=${harness}`),
+  );
+}
+
+export async function getToolCalls(
+  range: 7 | 30 | 90,
+  harness: string,
+  expanded: boolean,
+) {
+  const query = new URLSearchParams({
+    range: String(range),
+    harness,
+    expand: String(expanded),
+  });
+  return toolCallsResponseSchema.parse(
+    await getJson(`/api/tool-calls?${query}`),
   );
 }
 

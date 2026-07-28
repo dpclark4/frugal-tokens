@@ -398,6 +398,27 @@ export const performanceResponseSchema = z.object({
   anthropic: performanceProviderSchema,
 });
 
+const runtimeDistributionSchema = z.object({
+  average: z.number().nonnegative(),
+  median: z.number().nonnegative(),
+  p95: z.number().nonnegative(),
+});
+
+export const toolCallsResponseSchema = z.object({
+  rangeDays: z.union([z.literal(7), z.literal(30), z.literal(90)]),
+  startAt: z.number(),
+  endAt: z.number(),
+  expanded: z.boolean(),
+  tools: z.array(z.object({
+    tool: z.string(),
+    count: z.number().int().positive(),
+    modelCalls: z.number().int().positive(),
+    callsPerModelCall: z.number().positive(),
+    toolRuntime: runtimeDistributionSchema.optional(),
+    modelRuntime: runtimeDistributionSchema.optional(),
+  })),
+});
+
 export const ttlMissMetricsSchema = z.object({
   rangeDays: z.number().int().positive(),
   sessions: z.number().int().nonnegative(),
@@ -508,4 +529,5 @@ export type TokenUsage = z.infer<typeof tokenUsageSchema>;
 export type UsageResponse = z.infer<typeof usageResponseSchema>;
 export type OverviewResponse = z.infer<typeof overviewResponseSchema>;
 export type PerformanceResponse = z.infer<typeof performanceResponseSchema>;
+export type ToolCallsResponse = z.infer<typeof toolCallsResponseSchema>;
 export type TtlMissMetrics = z.infer<typeof ttlMissMetricsSchema>;

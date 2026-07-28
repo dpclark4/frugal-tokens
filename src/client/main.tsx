@@ -20,6 +20,11 @@ const PerformancePage = lazy(() =>
     default: PerformancePage,
   }))
 );
+const ToolCallsPage = lazy(() =>
+  import("./ToolCallsPage.tsx").then(({ ToolCallsPage }) => ({
+    default: ToolCallsPage,
+  }))
+);
 
 function AppError({ error, reset }: { error: unknown; reset: () => void }) {
   const message = error instanceof Error ? error.message : String(error);
@@ -88,8 +93,21 @@ const performanceRoute = createRoute({
   }),
   component: PerformancePage,
 });
+const toolCallsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tool-calls",
+  validateSearch: z.object({
+    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex"]).catch("all"),
+    range: z.coerce.number().pipe(z.union([z.literal(7), z.literal(30), z.literal(90)])).catch(30),
+    expanded: z.preprocess(
+      (value) => value === true || value === "true",
+      z.boolean(),
+    ).catch(false),
+  }),
+  component: ToolCallsPage,
+});
 const router = createRouter({
-  routeTree: rootRoute.addChildren([indexRoute, performanceRoute]),
+  routeTree: rootRoute.addChildren([indexRoute, performanceRoute, toolCallsRoute]),
 });
 
 declare module "@tanstack/react-router" {

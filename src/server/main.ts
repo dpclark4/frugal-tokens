@@ -27,6 +27,7 @@ import {
 import type { UsageCall } from "./usage.ts";
 import { aggregateUsage } from "./usageAnalytics.ts";
 import { aggregateTtlMisses } from "./ttlMissAnalytics.ts";
+import { aggregateToolCalls } from "./toolCallAnalytics.ts";
 import {
   aggregatePerformance,
   PERFORMANCE_MODELS,
@@ -570,6 +571,34 @@ function overviewSessions(
   }
   return { sessions, sourceTimings };
 }
+
+app.get("/api/tool-calls", (context) => {
+  const harness = context.req.query("harness") ?? "all";
+  if (!["all", "opencode", "claude-code", "pi", "codex"].includes(harness)) {
+    return context.json({ error: "Invalid harness" }, 400);
+  }
+  const rangeParam = context.req.query("range") ?? "30";
+  if (!["7", "30", "90"].includes(rangeParam)) {
+    return context.json({ error: "Invalid range; expected 7, 30, or 90" }, 400);
+  }
+  const expandParam = context.req.query("expand") ?? "false";
+  if (!["true", "false"].includes(expandParam)) {
+    return context.json({ error: "Invalid expand value" }, 400);
+  }
+  const range = Number(rangeParam) as 7 | 30 | 90;
+  const end = Date.now();
+  const start = new Date(
+    new Date(end).setHours(0, 0, 0, 0) - (range - 1) * 86_400_000,
+  ).getTime();
+  const calls = archiveRepository?.listToolCalls(
+    start,
+    end,
+    harness === "all" ? undefined : harness as SessionSummary["harness"],
+  ) ?? [];
+  return context.json(
+    aggregateToolCalls(calls, range, start, end, expandParam === "true"),
+  );
+});
 
 app.get("/api/performance", (context) => {
   const harness = context.req.query("harness") ?? "all";
