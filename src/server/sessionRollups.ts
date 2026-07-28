@@ -6,10 +6,11 @@ import type {
   SourceSessionImport,
 } from "./sessionRepository.ts";
 
-export const SESSION_ROLLUP_VERSION = 1;
+export const SESSION_ROLLUP_VERSION = 2;
 
 type CostBucket = {
   cost: number;
+  hasPricedCost: boolean;
   hasUnpricedCost: boolean;
 };
 
@@ -213,6 +214,7 @@ export function buildSessionRollup(
         cacheRead: 0,
         peakContext: 0,
         cost: 0,
+        hasPricedCost: false,
         hasUnpricedCost: false,
         models: new Map(),
       };
@@ -249,18 +251,25 @@ export function buildSessionRollup(
         day.cacheRead += call.tokens.cacheRead;
         day.peakContext = Math.max(day.peakContext, input);
         if (cost === undefined) day.hasUnpricedCost = true;
-        else day.cost += cost;
+        else {
+          day.cost += cost;
+          day.hasPricedCost = true;
+        }
 
         const model = day.models.get(call.model) ?? {
           input: 0,
           cacheRead: 0,
           cost: 0,
+          hasPricedCost: false,
           hasUnpricedCost: false,
         };
         model.input += input;
         model.cacheRead += call.tokens.cacheRead;
         if (cost === undefined) model.hasUnpricedCost = true;
-        else model.cost += cost;
+        else {
+          model.cost += cost;
+          model.hasPricedCost = true;
+        }
         day.models.set(call.model, model);
       }
       days.set(date, day);

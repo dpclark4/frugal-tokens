@@ -1,5 +1,5 @@
 import { deepStrictEqual } from "node:assert/strict";
-import { aggregateUsage } from "./usageAnalytics.ts";
+import { aggregateUsage, aggregateUsageRollups } from "./usageAnalytics.ts";
 import type { UsageCall } from "./usage.ts";
 
 function usageCall(
@@ -126,8 +126,6 @@ Deno.test("aggregates subagent adoption, calls, and cost share", () => {
     withSubagents: 1,
     withMultipleSubagents: 0,
     subagents: 1,
-    calls: 3,
-    subagentCalls: 1,
     totalInput: 300,
     subagentInput: 100,
     totalCost: 10,
@@ -141,13 +139,127 @@ Deno.test("aggregates subagent adoption, calls, and cost share", () => {
     withSubagents: 1,
     withMultipleSubagents: 0,
     subagents: 1,
-    calls: 3,
-    subagentCalls: 1,
     totalInput: 300,
     subagentInput: 100,
     totalCost: 10,
     subagentCost: 3,
     hasUnpricedCost: false,
+  }]);
+});
+
+Deno.test("aggregates compact usage rollups and sparse subagent activity", () => {
+  const firstDay = new Date(2026, 6, 10, 9).getTime();
+  const secondDay = new Date(2026, 6, 11, 9).getTime();
+  const sessionStartedAt = new Date(2026, 6, 1).getTime();
+  const day = (
+    date: string,
+    startedAt: number,
+    input: number,
+    cost: number,
+  ) => ({
+    date,
+    turns: 1,
+    firstTurnAt: startedAt,
+    lastCallAt: startedAt + 1,
+    input,
+    cacheRead: 0,
+    peakContext: input,
+    cost,
+    hasPricedCost: true,
+    hasUnpricedCost: false,
+    models: [{
+      model: "claude-sonnet-4-5",
+      input,
+      cacheRead: 0,
+      cost,
+      hasPricedCost: true,
+      hasUnpricedCost: false,
+    }],
+  });
+  const response = aggregateUsageRollups(
+    [{
+      rootSessionID: 1,
+      sessionStartedAt,
+      directInput: 100,
+      subagentInput: 150,
+      subagentModelCalls: 2,
+      overview: {
+        days: [
+          day("2026-07-10", firstDay, 200, 5),
+          day("2026-07-11", secondDay, 50, 1),
+        ],
+        executionIntervals: [],
+      },
+    }, {
+      rootSessionID: 3,
+      sessionStartedAt,
+      directInput: 100,
+      subagentInput: 0,
+      subagentModelCalls: 0,
+      overview: {
+        days: [day("2026-07-10", firstDay + 1, 100, 5)],
+        executionIntervals: [],
+      },
+    }],
+    [{
+      rootSessionID: 1,
+      subagentSessionID: 2,
+      date: "2026-07-10",
+      input: 100,
+      cost: 3,
+      hasUnpricedCost: false,
+    }, {
+      rootSessionID: 1,
+      subagentSessionID: 2,
+      date: "2026-07-11",
+      input: 50,
+      cost: 1,
+      hasUnpricedCost: false,
+    }],
+  ).response;
+
+  deepStrictEqual(response.subagentDays, [{
+    date: "2026-07-10",
+    rootOnly: 1,
+    withSubagents: 1,
+    withMultipleSubagents: 0,
+    subagents: 1,
+    totalInput: 300,
+    subagentInput: 100,
+    totalCost: 10,
+    subagentCost: 3,
+    hasUnpricedCost: false,
+  }, {
+    date: "2026-07-11",
+    rootOnly: 0,
+    withSubagents: 1,
+    withMultipleSubagents: 0,
+    subagents: 1,
+    totalInput: 50,
+    subagentInput: 50,
+    totalCost: 1,
+    subagentCost: 1,
+    hasUnpricedCost: false,
+  }]);
+  deepStrictEqual(response.subagentWeeks, [{
+    date: "2026-07-06",
+    endDate: "2026-07-12",
+    rootOnly: 1,
+    withSubagents: 1,
+    withMultipleSubagents: 0,
+    subagents: 1,
+    totalInput: 350,
+    subagentInput: 150,
+    totalCost: 11,
+    subagentCost: 4,
+    hasUnpricedCost: false,
+  }]);
+  deepStrictEqual(response.days, [{
+    date: "2026-07-10",
+    models: [{ model: "claude-sonnet-4-5", input: 300, cost: 10 }],
+  }, {
+    date: "2026-07-11",
+    models: [{ model: "claude-sonnet-4-5", input: 50, cost: 1 }],
   }]);
 });
 

@@ -1,6 +1,25 @@
 import type { UsageResponse } from "../shared/sessionSchemas.ts";
+import type { SessionOverviewRollup } from "./sessionRollups.ts";
 import type { InitialInputSample } from "./sessionRepository.ts";
 import type { UsageCall } from "./usage.ts";
+
+export type StoredUsageRollup = {
+  rootSessionID: number;
+  sessionStartedAt: number;
+  directInput: number;
+  subagentInput: number;
+  subagentModelCalls: number;
+  overview: SessionOverviewRollup;
+};
+
+export type StoredSubagentUsage = {
+  rootSessionID: number;
+  subagentSessionID: number;
+  date: string;
+  input: number;
+  cost: number;
+  hasUnpricedCost: boolean;
+};
 
 function dateKey(value: number) {
   const date = new Date(value);
@@ -97,8 +116,6 @@ function summarizeSubagents(inputs: Map<string, SubagentBucket>) {
       withSubagents: bucket.withSubagents,
       withMultipleSubagents: bucket.withMultipleSubagents,
       subagents: bucket.subagents,
-      calls: bucket.calls,
-      subagentCalls: bucket.subagentCalls,
       totalInput: bucket.totalInput,
       subagentInput: bucket.subagentInput,
       totalCost: bucket.totalCost,
@@ -256,6 +273,177 @@ export function aggregateUsage(
       ),
       initialInputDays: summarizeInitialInputs(initialInputSamples),
       days: [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(
+        ([date, models]) => ({
+          date,
+          models: [...models.entries()].map(([model, bucket]) => ({
+            model,
+            input: bucket.input,
+            cost: bucket.hasPricedCost ? bucket.cost : undefined,
+          })),
+        }),
+      ),
+    },
+  };
+}
+
+export function aggregateUsageRollups(
+  rollups: StoredUsageRollup[],
+  subagentUsage: StoredSubagentUsage[],
+  start?: number,
+  subagentCoverage: UsageResponse["subagentCoverage"] = "full",
+  initialInputSamples: InitialInputSample[] = [],
+): { response: UsageResponse; rootCount: number; dayCount: number } {
+  const modelDays = new Map<
+    string,
+    Map<string, { input: number; cost: number; hasPricedCost: boolean }>
+  >();
+  const subagentsByRootDay = Map.groupBy(
+    subagentUsage,
+    (row) => `${row.rootSessionID}:${row.date}`,
+  );
+  const dailySubagents = new Map<string, SubagentBucket>();
+  const weeklySubagents = new Map<string, SubagentBucket>();
+  const sessionInputs = new Map<string, number[]>();
+  let hasUnpricedCost = false;
+
+  const addSubagentCohort = (
+    buckets: Map<string, SubagentBucket>,
+    key: string,
+    totalInput: number,
+    totalCost: number,
+    unpriced: boolean,
+    rows: StoredSubagentUsage[],
+  ) => {
+    const bucket = buckets.get(key) ?? emptySubagentBucket();
+    const subagentIDs = new Set(rows.map((row) => row.subagentSessionID));
+    bucket.rootOnly += subagentIDs.size === 0 ? 1 : 0;
+    bucket.withSubagents += subagentIDs.size > 0 ? 1 : 0;
+    bucket.withMultipleSubagents += subagentIDs.size > 1 ? 1 : 0;
+    bucket.subagents += subagentIDs.size;
+    bucket.totalInput += totalInput;
+    bucket.subagentInput += rows.reduce((sum, row) => sum + row.input, 0);
+    bucket.totalCost += totalCost;
+    bucket.subagentCost += rows.reduce((sum, row) => sum + row.cost, 0);
+    bucket.hasUnpricedCost ||= unpriced ||
+      rows.some((row) => row.hasUnpricedCost);
+    buckets.set(key, bucket);
+  };
+
+  for (const root of rollups) {
+    if (start === undefined || root.sessionStartedAt >= start) {
+      const date = dateKey(root.sessionStartedAt);
+      const values = sessionInputs.get(date) ?? [];
+      values.push(root.directInput + root.subagentInput);
+      sessionInputs.set(date, values);
+    }
+
+    const rangedDays = root.overview.days.filter((day) =>
+      start === undefined || day.firstTurnAt >= start
+    );
+    const weeks = new Map<
+      string,
+      {
+        input: number;
+        cost: number;
+        hasUnpricedCost: boolean;
+        rows: Map<number, StoredSubagentUsage>;
+      }
+    >();
+    for (const day of rangedDays) {
+      hasUnpricedCost ||= day.hasUnpricedCost;
+      const models = modelDays.get(day.date) ?? new Map();
+      for (const model of day.models) {
+        const bucket = models.get(model.model) ?? {
+          input: 0,
+          cost: 0,
+          hasPricedCost: false,
+        };
+        bucket.input += model.input;
+        bucket.cost += model.cost;
+        bucket.hasPricedCost ||= model.hasPricedCost ??
+          (!model.hasUnpricedCost || model.cost > 0);
+        models.set(model.model, bucket);
+      }
+      modelDays.set(day.date, models);
+
+      const rows = subagentsByRootDay.get(
+        `${root.rootSessionID}:${day.date}`,
+      ) ?? [];
+      addSubagentCohort(
+        dailySubagents,
+        day.date,
+        day.input,
+        day.cost,
+        day.hasUnpricedCost,
+        rows,
+      );
+
+      const week = weekKey(day.date);
+      const weekly = weeks.get(week) ?? {
+        input: 0,
+        cost: 0,
+        hasUnpricedCost: false,
+        rows: new Map(),
+      };
+      weekly.input += day.input;
+      weekly.cost += day.cost;
+      weekly.hasUnpricedCost ||= day.hasUnpricedCost;
+      for (const row of rows) {
+        const existing = weekly.rows.get(row.subagentSessionID);
+        weekly.rows.set(
+          row.subagentSessionID,
+          existing === undefined ? { ...row } : {
+            ...existing,
+            input: existing.input + row.input,
+            cost: existing.cost + row.cost,
+            hasUnpricedCost: existing.hasUnpricedCost || row.hasUnpricedCost,
+          },
+        );
+      }
+      weeks.set(week, weekly);
+    }
+    for (const [week, values] of weeks) {
+      addSubagentCohort(
+        weeklySubagents,
+        week,
+        values.input,
+        values.cost,
+        values.hasUnpricedCost,
+        [...values.rows.values()],
+      );
+    }
+  }
+
+  const sessionInputWeeks = new Map<string, number[]>();
+  for (const [date, values] of sessionInputs) {
+    const week = weekKey(date);
+    const inputs = sessionInputWeeks.get(week) ?? [];
+    inputs.push(...values);
+    sessionInputWeeks.set(week, inputs);
+  }
+
+  return {
+    rootCount: rollups.length,
+    dayCount: modelDays.size,
+    response: {
+      hasUnpricedCost,
+      subagentCoverage,
+      subagentDays: summarizeSubagents(dailySubagents),
+      subagentWeeks: summarizeSubagents(weeklySubagents).map((entry) => ({
+        ...entry,
+        endDate: Temporal.PlainDate.from(entry.date).add({ days: 6 })
+          .toString(),
+      })),
+      sessionInputDays: summarizeSessionInputs(sessionInputs),
+      sessionInputWeeks: summarizeSessionInputs(sessionInputWeeks).map(
+        (entry) => ({
+          ...entry,
+          endDate: Temporal.PlainDate.from(entry.date).add({ days: 6 })
+            .toString(),
+        }),
+      ),
+      initialInputDays: summarizeInitialInputs(initialInputSamples),
+      days: [...modelDays.entries()].sort(([a], [b]) => a.localeCompare(b)).map(
         ([date, models]) => ({
           date,
           models: [...models.entries()].map(([model, bucket]) => ({

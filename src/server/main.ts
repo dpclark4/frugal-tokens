@@ -2,7 +2,7 @@ import { type Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import { serveStatic } from "hono/deno";
 import { createMiddleware } from "hono/factory";
-import { computeModelCallCost, priceSessionDetail } from "./pricing.ts";
+import { priceSessionDetail } from "./pricing.ts";
 import {
   analyzeSessionCache,
   CACHE_TTL_1H_MS,
@@ -18,8 +18,7 @@ import {
   parseSessionMissFilters,
   sessionMissFilterSchema,
 } from "../shared/sessionSchemas.ts";
-import type { UsageCall } from "./usage.ts";
-import { aggregateUsage } from "./usageAnalytics.ts";
+import { aggregateUsageRollups } from "./usageAnalytics.ts";
 import { aggregateTtlMisses } from "./ttlMissAnalytics.ts";
 import { aggregateToolCalls } from "./toolCallAnalytics.ts";
 import {
@@ -584,31 +583,20 @@ app.get("/api/usage", (context) => {
     ? undefined
     : new Date(new Date().setHours(0, 0, 0, 0) - (range - 1) * 86_400_000)
       .getTime();
-  const usageCalls: UsageCall[] = [];
-
   const sourceDurations = new Map<string, number>();
   const sourceStartedAt = performance.now();
   const selectedHarness = harness === "all"
     ? undefined
     : harness as SessionSummary["harness"];
-  const calls = archiveRepository.listUsageCalls(start, selectedHarness);
+  const rollups = archiveRepository.listUsageRollups(start, selectedHarness);
+  const subagentUsage = rollups.some((rollup) => rollup.subagentModelCalls > 0)
+    ? archiveRepository.listSubagentUsage(start, selectedHarness)
+    : [];
   const initialInputSamples = archiveRepository.listInitialInputSamples(
     start,
     selectedHarness,
   );
   sourceDurations.set("database", performance.now() - sourceStartedAt);
-  const pricingStartedAt = performance.now();
-  for (const call of calls) {
-    usageCalls.push({
-      ...call,
-      computedCost: call.computedCost ?? computeModelCallCost(
-        call.tokens,
-        call.model,
-        call.startedAt,
-      ),
-    });
-  }
-  const pricingDuration = performance.now() - pricingStartedAt;
 
   const subagentCoverage = harness === "pi" || harness === "codex"
     ? "none"
@@ -616,8 +604,9 @@ app.get("/api/usage", (context) => {
     ? "partial"
     : "full";
   const aggregationStartedAt = performance.now();
-  const aggregated = aggregateUsage(
-    usageCalls,
+  const aggregated = aggregateUsageRollups(
+    rollups,
+    subagentUsage,
     start,
     subagentCoverage,
     initialInputSamples,
@@ -633,18 +622,16 @@ app.get("/api/usage", (context) => {
   ).join(" ");
   context.header(
     "Server-Timing",
-    `sources;dur=${sourceDuration.toFixed(1)}, pricing;dur=${
-      pricingDuration.toFixed(1)
-    }, aggregate;dur=${aggregationDuration.toFixed(1)}, total;dur=${
-      totalDuration.toFixed(1)
-    }`,
+    `sources;dur=${sourceDuration.toFixed(1)}, aggregate;dur=${
+      aggregationDuration.toFixed(1)
+    }, total;dur=${totalDuration.toFixed(1)}`,
   );
   console.info(
-    `[usage] harness=${harness} range=${rangeParam} calls=${aggregated.callCount} days=${aggregated.dayCount} sources=${
+    `[usage] harness=${harness} range=${rangeParam} roots=${aggregated.rootCount} subagentGroups=${subagentUsage.length} days=${aggregated.dayCount} sources=${
       sourceDuration.toFixed(1)
-    }ms ${sourceTimings} pricing=${pricingDuration.toFixed(1)}ms aggregate=${
-      aggregationDuration.toFixed(1)
-    }ms total=${totalDuration.toFixed(1)}ms`,
+    }ms ${sourceTimings} aggregate=${aggregationDuration.toFixed(1)}ms total=${
+      totalDuration.toFixed(1)
+    }ms`,
   );
   return context.json(aggregated.response);
 });

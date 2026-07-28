@@ -529,6 +529,22 @@ Deno.test("atomically replaces trees with root-scoped public child IDs", () => {
         subagent_computed_cost: null,
       }],
     );
+    strictEqual(
+      repository.listUsageRollups(undefined, "claude-code").length,
+      2,
+    );
+    deepStrictEqual(
+      repository.listSubagentUsage(undefined, "claude-code").map((row) => ({
+        input: row.input,
+        cost: row.cost,
+        hasUnpricedCost: row.hasUnpricedCost,
+      })),
+      [{ input: 10, cost: 0, hasUnpricedCost: false }, {
+        input: 10,
+        cost: 0,
+        hasUnpricedCost: false,
+      }],
+    );
     deepStrictEqual(
       repository.listSessions(1, 10, "claude-code").items.map(({ id }) => id)
         .sort(),
@@ -594,6 +610,10 @@ Deno.test("atomically replaces trees with root-scoped public child IDs", () => {
     strictEqual(
       repository.getSession("claude-code", "root-b")?.subagents[0].id,
       "child",
+    );
+    strictEqual(
+      repository.listSubagentUsage(undefined, "claude-code").length,
+      1,
     );
     deepStrictEqual(
       (db.prepare(`

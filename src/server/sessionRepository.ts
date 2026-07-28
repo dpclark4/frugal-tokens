@@ -20,6 +20,10 @@ import { computeModelCallCost } from "./pricing.ts";
 import type { UsageCall } from "./usage.ts";
 import type { ToolCallObservation } from "./toolCallAnalytics.ts";
 import type { StoredOverviewRollup } from "./overviewAnalytics.ts";
+import type {
+  StoredSubagentUsage,
+  StoredUsageRollup,
+} from "./usageAnalytics.ts";
 import { buildSessionRollup, type SessionRollup } from "./sessionRollups.ts";
 
 type Harness = SessionSummary["harness"];
@@ -897,6 +901,100 @@ export class SessionRepository {
     return rows.map((row) => ({
       rootSessionID: row.root_session_id,
       overview: JSON.parse(row.overview_json),
+    }));
+  }
+
+  listUsageRollups(
+    startedAt?: number,
+    harness?: Harness,
+  ): StoredUsageRollup[] {
+    const rows = this.db.prepare(`
+      SELECT sr.root_session_id,
+        COALESCE(s.started_at, s.updated_at) AS session_started_at,
+        s.uncached_input_tokens + s.cache_read_tokens +
+          COALESCE(s.cache_write_tokens, 0) AS direct_input,
+        sr.subagent_uncached_input_tokens + sr.subagent_cache_read_tokens +
+          COALESCE(sr.subagent_cache_write_tokens, 0) AS subagent_input,
+        sr.subagent_model_calls, sr.overview_json
+      FROM session_rollups sr
+      JOIN sessions s ON s.source_session_id = sr.root_session_id
+      JOIN source_sessions ss ON ss.id = sr.root_session_id
+      JOIN sources so ON so.id = ss.source_id
+      WHERE (? IS NULL OR sr.last_activity_at >= ?)
+        AND (? IS NULL OR so.harness = ?)
+      ORDER BY sr.root_session_id
+    `).all(
+      startedAt ?? null,
+      startedAt ?? null,
+      harness ?? null,
+      harness ?? null,
+    ) as Array<{
+      root_session_id: number;
+      session_started_at: number;
+      direct_input: number;
+      subagent_input: number;
+      subagent_model_calls: number;
+      overview_json: string;
+    }>;
+    return rows.map((row) => ({
+      rootSessionID: row.root_session_id,
+      sessionStartedAt: row.session_started_at,
+      directInput: row.direct_input,
+      subagentInput: row.subagent_input,
+      subagentModelCalls: row.subagent_model_calls,
+      overview: JSON.parse(row.overview_json),
+    }));
+  }
+
+  listSubagentUsage(
+    startedAt?: number,
+    harness?: Harness,
+  ): StoredSubagentUsage[] {
+    const rows = this.db.prepare(`
+      SELECT mcr.root_session_id, mcr.session_id AS subagent_session_id,
+        date(t.started_at / 1000, 'unixepoch', 'localtime') AS date,
+        SUM(
+          mc.uncached_input_tokens + mc.cache_read_tokens +
+          COALESCE(mc.cache_write_tokens, 0)
+        ) AS input,
+        SUM(mcr.cost) AS cost,
+        MAX(mcr.cost IS NULL) AS has_unpriced_cost
+      FROM model_call_rollups mcr
+      JOIN model_calls mc ON mc.id = mcr.model_call_id
+      JOIN turns t ON t.id = mc.turn_id
+      JOIN session_rollups sr ON sr.root_session_id = mcr.root_session_id
+      JOIN source_sessions root ON root.id = mcr.root_session_id
+      JOIN sources so ON so.id = root.source_id
+      WHERE mcr.session_id <> mcr.root_session_id
+        AND sr.subagent_model_calls > 0
+        AND (? IS NULL OR t.started_at >= ?)
+        AND (? IS NULL OR so.harness = ?)
+        AND NOT (
+          so.harness = 'codex' AND
+          COALESCE(mc.source_call_id, '') LIKE 'context-operation:%'
+        )
+      GROUP BY mcr.root_session_id, mcr.session_id, date
+      ORDER BY date, mcr.root_session_id, mcr.session_id
+    `).all(
+      startedAt ?? null,
+      startedAt ?? null,
+      harness ?? null,
+      harness ?? null,
+    ) as Array<{
+      root_session_id: number;
+      subagent_session_id: number;
+      date: string;
+      input: number;
+      cost: number | null;
+      has_unpriced_cost: number;
+    }>;
+    return rows.map((row) => ({
+      rootSessionID: row.root_session_id,
+      subagentSessionID: row.subagent_session_id,
+      date: row.date,
+      input: row.input,
+      cost: row.cost ?? 0,
+      hasUnpricedCost: row.has_unpriced_cost === 1,
     }));
   }
 
