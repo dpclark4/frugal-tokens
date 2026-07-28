@@ -990,8 +990,8 @@ h1 {
 }
 
 .session-count {
-  grid-area: count;
-  text-align: right;
+  display: block;
+  margin-top: 4px;
   font-family: var(--mono);
   color: var(--green);
   font-size: 12px;
@@ -1000,11 +1000,9 @@ h1 {
 .session-filters {
   display: grid;
   grid-template-columns: auto auto auto;
-  grid-template-areas:
-    ". count count"
-    "refresh filter harness";
+  grid-template-areas: "refresh filter harness";
   align-items: flex-end;
-  gap: 3px 8px;
+  gap: 8px;
 }
 
 .session-control,

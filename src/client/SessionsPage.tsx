@@ -1076,7 +1076,9 @@ function SessionMissFilterControl({
 
   function toggle(value: SessionMissFilter) {
     onChange(
-      selected.includes(value)
+      allSelected
+        ? [value]
+        : selected.includes(value)
         ? selected.filter((current) => current !== value)
         : [...selected, value],
     );
@@ -1084,7 +1086,7 @@ function SessionMissFilterControl({
 
   return (
     <div className="session-filter-control" ref={menuRef}>
-      <span className="session-control-label">Filter</span>
+      <span className="session-control-label">Cache misses</span>
       <button
         type="button"
         className="session-filter-trigger"
@@ -1893,6 +1895,7 @@ export function SessionsPage() {
     ? "none"
     : missFilters.join(",");
   const [data, setData] = useState<SessionListResponse>();
+  const [loadingSessions, setLoadingSessions] = useState(false);
   const [overview, setOverview] = useState<OverviewResponse>();
   const [overviewError, setOverviewError] = useState<string>();
   const [overviewRange, setOverviewRange] = useState<Range>(90);
@@ -1934,14 +1937,17 @@ export function SessionsPage() {
 
   useEffect(() => {
     let active = true;
-    setData(undefined);
     setError(undefined);
     setLoadMoreError(undefined);
-    setExpandedIDs(new Set());
-    setDetails({});
     loadingMoreRef.current = false;
     setLoadingMore(false);
-    getSessions(1, harness, missFilters).then((result) => active && setData(result))
+    setLoadingSessions(true);
+    getSessions(1, harness, missFilters).then((result) => {
+      if (!active) return;
+      setData(result);
+      setExpandedIDs(new Set());
+      setDetails({});
+    })
       .catch(
         (reason) => {
           if (active) {
@@ -1952,7 +1958,10 @@ export function SessionsPage() {
             );
           }
         },
-      );
+      )
+      .finally(() => {
+        if (active) setLoadingSessions(false);
+      });
     return () => {
       active = false;
     };
@@ -1960,7 +1969,7 @@ export function SessionsPage() {
 
   async function loadNextPage() {
     if (
-      !data || loadingMoreRef.current ||
+      !data || loadingSessions || loadingMoreRef.current ||
       data.pagination.page >= data.pagination.totalPages
     ) return;
     const requestedHarness = harness;
@@ -2031,7 +2040,13 @@ export function SessionsPage() {
     );
     observer.observe(target);
     return () => observer.disconnect();
-  }, [data?.pagination.page, data?.pagination.totalPages, harness, missFilterKey]);
+  }, [
+    data?.pagination.page,
+    data?.pagination.totalPages,
+    harness,
+    loadingSessions,
+    missFilterKey,
+  ]);
 
   async function toggleSession(id: string) {
     if (expandedIDs.has(id)) {
@@ -2094,13 +2109,14 @@ export function SessionsPage() {
         <div className="panel-heading">
           <div>
             <h2>Recent sessions</h2>
-          </div>
-          <div className="session-filters">
             {data && (
               <span className="session-count">
                 {integer.format(data.pagination.totalItems)} sessions
+                {loadingSessions && " · Updating…"}
               </span>
             )}
+          </div>
+          <div className="session-filters">
             <button
               type="button"
               className="session-refresh"
@@ -2123,6 +2139,7 @@ export function SessionsPage() {
                       ? "none"
                       : filters.join(","),
                   },
+                  resetScroll: false,
                 })}
             />
             <label className="session-control session-harness-control">
@@ -2135,6 +2152,7 @@ export function SessionsPage() {
                       harness: event.target.value as typeof harness,
                       misses: misses || undefined,
                     },
+                    resetScroll: false,
                   })}
               >
                 <option value="all">All</option>
