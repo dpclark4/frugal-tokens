@@ -16,6 +16,9 @@ type ChartRow = {
   cohorts: Cohort[];
   [key: string]: string | Cohort[] | number | null;
 };
+type Gap = {
+  dataKey: string;
+};
 
 const harnesses: Array<{
   value: Harness;
@@ -119,10 +122,29 @@ export function InitialInputChart({ usage }: { usage: UsageResponse }) {
       }
       return row;
     });
-  const sessions = cohorts.reduce((sum, cohort) => sum + cohort.sessions, 0);
   const visibleHarnesses = harnesses.filter(({ value }) =>
     cohorts.some((cohort) => cohort.harness === value)
   );
+  const gaps: Gap[] = [];
+  for (const { value } of visibleHarnesses) {
+    const observed = observedDates.filter((date) =>
+      cohortsByDate.get(date)?.some((cohort) => cohort.harness === value)
+    );
+    for (let index = 1; index < observed.length; index++) {
+      const previous = observed[index - 1];
+      const current = observed[index];
+      const missingDates = datesBetween(previous, current).slice(1, -1);
+      if (missingDates.length === 0) continue;
+      const dataKey = `${lineKey(value)}-gap-${index}`;
+      gaps.push({ dataKey });
+      for (const row of data) {
+        row[dataKey] = row.date === previous || row.date === current
+          ? row[lineKey(value)]
+          : null;
+      }
+    }
+  }
+  const sessions = cohorts.reduce((sum, cohort) => sum + cohort.sessions, 0);
 
   return (
     <>
@@ -184,6 +206,24 @@ export function InitialInputChart({ usage }: { usage: UsageResponse }) {
                     connectNulls={false}
                   />
                 ))}
+                {gaps.map(({ dataKey }) => {
+                  const harness = harnesses.find(({ value }) =>
+                    dataKey.startsWith(lineKey(value))
+                  )!;
+                  return (
+                    <Line
+                      key={dataKey}
+                      dataKey={dataKey}
+                      stroke={harness.color}
+                      strokeWidth={2.5}
+                      strokeDasharray="2 4"
+                      strokeLinecap="round"
+                      dot={false}
+                      activeDot={false}
+                      connectNulls
+                    />
+                  );
+                })}
               </LineChart>
             </ResponsiveContainer>
           )}
