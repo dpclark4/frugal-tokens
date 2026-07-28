@@ -271,6 +271,12 @@ export const usageResponseSchema = z.object({
     average: z.number().nonnegative(),
     sessions: z.number().int().positive(),
   })),
+  initialInputDays: z.array(z.object({
+    date: z.string(),
+    harness: harnessSchema,
+    median: z.number().nonnegative(),
+    sessions: z.number().int().positive(),
+  })),
   days: z.array(z.object({
     date: z.string(),
     models: z.array(z.object({
@@ -308,6 +314,7 @@ export const overviewResponseSchema = z.object({
     turns: distributionSchema.optional(),
     activeSpan: distributionSchema.optional(),
     input: distributionSchema.optional(),
+    initialInput: distributionSchema.optional(),
     peakContext: distributionSchema.optional(),
     elapsed: distributionSchema.optional(),
     spend: distributionSchema.optional(),

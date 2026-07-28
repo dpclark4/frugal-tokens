@@ -4,9 +4,9 @@ import {
   type ModelCall,
   type SessionDetail,
   sessionDetailSchema,
-  type SessionMissFilter,
   type SessionListResponse,
   sessionListResponseSchema,
+  type SessionMissFilter,
   type SessionSummary,
   type TokenUsage,
   type TurnInput,
@@ -30,6 +30,18 @@ export type StoredCacheMiss = CacheMissRecord & {
   modelCallID: number;
   previousModelCallID?: number;
   turnID: number;
+};
+
+export type InitialInputSample = {
+  harness: Harness;
+  sessionStartedAt: number;
+  input: number;
+};
+
+export type InitialInputDistribution = {
+  average: number;
+  median: number;
+  p90: number;
 };
 
 export type ModelCallCostSummary = {
@@ -661,8 +673,9 @@ export class SessionRepository {
       root_started_at: number | null;
       root_updated_at: number;
     };
-    const harnessFilter = harness === undefined ? "" :
-      "\n          AND so.harness = ?";
+    const harnessFilter = harness === undefined
+      ? ""
+      : "\n          AND so.harness = ?";
     const rows = this.db.prepare(`
       WITH scoped AS (
         SELECT mcr.session_id, mcr.root_session_id, mcr.cost,
@@ -861,6 +874,138 @@ export class SessionRepository {
       modelStartedAt: row.model_started_at,
       modelCompletedAt: optional(row.model_completed_at),
     }));
+  }
+
+  listInitialInputSamples(
+    startedAt?: number,
+    harness?: Harness,
+  ): InitialInputSample[] {
+    type InitialInputRow = {
+      harness: Harness;
+      session_started_at: number;
+      input: number;
+    };
+    const rows = this.db.prepare(`
+      SELECT so.harness,
+        COALESCE(s.started_at, s.updated_at) AS session_started_at,
+        mc.uncached_input_tokens + mc.cache_read_tokens +
+          COALESCE(mc.cache_write_tokens, 0) AS input
+      FROM source_sessions ss
+      JOIN sources so ON so.id = ss.source_id
+      JOIN sessions s ON s.source_session_id = ss.id
+      JOIN model_calls mc ON mc.id = (
+        SELECT first_mc.id
+        FROM turns first_t
+        JOIN model_calls first_mc ON first_mc.turn_id = first_t.id
+        WHERE first_t.session_id = ss.id
+          AND NOT (
+            so.harness = 'codex' AND
+            COALESCE(first_mc.source_call_id, '')
+              LIKE 'context-operation:%'
+          )
+        ORDER BY first_t.ordinal, first_mc.ordinal
+        LIMIT 1
+      )
+      WHERE ss.parent_id IS NULL
+        AND (? IS NULL OR COALESCE(s.started_at, s.updated_at) >= ?)
+        AND (? IS NULL OR so.harness = ?)
+      ORDER BY session_started_at, ss.id
+    `).all(
+      startedAt ?? null,
+      startedAt ?? null,
+      harness ?? null,
+      harness ?? null,
+    ) as InitialInputRow[];
+    return rows.map((row) => ({
+      harness: row.harness,
+      sessionStartedAt: row.session_started_at,
+      input: row.input,
+    }));
+  }
+
+  initialInputDistribution(
+    startedAt: number,
+    harness?: Harness,
+  ): InitialInputDistribution | undefined {
+    type DistributionRow = {
+      average: number | null;
+      median: number | null;
+      p90: number | null;
+    };
+    const row = this.db.prepare(`
+      WITH samples AS (
+        SELECT mc.uncached_input_tokens + mc.cache_read_tokens +
+          COALESCE(mc.cache_write_tokens, 0) AS input
+        FROM source_sessions ss
+        JOIN sources so ON so.id = ss.source_id
+        JOIN sessions s ON s.source_session_id = ss.id
+        JOIN model_calls mc ON mc.id = (
+          SELECT first_mc.id
+          FROM turns first_t
+          JOIN model_calls first_mc ON first_mc.turn_id = first_t.id
+          WHERE first_t.session_id = ss.id
+            AND NOT (
+              so.harness = 'codex' AND
+              COALESCE(first_mc.source_call_id, '')
+                LIKE 'context-operation:%'
+            )
+          ORDER BY first_t.ordinal, first_mc.ordinal
+          LIMIT 1
+        )
+        WHERE ss.parent_id IS NULL
+          AND COALESCE(s.started_at, s.updated_at) >= ?
+          AND (? IS NULL OR so.harness = ?)
+      ),
+      ranked AS (
+        SELECT input, ROW_NUMBER() OVER (ORDER BY input) - 1 AS index_value
+        FROM samples
+      ),
+      positions AS (
+        SELECT COUNT(*) AS sample_count, AVG(input) AS average,
+          (COUNT(*) - 1) * 0.5 AS median_position,
+          (COUNT(*) - 1) * 0.9 AS p90_position
+        FROM samples
+      ),
+      selected AS (
+        SELECT positions.*,
+          MAX(CASE
+            WHEN ranked.index_value = CAST(median_position AS INTEGER)
+            THEN ranked.input
+          END) AS median_lower,
+          MAX(CASE
+            WHEN ranked.index_value = CAST(median_position AS INTEGER) +
+              (median_position > CAST(median_position AS INTEGER))
+            THEN ranked.input
+          END) AS median_upper,
+          MAX(CASE
+            WHEN ranked.index_value = CAST(p90_position AS INTEGER)
+            THEN ranked.input
+          END) AS p90_lower,
+          MAX(CASE
+            WHEN ranked.index_value = CAST(p90_position AS INTEGER) +
+              (p90_position > CAST(p90_position AS INTEGER))
+            THEN ranked.input
+          END) AS p90_upper
+        FROM positions
+        LEFT JOIN ranked ON ranked.index_value IN (
+          CAST(median_position AS INTEGER),
+          CAST(median_position AS INTEGER) +
+            (median_position > CAST(median_position AS INTEGER)),
+          CAST(p90_position AS INTEGER),
+          CAST(p90_position AS INTEGER) +
+            (p90_position > CAST(p90_position AS INTEGER))
+        )
+      )
+      SELECT average,
+        median_lower + (median_upper - median_lower) *
+          (median_position - CAST(median_position AS INTEGER)) AS median,
+        p90_lower + (p90_upper - p90_lower) *
+          (p90_position - CAST(p90_position AS INTEGER)) AS p90
+      FROM selected
+    `).get(startedAt, harness ?? null, harness ?? null) as DistributionRow;
+    return row.average === null || row.median === null || row.p90 === null
+      ? undefined
+      : { average: row.average, median: row.median, p90: row.p90 };
   }
 
   listUsageCalls(startedAt?: number, harness?: Harness): UsageCall[] {
@@ -1501,11 +1646,13 @@ export class SessionRepository {
       LEFT JOIN reasoning_setting_events rse
         ON rse.id = trs.setting_event_id
       WHERE t.session_id = ? ORDER BY t.ordinal
-    `).all(row.source_session_id) as Array<ReasoningSettingRow & {
-      id: number;
-      ordinal: number;
-      started_at: number;
-    }>).map((turn) => {
+    `).all(row.source_session_id) as Array<
+      ReasoningSettingRow & {
+        id: number;
+        ordinal: number;
+        started_at: number;
+      }
+    >).map((turn) => {
       const turnCalls = callsByTurn.get(turn.id) ?? [];
       const turnInputs = inputsByTurn.get(turn.id) ?? [];
       return {

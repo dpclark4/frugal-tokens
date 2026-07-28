@@ -72,7 +72,9 @@ export function CompactOverview({
     <div className="compact-overview">
       <div className="compact-overview-summary">
         <div
-          title={`${integer.format(data.activeDays)} of ${integer.format(data.rangeDays)} selected days had activity; ${
+          title={`${integer.format(data.activeDays)} of ${
+            integer.format(data.rangeDays)
+          } selected days had activity; ${
             integer.format(data.activeWeekdays)
           } weekdays, ${integer.format(data.weekendDays)} weekend days`}
         >
@@ -92,7 +94,9 @@ export function CompactOverview({
           <span>Overall token reuse</span>
         </div>
         <div
-          title={`${integer.format(data.multiDaySessions)} of ${integer.format(data.sessions)} sessions`}
+          title={`${integer.format(data.multiDaySessions)} of ${
+            integer.format(data.sessions)
+          } sessions`}
         >
           <strong>{percent(data.multiDaySessionRate)}</strong>
           <span>Multi-day sessions</span>
@@ -102,7 +106,9 @@ export function CompactOverview({
         <table className="overview-table">
           <thead>
             <tr>
-              <th className="overview-section-title">Activity per active day</th>
+              <th className="overview-section-title">
+                Activity per active day
+              </th>
               <th>Median</th>
               <th>Average</th>
               <th>P90</th>
@@ -138,6 +144,12 @@ export function CompactOverview({
               label="Input processed"
               values={data.sessionProfile.input}
               format={compact.format}
+            />
+            <MetricRow
+              label="Initial input"
+              values={data.sessionProfile.initialInput}
+              format={compact.format}
+              tooltip="Input on the first model call of each root session"
             />
             <MetricRow
               label="Peak context"

@@ -588,6 +588,12 @@ app.get("/api/overview", (context) => {
     : harness === "all"
     ? "partial"
     : "full";
+  const initialInputStartedAt = performance.now();
+  const initialInput = archiveRepository.initialInputDistribution(
+    start,
+    harness === "all" ? undefined : harness as SessionSummary["harness"],
+  );
+  const initialInputDuration = performance.now() - initialInputStartedAt;
   const loadStartedAt = performance.now();
   const loaded = overviewSessions(
     start - ROTATION_INACTIVITY_MINUTES * 60_000,
@@ -595,13 +601,17 @@ app.get("/api/overview", (context) => {
   );
   const loadDuration = performance.now() - loadStartedAt;
   const aggregationStartedAt = performance.now();
-  const overview = aggregateOverview(
+  const aggregated = aggregateOverview(
     loaded.sessions,
     start,
     end,
     range,
     coverage,
   );
+  const overview = {
+    ...aggregated,
+    sessionProfile: { ...aggregated.sessionProfile, initialInput },
+  };
   const aggregationDuration = performance.now() - aggregationStartedAt;
   const totalDuration = performance.now() - requestStartedAt;
   const sourceDuration = [...loaded.sourceTimings.values()].reduce(
@@ -620,16 +630,18 @@ app.get("/api/overview", (context) => {
   ).join(" ");
   context.header(
     "Server-Timing",
-    `sources;dur=${sourceDuration.toFixed(1)}, aggregate;dur=${
-      aggregationDuration.toFixed(1)
-    }, total;dur=${totalDuration.toFixed(1)}`,
+    `sources;dur=${sourceDuration.toFixed(1)}, initial-input;dur=${
+      initialInputDuration.toFixed(1)
+    }, aggregate;dur=${aggregationDuration.toFixed(1)}, total;dur=${
+      totalDuration.toFixed(1)
+    }`,
   );
   console.info(
     `[overview] harness=${harness} range=${rangeParam} roots=${loaded.sessions.length} load=${
       loadDuration.toFixed(1)
-    }ms aggregate=${aggregationDuration.toFixed(1)}ms total=${
-      totalDuration.toFixed(1)
-    }ms ${sourceTimings}`,
+    }ms initial-input=${initialInputDuration.toFixed(1)}ms aggregate=${
+      aggregationDuration.toFixed(1)
+    }ms total=${totalDuration.toFixed(1)}ms ${sourceTimings}`,
   );
   return context.json(overview);
 });
@@ -652,9 +664,13 @@ app.get("/api/usage", (context) => {
 
   const sourceDurations = new Map<string, number>();
   const sourceStartedAt = performance.now();
-  const calls = archiveRepository.listUsageCalls(
+  const selectedHarness = harness === "all"
+    ? undefined
+    : harness as SessionSummary["harness"];
+  const calls = archiveRepository.listUsageCalls(start, selectedHarness);
+  const initialInputSamples = archiveRepository.listInitialInputSamples(
     start,
-    harness === "all" ? undefined : harness as SessionSummary["harness"],
+    selectedHarness,
   );
   sourceDurations.set("database", performance.now() - sourceStartedAt);
   const pricingStartedAt = performance.now();
@@ -676,7 +692,12 @@ app.get("/api/usage", (context) => {
     ? "partial"
     : "full";
   const aggregationStartedAt = performance.now();
-  const aggregated = aggregateUsage(usageCalls, start, subagentCoverage);
+  const aggregated = aggregateUsage(
+    usageCalls,
+    start,
+    subagentCoverage,
+    initialInputSamples,
+  );
   const aggregationDuration = performance.now() - aggregationStartedAt;
   const totalDuration = performance.now() - requestStartedAt;
   const sourceDuration = [...sourceDurations.values()].reduce(

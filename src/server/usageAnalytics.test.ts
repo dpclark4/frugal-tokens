@@ -68,6 +68,38 @@ Deno.test("aggregates daily and weekly session input percentiles", () => {
   ]);
 });
 
+Deno.test("aggregates initial input by day and harness", () => {
+  const firstDay = new Date(2026, 6, 10).getTime();
+  const secondDay = new Date(2026, 6, 11).getTime();
+  const response = aggregateUsage([], undefined, "full", [
+    { harness: "claude-code", sessionStartedAt: firstDay, input: 100 },
+    { harness: "claude-code", sessionStartedAt: firstDay + 1, input: 300 },
+    { harness: "codex", sessionStartedAt: firstDay, input: 500 },
+    { harness: "claude-code", sessionStartedAt: secondDay, input: 800 },
+  ]).response;
+
+  deepStrictEqual(response.initialInputDays, [
+    {
+      date: "2026-07-10",
+      harness: "claude-code",
+      median: 200,
+      sessions: 2,
+    },
+    {
+      date: "2026-07-10",
+      harness: "codex",
+      median: 500,
+      sessions: 1,
+    },
+    {
+      date: "2026-07-11",
+      harness: "claude-code",
+      median: 800,
+      sessions: 1,
+    },
+  ]);
+});
+
 Deno.test("aggregates subagent adoption, calls, and cost share", () => {
   const startedAt = new Date(2026, 6, 10).getTime();
   const sessionStartedAt = new Date(2026, 6, 1).getTime();

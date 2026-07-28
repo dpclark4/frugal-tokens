@@ -343,6 +343,12 @@ Deno.test("stores and reads canonical sessions atomically", () => {
     const listed = repository.listSessions(1, 10, "pi");
     strictEqual(listed.pagination.totalItems, 1);
     deepStrictEqual(listed.items.map(({ id }) => id), ["root"]);
+    deepStrictEqual(repository.listInitialInputSamples(undefined, "pi"), [{
+      harness: "pi",
+      sessionStartedAt: 10,
+      input: 10,
+    }]);
+    deepStrictEqual(repository.listInitialInputSamples(11, "pi"), []);
 
     const detail = repository.getSession("pi", "root")!;
     strictEqual(detail.reportedCost, 0);
@@ -427,6 +433,25 @@ Deno.test("stores and reads canonical sessions atomically", () => {
         .sort(),
       ["codex", "pi"],
     );
+
+    const second = importedSession(sourceID, "second");
+    second.session.turns[0].calls[0].tokens = {
+      ...second.session.turns[0].calls[0].tokens,
+      uncachedInput: 13,
+    };
+    repository.replaceSourceSession(second);
+    const third = importedSession(sourceID, "third");
+    third.session.turns[0].calls[0].tokens = {
+      ...third.session.turns[0].calls[0].tokens,
+      uncachedInput: 23,
+    };
+    repository.replaceSourceSession(third);
+    deepStrictEqual(repository.initialInputDistribution(0, "pi"), {
+      average: 20,
+      median: 20,
+      p90: 28,
+    });
+    strictEqual(repository.initialInputDistribution(11, "pi"), undefined);
 
     const invalid = importedSession(sourceID, "root");
     invalid.checkpoint.checksum = "must-roll-back";

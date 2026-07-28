@@ -1,17 +1,24 @@
 import { useEffect, useState } from "react";
 import type { UsageResponse } from "../shared/sessionSchemas.ts";
 import { getUsage } from "./api.ts";
+import { InitialInputChart } from "./analytics/InitialInputChart.tsx";
 import { SessionInputChart } from "./analytics/SessionInputChart.tsx";
 import { SpendInputChart } from "./analytics/SpendInputChart.tsx";
 import { SubagentChart } from "./analytics/SubagentChart.tsx";
 
-type View = "spend" | "input" | "session-input" | "subagents";
+type View =
+  | "spend"
+  | "input"
+  | "session-input"
+  | "initial-input"
+  | "subagents";
 type Range = 7 | 30 | 90 | "all";
 
 const views: Array<{ value: View; label: string }> = [
   { value: "spend", label: "Spend" },
   { value: "input", label: "Input" },
   { value: "session-input", label: "Session size" },
+  { value: "initial-input", label: "Initial input" },
   { value: "subagents", label: "Subagents" },
 ];
 
@@ -87,6 +94,7 @@ export function UsageChart({ harness }: { harness: string }) {
         />
       )}
       {usage && view === "session-input" && <SessionInputChart usage={usage} />}
+      {usage && view === "initial-input" && <InitialInputChart usage={usage} />}
       {usage && view === "subagents" && <SubagentChart usage={usage} />}
     </section>
   );

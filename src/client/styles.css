@@ -878,6 +878,56 @@ h1 {
   user-select: text;
 }
 
+.initial-input-tooltip {
+  min-width: 340px;
+}
+
+.initial-input-tooltip-header,
+.initial-input-tooltip-rows > div {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 72px 62px;
+  align-items: center;
+  gap: 12px;
+}
+
+.initial-input-tooltip-header {
+  margin-bottom: 7px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--panel-border);
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.initial-input-tooltip-header span:not(:first-child),
+.initial-input-tooltip-rows > div > :not(:first-child) {
+  text-align: right;
+}
+
+.initial-input-tooltip-rows {
+  display: grid;
+  gap: 8px;
+}
+
+.initial-input-tooltip-rows > div > strong {
+  font-size: 12px;
+}
+
+.initial-input-tooltip-rows small {
+  display: block;
+  margin-top: 2px;
+  color: var(--danger);
+  font-size: 8px;
+  white-space: nowrap;
+}
+
+.usage-tooltip > .initial-input-tooltip-note {
+  margin: 11px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--panel-border);
+  font-size: 9px;
+}
+
 .usage-tooltip-models {
   display: grid;
   gap: 7px;

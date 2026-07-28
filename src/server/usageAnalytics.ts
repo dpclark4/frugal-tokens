@@ -1,4 +1,5 @@
 import type { UsageResponse } from "../shared/sessionSchemas.ts";
+import type { InitialInputSample } from "./sessionRepository.ts";
 import type { UsageCall } from "./usage.ts";
 
 function dateKey(value: number) {
@@ -21,6 +22,26 @@ function percentile(values: number[], quantile: number) {
 function weekKey(date: string) {
   const day = Temporal.PlainDate.from(date);
   return day.subtract({ days: day.dayOfWeek - 1 }).toString();
+}
+
+function summarizeInitialInputs(samples: InitialInputSample[]) {
+  return [
+    ...Map.groupBy(
+      samples,
+      (sample) => `${dateKey(sample.sessionStartedAt)}:${sample.harness}`,
+    ).entries(),
+  ].map(([key, cohort]) => {
+    const separator = key.indexOf(":");
+    const values = cohort.map((sample) => sample.input).sort((a, b) => a - b);
+    return {
+      date: key.slice(0, separator),
+      harness: cohort[0].harness,
+      median: percentile(values, 0.5),
+      sessions: values.length,
+    };
+  }).sort((a, b) =>
+    a.date.localeCompare(b.date) || a.harness.localeCompare(b.harness)
+  );
 }
 
 function summarizeSessionInputs(inputs: Map<string, number[]>) {
@@ -147,6 +168,7 @@ export function aggregateUsage(
   usageCalls: UsageCall[],
   start?: number,
   subagentCoverage: UsageResponse["subagentCoverage"] = "full",
+  initialInputSamples: InitialInputSample[] = [],
 ): { response: UsageResponse; callCount: number; dayCount: number } {
   const days = new Map<
     string,
@@ -232,6 +254,7 @@ export function aggregateUsage(
             .toString(),
         }),
       ),
+      initialInputDays: summarizeInitialInputs(initialInputSamples),
       days: [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(
         ([date, models]) => ({
           date,
