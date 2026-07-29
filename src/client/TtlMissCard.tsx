@@ -177,12 +177,14 @@ export function TtlMissCard({
   overviewError,
   range,
   onRangeChange,
+  onMetricsChange,
 }: {
   harness: string;
   overview?: OverviewResponse;
   overviewError?: string;
   range: Range;
   onRangeChange: (range: Range) => void;
+  onMetricsChange?: (metrics?: TtlMissMetrics) => void;
 }) {
   const [view, setView] = useState<"overview" | "cache">("overview");
   const [metrics, setMetrics] = useState<TtlMissMetrics>();
@@ -191,9 +193,13 @@ export function TtlMissCard({
   useEffect(() => {
     let active = true;
     setMetrics(undefined);
+    onMetricsChange?.(undefined);
     setError(undefined);
     getCacheMissOverview(range, harness).then((result) => {
-      if (active) setMetrics(result);
+      if (active) {
+        setMetrics(result);
+        onMetricsChange?.(result);
+      }
     }).catch((reason) => {
       if (active) {
         setError(

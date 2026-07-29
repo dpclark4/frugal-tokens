@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { getRouteApi } from "@tanstack/react-router";
-import { ChevronDown, Image, RefreshCw } from "lucide-react";
+import { Check, ChevronDown, Image, RefreshCw, Share } from "lucide-react";
 import type {
   CacheAssessment,
   CacheIssue,
@@ -11,7 +11,9 @@ import type {
   SessionMissFilter,
   SessionListResponse,
   SessionSummary,
+  TtlMissMetrics,
   TokenUsage,
+  UsageResponse,
   TurnInput,
 } from "../shared/sessionSchemas.ts";
 import {
@@ -29,8 +31,26 @@ import piIcon from "./assets/icons/pi-logo.svg";
 import { UsageChart } from "./UsageChart.tsx";
 import { TtlMissCard } from "./TtlMissCard.tsx";
 import { SiteHeader } from "./SiteHeader.tsx";
+import { buildHomepageReport, type ReportRange } from "./shareReport.ts";
 
 const route = getRouteApi("/");
+
+async function copyToClipboard(value: string) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("Clipboard access is unavailable");
+}
+
 const integer = new Intl.NumberFormat("en-US");
 const dollars = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -1899,6 +1919,10 @@ export function SessionsPage() {
   const [overview, setOverview] = useState<OverviewResponse>();
   const [overviewError, setOverviewError] = useState<string>();
   const [overviewRange, setOverviewRange] = useState<Range>(90);
+  const [shareCacheMisses, setShareCacheMisses] = useState<TtlMissMetrics>();
+  const [shareUsage, setShareUsage] = useState<UsageResponse>();
+  const [shareUsageRange, setShareUsageRange] = useState<ReportRange>(90);
+  const [shareState, setShareState] = useState<"idle" | "copied" | "error">("idle");
   const [expandedIDs, setExpandedIDs] = useState<Set<string>>(
     () => new Set(),
   );
@@ -2076,6 +2100,25 @@ export function SessionsPage() {
     }
   }
 
+  async function shareReport() {
+    if (!overview || !shareCacheMisses || !shareUsage) return;
+    try {
+      await copyToClipboard(buildHomepageReport({
+        overview,
+        cacheMisses: shareCacheMisses,
+        usage: shareUsage,
+        overviewRange,
+        usageRange: shareUsageRange,
+        harness,
+      }));
+      setShareState("copied");
+      window.setTimeout(() => setShareState("idle"), 2_000);
+    } catch {
+      setShareState("error");
+      window.setTimeout(() => setShareState("idle"), 3_000);
+    }
+  }
+
   async function refreshData() {
     setRefreshing(true);
     setError(undefined);
@@ -2092,7 +2135,27 @@ export function SessionsPage() {
 
   return (
     <main>
-      <SiteHeader active="overview" />
+      <SiteHeader
+        active="overview"
+        action={
+          <button
+            type="button"
+            className={`share-report-button${shareState === "error" ? " error" : ""}`}
+            onClick={shareReport}
+            disabled={!overview || !shareCacheMisses || !shareUsage}
+            aria-label={shareState === "copied" ? "Report copied" : "Copy Markdown report"}
+            title={shareState === "copied"
+              ? "Markdown report copied"
+              : shareState === "error"
+              ? "Unable to copy report"
+              : "Copy Markdown report"}
+          >
+            {shareState === "copied"
+              ? <Check size={16} aria-hidden="true" />
+              : <Share size={16} aria-hidden="true" />}
+          </button>
+        }
+      />
 
       <div className="homepage-metrics">
         <TtlMissCard
@@ -2101,8 +2164,13 @@ export function SessionsPage() {
           overviewError={overviewError}
           range={overviewRange}
           onRangeChange={setOverviewRange}
+          onMetricsChange={setShareCacheMisses}
         />
-        <UsageChart harness={harness} />
+        <UsageChart
+          harness={harness}
+          onDataChange={setShareUsage}
+          onRangeChange={setShareUsageRange}
+        />
       </div>
 
       <section className="sessions-panel">

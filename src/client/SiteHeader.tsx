@@ -1,5 +1,8 @@
-export function SiteHeader({ active }: {
+import type { ReactNode } from "react";
+
+export function SiteHeader({ active, action }: {
   active: "overview" | "performance" | "tool-calls";
+  action?: ReactNode;
 }) {
   return (
     <header className="page-header site-header">
@@ -24,6 +27,7 @@ export function SiteHeader({ active }: {
           Tool calls
         </a>
       </nav>
+      {action && <div className="site-header-action">{action}</div>}
     </header>
   );
 }

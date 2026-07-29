@@ -22,7 +22,11 @@ const views: Array<{ value: View; label: string }> = [
   { value: "subagents", label: "Subagents" },
 ];
 
-export function UsageChart({ harness }: { harness: string }) {
+export function UsageChart({ harness, onDataChange, onRangeChange }: {
+  harness: string;
+  onDataChange?: (usage?: UsageResponse) => void;
+  onRangeChange?: (range: Range) => void;
+}) {
   const [view, setView] = useState<View>("spend");
   const [range, setRange] = useState<Range>(90);
   const [usage, setUsage] = useState<UsageResponse>();
@@ -31,8 +35,14 @@ export function UsageChart({ harness }: { harness: string }) {
   useEffect(() => {
     let active = true;
     setUsage(undefined);
+    onDataChange?.(undefined);
     setError(undefined);
-    getUsage(range, harness).then((result) => active && setUsage(result)).catch(
+    getUsage(range, harness).then((result) => {
+      if (active) {
+        setUsage(result);
+        onDataChange?.(result);
+      }
+    }).catch(
       (reason) => {
         if (active) {
           setError(
@@ -70,7 +80,10 @@ export function UsageChart({ harness }: { harness: string }) {
               type="button"
               className={range === value ? "active" : undefined}
               aria-pressed={range === value}
-              onClick={() => setRange(value)}
+              onClick={() => {
+                setRange(value);
+                onRangeChange?.(value);
+              }}
             >
               {value === "all" ? "All" : `${value}D`}
             </button>

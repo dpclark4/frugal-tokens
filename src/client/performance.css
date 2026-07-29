@@ -4,6 +4,40 @@
   min-height: 54px;
 }
 
+.site-header-action {
+  position: absolute;
+  top: 12px;
+  right: 0;
+}
+
+.share-report-button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.share-report-button:hover:not(:disabled),
+.share-report-button:focus-visible {
+  border-color: var(--green-soft);
+  color: var(--ink);
+}
+
+.share-report-button:disabled {
+  cursor: wait;
+  opacity: .45;
+}
+
+.share-report-button.error {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .page-tabs {
   position: absolute;
   left: 50%;
