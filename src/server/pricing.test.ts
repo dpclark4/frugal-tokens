@@ -81,6 +81,40 @@ Deno.test("uses the published long-context model rates", () => {
   }
 });
 
+Deno.test("prices Claude Opus 5 at its published rates", () => {
+  closeTo(
+    computeModelCallCost(
+      tokens({
+        uncachedInput: 1_000_000,
+        cacheRead: 1_000_000,
+        cacheWrite: 2_000_000,
+        cacheWrite5m: 1_000_000,
+        cacheWrite1h: 1_000_000,
+        output: 1_000_000,
+      }),
+      "claude-opus-5",
+      timestamp,
+    ),
+    46.75,
+  );
+});
+
+Deno.test("prices Kimi K3 cache hits, misses, writes, and output", () => {
+  closeTo(
+    computeModelCallCost(
+      tokens({
+        uncachedInput: 1_000_000,
+        cacheRead: 1_000_000,
+        cacheWrite: 1_000_000,
+        output: 1_000_000,
+      }),
+      "moonshotai/kimi-k3",
+      timestamp,
+    ),
+    21.3,
+  );
+});
+
 Deno.test("prices Codex models at their published rates", () => {
   const expected = new Map([
     ["gpt-5.3-codex", 15.925],

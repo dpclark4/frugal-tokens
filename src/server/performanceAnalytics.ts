@@ -28,6 +28,7 @@ export const PERFORMANCE_MODELS = {
     "claude-fable-5",
     "claude-haiku-4-5",
     "claude-haiku-4-5-20251001",
+    "claude-opus-5",
     "claude-opus-4-5",
     "claude-opus-4-6",
     "claude-opus-4-7",

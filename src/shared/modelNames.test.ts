@@ -2,12 +2,15 @@ import { canonicalModelId, displayModelName } from "./modelNames.ts";
 
 Deno.test("formats known model IDs consistently", () => {
   const cases = {
+    "claude-opus-5": "Claude Opus 5",
     "claude-sonnet-5": "Claude Sonnet 5",
     "claude-haiku-4-5": "Claude Haiku 4.5",
     "claude-haiku-4-5-20251001": "Claude Haiku 4.5",
     "claude-haiku-4-5-20251201": "Claude Haiku 4.5",
     "gpt-5.6-terra": "GPT 5.6 Terra",
     "grok-4-5": "Grok 4.5",
+    "kimi-k3": "Kimi K3",
+    "moonshotai/kimi-k3": "Kimi K3",
   };
 
   for (const [model, expected] of Object.entries(cases)) {

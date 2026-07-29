@@ -21,6 +21,7 @@ type RateCard = {
 const standard: Record<string, RateCard> = {
   "claude-fable-5": { input: 10, cacheWrite5m: 12.5, cacheWrite1h: 20, cacheRead: 1, output: 50 },
   "claude-mythos-5": { input: 10, cacheWrite5m: 12.5, cacheWrite1h: 20, cacheRead: 1, output: 50 },
+  "claude-opus-5": { input: 5, cacheWrite5m: 6.25, cacheWrite1h: 10, cacheRead: 0.5, output: 25 },
   "claude-opus-4-8": { input: 5, cacheWrite5m: 6.25, cacheWrite1h: 10, cacheRead: 0.5, output: 25 },
   "claude-opus-4-7": { input: 5, cacheWrite5m: 6.25, cacheWrite1h: 10, cacheRead: 0.5, output: 25 },
   "claude-opus-4-6": { input: 5, cacheWrite5m: 6.25, cacheWrite1h: 10, cacheRead: 0.5, output: 25 },
@@ -34,6 +35,7 @@ const standard: Record<string, RateCard> = {
   "claude-haiku-3-5": { input: 0.8, cacheWrite5m: 1, cacheWrite1h: 1.6, cacheRead: 0.08, output: 4 },
   "grok-4-5": { input: 2, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0.5, output: 6 },
   "grok-4.5": { input: 2, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0.5, output: 6 },
+  "kimi-k3": { input: 3, cacheRead: 0.3, cacheWrite: 3, output: 15 },
   "gpt-5.6-sol": { input: 5, cacheRead: 0.5, cacheWrite: 6.25, output: 30 },
   "gpt-5.6-terra": { input: 2.5, cacheRead: 0.25, cacheWrite: 3.125, output: 15 },
   "gpt-5.6-luna": { input: 1, cacheRead: 0.1, cacheWrite: 1.25, output: 6 },
@@ -86,7 +88,7 @@ const longContext: Record<string, RateCard> = {
 const LONG_CONTEXT_THRESHOLD = 272_000;
 
 function normalizedModel(model: string) {
-  return model.replace(/^.*?((?:claude|gpt|grok)-)/, "$1").replace(
+  return model.replace(/^.*?((?:claude|gpt|grok|kimi)-)/, "$1").replace(
     /-\d{8}.*$/,
     "",
   );
