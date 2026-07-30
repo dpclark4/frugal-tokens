@@ -26,7 +26,7 @@ const contentBlockSchema = z.object({
 // Codex writes an explicit null when a scope leaves reasoning effort unset, so
 // null is read as absent rather than rejected.
 const reasoningEffortSettingsSchema = z.object({
-  reasoning_effort: z.string().nullish(),
+  reasoning_effort: z.string().nullable().optional(),
 }).passthrough();
 
 const collaborationModeSchema = z.object({
