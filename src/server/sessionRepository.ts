@@ -245,6 +245,8 @@ type ContentRow = {
   model_call_id: number;
   kind: string;
   preview: string | null;
+  original_length: number | null;
+  truncated: number;
 };
 
 type TurnInputRow = {
@@ -1747,7 +1749,7 @@ export class SessionRepository {
     `).all(...visibleCalls.map((call) => call.id)) as ToolRow[];
     const toolsByCall = Map.groupBy(tools, (tool) => tool.model_call_id);
     const contents = visibleCalls.length === 0 ? [] : this.db.prepare(`
-      SELECT model_call_id, kind, preview
+      SELECT model_call_id, kind, preview, original_length, truncated
       FROM call_content
       WHERE model_call_id IN (${visibleCalls.map(() => "?").join(",")})
       ORDER BY model_call_id, ordinal
@@ -1801,10 +1803,19 @@ export class SessionRepository {
         reasoningSetting: reasoningSetting(turn),
         calls: turnCalls.map((call) => {
           const callTools = toolsByCall.get(call.id) ?? [];
+          const callContents = contentsByCall.get(call.id) ?? [];
+          const response = callContents.find((content) =>
+            content.kind === "text" && content.preview !== null
+          );
           return {
             id: call.source_call_id ?? String(call.id),
             callWithinTurn: call.ordinal,
-            preview: callPreview(contentsByCall.get(call.id) ?? [], callTools),
+            preview: callPreview(callContents, callTools),
+            ...(response === undefined ? {} : {
+              responsePreview: response.preview!,
+              responseOriginalLength: optional(response.original_length),
+              responseTruncated: response.truncated === 1,
+            }),
             provider: call.provider,
             model: call.model,
             startedAt: call.started_at,

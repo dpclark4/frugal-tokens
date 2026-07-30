@@ -794,10 +794,12 @@ function SubagentCostBreakdown({
 
 function SubagentSummary({
   session,
+  launcher,
   expanded,
   onToggle,
 }: {
   session: SessionDetail;
+  launcher?: ModelCall["activity"]["tools"][number];
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -834,18 +836,18 @@ function SubagentSummary({
   const hasDescendants = session.subagents.length > 0;
   return (
     <div className={`trace-subagent-summary${expanded ? " is-expanded" : ""}`}>
-      <table className="data-table turn-table subagent-summary-table">
+      <table className="data-table call-table subagent-summary-table">
         <colgroup>
-          <col className="turn-column" />
-          <col className="turn-model-column" />
-          <col className="turn-elapsed-column" />
-          <col className="turn-activity-column" />
-          <col className="turn-context-column" />
-          <col className="turn-input-column" />
-          <col className="turn-image-column" />
-          <col className="turn-cache-column" />
-          <col className="turn-output-column" />
-          <col className="turn-cost-column" />
+          <col className="call-identity-column" />
+          <col className="call-model-column" />
+          <col className="call-elapsed-column" />
+          <col className="call-outcome-column" />
+          <col className="call-context-column" />
+          <col className="call-input-column" />
+          <col className="call-image-column" />
+          <col className="call-cache-column" />
+          <col className="call-output-column" />
+          <col className="call-cost-column" />
         </colgroup>
         <tbody>
           <tr className="subagent-summary-row">
@@ -860,25 +862,38 @@ function SubagentSummary({
                   {expanded ? "▾" : "▸"}
                 </span>
                 <span className="subagent-summary-body">
-                  <span className="subagent-summary-title">
-                    <strong>Subagent · {session.agent ?? "agent"}</strong>
-                    <span>{session.title}</span>
-                  </span>
-                  <small>
-                    {total.userTurns} turn{total.userTurns === 1 ? "" : "s"} ·
-                    {"  "}{hasDescendants
-                      ? `${session.modelCalls} direct calls · ${session.subagents.length} nested subagent${
-                        session.subagents.length === 1 ? "" : "s"
-                      }`
-                      : `${total.modelCalls} calls`}
-                    {elapsed ? ` · ${elapsed}` : ""}
-                  </small>
+                  <strong>Subagent session</strong>
+                  <small>Agent · {session.agent ?? "default"}</small>
                 </span>
               </button>
             </td>
-            <td aria-hidden="true" />
-            <td aria-hidden="true" />
-            <td aria-hidden="true" />
+            <td className="call-model-cell">
+              <span className="model-leading-layout">
+                <span className="model-leading-slot" aria-hidden="true" />
+                <span className="session-model-details">
+                  <ModelSummary models={session.models} />
+                  <SessionThinkingSummary
+                    thinking={session.thinking}
+                    modelCalls={session.modelCalls}
+                  />
+                </span>
+              </span>
+            </td>
+            <td className={elapsed ? undefined : "muted"}>{elapsed ?? "—"}</td>
+            <td className="subagent-summary-activity">
+              <span className="metric-stack">
+                <span title={session.title}>{session.title}</span>
+                <small>
+                  {launcher ? `Launched by ${launcher.name} · ` : ""}
+                  {total.userTurns} turn{total.userTurns === 1 ? "" : "s"} ·
+                  {" "}{hasDescendants
+                    ? `${session.modelCalls} direct calls · ${session.subagents.length} nested subagent${
+                      session.subagents.length === 1 ? "" : "s"
+                    }`
+                    : `${total.modelCalls} calls`}
+                </small>
+              </span>
+            </td>
             <td>
               <ContextMetric
                 value={context.latest?.size}
@@ -1179,10 +1194,28 @@ function toolMechanics(call: ModelCall) {
 
 function exceptionalFinishReason(reason?: string) {
   if (!reason) return undefined;
-  const normalized = reason.toLowerCase().replaceAll(/[-_]/g, "");
+  const normalized = normalizedFinishReason(reason);
   return ["stop", "endturn", "tooluse", "toolcalls"].includes(normalized)
     ? undefined
     : reason;
+}
+
+function normalizedFinishReason(reason: string) {
+  return reason.toLowerCase().replaceAll(/[-_\s]/g, "");
+}
+
+function terminalResponseCall(calls: ModelCall[]) {
+  const call = calls.at(-1);
+  if (
+    !call?.activity.hasText || call.activity.tools.length > 0 ||
+    !call.responsePreview
+  ) return undefined;
+  const reason = call.activity.finishReason;
+  if (
+    reason !== undefined &&
+    !["stop", "endturn"].includes(normalizedFinishReason(reason))
+  ) return undefined;
+  return call;
 }
 
 function toolTargetPreview(value?: string) {
@@ -1315,6 +1348,45 @@ function TurnInputSummary({ inputs }: { inputs?: TurnInput[] }) {
   );
 }
 
+function AssistantResponse({ call }: { call: ModelCall }) {
+  const [expanded, setExpanded] = useState(false);
+  if (!call.responsePreview) return null;
+  const canExpand = call.responsePreview.length > 360 || call.responseTruncated;
+  const meta = [
+    `Produced by Call ${call.callWithinTurn}`,
+    call.responseOriginalLength !== undefined
+      ? `${integer.format(call.responseOriginalLength)} chars`
+      : undefined,
+    call.responseTruncated ? "preview truncated" : undefined,
+  ].filter(Boolean).join(" · ");
+
+  return (
+    <section className="assistant-response" aria-label="Assistant response">
+      <div className="assistant-response-heading">
+        <span className="assistant-response-label">Assistant response</span>
+        <span className="assistant-response-meta">{meta}</span>
+      </div>
+      <div
+        className={`assistant-response-preview${
+          expanded ? " assistant-response-preview-expanded" : ""
+        }`}
+      >
+        {call.responsePreview}
+      </div>
+      {canExpand && (
+        <button
+          type="button"
+          className="assistant-response-toggle"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((current) => !current)}
+        >
+          {expanded ? "Show less" : "Show more"}
+        </button>
+      )}
+    </section>
+  );
+}
+
 function callSubagents(call: ModelCall, session: SessionDetail) {
   const seen = new Set<string>();
   const children: SessionDetail[] = [];
@@ -1349,18 +1421,20 @@ function turnSubagents(
 function CallTable({
   calls,
   session,
-  expandedCallID,
-  setExpandedCallID,
-  expandedSubagentID,
-  setExpandedSubagentID,
+  expandedCallIDs,
+  toggleCall,
+  responseCallID,
+  expandedSubagentIDs,
+  toggleSubagent,
   nested = false,
 }: {
   calls: ModelCall[];
   session: SessionDetail;
-  expandedCallID?: string;
-  setExpandedCallID: (id: string | undefined) => void;
-  expandedSubagentID?: string;
-  setExpandedSubagentID: (id: string | undefined) => void;
+  expandedCallIDs: Set<string>;
+  toggleCall: (id: string) => void;
+  responseCallID?: string;
+  expandedSubagentIDs: Set<string>;
+  toggleSubagent: (id: string) => void;
   nested?: boolean;
 }) {
   if (calls.length === 0) {
@@ -1398,7 +1472,7 @@ function CallTable({
         </thead>
         <tbody>
           {calls.map((call) => {
-            const expanded = expandedCallID === call.id;
+            const expanded = expandedCallIDs.has(call.id);
             const callDuration = duration(call.startedAt, call.completedAt);
             const callContext = contextSize(call.tokens);
             const subagents = callSubagents(call, session);
@@ -1448,7 +1522,9 @@ function CallTable({
               tool.inputPreview !== undefined
             );
             const target = toolTargetPreview(previewTool?.inputPreview);
-            const outcome = call.preview ??
+            const outcome = call.id === responseCallID
+              ? "Assistant response"
+              : call.preview ??
               (previewTool && target
                 ? `${previewTool.name}: ${target}`
                 : activitySummary(call));
@@ -1460,7 +1536,7 @@ function CallTable({
                     expanded ? " row-open" : ""
                   }`}
                   onClick={hasDetails
-                    ? () => setExpandedCallID(expanded ? undefined : call.id)
+                    ? () => toggleCall(call.id)
                     : undefined}
                 >
                   <td
@@ -1609,8 +1685,10 @@ function CallTable({
                                         className="tool-details"
                                         title={tool.inputPreview}
                                       >
-                                        {toolTargetPreview(tool.inputPreview) ??
-                                          "—"}
+                                        <span className="tool-details-preview">
+                                          {toolTargetPreview(tool.inputPreview) ??
+                                            "—"}
+                                        </span>
                                       </td>
                                     </tr>
                                   ))}
@@ -1623,13 +1701,11 @@ function CallTable({
                           <SubagentSummary
                             key={child.id}
                             session={child}
-                            expanded={expandedSubagentID === child.id}
-                            onToggle={() =>
-                              setExpandedSubagentID(
-                                expandedSubagentID === child.id
-                                  ? undefined
-                                  : child.id,
-                              )}
+                            launcher={call.activity.tools.find((tool) =>
+                              tool.childSessionID === child.id
+                            )}
+                            expanded={expandedSubagentIDs.has(child.id)}
+                            onToggle={() => toggleSubagent(child.id)}
                           />
                         ))}
                       </div>
@@ -1655,13 +1731,33 @@ function SessionBreakdown({
   const [expandedTurns, setExpandedTurns] = useState<Set<number>>(
     () => new Set(),
   );
-  const [expandedCallID, setExpandedCallID] = useState<string>();
-  const [expandedSubagentID, setExpandedSubagentID] = useState<string>();
+  const [expandedCallIDs, setExpandedCallIDs] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [expandedSubagentIDs, setExpandedSubagentIDs] = useState<Set<string>>(
+    () => new Set(),
+  );
   function toggleTurn(number: number) {
     setExpandedTurns((current) => {
       const next = new Set(current);
       if (next.has(number)) next.delete(number);
       else next.add(number);
+      return next;
+    });
+  }
+  function toggleCall(id: string) {
+    setExpandedCallIDs((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function toggleSubagent(id: string) {
+    setExpandedSubagentIDs((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
@@ -1699,6 +1795,7 @@ function SessionBreakdown({
           <tbody>
             {session.turns.map((turn) => {
               const metrics = turnMetrics(turn.calls);
+              const responseCall = terminalResponseCall(turn.calls);
               const context = contextRange(turn.calls);
               const open = expandedTurns.has(turn.number);
               const subs = turnSubagents(turn, session);
@@ -1884,12 +1981,14 @@ function SessionBreakdown({
                           <CallTable
                             calls={turn.calls}
                             session={session}
-                            expandedCallID={expandedCallID}
-                            setExpandedCallID={setExpandedCallID}
-                            expandedSubagentID={expandedSubagentID}
-                            setExpandedSubagentID={setExpandedSubagentID}
+                            expandedCallIDs={expandedCallIDs}
+                            toggleCall={toggleCall}
+                            responseCallID={responseCall?.id}
+                            expandedSubagentIDs={expandedSubagentIDs}
+                            toggleSubagent={toggleSubagent}
                             nested={nested}
                           />
+                          {responseCall && <AssistantResponse call={responseCall} />}
                         </div>
                       </td>
                     </tr>
