@@ -23,8 +23,10 @@ const contentBlockSchema = z.object({
   image_url: z.string().optional(),
 }).passthrough();
 
+// Codex writes an explicit null when a scope leaves reasoning effort unset, so
+// null is read as absent rather than rejected.
 const reasoningEffortSettingsSchema = z.object({
-  reasoning_effort: z.string().optional(),
+  reasoning_effort: z.string().nullable().optional(),
 }).passthrough();
 
 const collaborationModeSchema = z.object({
@@ -462,7 +464,7 @@ function codexReasoningSetting(payload: NonNullable<Record["payload"]>) {
   }
   const collaborationEffort =
     payload.collaboration_mode?.settings?.reasoning_effort;
-  if (collaborationEffort !== undefined) {
+  if (collaborationEffort != null) {
     return {
       settingName: "reasoning_effort",
       settingValue: collaborationEffort,
@@ -471,7 +473,7 @@ function codexReasoningSetting(payload: NonNullable<Record["payload"]>) {
     };
   }
   const threadEffort = payload.thread_settings?.reasoning_effort;
-  if (threadEffort !== undefined) {
+  if (threadEffort != null) {
     return {
       settingName: "reasoning_effort",
       settingValue: threadEffort,
@@ -480,7 +482,7 @@ function codexReasoningSetting(payload: NonNullable<Record["payload"]>) {
   }
   const threadCollaborationEffort = payload.thread_settings
     ?.collaboration_mode?.settings?.reasoning_effort;
-  if (threadCollaborationEffort !== undefined) {
+  if (threadCollaborationEffort != null) {
     return {
       settingName: "reasoning_effort",
       settingValue: threadCollaborationEffort,

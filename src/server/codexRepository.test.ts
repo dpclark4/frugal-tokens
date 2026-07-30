@@ -1,5 +1,8 @@
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
-import { CodexRepository } from "./codexRepository.ts";
+import {
+  CodexRepository,
+  normalizeCodexSession,
+} from "./codexRepository.ts";
 import type { SessionDetail } from "../shared/sessionSchemas.ts";
 
 function repository(files: Record<string, string>) {
@@ -182,6 +185,52 @@ Deno.test("applies Codex reasoning settings to the turn that changes them", () =
     ),
     ["low", "medium"],
   );
+});
+
+Deno.test("ignores null Codex reasoning effort and falls back", () => {
+  const actual = repository({
+    "2026/07/25/rollout-null-effort.jsonl": `
+{"timestamp":"2026-07-25T18:00:00.000Z","type":"event_msg","payload":{"type":"task_started"}}
+{"timestamp":"2026-07-25T18:00:00.001Z","type":"turn_context","payload":{"model":"gpt-5.6-sol","collaboration_mode":{"mode":"default","settings":{"model":"gpt-5.6-sol","reasoning_effort":null,"developer_instructions":null}}}}
+{"timestamp":"2026-07-25T18:00:00.002Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"first"}]}}
+{"timestamp":"2026-07-25T18:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":1,"reasoning_output_tokens":0}}}}
+{"timestamp":"2026-07-25T18:00:02.000Z","type":"event_msg","payload":{"type":"task_started"}}
+{"timestamp":"2026-07-25T18:00:02.001Z","type":"turn_context","payload":{"model":"gpt-5.6-sol","collaboration_mode":{"settings":{"reasoning_effort":null}},"thread_settings":{"reasoning_effort":"low"}}}
+{"timestamp":"2026-07-25T18:00:02.002Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"second"}]}}
+{"timestamp":"2026-07-25T18:00:03.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":1,"reasoning_output_tokens":0}}}}
+`,
+  }).getSession("2026/07/25/rollout-null-effort")!;
+
+  deepStrictEqual(actual.turns.length, 2);
+  deepStrictEqual(
+    actual.turns.map((turn) => turn.reasoningSetting?.settingValue),
+    [undefined, "low"],
+  );
+  deepStrictEqual(
+    actual.turns[1].reasoningSetting?.sourceFieldPath,
+    "payload.thread_settings.reasoning_effort",
+  );
+});
+
+Deno.test("imports Codex sessions that report a null reasoning effort", () => {
+  const text = `
+{"timestamp":"2026-07-25T18:00:00.000Z","type":"event_msg","payload":{"type":"task_started"}}
+{"timestamp":"2026-07-25T18:00:00.001Z","type":"turn_context","payload":{"model":"gpt-5.6-sol","collaboration_mode":{"mode":"default","settings":{"model":"gpt-5.6-sol","reasoning_effort":null,"developer_instructions":null}}}}
+{"timestamp":"2026-07-25T18:00:00.002Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"first"}]}}
+{"timestamp":"2026-07-25T18:00:01.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":1,"reasoning_output_tokens":0}}}}
+`.trim();
+
+  const actual = normalizeCodexSession({
+    id: "2026/07/25/rollout-null-effort",
+    path: "2026/07/25/rollout-null-effort.jsonl",
+    artifactPath: "2026/07/25/rollout-null-effort.jsonl",
+    updatedAt: 0,
+    size: text.length,
+  }, text);
+
+  strictEqual(actual.turns.length, 1);
+  strictEqual(actual.turns[0].reasoningSetting, undefined);
+  strictEqual(actual.summary.models[0], "gpt-5.6-sol");
 });
 
 Deno.test("infers Codex model-call timing around tool loops", () => {
