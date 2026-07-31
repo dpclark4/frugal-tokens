@@ -38,7 +38,7 @@
     "db:rollback": "deno run -A scripts/runDbmate.ts down",
     "db:status": "deno run -A scripts/runDbmate.ts status",
 
-    "demo:db:create": "deno run --env-file=.env.demo --allow-env=FRUGAL_TOKENS_DATABASE_URL,HOME,USERPROFILE --allow-read --allow-write --allow-run=sqlite3 scripts/createDemoDatabase.ts",
+    "demo:db:create": "deno run --env-file=.env --allow-env=FRUGAL_TOKENS_DATABASE_URL,HOME,USERPROFILE --allow-read --allow-write --allow-run=sqlite3 scripts/createDemoDatabase.ts",
     "demo:db:merge": "deno run --allow-read --allow-write scripts/mergeDemoDatabases.ts",
 
     "dev": "deno run -A npm:concurrently@10.0.3 --kill-others-on-fail --names api,web 'deno task dev:server' 'deno task dev:client'",

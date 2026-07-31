@@ -11,8 +11,9 @@ Copy the demo environment template and update its values:
 cp .env.demo.example .env.demo
 ```
 
-The demo tasks load `.env.demo`. `FRUGAL_TOKENS_DATABASE_URL` should point to
-the local archive used as the source for demo database snapshots.
+The deployment tasks load `.env.demo`. The database creation task loads `.env`.
+`FRUGAL_TOKENS_DATABASE_URL` should point to the local archive used as the source
+for demo database snapshots.
 
 The `demo-api` Railway service must mount the `demo-api-volume` volume at
 `/data`. Sleep configuration and the API domain are managed in Railway.
