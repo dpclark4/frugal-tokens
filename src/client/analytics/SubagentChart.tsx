@@ -236,6 +236,7 @@ export function SubagentChart({ usage }: { usage: UsageResponse }) {
                   fill="#786578"
                   maxBarSize={48}
                   minPointSize={2}
+                  isAnimationActive={false}
                 />
                 <Bar
                   dataKey="rootCost"
@@ -243,6 +244,7 @@ export function SubagentChart({ usage }: { usage: UsageResponse }) {
                   stackId="cost"
                   fill="#466244"
                   maxBarSize={48}
+                  isAnimationActive={false}
                 />
               </BarChart>
             </ResponsiveContainer>

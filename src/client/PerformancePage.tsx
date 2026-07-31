@@ -317,6 +317,7 @@ function CacheLossPanel({ title, result }: { title: string; result?: ProviderRes
                       name={`${bucket.label} misses`}
                       stackId="loss"
                       fill={bucket.color}
+                      isAnimationActive={false}
                     />
                   ))}
                 </BarChart>

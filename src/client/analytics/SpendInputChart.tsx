@@ -122,7 +122,15 @@ export function SpendInputChart({ usage, metric }: {
                   <UsageTooltip active={props.active} label={props.label} payload={props.payload as Array<{ color?: string; name?: string; value?: number }>} metric={metric} />
                 )} />
                 {series.map(({ key, label, color }) => (
-                  <Bar key={key} dataKey={key} name={label} stackId="models" fill={color} maxBarSize={48} />
+                  <Bar
+                    key={key}
+                    dataKey={key}
+                    name={label}
+                    stackId="models"
+                    fill={color}
+                    maxBarSize={48}
+                    isAnimationActive={false}
+                  />
                 ))}
               </BarChart>
             </ResponsiveContainer>
