@@ -81,6 +81,38 @@ Deno.test("uses the published long-context model rates", () => {
   }
 });
 
+Deno.test("uses Luna and Terra prices effective July 30 at 4 PM Eastern", () => {
+  const before = Date.parse("2026-07-30T19:59:59.999Z");
+  const effectiveAt = Date.parse("2026-07-30T20:00:00Z");
+  const cases = [
+    ["gpt-5.6-terra", 2.5, 2, 5, 4],
+    ["gpt-5.6-luna", 1, 0.2, 2, 0.4],
+  ] as const;
+
+  for (const [model, oldShort, newShort, oldLong, newLong] of cases) {
+    closeTo(
+      computeModelCallCost(tokens({ uncachedInput: 100_000 }), model, before),
+      oldShort / 10,
+    );
+    closeTo(
+      computeModelCallCost(tokens({ uncachedInput: 100_000 }), model, effectiveAt),
+      newShort / 10,
+    );
+    closeTo(
+      computeModelCallCost(tokens({ uncachedInput: 1_000_000 }), model, before),
+      oldLong,
+    );
+    closeTo(
+      computeModelCallCost(
+        tokens({ uncachedInput: 1_000_000 }),
+        model,
+        effectiveAt,
+      ),
+      newLong,
+    );
+  }
+});
+
 Deno.test("prices Claude Opus 5 at its published rates", () => {
   closeTo(
     computeModelCallCost(

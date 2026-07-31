@@ -86,6 +86,17 @@ const longContext: Record<string, RateCard> = {
 };
 
 const LONG_CONTEXT_THRESHOLD = 272_000;
+const OPENAI_LUNA_TERRA_PRICE_CUT = Date.parse("2026-07-30T20:00:00Z");
+
+const reducedLunaTerraRates: Record<string, RateCard> = {
+  "gpt-5.6-terra": { input: 2, cacheRead: 0.2, cacheWrite: 2.5, output: 12 },
+  "gpt-5.6-luna": { input: 0.2, cacheRead: 0.02, cacheWrite: 0.25, output: 1.2 },
+};
+
+const reducedLunaTerraLongContextRates: Record<string, RateCard> = {
+  "gpt-5.6-terra": { input: 4, cacheRead: 0.4, cacheWrite: 5, output: 18 },
+  "gpt-5.6-luna": { input: 0.4, cacheRead: 0.04, cacheWrite: 0.5, output: 1.8 },
+};
 
 function normalizedModel(model: string) {
   return model.replace(/^.*?((?:claude|gpt|grok|kimi)-)/, "$1").replace(
@@ -96,9 +107,16 @@ function normalizedModel(model: string) {
 
 function rateCard(model: string, timestamp: number, inputTokens: number) {
   const normalized = normalizedModel(model);
+  const long = normalized.startsWith("gpt-5.") &&
+    inputTokens >= LONG_CONTEXT_THRESHOLD;
+  if (timestamp >= OPENAI_LUNA_TERRA_PRICE_CUT) {
+    const reducedRates = long
+      ? reducedLunaTerraLongContextRates[normalized]
+      : reducedLunaTerraRates[normalized];
+    if (reducedRates) return reducedRates;
+  }
   if (
-    normalized.startsWith("gpt-5.") &&
-    inputTokens >= LONG_CONTEXT_THRESHOLD
+    long
   ) return longContext[normalized];
   if (normalized === "claude-sonnet-5") {
     return timestamp < Date.parse("2026-09-01T00:00:00Z")
