@@ -1,0 +1,14 @@
+{
+  "name": "frugal-tokens-pi-cache-telemetry",
+  "version": "0.1.0",
+  "private": true,
+  "keywords": ["pi-package"],
+  "type": "module",
+  "pi": {
+    "extensions": ["./extensions/cache-telemetry.ts"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  }
+}
