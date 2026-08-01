@@ -367,7 +367,8 @@ export default async function cacheTelemetry(pi: ExtensionAPI) {
   mkdirSync(baseDir, { recursive: true, mode: 0o700 });
 
   let sessionId = "unknown";
-  let logPath = join(baseDir, `startup-${process.pid}.jsonl`);
+  let logStem = `startup-${process.pid}`;
+  let logPath = join(baseDir, `${logStem}.jsonl`);
   let sequence = 0;
   let fileIndex = 0;
   let pending: RequestObservation[] = [];
@@ -380,7 +381,7 @@ export default async function cacheTelemetry(pi: ExtensionAPI) {
     try {
       if (statSync(logPath, { throwIfNoEntry: false })?.size >= MAX_LOG_BYTES) {
         fileIndex++;
-        logPath = join(baseDir, `${sanitizeFilePart(sessionId)}-${process.pid}-${fileIndex}.jsonl`);
+        logPath = join(baseDir, `${logStem}.${fileIndex}.jsonl`);
       }
       appendFileSync(logPath, `${JSON.stringify({ schemaVersion: SCHEMA_VERSION, ...event })}\n`, {
         encoding: "utf8",
@@ -410,7 +411,13 @@ export default async function cacheTelemetry(pi: ExtensionAPI) {
 
   pi.on("session_start", (event, ctx) => {
     sessionId = ctx.sessionManager.getSessionId();
-    logPath = join(baseDir, `${sanitizeFilePart(sessionId)}-${process.pid}-${fileIndex}.jsonl`);
+    const sessionFile = ctx.sessionManager.getSessionFile();
+    const sessionFileName = sessionFile
+      ? basename(sessionFile)
+      : `${sanitizeFilePart(sessionId)}-${process.pid}.jsonl`;
+    logStem = sessionFileName.replace(/\.jsonl$/i, "");
+    fileIndex = 0;
+    logPath = join(baseDir, `${logStem}.jsonl`);
     sequence = 0;
     pending = [];
     previousRequest = undefined;
@@ -424,9 +431,7 @@ export default async function cacheTelemetry(pi: ExtensionAPI) {
       timestamp: new Date().toISOString(),
       reason: event.reason,
       sessionId,
-      sessionFileHash: ctx.sessionManager.getSessionFile()
-        ? hash(ctx.sessionManager.getSessionFile())
-        : undefined,
+      sessionFileHash: sessionFile ? hash(sessionFile) : undefined,
       cwd: { basename: basename(ctx.cwd), hash: hash(ctx.cwd) },
       runtime: { node: process.version, pid: process.pid, platform: process.platform, arch: process.arch },
       privacy: "No raw prompts, tool bodies, images, credentials, authorization headers, or response IDs are logged."

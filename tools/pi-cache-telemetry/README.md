@@ -20,10 +20,10 @@ It does **not** record raw prompts, system instructions, tool definitions, tool 
 Logs default to:
 
 ```text
-~/.pi/agent/diagnostics/cache-telemetry/<session-id>-<pid>.jsonl
+~/.pi/agent/diagnostics/cache-telemetry/<pi-session-basename>.jsonl
 ```
 
-Set `PI_CACHE_TELEMETRY_DIR` to use another directory. Files rotate at 50 MB and are created with mode `0600` where supported.
+Persisted sessions use the same basename as their Pi session JSONL, making the two files directly match across directories. Ephemeral sessions fall back to `<session-id>-<pid>.jsonl`. Set `PI_CACHE_TELEMETRY_DIR` to use another directory. Files rotate at 50 MB and are created with mode `0600` where supported.
 
 ## Try it for one Pi process
 
