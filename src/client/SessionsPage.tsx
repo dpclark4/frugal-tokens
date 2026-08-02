@@ -2372,6 +2372,7 @@ export function SessionsPage() {
                     const expanded = expandedIDs.has(session.id);
                     const detail = details[session.id];
                     const span = sessionSpan(detail ?? session);
+                    const sessionStart = span?.start ?? session.startedAt;
                     const tokens = session.inclusiveTokens ?? session.tokens;
                     const imageInputs = session.inclusiveImageInputs ?? 0;
                     const hasInclusiveMetrics =
@@ -2415,14 +2416,22 @@ export function SessionsPage() {
                                 >
                                   {session.title}
                                 </strong>
-                                {session.startedAt !== undefined && (
+                                {session.sourcePath !== undefined && (
                                   <small
-                                    className="session-started"
-                                    title={`Started ${
-                                      fullTimestamp.format(session.startedAt)
-                                    }`}
+                                    className="session-source-path"
+                                    title={`Source path: ${session.sourcePath}`}
                                   >
-                                    {sessionStarted.format(session.startedAt)}
+                                    {session.sourcePath}
+                                  </small>
+                                )}
+                                {session.internalID !== undefined && (
+                                  <small
+                                    className="session-id"
+                                    title={`Internal archive session ID: ${
+                                      session.internalID
+                                    } · Source session ID: ${session.id}`}
+                                  >
+                                    ID {session.internalID}
                                   </small>
                                 )}
                               </div>
@@ -2448,7 +2457,19 @@ export function SessionsPage() {
                               }`
                               : undefined}
                           >
-                            {span?.label ?? "—"}
+                            <span className="metric-stack session-elapsed">
+                              <span>{span?.label ?? "—"}</span>
+                              {sessionStart !== undefined && (
+                                <small
+                                  className="session-started"
+                                  title={`Started ${
+                                    fullTimestamp.format(sessionStart)
+                                  }`}
+                                >
+                                  {sessionStarted.format(sessionStart)}
+                                </small>
+                              )}
+                            </span>
                           </td>
                           <td title="Inclusive of direct and subagent turns and calls">
                             <span className="metric-stack">

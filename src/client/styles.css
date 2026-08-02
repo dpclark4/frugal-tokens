@@ -1191,7 +1191,8 @@ h1 {
 }
 
 .session-table .elapsed-column {
-  width: 82px;
+  /* The start timestamp now lives beneath the duration. */
+  width: 126px;
 }
 
 /* Keep the detail tables' shared metric columns on the same grid. */
@@ -1337,12 +1338,22 @@ table.data-table {
   letter-spacing: .01em;
 }
 
-.session-id {
-  color: var(--green-soft);
-  font-family: var(--mono);
+.session-cell .session-source-path,
+.session-cell .session-id {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font: 9px/1.25 var(--mono);
+}
+
+.session-cell .session-source-path {
+  margin-top: 4px;
+  color: var(--muted-2);
+}
+
+.session-cell .session-id {
+  margin-top: 2px;
+  color: var(--green-soft);
 }
 
 .updated-at {

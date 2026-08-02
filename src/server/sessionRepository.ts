@@ -168,6 +168,7 @@ type SummaryRow = {
   external_id: string;
   public_id: string;
   harness: Harness;
+  artifact_path: string | null;
   title: string;
   agent: string | null;
   updated_at: number;
@@ -268,7 +269,7 @@ type ContextEventRow = {
 const summaryColumns = `
   ss.id AS source_session_id, ss.external_id,
   COALESCE(ss.public_id, ss.external_id) AS public_id, so.harness,
-  s.title, s.agent, s.updated_at, s.started_at, s.ended_at,
+  ss.artifact_path, s.title, s.agent, s.updated_at, s.started_at, s.ended_at,
   s.providers_json, s.models_json, s.user_turns, s.model_calls,
   s.reported_cost, s.uncached_input_tokens, s.cache_read_tokens,
   s.cache_write_tokens, s.cache_write_5m_tokens,
@@ -444,6 +445,8 @@ function tokens(row: SummaryRow | CallRow): TokenUsage {
 function summary(row: SummaryRow): SessionSummary {
   return {
     id: row.public_id,
+    internalID: row.source_session_id,
+    sourcePath: optional(row.artifact_path),
     harness: row.harness,
     title: row.title,
     updatedAt: row.updated_at,

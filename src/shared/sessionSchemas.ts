@@ -118,6 +118,10 @@ export const thinkingSummarySchema = z.object({
 
 export const sessionSummarySchema = z.object({
   id: z.string(),
+  // Enriched by the archive adapter; raw harness summaries do not have these
+  // canonical fields until they are persisted.
+  internalID: z.number().int().positive().optional(),
+  sourcePath: z.string().optional(),
   harness: harnessSchema,
   title: z.string(),
   updatedAt: z.number(),
