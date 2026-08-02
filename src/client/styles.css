@@ -841,6 +841,258 @@ h1 {
   font-size: 10px;
 }
 
+.combined-usage-heading {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 24px;
+  padding: 14px 28px 0;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.combined-usage-heading > .combined-total {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-top: 5px;
+  flex: none;
+}
+
+.combined-total > span {
+  color: var(--muted);
+  font-size: 9px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.combined-total > strong {
+  font-size: 18px;
+}
+
+.combined-model-table {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  width: 250px;
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 9px;
+  flex: none;
+}
+
+.combined-model-item {
+  display: grid;
+  grid-template-columns: 7px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.combined-model-item i {
+  width: 7px;
+  height: 7px;
+}
+
+.combined-model-item > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.combined-model-item strong {
+  color: var(--ink);
+  font-size: 9px;
+}
+
+.combined-model-overflow {
+  align-self: center;
+}
+
+.combined-model-overflow > button {
+  font-size: 9px;
+}
+
+.combined-model-overflow .model-overflow-popover {
+  top: calc(100% + 8px);
+  bottom: auto;
+}
+
+.combined-model-overflow .model-summary-item {
+  min-width: 230px;
+}
+
+.combined-usage-chart {
+  min-height: 360px;
+  padding: 2px 20px 0 12px;
+  font-family: var(--mono);
+}
+
+.combined-chart-stage {
+  position: relative;
+}
+
+.combined-chart-stage svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+  touch-action: pan-y;
+}
+
+.combined-grid {
+  stroke: var(--head-border);
+  stroke-width: 1;
+  stroke-dasharray: 3 5;
+}
+
+.combined-axis-label,
+.combined-panel-label,
+.combined-panel-unit {
+  font-family: var(--mono);
+}
+
+.combined-axis-label {
+  fill: #666a63;
+  font-size: 11px;
+}
+
+.combined-panel-label {
+  fill: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .05em;
+}
+
+.combined-panel-unit {
+  fill: var(--muted);
+  font-size: 8px;
+}
+
+.combined-input-line {
+  fill: none;
+  stroke: #416f7a;
+  stroke-width: 2.25;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.combined-input-point {
+  fill: var(--surface-0);
+  stroke: #416f7a;
+  stroke-width: 1.5;
+}
+
+.combined-hover-band {
+  fill: rgba(65, 111, 122, .055);
+  pointer-events: none;
+}
+
+.combined-hover-line {
+  stroke: #87918b;
+  stroke-width: 1;
+  stroke-dasharray: 2 3;
+  pointer-events: none;
+}
+
+.combined-hover-point {
+  fill: var(--surface-0);
+  stroke: #416f7a;
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.combined-tooltip-position {
+  position: absolute;
+  z-index: 3;
+  top: 24px;
+  width: 0;
+  pointer-events: none;
+}
+
+.combined-usage-tooltip {
+  width: 300px;
+  padding: 12px 13px;
+  transform: translateX(14px);
+  border: 1px solid var(--panel-border);
+  background: var(--surface-0);
+  box-shadow: 0 10px 30px rgba(57, 51, 40, .16);
+  font: 10px var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.combined-usage-tooltip.align-right {
+  transform: translateX(calc(-100% - 14px));
+}
+
+.combined-usage-tooltip > p {
+  margin: 0 0 8px;
+  color: var(--muted);
+}
+
+.combined-tooltip-totals {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.combined-tooltip-totals > div {
+  display: grid;
+  gap: 1px;
+}
+
+.combined-tooltip-totals strong {
+  color: var(--ink);
+  font-size: 15px;
+}
+
+.combined-tooltip-totals span {
+  color: var(--muted);
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+.combined-usage-tooltip > .effective-rate {
+  margin: 9px 0 0;
+  padding-top: 7px;
+  border-top: 1px solid var(--row-border);
+  color: #416f7a;
+  font-size: 9px;
+}
+
+.combined-tooltip-models {
+  display: grid;
+  gap: 5px;
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid var(--row-border);
+}
+
+.combined-tooltip-models > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.combined-tooltip-models > div > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.combined-tooltip-models i {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+}
+
+.combined-tooltip-models small,
+.model-overflow-count {
+  color: var(--accent);
+}
+
 .chart-message {
   display: grid;
   height: 100%;
@@ -2806,6 +3058,27 @@ table.data-table {
   .chart-tabs {
     flex-wrap: wrap;
     gap: 8px 18px;
+  }
+
+  .combined-usage-heading {
+    flex-wrap: wrap;
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+
+  .combined-model-table {
+    width: min(100%, 300px);
+    margin-left: 0;
+  }
+
+  .combined-usage-chart {
+    padding-right: 8px;
+    padding-left: 4px;
+    overflow-x: auto;
+  }
+
+  .combined-chart-stage {
+    min-width: 650px;
   }
 
   .usage-chart-body {

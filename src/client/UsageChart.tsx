@@ -4,11 +4,13 @@ import { getUsage } from "./api.ts";
 import { InitialInputChart } from "./analytics/InitialInputChart.tsx";
 import { SessionInputChart } from "./analytics/SessionInputChart.tsx";
 import { SpendInputChart } from "./analytics/SpendInputChart.tsx";
+import { SpendInputOverviewChart } from "./analytics/SpendInputOverviewChart.tsx";
 import { SubagentChart } from "./analytics/SubagentChart.tsx";
 
 type View =
   | "spend"
   | "input"
+  | "spend-input"
   | "session-input"
   | "initial-input"
   | "subagents";
@@ -17,6 +19,7 @@ type Range = 7 | 30 | 90 | "all";
 const views: Array<{ value: View; label: string }> = [
   { value: "spend", label: "Spend" },
   { value: "input", label: "Input" },
+  { value: "spend-input", label: "Spend + input" },
   { value: "session-input", label: "Session size" },
   { value: "initial-input", label: "Initial input" },
   { value: "subagents", label: "Subagents" },
@@ -28,7 +31,7 @@ export function UsageChart({ harness, onDataChange, onRangeChange }: {
   onRangeChange?: (range: Range) => void;
 }) {
   const [view, setView] = useState<View>("spend");
-  const [range, setRange] = useState<Range>(90);
+  const [range, setRange] = useState<Range>(30);
   const [usage, setUsage] = useState<UsageResponse>();
   const [error, setError] = useState<string>();
 
@@ -105,6 +108,9 @@ export function UsageChart({ harness, onDataChange, onRangeChange }: {
           usage={usage}
           metric={view === "spend" ? "cost" : "input"}
         />
+      )}
+      {usage && view === "spend-input" && (
+        <SpendInputOverviewChart usage={usage} range={range} />
       )}
       {usage && view === "session-input" && <SessionInputChart usage={usage} />}
       {usage && view === "initial-input" && <InitialInputChart usage={usage} />}

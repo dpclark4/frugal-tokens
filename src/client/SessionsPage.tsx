@@ -2017,10 +2017,10 @@ export function SessionsPage() {
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [overview, setOverview] = useState<OverviewResponse>();
   const [overviewError, setOverviewError] = useState<string>();
-  const [overviewRange, setOverviewRange] = useState<Range>(90);
+  const [overviewRange, setOverviewRange] = useState<Range>(30);
   const [shareCacheMisses, setShareCacheMisses] = useState<TtlMissMetrics>();
   const [shareUsage, setShareUsage] = useState<UsageResponse>();
-  const [shareUsageRange, setShareUsageRange] = useState<ReportRange>(90);
+  const [shareUsageRange, setShareUsageRange] = useState<ReportRange>(30);
   const [shareState, setShareState] = useState<"idle" | "copied" | "error">("idle");
   const [expandedIDs, setExpandedIDs] = useState<Set<string>>(
     () => new Set(),
