@@ -477,17 +477,17 @@ export function sessionCacheIssues(
           call.cacheAssessment?.cause === cause
         );
         if (misses.length === 0) continue;
-        const status = misses.some((call) =>
-            call.cacheAssessment?.status === "full-miss"
-          )
-          ? "full-miss" as const
-          : "partial-hit" as const;
-        issues.push({
-          status,
-          ...(cause ? { cause } : {}),
-          turn: turn.number,
-          scope,
-        });
+        for (const status of ["full-miss", "partial-hit"] as const) {
+          if (!misses.some((call) =>
+            call.cacheAssessment?.status === status
+          )) continue;
+          issues.push({
+            status,
+            ...(cause ? { cause } : {}),
+            turn: turn.number,
+            scope,
+          });
+        }
       }
       return issues;
     }),

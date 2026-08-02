@@ -135,6 +135,7 @@ Deno.test("classifies mid-turn and cross-turn thinking changes", () => {
   strictEqual(actual.turns[1].cacheSummary?.unexpectedMisses, 0);
   deepStrictEqual(sessionCacheIssues(actual), [
     { status: "full-miss", cause: "thinking-change", turn: 1, scope: undefined },
+    { status: "partial-hit", cause: "thinking-change", turn: 1, scope: undefined },
     { status: "full-miss", cause: "thinking-change", turn: 2, scope: undefined },
   ]);
 });
@@ -359,6 +360,7 @@ Deno.test("summarizes turns and includes independently analyzed subagents", () =
   });
   deepStrictEqual(sessionCacheIssues(actual), [
     { status: "full-miss", turn: 1, scope: undefined },
+    { status: "partial-hit", turn: 1, scope: undefined },
     { status: "full-miss", turn: 1, scope: "child" },
   ]);
 });
