@@ -1,0 +1,23 @@
+{
+  "id": "large-prefix-warm-follow-up-recovery",
+  "model": "gpt-5.6-luna",
+  "mode": "full-replay",
+  "reasoning": { "effort": "medium" },
+  "store": false,
+  "instructions": "Read the supplied deterministic fixture. Answer briefly and do not call tools.",
+  "prompt_cache_key": "responses-cache-lab-large-prefix-v1",
+  "calls": [
+    {
+      "id": "warm",
+      "input_file": "tools/responses-cache-lab/fixtures/stable-prefix.txt"
+    },
+    {
+      "id": "follow-up",
+      "input": "From the fixture, report the checksum for record-024 in one short line."
+    },
+    {
+      "id": "recovery",
+      "input": "From the same fixture, report the checksum for record-048 in one short line."
+    }
+  ]
+}

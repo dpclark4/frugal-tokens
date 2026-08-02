@@ -1,0 +1,18 @@
+{
+  "id": "full-replay",
+  "model": "gpt-5.6-luna",
+  "mode": "full-replay",
+  "reasoning": { "effort": "medium" },
+  "store": false,
+  "prompt_cache_key": "responses-cache-lab-replay-v1",
+  "calls": [
+    {
+      "id": "first",
+      "input": "Remember this stable prefix: alpha, beta, gamma."
+    },
+    {
+      "id": "second",
+      "input": "Continue the same conversation with one short sentence."
+    }
+  ]
+}

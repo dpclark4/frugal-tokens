@@ -1,0 +1,29 @@
+{
+  "id": "hello-world",
+  "model": "gpt-5.6-luna",
+  "mode": "full-replay",
+  "reasoning": { "effort": "medium" },
+  "store": false,
+  "instructions": "Answer briefly. Do not call tools.",
+  "prompt_cache_key": "responses-cache-lab-hello-world-v1",
+  "calls": [
+    {
+      "id": "hello",
+      "input": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "Hello world. Read this small fixture: project=frugal-tokens; experiment=prompt-cache reporting; note=cacheRead is provider-reported usage. Reply with a short greeting."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "recall",
+      "input": "What project and experiment did the fixture mention? Answer in one short line."
+    }
+  ]
+}

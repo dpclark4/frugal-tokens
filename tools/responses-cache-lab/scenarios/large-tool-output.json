@@ -1,0 +1,37 @@
+{
+  "id": "large-tool-output",
+  "model": "gpt-5.6-luna",
+  "mode": "full-replay",
+  "reasoning": { "effort": "medium" },
+  "store": false,
+  "instructions": "Call get_large_fixture once, then summarize it without quoting it.",
+  "tools": [
+    {
+      "type": "function",
+      "name": "get_large_fixture",
+      "description": "Return a deterministic large text fixture.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "strict": true
+    }
+  ],
+  "tool_outputs": {
+    "get_large_fixture": {
+      "text": "deterministic tool output block ",
+      "repeat": 10000
+    }
+  },
+  "calls": [
+    {
+      "id": "large-tool-warm",
+      "input": "Call get_large_fixture and report only its approximate size."
+    },
+    {
+      "id": "large-tool-follow-up",
+      "input": "Now answer with the word ready."
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "id": "text-warm-follow-up",
+  "model": "gpt-5.6-luna",
+  "mode": "full-replay",
+  "reasoning": { "effort": "medium" },
+  "store": false,
+  "instructions": "Answer briefly and do not call tools.",
+  "prompt_cache_key": "responses-cache-lab-text-v1",
+  "calls": [
+    {
+      "id": "warm",
+      "input": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "Establish a stable text-only prefix for this cache experiment."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "follow-up",
+      "input": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "Now answer with one short sentence."
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

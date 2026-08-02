@@ -1,0 +1,42 @@
+{
+  "id": "small-tool-output",
+  "model": "gpt-5.6-luna",
+  "mode": "full-replay",
+  "reasoning": { "effort": "medium" },
+  "store": false,
+  "instructions": "Use the lookup_fixture function when useful, then answer briefly.",
+  "tools": [
+    {
+      "type": "function",
+      "name": "lookup_fixture",
+      "description": "Return the fixed fixture value.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "key": { "type": "string" }
+        },
+        "required": ["key"],
+        "additionalProperties": false
+      },
+      "strict": true
+    }
+  ],
+  "tool_outputs": {
+    "lookup_fixture": {
+      "output": {
+        "key": "small",
+        "value": "fixed deterministic output"
+      }
+    }
+  },
+  "calls": [
+    {
+      "id": "warm",
+      "input": "Call lookup_fixture with key small, then summarize the result."
+    },
+    {
+      "id": "follow-up",
+      "input": "Use the same context and state the value in five words or fewer."
+    }
+  ]
+}
