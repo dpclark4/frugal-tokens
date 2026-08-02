@@ -2373,6 +2373,26 @@ export function SessionsPage() {
                     const detail = details[session.id];
                     const span = sessionSpan(detail ?? session);
                     const sessionStart = span?.start ?? session.startedAt;
+                    const sessionLocation = session.workingDirectory ??
+                      session.sourcePath;
+                    const sessionLocationLabel =
+                      session.workingDirectory !== undefined
+                        ? `Working directory: ${session.workingDirectory}`
+                        : session.sourcePath === undefined
+                        ? undefined
+                        : `Source path: ${session.sourcePath}`;
+                    const sessionDebugTitle = session.internalID === undefined
+                      ? undefined
+                      : `Archive session ID: ${session.internalID}\nSource session ID: ${session.id}`;
+                    const sessionTitleTooltip = sessionDebugTitle === undefined
+                      ? session.title
+                      : `${session.title}\n\n${sessionDebugTitle}`;
+                    const sessionLocationTitle =
+                      sessionLocationLabel === undefined
+                        ? sessionDebugTitle
+                        : sessionDebugTitle === undefined
+                        ? sessionLocationLabel
+                        : `${sessionLocationLabel}\n${sessionDebugTitle}`;
                     const tokens = session.inclusiveTokens ?? session.tokens;
                     const imageInputs = session.inclusiveImageInputs ?? 0;
                     const hasInclusiveMetrics =
@@ -2412,26 +2432,19 @@ export function SessionsPage() {
                               <div className="session-copy">
                                 <strong
                                   className="session-title"
-                                  title={session.title}
+                                  title={sessionTitleTooltip}
                                 >
                                   {session.title}
                                 </strong>
-                                {session.sourcePath !== undefined && (
+                                {sessionLocation !== undefined && (
                                   <small
-                                    className="session-source-path"
-                                    title={`Source path: ${session.sourcePath}`}
+                                    className={session.workingDirectory !==
+                                        undefined
+                                      ? "session-working-directory"
+                                      : "session-source-path"}
+                                    title={sessionLocationTitle}
                                   >
-                                    {session.sourcePath}
-                                  </small>
-                                )}
-                                {session.internalID !== undefined && (
-                                  <small
-                                    className="session-id"
-                                    title={`Internal archive session ID: ${
-                                      session.internalID
-                                    } · Source session ID: ${session.id}`}
-                                  >
-                                    ID {session.internalID}
+                                    {sessionLocation}
                                   </small>
                                 )}
                               </div>

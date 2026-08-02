@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import { compactHomePath } from "./database.ts";
 import {
   type ContextEvent,
   type ModelCall,
@@ -137,6 +138,7 @@ export type SourceSessionImport = {
   publicID?: string;
   parentExternalID?: string;
   artifactPath?: string;
+  workingDirectory?: string;
   observedAt: number;
   checkpoint: {
     changeHint?: string;
@@ -169,6 +171,7 @@ type SummaryRow = {
   public_id: string;
   harness: Harness;
   artifact_path: string | null;
+  working_directory: string | null;
   title: string;
   agent: string | null;
   updated_at: number;
@@ -269,7 +272,8 @@ type ContextEventRow = {
 const summaryColumns = `
   ss.id AS source_session_id, ss.external_id,
   COALESCE(ss.public_id, ss.external_id) AS public_id, so.harness,
-  ss.artifact_path, s.title, s.agent, s.updated_at, s.started_at, s.ended_at,
+  ss.artifact_path, ss.working_directory,
+  s.title, s.agent, s.updated_at, s.started_at, s.ended_at,
   s.providers_json, s.models_json, s.user_turns, s.model_calls,
   s.reported_cost, s.uncached_input_tokens, s.cache_read_tokens,
   s.cache_write_tokens, s.cache_write_5m_tokens,
@@ -443,10 +447,14 @@ function tokens(row: SummaryRow | CallRow): TokenUsage {
 }
 
 function summary(row: SummaryRow): SessionSummary {
+  const workingDirectory = optional(row.working_directory);
   return {
     id: row.public_id,
     internalID: row.source_session_id,
     sourcePath: optional(row.artifact_path),
+    workingDirectory: workingDirectory === undefined
+      ? undefined
+      : compactHomePath(workingDirectory),
     harness: row.harness,
     title: row.title,
     updatedAt: row.updated_at,
@@ -1303,12 +1311,13 @@ export class SessionRepository {
     try {
       const upsertIdentity = this.db.prepare(`
         INSERT INTO source_sessions (
-          source_id, external_id, public_id, artifact_path, availability,
-          first_seen_at, last_seen_at
-        ) VALUES (?, ?, ?, ?, 'available', ?, ?)
+          source_id, external_id, public_id, artifact_path, working_directory,
+          availability, first_seen_at, last_seen_at
+        ) VALUES (?, ?, ?, ?, ?, 'available', ?, ?)
         ON CONFLICT (source_id, external_id) DO UPDATE SET
           public_id = excluded.public_id,
           artifact_path = excluded.artifact_path,
+          working_directory = excluded.working_directory,
           availability = 'available',
           last_seen_at = excluded.last_seen_at
       `);
@@ -1318,6 +1327,7 @@ export class SessionRepository {
           value.externalID,
           value.publicID ?? value.externalID,
           value.artifactPath ?? null,
+          value.workingDirectory ?? null,
           value.observedAt,
           value.observedAt,
         );
@@ -1372,13 +1382,15 @@ export class SessionRepository {
       (this.db.prepare(`
         INSERT INTO source_sessions (
           source_id, external_id, public_id, parent_id, tree_root_id,
-          artifact_path, availability, first_seen_at, last_seen_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 'available', ?, ?)
+          artifact_path, working_directory, availability, first_seen_at,
+          last_seen_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'available', ?, ?)
         ON CONFLICT (source_id, external_id) DO UPDATE SET
           public_id = excluded.public_id,
           parent_id = excluded.parent_id,
           tree_root_id = excluded.tree_root_id,
           artifact_path = excluded.artifact_path,
+          working_directory = excluded.working_directory,
           availability = 'available',
           last_seen_at = excluded.last_seen_at
         RETURNING id
@@ -1389,6 +1401,7 @@ export class SessionRepository {
         parentID,
         treeRootID,
         value.artifactPath ?? null,
+        value.workingDirectory ?? null,
         value.observedAt,
         value.observedAt,
       ) as { id: number }).id,

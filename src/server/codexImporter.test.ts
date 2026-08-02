@@ -9,6 +9,7 @@ import { contextRange } from "../shared/contextMetrics.ts";
 
 const transcript = `
 {"id":"session","timestamp":"2026-07-11T13:59:59.000Z","instructions":null,"git":null}
+{"timestamp":"2026-07-11T13:59:59.000Z","type":"session_meta","payload":{"cwd":"/Users/test/project"}}
 {"timestamp":"2026-07-11T13:59:59.000Z","type":"response_item","payload":{"type":"reasoning","summary":[],"content":null,"encrypted_content":"ignored"}}
 {"timestamp":"2026-07-11T13:59:59.000Z","type":"event_msg","payload":{"type":"token_count","info":null,"rate_limits":null}}
 {"timestamp":"2026-07-11T14:00:00.000Z","type":"turn_context","payload":{"model":"gpt-5.6-luna","effort":"medium"}}
@@ -50,6 +51,7 @@ Deno.test("imports Codex sessions for SQLite reads", async () => {
     strictEqual(repository.listSessions(1, 10, "codex").items[0].id, id);
     const detail = repository.getSession("codex", id)!;
     strictEqual(detail.title, "Import Codex");
+    strictEqual(detail.workingDirectory, "/Users/test/project");
     // Canonical storage retains the opaque operation, but session reads and
     // usage analytics hide explicitly tagged compaction machinery.
     strictEqual(repository.listUsageCalls(undefined, "codex").length, 2);
@@ -76,7 +78,7 @@ Deno.test("imports Codex sessions for SQLite reads", async () => {
       detail.turns[1].calls[0].contextEventsBefore,
       [{
         type: "compaction",
-        sourceOrder: 14,
+        sourceOrder: 15,
         occurredAt: Date.parse("2026-07-11T14:00:07.001Z"),
       }],
     );

@@ -13,7 +13,7 @@ export async function syncCodexSessions(
     harness: "codex",
     label: "Codex",
     directory,
-    parserVersion: "codex-10",
+    parserVersion: "codex-11",
     repository,
     discover: discoverCodexSessions,
     normalize: normalizeCodexSession,

@@ -11,7 +11,7 @@ import {
   type SourceSessionCheckpoint,
 } from "./sessionRepository.ts";
 
-const parserVersion = "opencode-6";
+const parserVersion = "opencode-7";
 
 type AggregateRow = {
   session_id: string;
@@ -181,6 +181,7 @@ function checksum(value: OpenCodeSnapshot) {
       row.title,
       row.model,
       row.agent,
+      row.directory,
       row.time_created,
       row.time_updated,
     ]),

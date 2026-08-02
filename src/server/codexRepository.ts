@@ -54,6 +54,7 @@ const recordSchema = z.object({
     call_id: z.string().optional(),
     id: z.string().optional(),
     turn_id: z.string().optional(),
+    cwd: z.string().optional(),
     message: z.string().optional(),
     status: z.string().optional(),
     started_at: z.number().nonnegative().optional(),
@@ -967,13 +968,20 @@ function codexSession(records: Record[], id: string, updatedAt: number) {
   };
 }
 
+function sessionWorkingDirectory(records: Record[]) {
+  return records.find((record) =>
+    record.type === "session_meta" && record.payload?.cwd
+  )?.payload?.cwd ?? records.find((record) => record.payload?.cwd)?.payload?.cwd;
+}
+
 export function normalizeCodexSession(
   candidate: CodexSessionCandidate,
   text: string,
 ) {
-  return codexSession(
-    readRecordsFromText(text, true),
-    candidate.id,
-    candidate.updatedAt,
-  );
+  const records = readRecordsFromText(text, true);
+  const normalized = codexSession(records, candidate.id, candidate.updatedAt);
+  const workingDirectory = sessionWorkingDirectory(records);
+  return workingDirectory === undefined
+    ? normalized
+    : { ...normalized, workingDirectory };
 }

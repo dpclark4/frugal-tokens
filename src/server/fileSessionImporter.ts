@@ -15,6 +15,7 @@ export type FileSessionCandidate = {
 
 type NormalizedFileSession = {
   summary: SessionSummary;
+  workingDirectory?: string;
   turns: SessionTurnImport[];
   contextEvents?: SessionContextEventImport[];
 };
@@ -124,6 +125,7 @@ export async function syncFileSessions(options: {
         sourceID,
         externalID: candidate.id,
         artifactPath: candidate.artifactPath,
+        workingDirectory: normalized.workingDirectory,
         observedAt,
         checkpoint: {
           sourceSize: candidate.size,

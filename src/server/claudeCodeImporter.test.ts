@@ -17,7 +17,7 @@ Deno.test("imports a Claude Code root and namespaced child tree", async () => {
   write(
     `${project}/root.jsonl`,
     `
-{"type":"user","timestamp":"2026-07-14T10:00:00Z","promptSource":"typed","origin":{"kind":"human"},"message":{"content":[{"type":"text","text":"${longPrompt}"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBORw0KGgoAAAANSUhEUg=="}}]}}
+{"type":"user","timestamp":"2026-07-14T10:00:00Z","cwd":"/Users/test/project","promptSource":"typed","origin":{"kind":"human"},"message":{"content":[{"type":"text","text":"${longPrompt}"},{"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBORw0KGgoAAAANSUhEUg=="}}]}}
 {"type":"assistant","timestamp":"2026-07-14T10:00:01Z","message":{"id":"root-call","model":"claude-opus","stop_reason":"tool_use","content":[{"type":"thinking","thinking":"secret reasoning"},{"type":"text","text":"Calling child"},{"type":"tool_use","id":"tool-1","name":"Agent","input":{"prompt":"investigate"}}],"usage":{"input_tokens":2,"cache_read_input_tokens":3,"cache_creation_input_tokens":4,"output_tokens":5}}}
 {"type":"user","timestamp":"2026-07-14T10:00:02Z","message":{"content":[{"type":"tool_result","tool_use_id":"tool-1","content":"child output"}]},"toolUseResult":{"agentId":"child"}}
 {"type":"user","timestamp":"2026-07-14T10:00:03Z","message":{"content":[{"type":"tool_result","tool_use_id":"unknown","content":"plain output"}]},"toolUseResult":"plain output"}
@@ -56,6 +56,7 @@ Deno.test("imports a Claude Code root and namespaced child tree", async () => {
     strictEqual(result.imported, 1);
     const detail = repository.getSession("claude-code", "project/root")!;
     strictEqual(detail.title, "Indexed root");
+    strictEqual(detail.workingDirectory, "/Users/test/project");
     strictEqual(detail.subagents[0].id, "child");
     strictEqual(detail.subagents[0].parentID, "project/root");
     strictEqual(detail.subagents[0].title, "Explorer child");

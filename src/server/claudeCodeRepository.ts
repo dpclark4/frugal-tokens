@@ -43,6 +43,7 @@ const recordSchema = z.object({
   isMeta: z.boolean().optional(),
   isSidechain: z.boolean().optional(),
   promptSource: z.string().optional(),
+  cwd: z.string().optional(),
   origin: z.object({ kind: z.string().optional() }).passthrough().optional(),
   message: z.object({
     id: z.string().optional(),
@@ -594,6 +595,7 @@ export function normalizeClaudeCodeSessionTree(options: {
   return transcripts.map((transcript) => {
     const isRoot = transcript.path === options.candidate.path;
     const records = readRecordsFromText(text(transcript.path), true);
+    const workingDirectory = records.find((record) => record.cwd)?.cwd;
     const decoded = decodeRecords(records);
     const rawID = isRoot
       ? options.candidate.id
@@ -645,6 +647,7 @@ export function normalizeClaudeCodeSessionTree(options: {
         ? undefined
         : externalIDs.get(parentArtifactPath),
       artifactPath: transcript.artifactPath,
+      ...(workingDirectory === undefined ? {} : { workingDirectory }),
       observedAt: options.observedAt,
       checkpoint: options.checkpoint,
       session: {

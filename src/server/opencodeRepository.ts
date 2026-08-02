@@ -68,6 +68,7 @@ export type OpenCodeSessionRow = {
   title: string;
   model: string | null;
   agent: string | null;
+  directory?: string | null;
   time_created: number;
   time_updated: number;
 };
@@ -560,6 +561,7 @@ export function normalizeOpenCodeSessionTree(options: {
       externalID: row.id,
       parentExternalID: row.parent_id ?? undefined,
       artifactPath: `session:${row.id}`,
+      ...(row.directory ? { workingDirectory: row.directory } : {}),
       observedAt: options.observedAt,
       checkpoint: options.checkpoint,
       session: {

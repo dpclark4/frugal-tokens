@@ -15,6 +15,7 @@ function sourceDatabase(path: string) {
       title TEXT NOT NULL,
       model TEXT,
       agent TEXT,
+      directory TEXT,
       time_created INTEGER NOT NULL,
       time_updated INTEGER NOT NULL
     );
@@ -42,7 +43,7 @@ Deno.test("incrementally imports OpenCode session trees", () => {
   const sourcePath = `${directory}/opencode.sqlite`;
   const source = sourceDatabase(sourcePath);
   const insertSession = source.prepare(`
-    INSERT INTO session VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO session VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
   insertSession.run(
     "root",
@@ -54,10 +55,20 @@ Deno.test("incrementally imports OpenCode session trees", () => {
       variant: "medium",
     }),
     "build",
+    "/Users/test/project",
     1,
     10,
   );
-  insertSession.run("child", "root", "Child", null, "explore", 2, 9);
+  insertSession.run(
+    "child",
+    "root",
+    "Child",
+    null,
+    "explore",
+    "/Users/test/project",
+    2,
+    9,
+  );
   const insertMessage = source.prepare(`
     INSERT INTO message VALUES (?, ?, ?, ?, ?)
   `);
@@ -247,6 +258,7 @@ Deno.test("incrementally imports OpenCode session trees", () => {
     const first = syncOpenCodeSessions(sourcePath, repository);
     strictEqual(first.imported, 1);
     const detail = repository.getSession("opencode", "root")!;
+    strictEqual(detail.workingDirectory, "/Users/test/project");
     strictEqual(detail.subagents[0].id, "child");
     strictEqual(detail.turns[0].reasoningSetting?.settingValue, "high");
     strictEqual(detail.turns[0].reasoningSetting?.provenance, "inherited");

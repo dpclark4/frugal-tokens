@@ -35,6 +35,10 @@ Deno.test("imports PI sessions directly from the configured directory", async ()
       repository.getSession("pi", "root-session")?.title,
       "Root session",
     );
+    strictEqual(
+      repository.getSession("pi", "root-session")?.workingDirectory,
+      "/Users/test/project",
+    );
   } finally {
     db.close();
     Deno.removeSync(directory, { recursive: true });

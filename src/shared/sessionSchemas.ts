@@ -122,6 +122,7 @@ export const sessionSummarySchema = z.object({
   // canonical fields until they are persisted.
   internalID: z.number().int().positive().optional(),
   sourcePath: z.string().optional(),
+  workingDirectory: z.string().optional(),
   harness: harnessSchema,
   title: z.string(),
   updatedAt: z.number(),

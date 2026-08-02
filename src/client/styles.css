@@ -1339,21 +1339,17 @@ table.data-table {
 }
 
 .session-cell .session-source-path,
-.session-cell .session-id {
+.session-cell .session-working-directory {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   font: 9px/1.25 var(--mono);
 }
 
-.session-cell .session-source-path {
+.session-cell .session-source-path,
+.session-cell .session-working-directory {
   margin-top: 4px;
   color: var(--muted-2);
-}
-
-.session-cell .session-id {
-  margin-top: 2px;
-  color: var(--green-soft);
 }
 
 .updated-at {
@@ -2529,10 +2525,6 @@ table.data-table {
   font-family: "Avenir Next", "Segoe UI", sans-serif;
   font-size: 13px;
   margin-bottom: 4px;
-}
-
-.subagent-identity .session-id {
-  font-size: 9px;
 }
 
 .subagent-stats {

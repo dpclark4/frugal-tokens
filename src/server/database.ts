@@ -15,6 +15,15 @@ export function expandHomePath(path: string) {
   return path;
 }
 
+export function compactHomePath(path: string) {
+  const home = homeDirectory().replace(/[\\/]+$/, "") || "/";
+  if (path === home) return "~";
+  if (path.startsWith(`${home}/`) || path.startsWith(`${home}\\`)) {
+    return `~${path.slice(home.length)}`;
+  }
+  return path;
+}
+
 export function sqlitePath(databaseURL: string) {
   if (!databaseURL.startsWith("sqlite:")) {
     throw new Error("FRUGAL_TOKENS_DATABASE_URL must use the sqlite: scheme");

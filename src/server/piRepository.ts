@@ -593,13 +593,19 @@ function piSession(records: Record[], id: string, updatedAt: number) {
   };
 }
 
+function sessionWorkingDirectory(records: Record[]) {
+  return records.find((record) => record.type === "session" && record.cwd)
+    ?.cwd ?? records.find((record) => record.cwd)?.cwd;
+}
+
 export function normalizePiSession(
   candidate: PiSessionCandidate,
   text: string,
 ) {
-  return piSession(
-    readRecordsFromText(text, true),
-    candidate.id,
-    candidate.updatedAt,
-  );
+  const records = readRecordsFromText(text, true);
+  const normalized = piSession(records, candidate.id, candidate.updatedAt);
+  const workingDirectory = sessionWorkingDirectory(records);
+  return workingDirectory === undefined
+    ? normalized
+    : { ...normalized, workingDirectory };
 }

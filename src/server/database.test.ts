@@ -1,15 +1,30 @@
 import { strictEqual } from "node:assert/strict";
 import { join } from "node:path";
-import { expandHomePath, openArchiveDatabase, sqlitePath } from "./database.ts";
+import {
+  compactHomePath,
+  expandHomePath,
+  openArchiveDatabase,
+  sqlitePath,
+} from "./database.ts";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
 
-Deno.test("expands home-relative paths", () => {
+Deno.test("expands and compacts home-relative paths", () => {
   const home = Deno.env.get("HOME") || Deno.env.get("USERPROFILE");
   if (!home) throw new Error("Test requires a home directory");
   const expected = join(home, "data/archive.sqlite");
   strictEqual(expandHomePath("~/data/archive.sqlite"), expected);
   strictEqual(sqlitePath("sqlite:~/data/archive.sqlite"), expected);
   strictEqual(expandHomePath("/tmp/archive.sqlite"), "/tmp/archive.sqlite");
+  const currentHome = home;
+  strictEqual(compactHomePath(currentHome), "~");
+  strictEqual(
+    compactHomePath(join(currentHome, "project/archive.sqlite")),
+    "~/project/archive.sqlite",
+  );
+  strictEqual(
+    compactHomePath(`${currentHome}-other/archive.sqlite`),
+    `${currentHome}-other/archive.sqlite`,
+  );
 });
 
 Deno.test("opens an archive database with the required SQLite settings", () => {
