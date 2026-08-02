@@ -33,6 +33,11 @@ Create a sanitized contributor database with:
 deno task demo:db:create -- --output contributor.sqlite
 ```
 
+The generator replaces source locations and working directories with per-run
+random aliases such as `~/amber-finch`. The same original path receives the
+same alias everywhere in that generated database, while the original path is
+not retained.
+
 To add it to an existing sanitized demo database, run:
 
 ```sh

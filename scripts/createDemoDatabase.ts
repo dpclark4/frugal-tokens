@@ -88,6 +88,29 @@ function generatedTitle(used: Set<string>) {
   }
 }
 
+function normalizePathKey(value: string) {
+  const normalized = value.replaceAll("\\", "/");
+  return normalized === "/" ? normalized : normalized.replace(/\/+$/, "");
+}
+
+function createPathRedactor() {
+  const aliases = new Map<string, string>();
+  const usedAliases = new Set<string>();
+  return (value: string) => {
+    const key = normalizePathKey(value);
+    const existing = aliases.get(key);
+    if (existing !== undefined) return existing;
+
+    let alias: string;
+    do {
+      alias = `~/${adjectives[randomIndex(adjectives.length)].toLowerCase()}-${animals[randomIndex(animals.length)].toLowerCase()}`;
+    } while (usedAliases.has(alias));
+    usedAliases.add(alias);
+    aliases.set(key, alias);
+    return alias;
+  };
+}
+
 function removeIfExists(path: string) {
   try {
     Deno.removeSync(path);
@@ -134,10 +157,19 @@ function redact(db: DatabaseSync) {
   db.exec("PRAGMA secure_delete = ON");
   db.exec("BEGIN IMMEDIATE");
   try {
+    const redactPath = createPathRedactor();
+    const sourceLocations = db.prepare(
+      "SELECT id, location FROM sources",
+    ).all() as Array<{ id: number; location: string }>;
+    const workingDirectories = db.prepare(`
+      SELECT id, working_directory
+      FROM source_sessions
+      WHERE working_directory IS NOT NULL
+    `).all() as Array<{ id: number; working_directory: string }>;
+
     db.exec(`
       UPDATE sources
-      SET label = 'Demo ' || harness,
-          location = 'demo-source-' || id;
+      SET label = 'Demo ' || harness;
 
       UPDATE source_sessions
       SET external_id = 'demo-session-' || id,
@@ -167,6 +199,23 @@ function redact(db: DatabaseSync) {
             WHEN output_preview IS NULL THEN NULL ELSE '${REDACTED}'
           END;
     `);
+
+    const updateSourceLocation = db.prepare(
+      "UPDATE sources SET location = ? WHERE id = ?",
+    );
+    for (const source of sourceLocations) {
+      updateSourceLocation.run(redactPath(source.location), source.id);
+    }
+
+    const updateWorkingDirectory = db.prepare(
+      "UPDATE source_sessions SET working_directory = ? WHERE id = ?",
+    );
+    for (const session of workingDirectories) {
+      updateWorkingDirectory.run(
+        redactPath(session.working_directory),
+        session.id,
+      );
+    }
 
     const titles = db.prepare(
       "SELECT source_session_id FROM sessions ORDER BY source_session_id",
@@ -204,12 +253,14 @@ async function compact(path: string) {
 function audit(db: DatabaseSync) {
   const checks = [
     ["sessions", "updated_at < " + DEMO_START_AT],
-    ["sources", `location NOT GLOB 'demo-source-*' OR label NOT GLOB 'Demo *'`],
+    ["sources", `location NOT GLOB '~/*' OR label NOT GLOB 'Demo *'`],
     [
       "source_sessions",
       `external_id NOT GLOB 'demo-session-*'
         OR public_id NOT GLOB 'demo-session-*'
         OR artifact_path IS NOT NULL
+        OR (working_directory IS NOT NULL
+          AND working_directory NOT GLOB '~/*')
         OR change_hint IS NOT NULL
         OR last_error IS NOT NULL`,
     ],

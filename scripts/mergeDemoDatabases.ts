@@ -67,12 +67,19 @@ function countWhere(db: DatabaseSync, table: string, predicate: string) {
 
 function assertSanitized(db: DatabaseSync, name: string) {
   const checks = [
-    ["sources", `location NOT GLOB 'demo-source-*' OR label NOT GLOB 'Demo *'`],
+    [
+      "sources",
+      `(location NOT GLOB 'demo-source-*'
+        AND location NOT GLOB '~/*')
+        OR label NOT GLOB 'Demo *'`,
+    ],
     [
       "source_sessions",
       `external_id NOT GLOB 'demo-session-*'
         OR public_id NOT GLOB 'demo-session-*'
         OR artifact_path IS NOT NULL
+        OR (working_directory IS NOT NULL
+          AND working_directory NOT GLOB '~/*')
         OR change_hint IS NOT NULL
         OR last_error IS NOT NULL`,
     ],
@@ -323,7 +330,7 @@ try {
   const sourceSessions = source.prepare(`
     SELECT ss.id, ss.source_id, ss.parent_id, ss.tree_root_id, ss.availability,
       ss.source_size, ss.source_modified_at, ss.checksum, ss.parser_version,
-      ss.first_seen_at, ss.last_seen_at, ss.imported_at
+      ss.first_seen_at, ss.last_seen_at, ss.imported_at, ss.working_directory
     FROM source_sessions ss
     JOIN sessions s ON s.source_session_id = ss.id
     ORDER BY ss.id
@@ -357,22 +364,23 @@ try {
       ) as { id: number };
       sourceIDs.set(sourceID, targetSource.id);
       target.prepare("UPDATE sources SET location = ? WHERE id = ?")
-        .run(`demo-source-${targetSource.id}`, targetSource.id);
+        .run(`~/source-${targetSource.id}`, targetSource.id);
     }
 
     const targetSessionIDs = new Map<number, number>();
     const insertSourceSession = target.prepare(`
       INSERT INTO source_sessions (
         source_id, external_id, public_id, parent_id, tree_root_id, artifact_path,
-        availability, source_size, source_modified_at, checksum, parser_version,
-        first_seen_at, last_seen_at, imported_at, last_error, change_hint
-      ) VALUES (?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+        working_directory, availability, source_size, source_modified_at, checksum,
+        parser_version, first_seen_at, last_seen_at, imported_at, last_error, change_hint
+      ) VALUES (?, ?, ?, NULL, NULL, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
       RETURNING id
     `);
     for (const session of retained) {
       const targetSession = insertSourceSession.get(
         sourceIDs.get(Number(value(session, "source_id")))!, "pending", "pending",
-        value(session, "availability"), value(session, "source_size"),
+        value(session, "working_directory"), value(session, "availability"),
+        value(session, "source_size"),
         value(session, "source_modified_at"), value(session, "checksum"),
         value(session, "parser_version"), value(session, "first_seen_at"),
         value(session, "last_seen_at"), value(session, "imported_at"),
