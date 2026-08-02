@@ -60,6 +60,35 @@ of the provider's internal cache decision. A turn-level cached percentage can
 also combine a hot model call with a busted model call, so turn summaries are
 not sufficient for this classification.
 
+## Investigation goal and evidence model
+
+The working target is a **transient per-request bust**:
+
+```text
+warm cache -> one low/zero-read request -> cache rebuild -> warm cache
+```
+
+A later hot call is evidence that the cache recovered; it does not erase the
+input cost of the bust request. “Cache miss” and “request hang” are separate
+observations and should not be conflated without transport evidence connecting
+them.
+
+The investigation therefore keeps two questions separate:
+
+1. **Cache reporting/outcome:** did the provider return a cache-read value, or
+   did Pi normalize an omitted field to zero? The current session format cannot
+   distinguish those cases.
+2. **Request/transport behavior:** did Pi use a WebSocket continuation or full
+   context, was the connection reused, did a failure/fallback occur, and was a
+   request later aborted? The telemetry extension is intended to answer these
+   questions without mutating the request.
+
+The goal is not to manufacture misses before the pattern is understood. First
+collect enough call-level data to compare model/settings, prompt-cache key,
+logical prefix continuity, images, tool-output size, idle gap, transport path,
+and the following recovery call. Only then should a controlled reproduction
+matrix be designed.
+
 ## Data sources
 
 - Frugal Tokens archive: `~/.local/share/frugal-tokens/archive.sqlite`
