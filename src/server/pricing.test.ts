@@ -131,6 +131,47 @@ Deno.test("prices Claude Opus 5 at its published rates", () => {
   );
 });
 
+Deno.test("normalizes OpenRouter Anthropic model IDs for pricing", () => {
+  closeTo(
+    computeModelCallCost(
+      tokens({
+        uncachedInput: 1_000_000,
+        cacheRead: 1_000_000,
+        cacheWrite: 1_000_000,
+        cacheWrite5m: 1_000_000,
+        cacheWrite1h: 0,
+        output: 1_000_000,
+      }),
+      "openrouter/anthropic/claude-haiku-4.5",
+      timestamp,
+    ),
+    7.35,
+  );
+  closeTo(
+    computeModelCallCost(
+      tokens({ uncachedInput: 1_000_000 }),
+      "anthropic/claude-haiku-4-5-20251001",
+      timestamp,
+    ),
+    1,
+  );
+});
+
+Deno.test("prices Claude Sonnet 5 at its promotional and standard rates", () => {
+  const before = Date.parse("2026-08-31T23:59:59.999Z");
+  const effectiveAt = Date.parse("2026-09-01T00:00:00Z");
+  for (const [at, expected] of [[before, 2], [effectiveAt, 3]] as const) {
+    closeTo(
+      computeModelCallCost(
+        tokens({ uncachedInput: 1_000_000 }),
+        "openrouter/anthropic/claude-sonnet-5",
+        at,
+      ),
+      expected,
+    );
+  }
+});
+
 Deno.test("prices Kimi K3 cache hits, misses, writes, and output", () => {
   closeTo(
     computeModelCallCost(

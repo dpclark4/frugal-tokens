@@ -3,6 +3,7 @@ import type {
   TokenUsage,
 } from "../shared/sessionSchemas.ts";
 import { contextSize } from "../shared/contextMetrics.ts";
+import { canonicalModelId } from "../shared/modelNames.ts";
 import { rollupCosts } from "../shared/costMetrics.ts";
 import {
   type CacheMissTokens,
@@ -99,10 +100,7 @@ const reducedLunaTerraLongContextRates: Record<string, RateCard> = {
 };
 
 function normalizedModel(model: string) {
-  return model.replace(/^.*?((?:claude|gpt|grok|kimi)-)/, "$1").replace(
-    /-\d{8}.*$/,
-    "",
-  );
+  return canonicalModelId(model);
 }
 
 function rateCard(model: string, timestamp: number, inputTokens: number) {
