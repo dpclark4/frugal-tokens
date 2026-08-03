@@ -1,0 +1,37 @@
+.new-next-section h2 {
+  margin: 0;
+  color: var(--dashboard-ink);
+  font-size: 21px;
+  letter-spacing: -.035em;
+}
+
+.new-next-section {
+  display: flex;
+  min-height: 106px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 30px;
+  margin-top: 24px;
+  padding: 24px 32px;
+  border-style: dashed;
+  box-shadow: none;
+}
+
+.new-next-section .eyebrow {
+  margin-bottom: 5px;
+  font-size: 9px;
+}
+
+.new-next-section p:last-child {
+  max-width: 500px;
+  margin: 0;
+  color: var(--muted);
+  font: 10px/1.5 var(--mono);
+  text-align: right;
+}
+
+
+@media (max-width: 760px) {
+  .new-next-section { align-items: stretch; flex-direction: column; gap: 12px; padding: 22px 18px; }
+  .new-next-section p:last-child { text-align: left; }
+}
