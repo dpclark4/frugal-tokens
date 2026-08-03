@@ -727,16 +727,15 @@ function ActivityCalendar({ data }: { data?: ActivityOverviewResponse }) {
     <section className="new-calendar" aria-labelledby="new-calendar-title">
       <div className="dashboard-section-heading">
         <div>
-          <p className="dashboard-kicker">Processed input</p>
-          <h2 id="new-calendar-title">Daily workload</h2>
+          <h2 id="new-calendar-title">Activity by day</h2>
         </div>
       </div>
 
       <div className="new-calendar-measure">
-        <span>Relative to the busiest day</span>
+        <span>Processed input · log-scaled within this period</span>
         <div
           className="activity-heat-key"
-          aria-label="Less to more processed input"
+          aria-label="Less to more processed input on a logarithmic scale"
         >
           <small>Less</small>
           {[1, 2, 3, 4, 5].map((level) => (
