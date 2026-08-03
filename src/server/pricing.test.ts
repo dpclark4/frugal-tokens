@@ -169,6 +169,23 @@ Deno.test("normalizes OpenRouter Anthropic model IDs for pricing", () => {
   );
 });
 
+Deno.test("prices GLM 5.2 through provider aliases", () => {
+  for (const model of ["glm-5.2", "z-ai/glm-5.2"]) {
+    closeTo(
+      computeModelCallCost(
+        tokens({
+          uncachedInput: 1_000_000,
+          cacheRead: 1_000_000,
+          output: 1_000_000,
+        }),
+        model,
+        timestamp,
+      ),
+      6.06,
+    );
+  }
+});
+
 Deno.test("prices Claude Sonnet 5 at its promotional and standard rates", () => {
   const before = Date.parse("2026-08-31T23:59:59.999Z");
   const effectiveAt = Date.parse("2026-09-01T00:00:00Z");

@@ -37,6 +37,7 @@ const standard: Record<string, RateCard> = {
   "grok-4-5": { input: 2, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0.5, output: 6 },
   "grok-4.5": { input: 2, cacheWrite5m: 0, cacheWrite1h: 0, cacheRead: 0.5, output: 6 },
   "kimi-k3": { input: 3, cacheRead: 0.3, cacheWrite: 3, output: 15 },
+  "glm-5.2": { input: 1.4, cacheRead: 0.26, output: 4.4 },
   "gpt-5.6-sol": { input: 5, cacheRead: 0.5, cacheWrite: 6.25, output: 30 },
   "gpt-5.6-terra": { input: 2.5, cacheRead: 0.25, cacheWrite: 3.125, output: 15 },
   "gpt-5.6-luna": { input: 1, cacheRead: 0.1, cacheWrite: 1.25, output: 6 },

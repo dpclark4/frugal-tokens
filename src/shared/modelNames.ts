@@ -52,7 +52,7 @@ function withoutProviderPrefix(model: string) {
   // Bedrock IDs can be routed through a region or inference profile, e.g.
   // "us.anthropic.claude-opus-4-7". Keep the model portion for display and
   // grouping without changing the persisted ID.
-  return normalized.replace(/^.*?(?=(?:claude|gpt|grok|kimi)-)/, "");
+  return normalized.replace(/^.*?(?=(?:claude|gpt|grok|kimi|glm)-)/, "");
 }
 
 function withoutReleaseSuffix(model: string) {
