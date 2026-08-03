@@ -8,6 +8,10 @@ import "./NewPage.css";
 const route = getRouteApi("/new");
 const integer = new Intl.NumberFormat("en-US");
 const decimal = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
+const oneDecimal = new Intl.NumberFormat("en-US", {
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
 const compact = new Intl.NumberFormat("en-US", {
   notation: "compact",
   maximumFractionDigits: 1,
@@ -65,20 +69,84 @@ function approximateDuration(value: number) {
   return `~${hours}h${remainder === 0 ? "" : ` ${remainder}m`}`;
 }
 
-function MetricCell({ label, value, detail, emphasis }: {
+type SummaryMetricProps = {
+  label: string;
+  value: string;
+  detail?: string;
+  comparison?: string;
+  emphasis?: "signal";
+};
+
+function SummaryMetric({
+  label,
+  value,
+  detail,
+  comparison,
+  emphasis,
+}: SummaryMetricProps) {
+  return (
+    <div className={`summary-metric${emphasis ? ` ${emphasis}` : ""}`}>
+      <span className="summary-metric-label">{label}</span>
+      <strong>{value}</strong>
+      {detail && <small className="summary-metric-detail">{detail}</small>}
+      {comparison && (
+        <small className="summary-metric-comparison">{comparison}</small>
+      )}
+    </div>
+  );
+}
+
+function SummarySecondary({
+  label,
+  value,
+  detail,
+  valueTitle,
+  info,
+}: {
   label: string;
   value: string;
   detail: string;
-  emphasis?: "spend" | "signal";
+  valueTitle?: string;
+  info?: string;
 }) {
   return (
-    <div className={`signal-metric${emphasis ? ` ${emphasis}` : ""}`}>
-      <span>{label}</span>
-      <strong>{value}</strong>
+    <div className="summary-secondary">
+      <div className="summary-secondary-label">
+        <span>{label}</span>
+        {info && (
+          <button
+            type="button"
+            className="summary-secondary-info"
+            aria-label={`About ${label.toLowerCase()}`}
+          >
+            <span aria-hidden="true">i</span>
+            <span className="summary-secondary-tooltip">{info}</span>
+          </button>
+        )}
+      </div>
+      <strong title={valueTitle}>{value}</strong>
       <small>{detail}</small>
     </div>
   );
 }
+
+// TODO: Replace these temporary UI values with a true preceding-period query
+// and cache/subagent aggregates from the API.
+const mockSummaryComparisons = {
+  spend: "+18% vs previous 30d",
+  sessions: "+12% vs previous 30d",
+  processedInput: "+21% vs previous 30d",
+  tokenReuse: "+0.4 pp vs previous 30d",
+  spendCoverageComparable: true,
+};
+
+const mockSummarySecondary = {
+  cacheMissSessions: 149,
+  cacheMissShare: "61.1%",
+  missCost: 21.79,
+  subagentSpend: 24.18,
+  subagentShare: "5.6% of priced spend",
+};
 
 type DistributionMetric = {
   label: string;
@@ -237,8 +305,9 @@ function DistributionStrip({ metric }: { metric: DistributionMetric }) {
     ["P75", metric.p75],
     ["P90", metric.p90],
   ];
-  const ariaLabel = `${metric.label}: ${tooltip.map(([label, value]) =>
-    `${label} ${value}`).join(", ")}`;
+  const ariaLabel = `${metric.label}: ${
+    tooltip.map(([label, value]) => `${label} ${value}`).join(", ")
+  }`;
   return (
     <tr>
       <th scope="row">
@@ -319,7 +388,9 @@ function SessionShape() {
           >
             <span aria-hidden="true">i</span>
             <span className="shape-info-tooltip">
-              Each row summarizes sessions in the selected period. Box = P25–P75, whisker = P10–P90, vertical tick = median, diamond = mean.
+              Each row summarizes sessions in the selected period. Box =
+              P25–P75, whisker = P10–P90, vertical tick = median, diamond =
+              mean.
             </span>
           </button>
         </div>
@@ -351,74 +422,96 @@ function SessionShape() {
   );
 }
 
-function SummaryMatrix({
-  data,
-  range,
-}: {
-  data?: ActivityOverviewResponse;
-  range: 30 | 90;
-}) {
+function SummaryMatrix({ data }: { data?: ActivityOverviewResponse }) {
   const costPerMillion = data && data.summary.processedInput > 0
     ? data.summary.spend / (data.summary.processedInput / 1_000_000)
     : undefined;
-  const ratePrefix = data?.summary.hasUnpricedCost ? "≥" : "";
+  const sessionsPerActiveDay = data && data.summary.activeDays > 0
+    ? data.summary.sessions / data.summary.activeDays
+    : undefined;
+  const showComparisons = data?.rangeDays === 30;
+  const spendDetail = !data
+    ? "Loading…"
+    : data.summary.hasUnpricedCost
+    ? "excludes unpriced usage"
+    : "all usage priced";
+  const effectiveRate = costPerMillion === undefined
+    ? "—"
+    : `${currency.format(costPerMillion)} / 1M processed`;
+  const effectiveRateDetail = data ? "based on priced spend" : "Loading…";
+  const sessionDetail = !data
+    ? "Loading…"
+    : sessionsPerActiveDay === undefined
+    ? "no active days"
+    : `${integer.format(data.summary.activeDays)} active days · ${
+      oneDecimal.format(sessionsPerActiveDay)
+    }/day`;
 
   return (
     <section className="signal-summary" aria-labelledby="signal-summary-title">
-      <div className="dashboard-section-heading">
-        <div>
-          <p className="dashboard-kicker">Period totals</p>
-          <h2 id="signal-summary-title">{range}-day signal</h2>
-        </div>
-        <span className="live-data-badge">Live</span>
+      <div className="dashboard-section-heading summary-heading">
+        <h2 id="signal-summary-title">Usage overview</h2>
       </div>
-      <div className="signal-matrix">
-        <div className="signal-row">
-          <span className="signal-row-label">Scale</span>
-          <MetricCell
-            label={data?.summary.hasUnpricedCost ? "Known spend" : "Spend"}
-            value={data ? currency.format(data.summary.spend) : "—"}
-            detail={data?.summary.hasUnpricedCost ? "some usage unpriced" : "period total"}
-            emphasis="spend"
-          />
-          <MetricCell
-            label="Processed input"
-            value={data ? compact.format(data.summary.processedInput) : "—"}
-            detail="cumulative tokens"
-            emphasis="signal"
-          />
-        </div>
-        <div className="signal-row">
-          <span className="signal-row-label">Cadence</span>
-          <MetricCell
-            label="Sessions"
-            value={data ? integer.format(data.summary.sessions) : "—"}
-            detail="root sessions"
-          />
-          <MetricCell
-            label="Active days"
-            value={data ? `${integer.format(data.summary.activeDays)} / ${range}` : "—"}
-            detail="days with work"
-          />
-        </div>
-        <div className="signal-row">
-          <span className="signal-row-label">Efficiency</span>
-          <MetricCell
-            label="Effective cost / 1M"
-            value={costPerMillion === undefined
-              ? "—"
-              : `${ratePrefix}${currency.format(costPerMillion)}`}
-            detail="processed input"
-          />
-          <MetricCell
-            label="Token reuse"
-            value={data?.summary.tokenReuse === undefined
-              ? "—"
-              : `${decimal.format(data.summary.tokenReuse * 100)}%`}
-            detail="token-weighted"
-            emphasis="signal"
-          />
-        </div>
+      <div className="summary-metrics">
+        <SummaryMetric
+          label="Priced spend"
+          value={data ? currency.format(data.summary.spend) : "—"}
+          detail={spendDetail}
+          comparison={showComparisons &&
+              mockSummaryComparisons.spendCoverageComparable
+            ? mockSummaryComparisons.spend
+            : undefined}
+        />
+        <SummaryMetric
+          label="Sessions"
+          value={data ? integer.format(data.summary.sessions) : "—"}
+          detail={sessionDetail}
+          comparison={showComparisons
+            ? mockSummaryComparisons.sessions
+            : undefined}
+        />
+        <SummaryMetric
+          label="Processed input"
+          value={data ? compact.format(data.summary.processedInput) : "—"}
+          detail={data ? "across model calls" : "Loading…"}
+          comparison={showComparisons
+            ? mockSummaryComparisons.processedInput
+            : undefined}
+        />
+        <SummaryMetric
+          label="Token reuse"
+          value={data?.summary.tokenReuse === undefined
+            ? "—"
+            : `${decimal.format(data.summary.tokenReuse * 100)}%`}
+          detail={data ? "token-weighted" : "Loading…"}
+          comparison={showComparisons
+            ? mockSummaryComparisons.tokenReuse
+            : undefined}
+          emphasis="signal"
+        />
+      </div>
+      <div className="summary-secondary-row">
+        <SummarySecondary
+          label="Minimum effective rate"
+          value={effectiveRate}
+          detail={effectiveRateDetail}
+          info="Priced spend divided by all processed input. This is a lower bound because some usage could not be priced."
+        />
+        <SummarySecondary
+          label="Cache misses"
+          value={`${
+            integer.format(mockSummarySecondary.cacheMissSessions)
+          } sessions · ${mockSummarySecondary.cacheMissShare}`}
+          valueTitle="149 of 244 sessions had at least one classified cache miss. $21.79 is spend observed at miss calls, not necessarily avoidable cost."
+          detail={`${
+            currency.format(mockSummarySecondary.missCost)
+          } at miss calls`}
+        />
+        <SummarySecondary
+          label="Subagents"
+          value={`${currency.format(mockSummarySecondary.subagentSpend)} spend`}
+          detail={mockSummarySecondary.subagentShare}
+        />
       </div>
     </section>
   );
@@ -467,11 +560,15 @@ function ActivityDay({
   const key = dateKey(date);
   const input = inputByDate.get(key) ?? 0;
   const level = heatLevel(input, activeValues);
-  const label = `${fullDate.format(date)}, ${millionTokens(input)} processed input`;
+  const label = `${fullDate.format(date)}, ${
+    millionTokens(input)
+  } processed input`;
   return (
     <button
       type="button"
-      className={`activity-day heat-${level}${selectedDate === key ? " selected" : ""}`}
+      className={`activity-day heat-${level}${
+        selectedDate === key ? " selected" : ""
+      }`}
       aria-label={label}
       aria-pressed={selectedDate === key}
       title={label}
@@ -502,22 +599,32 @@ function ActivityRange({
   const end = parseDate(endDate);
   const leadingDays = (start.getDay() + 6) % 7;
   const days: Date[] = [];
-  for (const date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
+  for (
+    const date = new Date(start);
+    date <= end;
+    date.setDate(date.getDate() + 1)
+  ) {
     days.push(new Date(date));
   }
 
   return (
-    <section className="activity-month activity-range" aria-label={dateRangeName(start, end)}>
+    <section
+      className="activity-month activity-range"
+      aria-label={dateRangeName(start, end)}
+    >
       <h3>{dateRangeName(start, end)}</h3>
       <div className="activity-month-weekdays" aria-hidden="true">
-        {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, index) => (
+        {["M", "T", "W", "T", "F", "S", "S"].map((day, index) => (
           <span key={`${day}-${index}`}>{day}</span>
         ))}
       </div>
       <div className="activity-month-days">
-        {Array.from({ length: leadingDays }, (_, index) => (
-          <span className="activity-day-spacer" key={`spacer-${index}`} />
-        ))}
+        {Array.from(
+          { length: leadingDays },
+          (_, index) => (
+            <span className="activity-day-spacer" key={`spacer-${index}`} />
+          ),
+        )}
         {days.map((date) => (
           <ActivityDay
             key={dateKey(date)}
@@ -566,20 +673,24 @@ function ActivityMonth({
     <section className="activity-month" aria-label={monthName.format(month)}>
       <h3>{monthName.format(month)}</h3>
       <div className="activity-month-weekdays" aria-hidden="true">
-        {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, index) => (
+        {["M", "T", "W", "T", "F", "S", "S"].map((day, index) => (
           <span key={`${day}-${index}`}>{day}</span>
         ))}
       </div>
       <div className="activity-month-days">
         {cells.map((day, index) => {
           if (day === undefined) {
-            return <span className="activity-day-spacer" key={`spacer-${index}`} />;
+            return (
+              <span className="activity-day-spacer" key={`spacer-${index}`} />
+            );
           }
           const date = new Date(month.getFullYear(), month.getMonth(), day);
           const key = dateKey(date);
           const inRange = key >= startDate && key <= endDate;
           if (!inRange) {
-            return <span className="activity-day-outside" key={key}>{day}</span>;
+            return (
+              <span className="activity-day-outside" key={key}>{day}</span>
+            );
           }
           return (
             <ActivityDay
@@ -623,7 +734,10 @@ function ActivityCalendar({ data }: { data?: ActivityOverviewResponse }) {
 
       <div className="new-calendar-measure">
         <span>Relative to the busiest day</span>
-        <div className="activity-heat-key" aria-label="Less to more processed input">
+        <div
+          className="activity-heat-key"
+          aria-label="Less to more processed input"
+        >
           <small>Less</small>
           {[1, 2, 3, 4, 5].map((level) => (
             <i className={`heat-${level}`} key={level} aria-hidden="true" />
@@ -633,7 +747,11 @@ function ActivityCalendar({ data }: { data?: ActivityOverviewResponse }) {
       </div>
 
       {!data
-        ? <div className="activity-calendar-message">Loading daily activity…</div>
+        ? (
+          <div className="activity-calendar-message">
+            Loading daily activity…
+          </div>
+        )
         : (
           <div className={`activity-calendar-months range-${data.rangeDays}`}>
             {data.rangeDays === 30
@@ -673,19 +791,36 @@ function ActivityCalendar({ data }: { data?: ActivityOverviewResponse }) {
           : (
             <>
               <div className="day-detail-heading">
-                <time dateTime={selectedDate}>{fullDate.format(parseDate(selectedDate))}</time>
+                <time dateTime={selectedDate}>
+                  {fullDate.format(parseDate(selectedDate))}
+                </time>
                 <strong>
                   {selectedDay?.hasUnpricedCost ? "Known spend " : "Spend "}
                   {currency.format(selectedDay?.spend ?? 0)}
                 </strong>
               </div>
               <div className="day-detail-metrics">
-                <div><span>Processed input</span><strong>{compact.format(selectedDay?.processedInput ?? 0)}</strong></div>
-                <div><span>Sessions</span><strong>{integer.format(selectedDay?.sessions ?? 0)}</strong></div>
-                <div><span>Turns</span><strong>{integer.format(selectedDay?.turns ?? 0)}</strong></div>
+                <div>
+                  <span>Processed input</span>
+                  <strong>
+                    {compact.format(selectedDay?.processedInput ?? 0)}
+                  </strong>
+                </div>
+                <div>
+                  <span>Sessions</span>
+                  <strong>
+                    {integer.format(selectedDay?.sessions ?? 0)}
+                  </strong>
+                </div>
+                <div>
+                  <span>Turns</span>
+                  <strong>{integer.format(selectedDay?.turns ?? 0)}</strong>
+                </div>
                 <div title="Estimated using a 10-minute inactivity window; overlapping activity is counted once.">
                   <span>Estimated active</span>
-                  <strong>{approximateDuration(selectedDay?.estimatedActiveMs ?? 0)}</strong>
+                  <strong>
+                    {approximateDuration(selectedDay?.estimatedActiveMs ?? 0)}
+                  </strong>
                 </div>
               </div>
               <div className="day-detail-breakdowns">
@@ -714,7 +849,8 @@ function ActivityCalendar({ data }: { data?: ActivityOverviewResponse }) {
                             <span title={session.title}>{session.title}</span>
                             <strong>{currency.format(session.spend)}</strong>
                             <small>
-                              {session.turns} turns · {compact.format(session.processedInput)} input
+                              {session.turns} turns ·{" "}
+                              {compact.format(session.processedInput)} input
                             </small>
                           </li>
                         ))}
@@ -724,7 +860,9 @@ function ActivityCalendar({ data }: { data?: ActivityOverviewResponse }) {
                 </section>
               </div>
               {selectedDay?.hasUnpricedCost && (
-                <p className="day-detail-note">Spend excludes usage without known pricing.</p>
+                <p className="day-detail-note">
+                  Spend excludes usage without known pricing.
+                </p>
               )}
             </>
           )}
@@ -787,7 +925,9 @@ export function NewPage() {
               <select
                 value={search.harness}
                 onChange={(event) =>
-                  update({ harness: event.target.value as typeof search.harness })}
+                  update({
+                    harness: event.target.value as typeof search.harness,
+                  })}
               >
                 <option value="all">All harnesses</option>
                 <option value="claude-code">Claude Code</option>
@@ -803,7 +943,7 @@ export function NewPage() {
 
         <div className="new-overview-grid">
           <div className="new-overview-left">
-            <SummaryMatrix data={data} range={search.range} />
+            <SummaryMatrix data={data} />
             <SessionShape />
           </div>
           <ActivityCalendar data={data} />
