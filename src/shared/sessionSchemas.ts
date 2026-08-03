@@ -297,6 +297,24 @@ const distributionSchema = z.object({
   p90: z.number().nonnegative(),
 });
 
+export const activityOverviewResponseSchema = z.object({
+  rangeDays: z.union([z.literal(30), z.literal(90)]),
+  startDate: z.string(),
+  endDate: z.string(),
+  summary: z.object({
+    activeDays: z.number().int().nonnegative(),
+    sessions: z.number().int().nonnegative(),
+    processedInput: z.number().int().nonnegative(),
+    tokenReuse: z.number().min(0).max(1).optional(),
+    spend: z.number().nonnegative(),
+    hasUnpricedCost: z.boolean(),
+  }),
+  days: z.array(z.object({
+    date: z.string(),
+    processedInput: z.number().int().nonnegative(),
+  })),
+});
+
 export const overviewResponseSchema = z.object({
   rangeDays: z.number().int().positive(),
   rotationInactivityMinutes: z.number().int().positive(),
@@ -538,6 +556,9 @@ export type SessionListResponse = z.infer<typeof sessionListResponseSchema>;
 export type SessionSummary = z.infer<typeof sessionSummarySchema>;
 export type TokenUsage = z.infer<typeof tokenUsageSchema>;
 export type UsageResponse = z.infer<typeof usageResponseSchema>;
+export type ActivityOverviewResponse = z.infer<
+  typeof activityOverviewResponseSchema
+>;
 export type OverviewResponse = z.infer<typeof overviewResponseSchema>;
 export type PerformanceResponse = z.infer<typeof performanceResponseSchema>;
 export type ToolCallsResponse = z.infer<typeof toolCallsResponseSchema>;
