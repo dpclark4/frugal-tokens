@@ -1,0 +1,42 @@
+{
+  "id": "diff-tool-output-follow-up-regression-probe",
+  "model": "gpt-5.6-luna",
+  "mode": "full-replay",
+  "reasoning": { "effort": "low" },
+  "store": false,
+  "instructions": "Call read_diff_fixture exactly once before answering the first request. Treat its result as a source diff and do not quote it. After the tool result, answer each request with exactly one word.",
+  "prompt_cache_key": "responses-cache-lab-diff-tool-follow-up-v1",
+  "tools": [
+    {
+      "type": "function",
+      "name": "read_diff_fixture",
+      "description": "Read a fixed deterministic unified diff fixture.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "strict": true
+    }
+  ],
+  "tool_outputs": {
+    "read_diff_fixture": {
+      "text": "diff --git a/src/cache.ts b/src/cache.ts\nindex 1234567..89abcde 100644\n--- a/src/cache.ts\n+++ b/src/cache.ts\n@@ -40,7 +40,8 @@ export function cacheKey(input: string) {\n-  return hash(input);\n+  const normalized = input.trim();\n+  return hash(normalized);\n }\n",
+      "repeat": 88
+    }
+  },
+  "calls": [
+    {
+      "id": "warm-and-read-diff",
+      "input_file": "tools/responses-cache-lab/fixtures/stable-prefix.txt"
+    },
+    {
+      "id": "small-follow-up",
+      "input": "Reply ready."
+    },
+    {
+      "id": "recovery-follow-up",
+      "input": "Reply done."
+    }
+  ]
+}

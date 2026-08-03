@@ -91,6 +91,59 @@ minute before the connection disappeared.
 The raw provider `cached_tokens` state for the miss is **unavailable** because
 that request used SSE, which the WebSocket wiretap does not capture.
 
+## Case 002 — Partial cache-read regression with healthy WebSocket continuation
+
+**Date:** 2026-08-03  
+**Harness/provider:** Pi / `openai-codex`  
+**Model:** `gpt-5.6-sol`
+
+### Relevant files
+
+```text
+Pi session:
+~/.pi/agent/sessions/--Users-danclark-programming-frugal-tokens--/2026-08-03T13-36-35-307Z_019fc7d7-2beb-7a17-8d89-c8f06c32e663.jsonl
+
+Telemetry extension:
+tools/pi-cache-telemetry/extensions/cache-telemetry.ts
+
+WebSocket monkeypatch/wiretap:
+tools/pi-cache-telemetry/codex-wiretap.mjs
+
+Telemetry:
+~/.pi/agent/diagnostics/cache-telemetry/2026-08-03T13-36-35-307Z_019fc7d7-2beb-7a17-8d89-c8f06c32e663.jsonl
+
+WebSocket wiretap:
+~/.pi/agent/diagnostics/cache-telemetry/wiretap/codex-websocket-2026-08-03T13-36-34Z-99472.jsonl
+```
+
+### Observed sequence
+
+Raw terminal WebSocket usage reported cache reads of `1536`, `3584`, then
+`2560` tokens on calls 3–5, despite call 5 having slightly more total input
+than call 4 (`8947` vs `8771`). The next call recovered to `8704` cached tokens.
+
+The regression request itself was not a tool call: its transmitted delta was
+one `user` `input_text` item of 304 bytes. It followed two tool-result
+continuations: a `function_call_output` of about 3.4 KB, then one of about
+20.4 KB. The logical history at call 5 contained three function calls, three
+function outputs, reasoning items, and prior text messages; the four-tool
+schema was unchanged.
+
+Every affected request used `previous_response_id` on the same WebSocket
+connection. Pi recorded an exact logical input prefix and unchanged envelope;
+there were no WebSocket errors, closes, reconnections, full-context requests,
+or SSE fallbacks.
+
+### Assessment
+
+This is a provider-reported **partial cache-read regression** (`3584 -> 2560 ->
+8704`), not a full zero-read miss and not the transport-triggered pattern in
+Case 001. Record nonzero regressions alongside zero reads: cache reads are not
+monotonic here even with a healthy continuation path. A useful reproduction
+candidate is tool use with a large tool result followed by a small user
+follow-up, but this single capture does not establish causality or identify
+which part of the provider cache became ineligible.
+
 ## Working hypothesis for future cases
 
 This pattern could explain **some** Codex CLI misses, and possibly other

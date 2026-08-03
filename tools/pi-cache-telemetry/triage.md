@@ -4,12 +4,17 @@ Use this runbook when the starting identifier comes from the local archive
 SQLite database rather than from a Pi session filename. The expected input is
 `model_calls.id`. Do not assume that this integer is a Pi session ID.
 
-This runbook is for investigating a suspicious normalized `cacheRead == 0`,
-especially a transient pattern such as:
+This runbook is for investigating a suspicious normalized `cacheRead == 0`
+or a nonzero partial cache-read regression, especially a transient pattern such
+as:
 
 ```text
 warm cache -> zero/low read -> warm cache
 ```
+
+Treat a lower but nonzero read as a regression rather than a proven cache miss.
+It can still provide reproducibility and bug-reporting evidence when the raw
+provider usage confirms the drop.
 
 ## Artifact locations
 
@@ -226,6 +231,9 @@ Use the `sequence` on an `assistant_completion` to find the matching
 - `payload.envelopeMatchesPrevious`
 - `payload.inputItemCount` and `payload.inputSuffixItemCount`
 - image/tool-output sizes and tagged input types
+- the immediately preceding one or two request deltas: whether they were user
+  input, `function_call_output`, or another item type, and their sizes; a large
+  tool result followed by a small user message is a useful reproduction shape
 - `websocketDelta.usedPreviousResponseId`
 - `websocketDelta.counters.connectionsCreated`
 - `websocketDelta.counters.connectionsReused`
@@ -359,6 +367,7 @@ Use this evidence table:
 | Raw `cached_tokens` is present and `0` | Provider explicitly reported zero cached tokens. |
 | `input_tokens_details` or `cached_tokens` is absent | Provider omitted cache metadata; Pi's normalized zero is ambiguous. |
 | Raw `cached_tokens` is positive but telemetry says `cacheRead: 0` | Suspect Pi parsing, terminal-event selection, or correlation bug. |
+| Raw `cached_tokens` is lower than the preceding and following calls, but remains positive | Record a partial cache-read regression; compare input/delta item types and sizes, tool outputs, and continuation state. |
 | Request has `previous_response_id` and a small input delta | Continuation path was used; inspect the preceding response and connection. |
 | No `previous_response_id` or full input was sent | This call was not using the cached WebSocket continuation path. |
 | WebSocket failure/fallback is present | Treat transport failure separately from cache behavior. |
@@ -382,7 +391,8 @@ Pi turn/call:
 Model:
 Candidate timestamp:
 Previous/current/following cache reads:
-Raw cached_tokens state: explicit zero / omitted / positive / unavailable:
+Raw cached_tokens state: explicit zero / omitted / positive / lower-than-neighbors / unavailable:
+Previous/current request delta shapes and sizes (including tool outputs):
 Continuation: previous_response_id and delta/full context:
 Connection: created/reused:
 Transport failures/fallbacks:

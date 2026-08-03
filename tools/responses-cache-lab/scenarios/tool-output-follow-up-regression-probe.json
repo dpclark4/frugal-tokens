@@ -1,0 +1,42 @@
+{
+  "id": "tool-output-follow-up-regression-probe",
+  "model": "gpt-5.6-luna",
+  "mode": "full-replay",
+  "reasoning": { "effort": "low" },
+  "store": false,
+  "instructions": "Call get_fixture exactly once before answering the first request. Do not quote fixture content. After the tool result, answer each request with exactly one word.",
+  "prompt_cache_key": "responses-cache-lab-tool-output-follow-up-v1",
+  "tools": [
+    {
+      "type": "function",
+      "name": "get_fixture",
+      "description": "Return a fixed deterministic text fixture.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      },
+      "strict": true
+    }
+  ],
+  "tool_outputs": {
+    "get_fixture": {
+      "text": "fixed tool output block\n",
+      "repeat": 850
+    }
+  },
+  "calls": [
+    {
+      "id": "warm-and-tool",
+      "input_file": "tools/responses-cache-lab/fixtures/stable-prefix.txt"
+    },
+    {
+      "id": "small-follow-up",
+      "input": "Reply ready."
+    },
+    {
+      "id": "recovery-follow-up",
+      "input": "Reply done."
+    }
+  ]
+}
