@@ -312,6 +312,26 @@ export const activityOverviewResponseSchema = z.object({
   days: z.array(z.object({
     date: z.string(),
     processedInput: z.number().int().nonnegative(),
+    spend: z.number().nonnegative(),
+    hasUnpricedCost: z.boolean(),
+    sessions: z.number().int().nonnegative(),
+    turns: z.number().int().nonnegative(),
+    estimatedActiveMs: z.number().int().nonnegative(),
+    models: z.array(z.object({
+      model: z.string(),
+      input: z.number().int().nonnegative(),
+      spend: z.number().nonnegative(),
+    })),
+    topSessions: z.array(z.object({
+      id: z.number().int().positive(),
+      title: z.string(),
+      harness: harnessSchema.optional(),
+      models: z.array(z.string()),
+      turns: z.number().int().nonnegative(),
+      processedInput: z.number().int().nonnegative(),
+      spend: z.number().nonnegative(),
+      hasUnpricedCost: z.boolean(),
+    })),
   })),
 });
 

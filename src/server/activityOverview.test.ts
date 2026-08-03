@@ -26,7 +26,7 @@ function day(
   };
 }
 
-Deno.test("activity overview returns only period totals and daily input", () => {
+Deno.test("activity overview returns period totals and daily drill-down data", () => {
   const first = new Date(2026, 6, 1, 12).getTime();
   const second = new Date(2026, 6, 2, 12).getTime();
   const outside = new Date(2026, 5, 30, 12).getTime();
@@ -63,7 +63,54 @@ Deno.test("activity overview returns only period totals and daily input", () => 
   strictEqual(result.summary.spend, 9);
   strictEqual(result.summary.hasUnpricedCost, true);
   deepStrictEqual(result.days, [
-    { date: "2026-07-01", processedInput: 1_000_000 },
-    { date: "2026-07-02", processedInput: 5_000_000 },
+    {
+      date: "2026-07-01",
+      processedInput: 1_000_000,
+      spend: 2,
+      hasUnpricedCost: false,
+      sessions: 1,
+      turns: 1,
+      estimatedActiveMs: 0,
+      models: [],
+      topSessions: [{
+        id: 1,
+        title: "Session 1",
+        harness: undefined,
+        models: [],
+        turns: 1,
+        processedInput: 1_000_000,
+        spend: 2,
+        hasUnpricedCost: false,
+      }],
+    },
+    {
+      date: "2026-07-02",
+      processedInput: 5_000_000,
+      spend: 7,
+      hasUnpricedCost: true,
+      sessions: 2,
+      turns: 2,
+      estimatedActiveMs: 0,
+      models: [],
+      topSessions: [{
+        id: 2,
+        title: "Session 2",
+        harness: undefined,
+        models: [],
+        turns: 1,
+        processedInput: 2_000_000,
+        spend: 4,
+        hasUnpricedCost: false,
+      }, {
+        id: 1,
+        title: "Session 1",
+        harness: undefined,
+        models: [],
+        turns: 1,
+        processedInput: 3_000_000,
+        spend: 3,
+        hasUnpricedCost: true,
+      }],
+    },
   ]);
 });
