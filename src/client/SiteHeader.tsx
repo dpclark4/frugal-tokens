@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 export function SiteHeader({ active, action }: {
-  active: "overview" | "performance" | "tool-calls";
+  active: "overview" | "new" | "performance" | "tool-calls";
   action?: ReactNode;
 }) {
   return (
@@ -13,6 +13,9 @@ export function SiteHeader({ active, action }: {
       <nav className="page-tabs" aria-label="Primary navigation">
         <a className={active === "overview" ? "active" : undefined} href="/">
           Overview
+        </a>
+        <a className={active === "new" ? "active" : undefined} href="/new">
+          New
         </a>
         <a
           className={active === "performance" ? "active" : undefined}

@@ -1,4 +1,5 @@
 import {
+  activityOverviewResponseSchema,
   overviewResponseSchema,
   performanceResponseSchema,
   sessionDetailSchema,
@@ -33,6 +34,15 @@ export async function syncSessions() {
 export async function getUsage(range: number | "all", harness: string) {
   return usageResponseSchema.parse(
     await getJson(`/api/usage?range=${range}&harness=${harness}`),
+  );
+}
+
+export async function getActivityOverview(
+  range: 30 | 90,
+  harness: string,
+) {
+  return activityOverviewResponseSchema.parse(
+    await getJson(`/api/activity-overview?range=${range}&harness=${harness}`),
   );
 }
 

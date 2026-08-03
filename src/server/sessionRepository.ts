@@ -900,8 +900,9 @@ export class SessionRepository {
     harness?: Harness,
   ): StoredOverviewRollup[] {
     const rows = this.db.prepare(`
-      SELECT sr.root_session_id, sr.overview_json
+      SELECT sr.root_session_id, sr.overview_json, s.title, so.harness
       FROM session_rollups sr
+      JOIN sessions s ON s.source_session_id = sr.root_session_id
       JOIN source_sessions ss ON ss.id = sr.root_session_id
       JOIN sources so ON so.id = ss.source_id
       WHERE sr.last_activity_at >= ?
@@ -910,9 +911,13 @@ export class SessionRepository {
     `).all(startedAt, harness ?? null, harness ?? null) as Array<{
       root_session_id: number;
       overview_json: string;
+      title: string;
+      harness: Harness;
     }>;
     return rows.map((row) => ({
       rootSessionID: row.root_session_id,
+      title: row.title,
+      harness: row.harness,
       overview: JSON.parse(row.overview_json),
     }));
   }

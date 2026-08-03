@@ -15,6 +15,11 @@ const SessionsPage = lazy(() =>
     default: SessionsPage,
   }))
 );
+const NewPage = lazy(() =>
+  import("./NewPage.tsx").then(({ NewPage }) => ({
+    default: NewPage,
+  }))
+);
 const PerformancePage = lazy(() =>
   import("./PerformancePage.tsx").then(({ PerformancePage }) => ({
     default: PerformancePage,
@@ -83,6 +88,15 @@ const indexRoute = createRoute({
   }),
   component: SessionsPage,
 });
+const newRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/new",
+  validateSearch: z.object({
+    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex"]).catch("all"),
+    range: z.coerce.number().pipe(z.union([z.literal(30), z.literal(90)])).catch(30),
+  }),
+  component: NewPage,
+});
 const performanceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/performance",
@@ -107,7 +121,12 @@ const toolCallsRoute = createRoute({
   component: ToolCallsPage,
 });
 const router = createRouter({
-  routeTree: rootRoute.addChildren([indexRoute, performanceRoute, toolCallsRoute]),
+  routeTree: rootRoute.addChildren([
+    indexRoute,
+    newRoute,
+    performanceRoute,
+    toolCallsRoute,
+  ]),
 });
 
 declare module "@tanstack/react-router" {
