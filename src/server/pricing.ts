@@ -146,6 +146,13 @@ export function computeModelCallCost(
         tokens.cacheWrite1h * rates.cacheWrite1h;
     } else if (rates.cacheWrite !== undefined) {
       cacheWriteCost = tokens.cacheWrite * rates.cacheWrite;
+    } else if (
+      tokens.cacheWrite5m === undefined && tokens.cacheWrite1h === undefined &&
+      rates.cacheWrite5m !== undefined
+    ) {
+      // Anthropic-compatible sources may report only total cache writes. In
+      // that case, assume the default 5-minute cache TTL.
+      cacheWriteCost = tokens.cacheWrite * rates.cacheWrite5m;
     } else {
       return undefined;
     }

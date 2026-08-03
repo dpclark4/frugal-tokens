@@ -155,6 +155,18 @@ Deno.test("normalizes OpenRouter Anthropic model IDs for pricing", () => {
     ),
     1,
   );
+  closeTo(
+    computeModelCallCost(
+      tokens({
+        uncachedInput: 1_000_000,
+        cacheWrite: 1_000_000,
+        output: 1_000_000,
+      }),
+      "claude-haiku-4-5",
+      timestamp,
+    ),
+    7.25,
+  );
 });
 
 Deno.test("prices Claude Sonnet 5 at its promotional and standard rates", () => {
