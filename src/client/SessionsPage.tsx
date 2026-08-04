@@ -1,6 +1,13 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import { getRouteApi } from "@tanstack/react-router";
-import { Check, ChevronDown, Image, RefreshCw, Share } from "lucide-react";
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Image,
+  RefreshCw,
+  Share,
+} from "lucide-react";
 import type {
   CacheAssessment,
   CacheIssue,
@@ -8,13 +15,13 @@ import type {
   ModelCall,
   OverviewResponse,
   SessionDetail,
-  SessionMissFilter,
   SessionListResponse,
+  SessionMissFilter,
   SessionSummary,
-  TtlMissMetrics,
   TokenUsage,
-  UsageResponse,
+  TtlMissMetrics,
   TurnInput,
+  UsageResponse,
 } from "../shared/sessionSchemas.ts";
 import {
   parseSessionMissFilters,
@@ -23,7 +30,7 @@ import {
 import { contextRange, contextSize } from "../shared/contextMetrics.ts";
 import { displayModelName } from "../shared/modelNames.ts";
 import { rollupCosts } from "../shared/costMetrics.ts";
-import { getOverview, getSession, getSessions, syncSessions } from "./api.ts";
+import { getOverview, getSessions, syncSessions } from "./api.ts";
 import claudeCodeIcon from "./assets/icons/claudecode-color.svg";
 import codexIcon from "./assets/icons/codex-logo-light.svg";
 import openCodeIcon from "./assets/icons/opencode-logo-light.svg";
@@ -199,7 +206,9 @@ function SessionThinkingSummary(
   const classified = thinking?.classifiedCalls ?? 0;
   const title = classified === 0
     ? "No requested thinking setting was exposed by the harness"
-    : `Latest: ${latest} · Used: ${values.join(" → ")} · ${classified} of ${modelCalls} calls classified`;
+    : `Latest: ${latest} · Used: ${
+      values.join(" → ")
+    } · ${classified} of ${modelCalls} calls classified`;
   return (
     <span className="session-thinking-summary" title={title}>
       <small>Thinking: {latest}</small>
@@ -373,7 +382,9 @@ function ThinkingChangeBadge({ count = 1 }: { count?: number }) {
   return (
     <span
       className="cache-issue-badge thinking-change-badge"
-      title={`${count} cache miss${count === 1 ? "" : "es"} after a thinking level change`}
+      title={`${count} cache miss${
+        count === 1 ? "" : "es"
+      } after a thinking level change`}
     >
       Thinking
     </span>
@@ -383,8 +394,8 @@ function ThinkingChangeBadge({ count = 1 }: { count?: number }) {
 function hasCacheOutcome(summary?: CacheSummary) {
   return summary !== undefined &&
     summary.hits + summary.partialHits + summary.fullMisses + summary.unknown +
-      summary.compactionRelatedMisses + summary.ttlRelatedMisses +
-      summary.thinkingChangeRelatedMisses > 0;
+          summary.compactionRelatedMisses + summary.ttlRelatedMisses +
+          summary.thinkingChangeRelatedMisses > 0;
 }
 
 function CacheSummaryBadge({ summary }: { summary?: CacheSummary }) {
@@ -448,9 +459,8 @@ function SessionCacheStatus({
       issue.status === "partial-hit" && issue.cause === undefined
     ) ?? [];
   const ttl = issues?.filter((issue) => issue.cause === "ttl") ?? [];
-  const thinkingChange = issues?.filter((issue) =>
-    issue.cause === "thinking-change"
-  ) ?? [];
+  const thinkingChange =
+    issues?.filter((issue) => issue.cause === "thinking-change") ?? [];
   if (
     !summary ||
     (full.length === 0 && partial.length === 0 && ttl.length === 0 &&
@@ -469,7 +479,9 @@ function SessionCacheStatus({
       ? `TTL miss turns:\n${ttl.map(cacheIssueLabel).join("\n")}`
       : undefined,
     thinkingChange.length > 0
-      ? `Thinking-change miss turns:\n${thinkingChange.map(cacheIssueLabel).join("\n")}`
+      ? `Thinking-change miss turns:\n${
+        thinkingChange.map(cacheIssueLabel).join("\n")
+      }`
       : undefined,
     `Call totals: ${cacheSummaryTitle(summary)}`,
   ].filter(Boolean).join("\n\n");
@@ -886,7 +898,8 @@ function SubagentSummary({
                 <small>
                   {launcher ? `Launched by ${launcher.name} · ` : ""}
                   {total.userTurns} turn{total.userTurns === 1 ? "" : "s"} ·
-                  {" "}{hasDescendants
+                  {" "}
+                  {hasDescendants
                     ? `${session.modelCalls} direct calls · ${session.subagents.length} nested subagent${
                       session.subagents.length === 1 ? "" : "s"
                     }`
@@ -1133,7 +1146,11 @@ function SessionMissFilterControl({
         <ChevronDown size={13} aria-hidden="true" />
       </button>
       {open && (
-        <div className="session-filter-menu" role="dialog" aria-label="Session miss filters">
+        <div
+          className="session-filter-menu"
+          role="dialog"
+          aria-label="Session miss filters"
+        >
           <label className="session-filter-option session-filter-all">
             <input
               type="checkbox"
@@ -1378,7 +1395,8 @@ function AssistantResponse({ call }: { call: ModelCall }) {
           type="button"
           className="assistant-response-toggle"
           aria-expanded={expanded}
-          onClick={() => setExpanded((current) => !current)}
+          onClick={() =>
+            setExpanded((current) => !current)}
         >
           {expanded ? "Show less" : "Show more"}
         </button>
@@ -1525,9 +1543,9 @@ function CallTable({
             const outcome = call.id === responseCallID
               ? "Assistant response"
               : call.preview ??
-              (previewTool && target
-                ? `${previewTool.name}: ${target}`
-                : activitySummary(call));
+                (previewTool && target
+                  ? `${previewTool.name}: ${target}`
+                  : activitySummary(call));
             const secondaryMechanics = call.preview || target ? mechanics : "";
             return (
               <Fragment key={call.id}>
@@ -1535,9 +1553,7 @@ function CallTable({
                   className={`call-row${hasDetails ? " has-details" : ""}${
                     expanded ? " row-open" : ""
                   }`}
-                  onClick={hasDetails
-                    ? () => toggleCall(call.id)
-                    : undefined}
+                  onClick={hasDetails ? () => toggleCall(call.id) : undefined}
                 >
                   <td
                     className="call-identity"
@@ -1551,7 +1567,10 @@ function CallTable({
                         >
                           {hasDetails ? (expanded ? "▾" : "▸") : ""}
                         </span>
-                        <strong>{nested ? "Subagent Call" : "Call"} {call.callWithinTurn}</strong>
+                        <strong>
+                          {nested ? "Subagent Call" : "Call"}{" "}
+                          {call.callWithinTurn}
+                        </strong>
                       </span>
                       <small>{sessionStarted.format(call.startedAt)}</small>
                     </span>
@@ -1622,7 +1641,9 @@ function CallTable({
                           />
                         )}
                         <TtlMissBadge count={ttlMisses.length} />
-                        <ThinkingChangeBadge count={thinkingChangeMisses.length} />
+                        <ThinkingChangeBadge
+                          count={thinkingChangeMisses.length}
+                        />
                         <CompactionBadge count={compactions} />
                       </span>
                     )}
@@ -1686,7 +1707,9 @@ function CallTable({
                                         title={tool.inputPreview}
                                       >
                                         <span className="tool-details-preview">
-                                          {toolTargetPreview(tool.inputPreview) ??
+                                          {toolTargetPreview(
+                                            tool.inputPreview,
+                                          ) ??
                                             "—"}
                                         </span>
                                       </td>
@@ -1856,14 +1879,19 @@ function SessionBreakdown({
                           >
                             {open ? "▾" : "▸"}
                           </button>
-                          <strong>{nested ? "Subagent Turn" : "Turn"} {turn.number}</strong>
+                          <strong>
+                            {nested ? "Subagent Turn" : "Turn"} {turn.number}
+                          </strong>
                         </span>
                         <small>{sessionStarted.format(turn.startedAt)}</small>
                       </span>
                     </td>
                     <td className="turn-model-cell">
                       <span className="model-leading-layout">
-                        <span className="model-leading-slot" aria-hidden="true" />
+                        <span
+                          className="model-leading-slot"
+                          aria-hidden="true"
+                        />
                         <span className="model-thinking-stack">
                           {turnModels.length > 0
                             ? <ModelSummary models={turnModels} />
@@ -1988,7 +2016,9 @@ function SessionBreakdown({
                             toggleSubagent={toggleSubagent}
                             nested={nested}
                           />
-                          {responseCall && <AssistantResponse call={responseCall} />}
+                          {responseCall && (
+                            <AssistantResponse call={responseCall} />
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -2021,11 +2051,9 @@ export function SessionsPage() {
   const [shareCacheMisses, setShareCacheMisses] = useState<TtlMissMetrics>();
   const [shareUsage, setShareUsage] = useState<UsageResponse>();
   const [shareUsageRange, setShareUsageRange] = useState<ReportRange>(30);
-  const [shareState, setShareState] = useState<"idle" | "copied" | "error">("idle");
-  const [expandedIDs, setExpandedIDs] = useState<Set<string>>(
-    () => new Set(),
+  const [shareState, setShareState] = useState<"idle" | "copied" | "error">(
+    "idle",
   );
-  const [details, setDetails] = useState<Record<string, SessionDetail>>({});
   const [error, setError] = useState<string>();
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string>();
@@ -2068,8 +2096,6 @@ export function SessionsPage() {
     getSessions(1, harness, missFilters).then((result) => {
       if (!active) return;
       setData(result);
-      setExpandedIDs(new Set());
-      setDetails({});
     })
       .catch(
         (reason) => {
@@ -2171,34 +2197,6 @@ export function SessionsPage() {
     missFilterKey,
   ]);
 
-  async function toggleSession(id: string) {
-    if (expandedIDs.has(id)) {
-      setExpandedIDs((current) => {
-        const next = new Set(current);
-        next.delete(id);
-        return next;
-      });
-      return;
-    }
-    setExpandedIDs((current) => new Set(current).add(id));
-    if (details[id]) return;
-    try {
-      const summary = data?.items.find((session) => session.id === id);
-      if (!summary) return;
-      const detail = await getSession(id, summary.harness);
-      setDetails((current) => ({ ...current, [id]: detail }));
-    } catch (reason) {
-      setExpandedIDs((current) => {
-        const next = new Set(current);
-        next.delete(id);
-        return next;
-      });
-      setError(
-        reason instanceof Error ? reason.message : "Unable to load session",
-      );
-    }
-  }
-
   async function shareReport() {
     if (!overview || !shareCacheMisses || !shareUsage) return;
     try {
@@ -2239,10 +2237,14 @@ export function SessionsPage() {
         action={
           <button
             type="button"
-            className={`share-report-button${shareState === "error" ? " error" : ""}`}
+            className={`share-report-button${
+              shareState === "error" ? " error" : ""
+            }`}
             onClick={shareReport}
             disabled={!overview || !shareCacheMisses || !shareUsage}
-            aria-label={shareState === "copied" ? "Report copied" : "Copy Markdown report"}
+            aria-label={shareState === "copied"
+              ? "Report copied"
+              : "Copy Markdown report"}
             title={shareState === "copied"
               ? "Markdown report copied"
               : shareState === "error"
@@ -2289,7 +2291,9 @@ export function SessionsPage() {
               className="session-refresh"
               onClick={refreshData}
               disabled={refreshing}
-              aria-label={refreshing ? "Refreshing sessions" : "Refresh sessions"}
+              aria-label={refreshing
+                ? "Refreshing sessions"
+                : "Refresh sessions"}
               title="Import changed sessions and reload"
             >
               <RefreshCw size={13} aria-hidden="true" />
@@ -2369,9 +2373,7 @@ export function SessionsPage() {
                 </thead>
                 <tbody>
                   {data.items.map((session) => {
-                    const expanded = expandedIDs.has(session.id);
-                    const detail = details[session.id];
-                    const span = sessionSpan(detail ?? session);
+                    const span = sessionSpan(session);
                     const sessionStart = span?.start ?? session.startedAt;
                     const sessionLocation = session.workingDirectory ??
                       session.sourcePath;
@@ -2410,172 +2412,187 @@ export function SessionsPage() {
                       provider.toLowerCase().includes("anthropic")
                     );
                     return (
-                      <Fragment key={session.id}>
-                        <tr
-                          className={`session-row${
-                            expanded ? " row-open" : ""
-                          }`}
-                          onClick={() => toggleSession(session.id)}
-                        >
-                          <td className="session-cell">
-                            <div className="session-identity">
-                              <button
-                                type="button"
-                                className="session-expand"
-                                aria-expanded={expanded}
-                                aria-label={`${
-                                  expanded ? "Collapse" : "Expand"
-                                } ${session.title}`}
-                              >
-                                {expanded ? "▾" : "▸"}
-                              </button>
-                              <div className="session-copy">
-                                <strong
-                                  className="session-title"
-                                  title={sessionTitleTooltip}
-                                >
-                                  {session.title}
-                                </strong>
-                                {sessionLocation !== undefined && (
-                                  <small
-                                    className={session.workingDirectory !==
-                                        undefined
-                                      ? "session-working-directory"
-                                      : "session-source-path"}
-                                    title={sessionLocationTitle}
-                                  >
-                                    {sessionLocation}
-                                  </small>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-                          <td>
-                            <span className="model-leading-layout">
-                              <HarnessIcon harness={session.harness} />
-                              <span className="session-model-details">
-                                <ModelSummary models={session.models} />
-                                <SessionThinkingSummary
-                                  thinking={session.thinking}
-                                  modelCalls={session.modelCalls}
-                                />
-                              </span>
+                      <tr
+                        key={session.id}
+                        className="session-row"
+                        role="link"
+                        tabIndex={0}
+                        aria-label={`Open session: ${session.title}`}
+                        onClick={() =>
+                          navigate({
+                            to: "/sessions/$harness/$sessionId",
+                            params: {
+                              harness: session.harness,
+                              sessionId: session.id,
+                            },
+                            search: {
+                              misses: misses || undefined,
+                              paths: "relative",
+                              color: "time",
+                              model: "recorded",
+                              thinking: "recorded",
+                            },
+                          })}
+                        onKeyDown={(event) => {
+                          if (event.key !== "Enter" && event.key !== " ") {
+                            return;
+                          }
+                          event.preventDefault();
+                          navigate({
+                            to: "/sessions/$harness/$sessionId",
+                            params: {
+                              harness: session.harness,
+                              sessionId: session.id,
+                            },
+                            search: {
+                              misses: misses || undefined,
+                              paths: "relative",
+                              color: "time",
+                              model: "recorded",
+                              thinking: "recorded",
+                            },
+                          });
+                        }}
+                      >
+                        <td className="session-cell">
+                          <div className="session-identity">
+                            <span
+                              className="session-open-indicator"
+                              aria-hidden="true"
+                            >
+                              <ChevronRight size={15} />
                             </span>
-                          </td>
-                          <td
-                            className={span?.label ? undefined : "muted"}
-                            title={span
-                              ? `${fullTimestamp.format(span.start)} → ${
-                                fullTimestamp.format(span.end)
+                            <div className="session-copy">
+                              <strong
+                                className="session-title"
+                                title={sessionTitleTooltip}
+                              >
+                                {session.title}
+                              </strong>
+                              {sessionLocation !== undefined && (
+                                <small
+                                  className={session.workingDirectory !==
+                                      undefined
+                                    ? "session-working-directory"
+                                    : "session-source-path"}
+                                  title={sessionLocationTitle}
+                                >
+                                  {sessionLocation}
+                                </small>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <span className="model-leading-layout">
+                            <HarnessIcon harness={session.harness} />
+                            <span className="session-model-details">
+                              <ModelSummary models={session.models} />
+                              <SessionThinkingSummary
+                                thinking={session.thinking}
+                                modelCalls={session.modelCalls}
+                              />
+                            </span>
+                          </span>
+                        </td>
+                        <td
+                          className={span?.label ? undefined : "muted"}
+                          title={span
+                            ? `${fullTimestamp.format(span.start)} → ${
+                              fullTimestamp.format(span.end)
+                            }`
+                            : undefined}
+                        >
+                          <span className="metric-stack session-elapsed">
+                            <span>{span?.label ?? "—"}</span>
+                            {sessionStart !== undefined && (
+                              <small
+                                className="session-started"
+                                title={`Started ${
+                                  fullTimestamp.format(sessionStart)
+                                }`}
+                              >
+                                {sessionStarted.format(sessionStart)}
+                              </small>
+                            )}
+                          </span>
+                        </td>
+                        <td title="Inclusive of direct and subagent turns and calls">
+                          <span className="metric-stack">
+                            <span>
+                              {session.inclusiveUserTurns ??
+                                session.userTurns} turns
+                            </span>
+                            <span>
+                              {session.inclusiveModelCalls ??
+                                session.modelCalls} calls
+                            </span>
+                            {(session.subagentCount ?? 0) > 0 && (
+                              <small>
+                                {session.subagentCount}{" "}
+                                subagent{session.subagentCount === 1 ? "" : "s"}
+                              </small>
+                            )}
+                          </span>
+                        </td>
+                        <td>
+                          <ContextMetric
+                            value={session.contextLatest}
+                            secondary={session.contextPeak}
+                            secondaryLabel="peak"
+                            title={session.contextLatest !== undefined &&
+                                session.contextPeak !== undefined
+                              ? `Latest root request: ${
+                                integer.format(session.contextLatest)
+                              } tokens · Peak root request: ${
+                                integer.format(session.contextPeak)
+                              } tokens${
+                                session.contextPeakTurn !== undefined &&
+                                  session.contextPeakCall !== undefined
+                                  ? ` (turn ${session.contextPeakTurn}, call #${session.contextPeakCall})`
+                                  : ""
                               }`
                               : undefined}
-                          >
-                            <span className="metric-stack session-elapsed">
-                              <span>{span?.label ?? "—"}</span>
-                              {sessionStart !== undefined && (
-                                <small
-                                  className="session-started"
-                                  title={`Started ${
-                                    fullTimestamp.format(sessionStart)
-                                  }`}
-                                >
-                                  {sessionStarted.format(sessionStart)}
-                                </small>
-                              )}
-                            </span>
-                          </td>
-                          <td title="Inclusive of direct and subagent turns and calls">
-                            <span className="metric-stack">
-                              <span>
-                                {session.inclusiveUserTurns ??
-                                  session.userTurns} turns
-                              </span>
-                              <span>
-                                {session.inclusiveModelCalls ??
-                                  session.modelCalls} calls
-                              </span>
-                              {(session.subagentCount ?? 0) > 0 && (
-                                <small>
-                                  {session.subagentCount}{" "}
-                                  subagent{session.subagentCount === 1
-                                    ? ""
-                                    : "s"}
-                                </small>
-                              )}
-                            </span>
-                          </td>
-                          <td>
-                            <ContextMetric
-                              value={session.contextLatest}
-                              secondary={session.contextPeak}
-                              secondaryLabel="peak"
-                              title={session.contextLatest !== undefined &&
-                                  session.contextPeak !== undefined
-                                ? `Latest root request: ${
-                                  integer.format(session.contextLatest)
-                                } tokens · Peak root request: ${
-                                  integer.format(session.contextPeak)
-                                } tokens${
-                                  session.contextPeakTurn !== undefined &&
-                                    session.contextPeakCall !== undefined
-                                    ? ` (turn ${session.contextPeakTurn}, call #${session.contextPeakCall})`
-                                    : ""
-                                }`
-                                : undefined}
-                            />
-                          </td>
-                          <td>
-                            <SessionInputMetric
-                              tokens={tokens}
-                              anthropic={anthropic}
-                            />
-                          </td>
-                          <td className="image-input-cell">
-                            <ImageInputIndicator count={imageInputs} />
-                          </td>
-                          <td>
-                            <SessionCacheStatus
-                              summary={session.cacheSummary}
-                              issues={session.cacheIssues}
-                              compactionCount={session.compactionCount}
-                            />
-                          </td>
-                          <td>
-                            <OutputMetric
-                              output={tokens.output}
-                              reasoning={tokens.reasoning}
-                            />
-                          </td>
-                          <td>
-                            <CostCell
-                              reported={hasInclusiveMetrics
-                                ? session.inclusiveReportedCost
-                                : session.reportedCost}
-                              computed={hasInclusiveMetrics
-                                ? session.inclusiveComputedCost
-                                : session.computedCost}
-                              direct={hasSubagents
-                                ? session.computedCost
-                                : undefined}
-                              subagents={subagentComputedCost}
-                              session
-                            />
-                          </td>
-                        </tr>
-                        {expanded && (
-                          <tr className="detail-row">
-                            <td colSpan={10}>
-                              {detail
-                                ? <SessionBreakdown session={detail} />
-                                : (
-                                  <div className="loading inset-loading">
-                                    Grouping model calls by turn...
-                                  </div>
-                                )}
-                            </td>
-                          </tr>
-                        )}
-                      </Fragment>
+                          />
+                        </td>
+                        <td>
+                          <SessionInputMetric
+                            tokens={tokens}
+                            anthropic={anthropic}
+                          />
+                        </td>
+                        <td className="image-input-cell">
+                          <ImageInputIndicator count={imageInputs} />
+                        </td>
+                        <td>
+                          <SessionCacheStatus
+                            summary={session.cacheSummary}
+                            issues={session.cacheIssues}
+                            compactionCount={session.compactionCount}
+                          />
+                        </td>
+                        <td>
+                          <OutputMetric
+                            output={tokens.output}
+                            reasoning={tokens.reasoning}
+                          />
+                        </td>
+                        <td>
+                          <CostCell
+                            reported={hasInclusiveMetrics
+                              ? session.inclusiveReportedCost
+                              : session.reportedCost}
+                            computed={hasInclusiveMetrics
+                              ? session.inclusiveComputedCost
+                              : session.computedCost}
+                            direct={hasSubagents
+                              ? session.computedCost
+                              : undefined}
+                            subagents={subagentComputedCost}
+                            session
+                          />
+                        </td>
+                      </tr>
                     );
                   })}
                 </tbody>

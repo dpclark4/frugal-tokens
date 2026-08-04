@@ -30,19 +30,30 @@ const ToolCallsPage = lazy(() =>
     default: ToolCallsPage,
   }))
 );
+const SessionDetailPage = lazy(() =>
+  import("./SessionDetailPage.tsx").then(({ SessionDetailPage }) => ({
+    default: SessionDetailPage,
+  }))
+);
 
 function AppError({ error, reset }: { error: unknown; reset: () => void }) {
   const message = error instanceof Error ? error.message : String(error);
   const stack = error instanceof Error ? error.stack : undefined;
-  const diagnostics = JSON.stringify({
-    capturedAt: new Date().toISOString(),
-    message,
-    stack,
-    url: window.location.href,
-    userAgent: navigator.userAgent,
-    reactVersion,
-    scripts: Array.from(document.scripts, (script) => script.src).filter(Boolean),
-  }, null, 2);
+  const diagnostics = JSON.stringify(
+    {
+      capturedAt: new Date().toISOString(),
+      message,
+      stack,
+      url: window.location.href,
+      userAgent: navigator.userAgent,
+      reactVersion,
+      scripts: Array.from(document.scripts, (script) => script.src).filter(
+        Boolean,
+      ),
+    },
+    null,
+    2,
+  );
 
   return (
     <main className="app-error">
@@ -83,7 +94,9 @@ const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   validateSearch: z.object({
-    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex"]).catch("all"),
+    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex"]).catch(
+      "all",
+    ),
     misses: z.string().optional(),
   }),
   component: SessionsPage,
@@ -92,8 +105,11 @@ const newRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/new",
   validateSearch: z.object({
-    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex"]).catch("all"),
-    range: z.coerce.number().pipe(z.union([z.literal(30), z.literal(90)])).catch(30),
+    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex"]).catch(
+      "all",
+    ),
+    range: z.coerce.number().pipe(z.union([z.literal(30), z.literal(90)]))
+      .catch(30),
   }),
   component: NewPage,
 });
@@ -101,7 +117,9 @@ const performanceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/performance",
   validateSearch: z.object({
-    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex"]).catch("all"),
+    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex"]).catch(
+      "all",
+    ),
     openai: z.string().catch("all"),
     anthropic: z.string().catch("all"),
   }),
@@ -111,8 +129,12 @@ const toolCallsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tool-calls",
   validateSearch: z.object({
-    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex"]).catch("all"),
-    range: z.coerce.number().pipe(z.union([z.literal(7), z.literal(30), z.literal(90)])).catch(30),
+    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex"]).catch(
+      "all",
+    ),
+    range: z.coerce.number().pipe(
+      z.union([z.literal(7), z.literal(30), z.literal(90)]),
+    ).catch(30),
     expanded: z.preprocess(
       (value) => value === true || value === "true",
       z.boolean(),
@@ -120,12 +142,33 @@ const toolCallsRoute = createRoute({
   }),
   component: ToolCallsPage,
 });
+const sessionDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sessions/$harness/$sessionId",
+  validateSearch: z.object({
+    misses: z.string().optional(),
+    paths: z.enum(["absolute", "relative"]).catch("relative"),
+    color: z.enum(["none", "time", "cost", "input", "output"]).catch(
+      "time",
+    ),
+    model: z.string().catch("recorded"),
+    thinking: z.string().catch("recorded"),
+  }),
+  parseParams: (params) => ({
+    harness: z.enum(["opencode", "claude-code", "pi", "codex"]).parse(
+      params.harness,
+    ),
+    sessionId: params.sessionId,
+  }),
+  component: SessionDetailPage,
+});
 const router = createRouter({
   routeTree: rootRoute.addChildren([
     indexRoute,
     newRoute,
     performanceRoute,
     toolCallsRoute,
+    sessionDetailRoute,
   ]),
 });
 
