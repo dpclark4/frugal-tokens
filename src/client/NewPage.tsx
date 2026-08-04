@@ -57,7 +57,7 @@ export function NewPage() {
         <div className="new-overview-grid">
           <div className="new-overview-left">
             <UsageOverview data={data} />
-            <SessionShape />
+            <SessionShape range={search.range} harness={search.harness} />
           </div>
           <ActivityCalendar data={data} />
         </div>

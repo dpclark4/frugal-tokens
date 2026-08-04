@@ -45,6 +45,10 @@ export type InitialInputSample = {
   input: number;
 };
 
+export type StoredSessionShapeRollup = StoredOverviewRollup & {
+  initialInput?: number;
+};
+
 export type InitialInputDistribution = {
   average: number;
   median: number;
@@ -919,6 +923,48 @@ export class SessionRepository {
       title: row.title,
       harness: row.harness,
       overview: JSON.parse(row.overview_json),
+    }));
+  }
+
+  listSessionShapeRollups(
+    startedAt: number,
+    harness?: Harness,
+  ): StoredSessionShapeRollup[] {
+    const rows = this.db.prepare(`
+      SELECT sr.root_session_id, sr.overview_json, s.title, so.harness,
+        (
+          SELECT first_mc.uncached_input_tokens + first_mc.cache_read_tokens +
+            COALESCE(first_mc.cache_write_tokens, 0)
+          FROM turns first_t
+          JOIN model_calls first_mc ON first_mc.turn_id = first_t.id
+          WHERE first_t.session_id = sr.root_session_id
+            AND NOT (
+              so.harness = 'codex' AND
+              COALESCE(first_mc.source_call_id, '') LIKE 'context-operation:%'
+            )
+          ORDER BY first_t.ordinal, first_mc.ordinal
+          LIMIT 1
+        ) AS initial_input
+      FROM session_rollups sr
+      JOIN sessions s ON s.source_session_id = sr.root_session_id
+      JOIN source_sessions ss ON ss.id = sr.root_session_id
+      JOIN sources so ON so.id = ss.source_id
+      WHERE sr.last_activity_at >= ?
+        AND (? IS NULL OR so.harness = ?)
+      ORDER BY sr.root_session_id
+    `).all(startedAt, harness ?? null, harness ?? null) as Array<{
+      root_session_id: number;
+      overview_json: string;
+      title: string;
+      harness: Harness;
+      initial_input: number | null;
+    }>;
+    return rows.map((row) => ({
+      rootSessionID: row.root_session_id,
+      title: row.title,
+      harness: row.harness,
+      overview: JSON.parse(row.overview_json),
+      initialInput: row.initial_input ?? undefined,
     }));
   }
 

@@ -31,6 +31,7 @@ import {
   ROTATION_INACTIVITY_MINUTES,
 } from "./overviewAnalytics.ts";
 import { aggregateActivityOverview } from "./activityOverview.ts";
+import { aggregateSessionShape } from "./sessionShapeAnalytics.ts";
 import { contextRange } from "../shared/contextMetrics.ts";
 import { rollupCosts } from "../shared/costMetrics.ts";
 import { expandHomePath, openArchiveDatabase, sqlitePath } from "./database.ts";
@@ -506,6 +507,50 @@ const cacheMissOverview = (context: Context) => {
 app.get("/api/cache-misses/overview", cacheMissOverview);
 // Keep the old route for existing clients and bookmarks.
 app.get("/api/ttl-misses", cacheMissOverview);
+
+app.get("/api/session-shape", (context) => {
+  const requestStartedAt = performance.now();
+  const harness = context.req.query("harness") ?? "all";
+  if (!["all", "opencode", "claude-code", "pi", "codex"].includes(harness)) {
+    return context.json({ error: "Invalid harness" }, 400);
+  }
+  const rangeParam = context.req.query("range") ?? "30";
+  if (rangeParam !== "30" && rangeParam !== "90") {
+    return context.json({ error: "Invalid range; expected 30 or 90" }, 400);
+  }
+  const range = Number(rangeParam) as 30 | 90;
+  const end = Date.now();
+  const start = new Date(
+    new Date(end).setHours(0, 0, 0, 0) - (range - 1) * 86_400_000,
+  ).getTime();
+  const selectedHarness = harness === "all"
+    ? undefined
+    : harness as SessionSummary["harness"];
+  const loadStartedAt = performance.now();
+  const loaded = archiveRepository.listSessionShapeRollups(
+    start,
+    selectedHarness,
+  );
+  const loadDuration = performance.now() - loadStartedAt;
+  const aggregationStartedAt = performance.now();
+  const shape = aggregateSessionShape(loaded, start, end, range);
+  const aggregationDuration = performance.now() - aggregationStartedAt;
+  const totalDuration = performance.now() - requestStartedAt;
+  context.header(
+    "Server-Timing",
+    `database;dur=${loadDuration.toFixed(1)}, aggregate;dur=${
+      aggregationDuration.toFixed(1)
+    }, total;dur=${totalDuration.toFixed(1)}`,
+  );
+  console.info(
+    `[session-shape] harness=${harness} range=${range} roots=${loaded.length} samples=${shape.sampleSize} database=${
+      loadDuration.toFixed(1)
+    }ms aggregate=${aggregationDuration.toFixed(1)}ms total=${
+      totalDuration.toFixed(1)
+    }ms`,
+  );
+  return context.json(shape);
+});
 
 app.get("/api/activity-overview", (context) => {
   const requestStartedAt = performance.now();

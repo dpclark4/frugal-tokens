@@ -5,8 +5,9 @@ import {
   sessionDetailSchema,
   sessionListResponseSchema,
   type SessionMissFilter,
-  ttlMissMetricsSchema,
+  sessionShapeResponseSchema,
   toolCallsResponseSchema,
+  ttlMissMetricsSchema,
   usageResponseSchema,
 } from "../shared/sessionSchemas.ts";
 
@@ -43,6 +44,15 @@ export async function getActivityOverview(
 ) {
   return activityOverviewResponseSchema.parse(
     await getJson(`/api/activity-overview?range=${range}&harness=${harness}`),
+  );
+}
+
+export async function getSessionShape(
+  range: 30 | 90,
+  harness: string,
+) {
+  return sessionShapeResponseSchema.parse(
+    await getJson(`/api/session-shape?range=${range}&harness=${harness}`),
   );
 }
 
