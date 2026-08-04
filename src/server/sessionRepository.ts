@@ -1,6 +1,8 @@
 import type { DatabaseSync } from "node:sqlite";
 import { compactHomePath } from "./database.ts";
 import {
+  type CompactionCheckpointItem,
+  type CompactionDetail,
   type ContextEvent,
   type ModelCall,
   type SessionDetail,
@@ -120,11 +122,24 @@ export type SessionCallImport =
     reasoningSetting?: ReasoningSettingImport;
   };
 
-export type SessionContextEventImport = ContextEvent & {
+export type CompactionCheckpointItemImport = Omit<
+  CompactionCheckpointItem,
+  "ordinal"
+> & { ordinal?: number };
+
+export type CompactionDetailImport = Omit<
+  CompactionDetail,
+  "checkpointItems"
+> & {
+  checkpointItems: CompactionCheckpointItemImport[];
+};
+
+export type SessionContextEventImport = Omit<ContextEvent, "compaction"> & {
   affectedCall?: {
     turn: number;
     call: number;
   };
+  compaction?: CompactionDetailImport;
 };
 
 export type SessionTurnImport = {
@@ -267,10 +282,37 @@ type TurnInputRow = {
 };
 
 type ContextEventRow = {
+  id: number;
   event_type: string;
   source_order: number;
   occurred_at: number | null;
   affected_model_call_id: number | null;
+  source_compaction_id: string | null;
+  compaction_trigger: CompactionDetail["trigger"] | null;
+  result_kind: CompactionDetail["resultKind"] | null;
+  checkpoint_completeness:
+    | CompactionDetail["checkpointCompleteness"]
+    | null;
+  pre_context_tokens: number | null;
+  post_context_tokens: number | null;
+  dropped_context_tokens: number | null;
+  retained_item_count: number | null;
+  dropped_item_count: number | null;
+  compaction_native_metadata_json: string | null;
+};
+
+type CompactionCheckpointItemRow = {
+  context_event_id: number;
+  ordinal: number;
+  source_entry_id: string | null;
+  item_kind: string;
+  role: string | null;
+  content_availability: CompactionCheckpointItem["contentAvailability"];
+  content_preview: string | null;
+  original_length: number | null;
+  truncated: number;
+  content_hash: string | null;
+  native_metadata_json: string | null;
 };
 
 const summaryColumns = `
@@ -1652,6 +1694,22 @@ export class SessionRepository {
         session_id, event_type, source_order, occurred_at,
         affected_model_call_id
       ) VALUES (?, ?, ?, ?, ?)
+      RETURNING id
+    `);
+    const insertCompactionDetail = this.db.prepare(`
+      INSERT INTO compaction_details (
+        context_event_id, source_compaction_id, trigger_kind, result_kind,
+        checkpoint_completeness, pre_context_tokens, post_context_tokens,
+        dropped_context_tokens, retained_item_count, dropped_item_count,
+        native_metadata_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    const insertCompactionItem = this.db.prepare(`
+      INSERT INTO compaction_checkpoint_items (
+        context_event_id, ordinal, source_entry_id, item_kind, role,
+        content_availability, content_preview, original_length, truncated,
+        content_hash, native_metadata_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
     for (const event of session.contextEvents ?? []) {
       const affectedCallID = event.affectedCall === undefined
@@ -1664,13 +1722,49 @@ export class SessionRepository {
           `Unknown affected call: turn ${event.affectedCall.turn}, call ${event.affectedCall.call}`,
         );
       }
-      insertContextEvent.run(
-        sourceSessionID,
-        event.type,
-        event.sourceOrder,
-        event.occurredAt ?? null,
-        affectedCallID ?? null,
+      const contextEventID = Number(
+        (insertContextEvent.get(
+          sourceSessionID,
+          event.type,
+          event.sourceOrder,
+          event.occurredAt ?? null,
+          affectedCallID ?? null,
+        ) as { id: number }).id,
       );
+      const compaction = event.compaction;
+      if (event.type !== "compaction" || compaction === undefined) continue;
+      insertCompactionDetail.run(
+        contextEventID,
+        compaction.sourceID ?? null,
+        compaction.trigger,
+        compaction.resultKind,
+        compaction.checkpointCompleteness,
+        compaction.preContextTokens ?? null,
+        compaction.postContextTokens ?? null,
+        compaction.droppedContextTokens ?? null,
+        compaction.retainedItemCount ?? null,
+        compaction.droppedItemCount ?? null,
+        compaction.nativeMetadata === undefined
+          ? null
+          : JSON.stringify(compaction.nativeMetadata),
+      );
+      compaction.checkpointItems.forEach((item, index) => {
+        insertCompactionItem.run(
+          contextEventID,
+          index + 1,
+          item.sourceEntryID ?? null,
+          item.kind,
+          item.role ?? null,
+          item.contentAvailability,
+          item.contentPreview ?? null,
+          item.originalLength ?? null,
+          Number(item.truncated),
+          item.contentHash ?? null,
+          item.nativeMetadata === undefined
+            ? null
+            : JSON.stringify(item.nativeMetadata),
+        );
+      });
     }
 
     const compactionCallKeys = new Set(
@@ -1767,20 +1861,83 @@ export class SessionRepository {
     }
     const nextVisited = new Set(visited).add(row.source_session_id);
     const contextEventRows = this.db.prepare(`
-      SELECT event_type, source_order, occurred_at, affected_model_call_id
-      FROM context_events
-      WHERE session_id = ?
-      ORDER BY source_order
+      SELECT ce.id, ce.event_type, ce.source_order, ce.occurred_at,
+        ce.affected_model_call_id,
+        cd.source_compaction_id,
+        cd.trigger_kind AS compaction_trigger,
+        cd.result_kind,
+        cd.checkpoint_completeness,
+        cd.pre_context_tokens,
+        cd.post_context_tokens,
+        cd.dropped_context_tokens,
+        cd.retained_item_count,
+        cd.dropped_item_count,
+        cd.native_metadata_json AS compaction_native_metadata_json
+      FROM context_events ce
+      LEFT JOIN compaction_details cd ON cd.context_event_id = ce.id
+      WHERE ce.session_id = ?
+      ORDER BY ce.source_order
     `).all(row.source_session_id) as ContextEventRow[];
+    const checkpointItemRows = this.db.prepare(`
+      SELECT cci.context_event_id, cci.ordinal, cci.source_entry_id,
+        cci.item_kind, cci.role, cci.content_availability,
+        cci.content_preview, cci.original_length, cci.truncated,
+        cci.content_hash, cci.native_metadata_json
+      FROM compaction_checkpoint_items cci
+      JOIN context_events ce ON ce.id = cci.context_event_id
+      WHERE ce.session_id = ?
+      ORDER BY cci.context_event_id, cci.ordinal
+    `).all(row.source_session_id) as CompactionCheckpointItemRow[];
+    const checkpointItemsByEvent = Map.groupBy(
+      checkpointItemRows,
+      (item) => item.context_event_id,
+    );
     const contextEventsByCall = Map.groupBy(
       contextEventRows.filter((event) => event.affected_model_call_id !== null),
       (event) => event.affected_model_call_id!,
     );
-    const contextEvent = (event: ContextEventRow): ContextEvent => ({
-      type: event.event_type,
-      sourceOrder: event.source_order,
-      occurredAt: optional(event.occurred_at),
-    });
+    const contextEvent = (event: ContextEventRow): ContextEvent => {
+      const compaction = event.result_kind === null ||
+          event.compaction_trigger === null ||
+          event.checkpoint_completeness === null
+        ? undefined
+        : {
+          sourceID: optional(event.source_compaction_id),
+          trigger: event.compaction_trigger,
+          resultKind: event.result_kind,
+          checkpointCompleteness: event.checkpoint_completeness,
+          preContextTokens: optional(event.pre_context_tokens),
+          postContextTokens: optional(event.post_context_tokens),
+          droppedContextTokens: optional(event.dropped_context_tokens),
+          retainedItemCount: optional(event.retained_item_count),
+          droppedItemCount: optional(event.dropped_item_count),
+          nativeMetadata: event.compaction_native_metadata_json === null
+            ? undefined
+            : JSON.parse(event.compaction_native_metadata_json),
+          checkpointItems: (checkpointItemsByEvent.get(event.id) ?? []).map(
+            (item) => ({
+              ordinal: item.ordinal,
+              sourceEntryID: optional(item.source_entry_id),
+              kind: item.item_kind,
+              role: optional(item.role),
+              contentAvailability: item.content_availability,
+              contentPreview: optional(item.content_preview),
+              originalLength: optional(item.original_length),
+              truncated: item.truncated === 1,
+              contentHash: optional(item.content_hash),
+              nativeMetadata: item.native_metadata_json === null
+                ? undefined
+                : JSON.parse(item.native_metadata_json),
+            }),
+          ),
+        };
+      return {
+        type: event.event_type,
+        sourceOrder: event.source_order,
+        occurredAt: optional(event.occurred_at),
+        ...(compaction === undefined ? {} : { compaction }),
+      };
+    };
     const calls = this.db.prepare(`
       SELECT mc.turn_id, ${callColumns},
         rse.setting_name AS reasoning_setting_name,

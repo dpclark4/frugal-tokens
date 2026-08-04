@@ -10,7 +10,7 @@ export async function syncPiSessions(
     harness: "pi",
     label: "PI",
     directory,
-    parserVersion: "pi-5",
+    parserVersion: "pi-6",
     repository,
     discover: discoverPiSessions,
     normalize: normalizePiSession,

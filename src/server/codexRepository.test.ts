@@ -392,6 +392,13 @@ Deno.test("falls back to legacy Codex user-message records", () => {
     type: "compaction",
     sourceOrder: 5,
     occurredAt: Date.parse("2026-02-05T14:00:04.000Z"),
+    compaction: {
+      trigger: "unknown",
+      resultKind: "unavailable",
+      checkpointCompleteness: "unknown",
+      nativeMetadata: { captureIssues: ["compacted-record-missing"] },
+      checkpointItems: [],
+    },
   }]);
 });
 

@@ -8,6 +8,8 @@ import {
 } from "../shared/sessionSchemas.ts";
 import type { UsageCall } from "./usage.ts";
 import type {
+  CompactionCheckpointItemImport,
+  CompactionDetailImport,
   SessionCallImport,
   SessionContentImport,
   SessionContextEventImport,
@@ -16,6 +18,13 @@ import type {
   SourceSessionCheckpoint,
   SourceSessionImport,
 } from "./sessionRepository.ts";
+import {
+  booleanValue,
+  numberCheckpointItems,
+  objectValue,
+  referenceCheckpointItem,
+  stringValue,
+} from "./compactionImport.ts";
 
 const contentPreviewLimit = 2_048;
 
@@ -43,10 +52,13 @@ const messageDataSchema = z.object({
 
 const partDataSchema = z.object({
   type: z.string(),
-  text: z.string().optional(),
+  text: z.unknown().optional(),
   mime: z.string().optional(),
   callID: z.string().optional(),
   tool: z.string().optional(),
+  auto: z.unknown().optional(),
+  overflow: z.unknown().optional(),
+  tail_start_id: z.unknown().optional(),
   state: z.object({
     status: z.string().optional(),
     input: z.unknown().optional(),
@@ -104,7 +116,12 @@ type PartRow = OpenCodePartRow;
 type DecodedParts = {
   activity: SessionCallImport["activity"];
   content: SessionContentImport[];
-  compaction: boolean;
+  compaction?: {
+    sourceID: string;
+    auto?: unknown;
+    overflow?: unknown;
+    tailStartID?: unknown;
+  };
 };
 
 const emptyTokens = (): TokenUsage => ({
@@ -181,11 +198,10 @@ function decodeParts(rows: OpenCodePartRow[], strict = false) {
         tools: [],
       },
       content: [],
-      compaction: false,
     };
     if (part.type === "text") {
-      current.activity.hasText = true;
-      if (part.text !== undefined) current.content.push(preview(part.text));
+      current.activity.hasText = typeof part.text === "string";
+      if (typeof part.text === "string") current.content.push(preview(part.text));
     }
     if (part.type === "reasoning") {
       current.activity.hasReasoning = true;
@@ -221,10 +237,167 @@ function decodeParts(rows: OpenCodePartRow[], strict = false) {
           : { outputPreview: output.preview }),
       });
     }
-    if (part.type === "compaction") current.compaction = true;
+    if (part.type === "compaction") {
+      current.compaction = {
+        sourceID: row.id,
+        auto: part.auto,
+        overflow: part.overflow,
+        tailStartID: part.tail_start_id,
+      };
+    }
     decoded.set(row.message_id, current);
   }
   return decoded;
+}
+
+function openCodeCheckpointItem(
+  row: OpenCodeMessageRow,
+  partsByMessage: Map<string, DecodedParts>,
+): CompactionCheckpointItemImport | undefined {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(row.data);
+  } catch {
+    return undefined;
+  }
+  const parsed = messageDataSchema.safeParse(raw);
+  if (!parsed.success) return undefined;
+  const message = parsed.data;
+  const parts = partsByMessage.get(row.id);
+  const text = parts?.content.find((item) =>
+    item.kind === "text" && item.preview !== undefined
+  );
+  const nativeMetadata = {
+    ...(parts?.activity.tools.length
+      ? { toolCount: parts.activity.tools.length }
+      : {}),
+  };
+  if (text?.preview !== undefined) {
+    return {
+      sourceEntryID: row.id,
+      kind: "message",
+      role: message.role,
+      contentAvailability: "plaintext",
+      contentPreview: text.preview,
+      originalLength: text.originalLength,
+      truncated: text.truncated ?? false,
+      nativeMetadata,
+    };
+  }
+  return referenceCheckpointItem({
+    sourceEntryID: row.id,
+    kind: "message",
+    role: message.role,
+    nativeMetadata,
+  });
+}
+
+function openCodeCompactionDetails(
+  markerRow: OpenCodeMessageRow,
+  markerIndex: number,
+  marker: NonNullable<DecodedParts["compaction"]>,
+  rows: OpenCodeMessageRow[],
+  partsByMessage: Map<string, DecodedParts>,
+): CompactionDetailImport {
+  const issues: string[] = [];
+  const auto = booleanValue(marker.auto);
+  const overflow = booleanValue(marker.overflow);
+  if (marker.auto !== undefined && auto === undefined) issues.push("auto-not-boolean");
+  if (marker.overflow !== undefined && overflow === undefined) {
+    issues.push("overflow-not-boolean");
+  }
+  const tailStartID = stringValue(marker.tailStartID);
+  if (marker.tailStartID !== undefined && tailStartID === undefined) {
+    issues.push("tail-start-id-not-string");
+  }
+  let retainedValues: OpenCodeMessageRow[] | undefined;
+  if (tailStartID !== undefined) {
+    const tailIndex = rows.findIndex((row) => row.id === tailStartID);
+    if (tailIndex >= 0 && tailIndex < markerIndex) {
+      retainedValues = rows.slice(tailIndex, markerIndex);
+    } else {
+      issues.push("tail-start-message-missing");
+    }
+  }
+  const retainedItems = (retainedValues ?? []).flatMap((row) => {
+    const item = openCodeCheckpointItem(row, partsByMessage);
+    return item === undefined ? [] : [item];
+  });
+  if (
+    retainedValues !== undefined && retainedItems.length !== retainedValues.length
+  ) {
+    issues.push("retained-message-unsupported");
+  }
+  return {
+    sourceID: marker.sourceID,
+    trigger: overflow === true
+      ? "overflow"
+      : auto === true
+      ? "automatic"
+      : auto === false
+      ? "manual"
+      : "unknown",
+    resultKind: "unavailable",
+    checkpointCompleteness: retainedValues === undefined ? "unknown" : "partial",
+    retainedItemCount: retainedItems.length,
+    droppedItemCount: retainedValues === undefined
+      ? undefined
+      : Math.max(0, markerIndex - retainedValues.length),
+    nativeMetadata: {
+      markerMessageID: markerRow.id,
+      ...(tailStartID === undefined ? {} : { tailStartID }),
+      ...(auto === undefined ? {} : { auto }),
+      ...(overflow === undefined ? {} : { overflow }),
+      ...(issues.length === 0 ? {} : { captureIssues: issues }),
+    },
+    checkpointItems: retainedItems,
+  };
+}
+
+function completeOpenCodeCompaction(
+  compaction: CompactionDetailImport,
+  summaryRow: OpenCodeMessageRow,
+  parts?: DecodedParts,
+) {
+  const summary = parts?.content.find((item) =>
+    item.kind === "text" && item.preview !== undefined
+  );
+  const metadata = objectValue(compaction.nativeMetadata) ?? {};
+  const issues = Array.isArray(metadata.captureIssues)
+    ? metadata.captureIssues.filter((issue): issue is string =>
+      typeof issue === "string"
+    )
+    : [];
+  if (summary?.preview === undefined) {
+    issues.push("summary-text-missing");
+    compaction.checkpointCompleteness = compaction.checkpointItems.length > 0
+      ? "partial"
+      : "unknown";
+  } else {
+    compaction.resultKind = "plaintext-summary";
+    const retainedContextIncomplete = issues.some((issue) =>
+      issue === "tail-start-message-missing" ||
+      issue === "retained-message-unsupported"
+    );
+    compaction.checkpointCompleteness = compaction.checkpointItems.length > 0
+      ? retainedContextIncomplete ? "partial" : "complete"
+      : "summary-only";
+    compaction.checkpointItems.unshift({
+      sourceEntryID: summaryRow.id,
+      kind: "summary",
+      role: "assistant",
+      contentAvailability: "plaintext",
+      contentPreview: summary.preview,
+      originalLength: summary.originalLength,
+      truncated: summary.truncated ?? false,
+    });
+  }
+  compaction.nativeMetadata = {
+    ...metadata,
+    summaryMessageID: summaryRow.id,
+    ...(issues.length === 0 ? {} : { captureIssues: issues }),
+  };
+  numberCheckpointItems(compaction);
 }
 
 function decodeMessages(
@@ -281,6 +454,13 @@ function decodeMessages(
           sourceOrder: messageIndex + 1,
           occurredAt: row.time_created,
           operationSeen: false,
+          compaction: numberCheckpointItems(openCodeCompactionDetails(
+            row,
+            messageIndex,
+            parts.compaction,
+            rows,
+            partsByMessage,
+          )),
         };
         contextEvents.push(event);
         pendingContextEvents.push(event);
@@ -295,9 +475,22 @@ function decodeMessages(
       });
       continue;
     }
-    if (message.role !== "assistant" || !message.tokens || turns.length === 0) {
-      continue;
+    if (message.role !== "assistant") continue;
+    const operationEvents = pendingContextEvents.filter((event) =>
+      !event.operationSeen
+    );
+    const compactionOperation = operationEvents.length > 0;
+    for (const event of operationEvents) {
+      event.operationSeen = true;
+      if (event.compaction !== undefined) {
+        completeOpenCodeCompaction(
+          event.compaction,
+          row,
+          partsByMessage.get(row.id),
+        );
+      }
     }
+    if (!message.tokens || turns.length === 0) continue;
 
     // session.model is mutable session metadata, not a historical record of
     // the variant used for each call. Only use variants recorded on messages;
@@ -329,12 +522,6 @@ function decodeMessages(
     };
     const cost = message.cost ?? 0;
     if (callTokens.processed === 0 && cost === 0) continue;
-
-    const operationEvents = pendingContextEvents.filter((event) =>
-      !event.operationSeen
-    );
-    const compactionOperation = operationEvents.length > 0;
-    operationEvents.forEach((event) => event.operationSeen = true);
 
     const provider = message.providerID ?? "unknown";
     const model = message.modelID ?? "unknown";

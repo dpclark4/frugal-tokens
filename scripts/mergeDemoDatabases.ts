@@ -283,13 +283,28 @@ function mergeSession(
   }
 
   const contextEvents = source.prepare(`
-    SELECT event_type, source_order, occurred_at, affected_model_call_id
+    SELECT id, event_type, source_order, occurred_at, affected_model_call_id
     FROM context_events WHERE session_id = ? ORDER BY source_order
   `).all(sourceSessionID) as Row[];
   const insertContextEvent = target.prepare(`
     INSERT INTO context_events (
       session_id, event_type, source_order, occurred_at, affected_model_call_id
-    ) VALUES (?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?) RETURNING id
+  `);
+  const insertCompactionDetail = target.prepare(`
+    INSERT INTO compaction_details (
+      context_event_id, source_compaction_id, trigger_kind, result_kind,
+      checkpoint_completeness, pre_context_tokens, post_context_tokens,
+      dropped_context_tokens, retained_item_count, dropped_item_count,
+      native_metadata_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const insertCompactionItem = target.prepare(`
+    INSERT INTO compaction_checkpoint_items (
+      context_event_id, ordinal, source_entry_id, item_kind, role,
+      content_availability, content_preview, original_length, truncated,
+      content_hash, native_metadata_json
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   for (const event of contextEvents) {
     const sourceCallID = value(event, "affected_model_call_id");
@@ -299,10 +314,43 @@ function mergeSession(
     if (sourceCallID !== null && targetCallID === undefined) {
       throw new Error(`Context event references a missing model call in session ${sourceSessionID}`);
     }
-    insertContextEvent.run(
+    const targetEvent = insertContextEvent.get(
       targetSessionID, value(event, "event_type"), value(event, "source_order"),
       value(event, "occurred_at"), targetCallID ?? null,
+    ) as { id: number };
+    const sourceEventID = Number(value(event, "id"));
+    const detail = source.prepare(`
+      SELECT source_compaction_id, trigger_kind, result_kind,
+        checkpoint_completeness, pre_context_tokens, post_context_tokens,
+        dropped_context_tokens, retained_item_count, dropped_item_count,
+        native_metadata_json
+      FROM compaction_details WHERE context_event_id = ?
+    `).get(sourceEventID) as Row | undefined;
+    if (detail === undefined) continue;
+    insertCompactionDetail.run(
+      targetEvent.id, value(detail, "source_compaction_id"),
+      value(detail, "trigger_kind"), value(detail, "result_kind"),
+      value(detail, "checkpoint_completeness"),
+      value(detail, "pre_context_tokens"), value(detail, "post_context_tokens"),
+      value(detail, "dropped_context_tokens"), value(detail, "retained_item_count"),
+      value(detail, "dropped_item_count"), value(detail, "native_metadata_json"),
     );
+    const items = source.prepare(`
+      SELECT ordinal, source_entry_id, item_kind, role, content_availability,
+        content_preview, original_length, truncated, content_hash,
+        native_metadata_json
+      FROM compaction_checkpoint_items
+      WHERE context_event_id = ? ORDER BY ordinal
+    `).all(sourceEventID) as Row[];
+    for (const item of items) {
+      insertCompactionItem.run(
+        targetEvent.id, value(item, "ordinal"), value(item, "source_entry_id"),
+        value(item, "item_kind"), value(item, "role"),
+        value(item, "content_availability"), value(item, "content_preview"),
+        value(item, "original_length"), value(item, "truncated"),
+        value(item, "content_hash"), value(item, "native_metadata_json"),
+      );
+    }
   }
 }
 

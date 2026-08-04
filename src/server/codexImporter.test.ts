@@ -21,7 +21,7 @@ const transcript = `
 {"timestamp":"2026-07-11T14:00:06.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"cached_input_tokens":25,"output_tokens":10,"reasoning_output_tokens":2}}}}
 {"timestamp":"2026-07-11T14:00:06.500Z","type":"event_msg","payload":{"type":"task_started"}}
 {"timestamp":"2026-07-11T14:00:06.900Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":0,"cached_input_tokens":0,"output_tokens":0,"reasoning_output_tokens":0,"total_tokens":4291}}}}
-{"timestamp":"2026-07-11T14:00:07.000Z","type":"compacted","payload":{"message":"","replacement_history":[{"type":"compaction","id":"cmp-1","encrypted_content":"sensitive-summary"}]}}
+{"timestamp":"2026-07-11T14:00:07.000Z","type":"compacted","payload":{"message":"","window_id":"window-2","window_number":1,"replacement_history":[{"type":"message","id":"developer-1","role":"developer","content":[{"type":"input_text","text":"Runtime instructions"}]},"legacy-item",{"type":"compaction","id":"cmp-1","encrypted_content":"sensitive-summary"}]}}
 {"timestamp":"2026-07-11T14:00:07.001Z","type":"event_msg","payload":{"type":"context_compacted"}}
 {"timestamp":"2026-07-11T14:00:07.500Z","type":"turn_context","payload":{"model":"gpt-5.6-luna","thread_settings":{"collaboration_mode":{"settings":{"reasoning_effort":"low"}}}}}
 {"timestamp":"2026-07-11T14:00:08.000Z","type":"event_msg","payload":{"type":"task_started"}}
@@ -74,13 +74,41 @@ Deno.test("imports Codex sessions for SQLite reads", async () => {
     `).get()!;
     strictEqual(tool.input_preview, "ls");
     strictEqual(tool.output_preview, "ok");
+    const compactionEvent = detail.turns[1].calls[0]
+      .contextEventsBefore![0];
+    strictEqual(compactionEvent.type, "compaction");
+    strictEqual(compactionEvent.sourceOrder, 15);
+    strictEqual(
+      compactionEvent.occurredAt,
+      Date.parse("2026-07-11T14:00:07.001Z"),
+    );
+    strictEqual(
+      compactionEvent.compaction?.resultKind,
+      "encrypted-checkpoint",
+    );
+    strictEqual(compactionEvent.compaction?.checkpointCompleteness, "partial");
     deepStrictEqual(
-      detail.turns[1].calls[0].contextEventsBefore,
-      [{
-        type: "compaction",
-        sourceOrder: 15,
-        occurredAt: Date.parse("2026-07-11T14:00:07.001Z"),
-      }],
+      compactionEvent.compaction?.checkpointItems.map((item) => ({
+        kind: item.kind,
+        sourceEntryID: item.sourceEntryID,
+        availability: item.contentAvailability,
+      })),
+      [
+        {
+          kind: "developer-message",
+          sourceEntryID: "developer-1",
+          availability: "plaintext",
+        },
+        {
+          kind: "opaque-checkpoint",
+          sourceEntryID: "cmp-1",
+          availability: "encrypted",
+        },
+      ],
+    );
+    deepStrictEqual(
+      compactionEvent.compaction?.nativeMetadata?.captureIssues,
+      ["replacement-item-not-object"],
     );
     strictEqual(
       (db.prepare("SELECT COUNT(*) AS count FROM turns").get() as {

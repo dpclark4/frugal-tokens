@@ -7,6 +7,8 @@ import {
 } from "../shared/sessionSchemas.ts";
 import { usageCallsFromSession } from "./usage.ts";
 import type {
+  CompactionCheckpointItemImport,
+  CompactionDetailImport,
   ReasoningSettingImport,
   SessionCallImport,
   SessionContentImport,
@@ -14,6 +16,15 @@ import type {
   SessionToolImport,
   SessionTurnImport,
 } from "./sessionRepository.ts";
+import {
+  contentText,
+  messageCheckpointItem,
+  nonnegativeInteger,
+  numberCheckpointItems,
+  objectValue,
+  referenceCheckpointItem,
+  stringValue,
+} from "./compactionImport.ts";
 
 const contentPreviewLimit = 2_048;
 
@@ -55,7 +66,13 @@ const recordSchema = z.object({
     id: z.string().optional(),
     turn_id: z.string().optional(),
     cwd: z.string().optional(),
-    message: z.string().optional(),
+    message: z.unknown().optional(),
+    summary: z.unknown().optional(),
+    replacement_history: z.unknown().optional(),
+    first_window_id: z.unknown().optional(),
+    previous_window_id: z.unknown().optional(),
+    window_id: z.unknown().optional(),
+    window_number: z.unknown().optional(),
     status: z.string().optional(),
     started_at: z.number().nonnegative().optional(),
     completed_at: z.number().nonnegative().optional(),
@@ -494,6 +511,135 @@ function codexReasoningSetting(payload: NonNullable<Record["payload"]>) {
   return undefined;
 }
 
+function codexCompactionDetails(record: Record): CompactionDetailImport {
+  const payload = record.payload;
+  const issues: string[] = [];
+  const replacement = payload?.replacement_history;
+  const replacementItems = Array.isArray(replacement) ? replacement : undefined;
+  if (replacement !== undefined && replacementItems === undefined) {
+    issues.push("replacement-history-not-array");
+  }
+  let encryptedCheckpoint = false;
+  let sourceID: string | undefined;
+  const checkpointItems: CompactionCheckpointItemImport[] = [];
+  const payloadMessage = stringValue(payload?.message);
+  if (payloadMessage?.trim()) {
+    checkpointItems.push({
+      sourceEntryID: stringValue(payload?.window_id),
+      kind: "summary",
+      role: "user",
+      contentAvailability: "plaintext",
+      contentPreview: payloadMessage.slice(0, contentPreviewLimit),
+      originalLength: payloadMessage.length,
+      truncated: payloadMessage.length > contentPreviewLimit,
+    });
+  }
+  for (const [index, value] of (replacementItems ?? []).entries()) {
+    const item = objectValue(value);
+    if (item === undefined) {
+      issues.push("replacement-item-not-object");
+      continue;
+    }
+    const type = stringValue(item.type) ?? "other";
+    const itemID = stringValue(item.id);
+    if (type === "compaction") {
+      sourceID ??= itemID;
+      const encrypted = stringValue(item.encrypted_content);
+      if (encrypted !== undefined) {
+        encryptedCheckpoint = true;
+        checkpointItems.push({
+          sourceEntryID: itemID,
+          kind: "opaque-checkpoint",
+          contentAvailability: "encrypted",
+          originalLength: encrypted.length,
+          truncated: false,
+          nativeMetadata: { replacementIndex: index },
+        });
+        continue;
+      }
+      const plaintext = contentText(item.content ?? item.message);
+      if (plaintext !== undefined) {
+        checkpointItems.push({
+          sourceEntryID: itemID,
+          kind: "summary",
+          role: "user",
+          contentAvailability: "plaintext",
+          contentPreview: plaintext.slice(0, contentPreviewLimit),
+          originalLength: plaintext.length,
+          truncated: plaintext.length > contentPreviewLimit,
+          nativeMetadata: { replacementIndex: index },
+        });
+      } else {
+        issues.push("compaction-item-content-missing");
+        checkpointItems.push(referenceCheckpointItem({
+          sourceEntryID: itemID,
+          kind: "opaque-checkpoint",
+          nativeMetadata: { replacementIndex: index },
+        }));
+      }
+      continue;
+    }
+    const role = stringValue(item.role);
+    checkpointItems.push(messageCheckpointItem({
+      sourceEntryID: itemID,
+      role,
+      content: item.content,
+      kind: role === "developer"
+        ? "developer-message"
+        : role === "system"
+        ? "system-message"
+        : type === "message"
+        ? "message"
+        : type,
+      nativeMetadata: {
+        replacementIndex: index,
+        sourceType: type,
+      },
+    }));
+  }
+  const invalidItems = replacementItems === undefined
+    ? 0
+    : replacementItems.length - checkpointItems.length +
+      (payloadMessage?.trim() ? 1 : 0);
+  const windowNumber = nonnegativeInteger(payload?.window_number);
+  if (payload?.window_number !== undefined && windowNumber === undefined) {
+    issues.push("window-number-invalid");
+  }
+  return {
+    sourceID: sourceID ?? stringValue(payload?.window_id),
+    trigger: "unknown",
+    resultKind: encryptedCheckpoint
+      ? "encrypted-checkpoint"
+      : checkpointItems.some((item) => item.kind === "summary")
+      ? "plaintext-summary"
+      : "unavailable",
+    checkpointCompleteness: replacementItems === undefined
+      ? "unknown"
+      : invalidItems > 0
+      ? "partial"
+      : "complete",
+    retainedItemCount: checkpointItems.length,
+    nativeMetadata: {
+      replacementItemCount: replacementItems?.length ?? 0,
+      ...(stringValue(payload?.first_window_id) === undefined
+        ? {}
+        : { firstWindowID: payload!.first_window_id }),
+      ...(stringValue(payload?.previous_window_id) === undefined
+        ? {}
+        : { previousWindowID: payload!.previous_window_id }),
+      ...(stringValue(payload?.window_id) === undefined
+        ? {}
+        : { windowID: payload!.window_id }),
+      ...(windowNumber === undefined ? {} : { windowNumber }),
+      ...(payloadMessage === undefined
+        ? {}
+        : { payloadMessageLength: payloadMessage.length }),
+      ...(issues.length === 0 ? {} : { captureIssues: issues }),
+    },
+    checkpointItems,
+  };
+}
+
 function decodeRecords(records: Record[]) {
   const turns: SessionTurnImport[] = [];
   const tokens = emptyTokens();
@@ -510,6 +656,7 @@ function decodeRecords(records: Record[]) {
   };
   const contextEvents: PendingContextEvent[] = [];
   const pendingContextEvents: PendingContextEvent[] = [];
+  let pendingCompaction: CompactionDetailImport | undefined;
   let lastCall: SessionCallImport | undefined;
   let activeReasoningSetting:
     | Omit<ReasoningSettingImport, "provenance">
@@ -518,6 +665,11 @@ function decodeRecords(records: Record[]) {
   for (const [recordIndex, record] of records.entries()) {
     const payload = record.payload;
     const time = timestamp(record);
+
+    if (record.type === "compacted") {
+      pendingCompaction = codexCompactionDetails(record);
+      continue;
+    }
 
     if (record.type === "event_msg" && payload?.type === "context_compacted") {
       if (
@@ -534,13 +686,28 @@ function decodeRecords(records: Record[]) {
         type: "compaction",
         sourceOrder: recordIndex + 1,
         ...(time === 0 ? {} : { occurredAt: time }),
+        compaction: numberCheckpointItems(pendingCompaction ?? {
+          trigger: "unknown",
+          resultKind: "unavailable",
+          checkpointCompleteness: "unknown",
+          nativeMetadata: { captureIssues: ["compacted-record-missing"] },
+          checkpointItems: [],
+        }),
       };
+      pendingCompaction = undefined;
       contextEvents.push(event);
       pendingContextEvents.push(event);
       continue;
     }
 
     if (record.type === "turn_context" && payload) {
+      if (pendingCompaction !== undefined && payload.summary === "auto") {
+        pendingCompaction.trigger = "automatic";
+        pendingCompaction.nativeMetadata = {
+          ...pendingCompaction.nativeMetadata,
+          nativeTrigger: "auto",
+        };
+      }
       if (payload.model) currentModel = payload.model;
       const setting = codexReasoningSetting(payload);
       if (setting !== undefined) {
@@ -621,8 +788,11 @@ function decodeRecords(records: Record[]) {
           }),
           calls: [],
         });
-      } else if (currentTurn.inputs === undefined && payload.message?.trim()) {
-        currentTurn.inputs = [preview(payload.message)];
+      } else {
+        const eventMessage = stringValue(payload.message);
+        if (currentTurn.inputs === undefined && eventMessage?.trim()) {
+          currentTurn.inputs = [preview(eventMessage)];
+        }
       }
       continue;
     }

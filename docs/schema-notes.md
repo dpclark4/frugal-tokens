@@ -60,8 +60,11 @@ These are not current defects; they are costs of the analytics-first model.
 - Content is retained as metadata and bounded previews, not full source
   payloads, durable attachment locations, or binary image data. This is good
   for a local analytics archive, but limits later replay and reparsing.
-- `context_events` has only type, order, time, and an optional model-call
-  target. It has no stable source-event identity or extensible payload.
+- `context_events` keeps only common timeline fields, while sparse
+  `compaction_details` and `compaction_checkpoint_items` rows preserve
+  compaction-specific provenance and bounded post-compaction context. Other
+  context-event types still have no stable source-event identity or extensible
+  payload.
 - `turn_inputs` and `call_content` repeat the same content metadata shape.
   Tool input/output previews repeat part of it again.
 - `sessions` duplicates metrics derivable from turns and calls. This is an
@@ -79,8 +82,9 @@ These are not current defects; they are costs of the analytics-first model.
 1. Make public session identifiers unambiguous at their API lookup scope.
 2. Add optional, privacy-conscious `metadata_json` fields to preserve
    harness-specific data that has no current first-class column.
-3. Preserve stable native source-entry IDs where available, even before a full
-   graph feature is built.
+3. Continue preserving stable native source-entry IDs in compaction checkpoint
+   items, and use them to backfill or link a full entry graph if that feature is
+   built.
 4. Prefer nullable timestamps for unknown source times over using the Unix
    epoch as a sentinel.
 5. Separate normalized call semantics from source provenance. Codex currently

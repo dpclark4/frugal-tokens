@@ -48,6 +48,8 @@ Deno.test("opens an archive database with the required SQLite settings", () => {
           'call_content',
           'tool_events',
           'context_events',
+          'compaction_details',
+          'compaction_checkpoint_items',
           'reasoning_setting_events',
           'turn_reasoning_settings',
           'model_call_reasoning_settings',
@@ -56,7 +58,7 @@ Deno.test("opens an archive database with the required SQLite settings", () => {
           'session_rollups'
         )
     `).get() as { count: number };
-    strictEqual(tables.count, 16);
+    strictEqual(tables.count, 18);
     strictEqual(first.prepare("PRAGMA foreign_keys").get()!.foreign_keys, 1);
     first.close();
   } finally {

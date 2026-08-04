@@ -153,10 +153,60 @@ export const sessionSummarySchema = z.object({
   tokens: tokenUsageSchema,
 });
 
+export const compactionTriggerSchema = z.enum([
+  "manual",
+  "automatic",
+  "threshold",
+  "overflow",
+  "unknown",
+]);
+
+export const compactionCheckpointItemSchema = z.object({
+  ordinal: z.number().int().positive(),
+  sourceEntryID: z.string().optional(),
+  kind: z.string().min(1),
+  role: z.string().optional(),
+  contentAvailability: z.enum([
+    "plaintext",
+    "encrypted",
+    "reference-only",
+    "unavailable",
+  ]),
+  contentPreview: z.string().optional(),
+  originalLength: z.number().int().nonnegative().optional(),
+  truncated: z.boolean(),
+  contentHash: z.string().optional(),
+  nativeMetadata: z.record(z.string(), z.unknown()).optional(),
+});
+
+export const compactionDetailSchema = z.object({
+  sourceID: z.string().optional(),
+  trigger: compactionTriggerSchema,
+  resultKind: z.enum([
+    "plaintext-summary",
+    "encrypted-checkpoint",
+    "unavailable",
+  ]),
+  checkpointCompleteness: z.enum([
+    "complete",
+    "partial",
+    "summary-only",
+    "unknown",
+  ]),
+  preContextTokens: z.number().int().nonnegative().optional(),
+  postContextTokens: z.number().int().nonnegative().optional(),
+  droppedContextTokens: z.number().int().nonnegative().optional(),
+  retainedItemCount: z.number().int().nonnegative().optional(),
+  droppedItemCount: z.number().int().nonnegative().optional(),
+  nativeMetadata: z.record(z.string(), z.unknown()).optional(),
+  checkpointItems: z.array(compactionCheckpointItemSchema),
+});
+
 export const contextEventSchema = z.object({
   type: z.string().min(1),
   sourceOrder: z.number().int().positive(),
   occurredAt: z.number().optional(),
+  compaction: compactionDetailSchema.optional(),
 });
 
 export const reasoningSettingSchema = z.object({
@@ -567,6 +617,10 @@ export type ModelCall = z.infer<typeof modelCallSchema>;
 export type SessionMissFilter = z.infer<typeof sessionMissFilterSchema>;
 export type TurnInput = z.infer<typeof turnInputSchema>;
 export type ContextEvent = z.infer<typeof contextEventSchema>;
+export type CompactionDetail = z.infer<typeof compactionDetailSchema>;
+export type CompactionCheckpointItem = z.infer<
+  typeof compactionCheckpointItemSchema
+>;
 export type CacheMissCause = z.infer<typeof cacheMissCauseSchema>;
 export type CacheAssessment = z.infer<typeof cacheAssessmentSchema>;
 export type CacheSummary = z.infer<typeof cacheSummarySchema>;

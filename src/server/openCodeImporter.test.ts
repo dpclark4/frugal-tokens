@@ -239,6 +239,7 @@ Deno.test("incrementally imports OpenCode session trees", () => {
     JSON.stringify({
       type: "compaction",
       auto: false,
+      overflow: "legacy",
       tail_start_id: "assistant",
     }),
   );
@@ -302,11 +303,29 @@ Deno.test("incrementally imports OpenCode session trees", () => {
     strictEqual(tool.output_preview, "done");
     const compacted = detail.turns[2].calls[0];
     strictEqual(compacted.id, "post-assistant");
-    deepStrictEqual(compacted.contextEventsBefore, [{
-      type: "compaction",
-      sourceOrder: 4,
-      occurredAt: 5,
-    }]);
+    const compactionEvent = compacted.contextEventsBefore![0];
+    strictEqual(compactionEvent.type, "compaction");
+    strictEqual(compactionEvent.sourceOrder, 4);
+    strictEqual(compactionEvent.occurredAt, 5);
+    strictEqual(compactionEvent.compaction?.trigger, "manual");
+    strictEqual(
+      compactionEvent.compaction?.checkpointCompleteness,
+      "partial",
+    );
+    strictEqual(
+      compactionEvent.compaction?.checkpointItems[0].contentPreview,
+      "Sensitive generated summary",
+    );
+    deepStrictEqual(
+      compactionEvent.compaction?.checkpointItems.map((item) =>
+        item.sourceEntryID
+      ),
+      ["compaction-summary", "assistant"],
+    );
+    deepStrictEqual(
+      compactionEvent.compaction?.nativeMetadata?.captureIssues,
+      ["overflow-not-boolean", "retained-message-unsupported"],
+    );
     strictEqual(
       analyzeSessionCache(detail).turns[2].calls[0].cacheAssessment?.cause,
       "compaction",

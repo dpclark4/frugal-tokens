@@ -5,7 +5,7 @@ import {
 } from "./claudeCodeRepository.ts";
 import { SessionRepository } from "./sessionRepository.ts";
 
-const parserVersion = "claude-code-4";
+const parserVersion = "claude-code-5";
 
 function externalID(
   candidate: ClaudeCodeSessionCandidate,

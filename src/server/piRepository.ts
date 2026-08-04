@@ -7,6 +7,7 @@ import {
 } from "../shared/sessionSchemas.ts";
 import { usageCallsFromSession } from "./usage.ts";
 import type {
+  CompactionDetailImport,
   ReasoningSettingImport,
   SessionCallImport,
   SessionContentImport,
@@ -14,6 +15,15 @@ import type {
   SessionToolImport,
   SessionTurnImport,
 } from "./sessionRepository.ts";
+import {
+  booleanValue,
+  messageCheckpointItem,
+  nonnegativeInteger,
+  numberCheckpointItems,
+  objectValue,
+  stringValue,
+  textCheckpointItem,
+} from "./compactionImport.ts";
 
 const contentPreviewLimit = 2_048;
 
@@ -36,6 +46,13 @@ const recordSchema = z.object({
   parentId: z.string().nullable().optional(),
   timestamp: z.string().optional(),
   cwd: z.string().optional(),
+  summary: z.unknown().optional(),
+  firstKeptEntryId: z.unknown().optional(),
+  retainedTail: z.unknown().optional(),
+  tokensBefore: z.unknown().optional(),
+  fromHook: z.unknown().optional(),
+  details: z.unknown().optional(),
+  usage: z.unknown().optional(),
   message: z.object({
     role: z.string().optional(),
     content: z.array(contentBlockSchema).optional(),
@@ -186,6 +203,169 @@ function basename(path: string | undefined) {
   return path.split("/").filter(Boolean).at(-1);
 }
 
+function piEntryCheckpointItem(value: unknown) {
+  const entry = objectValue(value);
+  if (entry === undefined) return undefined;
+  const sourceEntryID = stringValue(entry.id);
+  if (entry.type === "message") {
+    const message = objectValue(entry.message);
+    if (message === undefined) return undefined;
+    return messageCheckpointItem({
+      sourceEntryID,
+      role: stringValue(message.role),
+      content: message.content,
+    });
+  }
+  // retainedTail stores materialized messages rather than session entries.
+  if (typeof entry.role === "string") {
+    return messageCheckpointItem({
+      sourceEntryID,
+      role: entry.role,
+      content: entry.content,
+    });
+  }
+  if (entry.type === "custom_message") {
+    return messageCheckpointItem({
+      sourceEntryID,
+      role: "user",
+      content: entry.content,
+      nativeMetadata: {
+        ...(typeof entry.customType === "string"
+          ? { customType: entry.customType }
+          : {}),
+      },
+    });
+  }
+  if (entry.type === "branch_summary" && typeof entry.summary === "string") {
+    return textCheckpointItem({
+      sourceEntryID,
+      kind: "message",
+      role: "user",
+      text: entry.summary,
+      nativeMetadata: { sourceKind: "branch-summary" },
+    });
+  }
+  return undefined;
+}
+
+function piCompactionDetails(
+  record: Record,
+  records: Record[],
+): CompactionDetailImport {
+  const issues: string[] = [];
+  const summary = stringValue(record.summary);
+  if (record.summary !== undefined && summary === undefined) {
+    issues.push("summary-not-string");
+  }
+  const tokensBefore = nonnegativeInteger(record.tokensBefore);
+  if (record.tokensBefore !== undefined && tokensBefore === undefined) {
+    issues.push("tokens-before-invalid");
+  }
+
+  const byID = new Map(
+    records.flatMap((entry) =>
+      entry.id === undefined ? [] : [[entry.id, entry] as const]
+    ),
+  );
+  const branch: Record[] = [];
+  const visited = new Set<string>();
+  let currentID = record.parentId ?? undefined;
+  while (currentID !== undefined && currentID !== null) {
+    if (visited.has(currentID)) {
+      issues.push("parent-cycle");
+      break;
+    }
+    visited.add(currentID);
+    const entry = byID.get(currentID);
+    if (entry === undefined) {
+      issues.push("parent-entry-missing");
+      break;
+    }
+    branch.push(entry);
+    currentID = entry.parentId ?? undefined;
+  }
+  branch.reverse();
+
+  let retainedValues: unknown[] | undefined;
+  let droppedItemCount: number | undefined;
+  let boundaryKind = "unknown";
+  if (Array.isArray(record.retainedTail)) {
+    retainedValues = record.retainedTail;
+    boundaryKind = "retained-tail";
+  } else {
+    if (record.retainedTail !== undefined) issues.push("retained-tail-not-array");
+    const firstKeptEntryID = stringValue(record.firstKeptEntryId);
+    if (
+      record.firstKeptEntryId !== undefined && firstKeptEntryID === undefined
+    ) {
+      issues.push("first-kept-entry-id-not-string");
+    }
+    if (firstKeptEntryID !== undefined) {
+      const firstKeptIndex = branch.findIndex((entry) =>
+        entry.id === firstKeptEntryID
+      );
+      if (firstKeptIndex >= 0) {
+        retainedValues = branch.slice(firstKeptIndex);
+        droppedItemCount = firstKeptIndex;
+        boundaryKind = "first-kept-entry";
+      } else {
+        issues.push("first-kept-entry-missing");
+      }
+    }
+  }
+
+  const retainedItems = (retainedValues ?? []).flatMap((entry) => {
+    const item = piEntryCheckpointItem(entry);
+    return item === undefined ? [] : [item];
+  });
+  if (
+    retainedValues !== undefined && retainedItems.length !== retainedValues.length
+  ) {
+    issues.push("retained-entry-unsupported");
+  }
+  const checkpointItems = [
+    ...(summary === undefined
+      ? []
+      : [textCheckpointItem({
+        sourceEntryID: record.id,
+        kind: "summary",
+        role: "user",
+        text: summary,
+      })]),
+    ...retainedItems,
+  ];
+  const resultKind = summary === undefined
+    ? "unavailable" as const
+    : "plaintext-summary" as const;
+  const checkpointCompleteness = retainedValues !== undefined
+    ? summary === undefined ? "partial" as const : "complete" as const
+    : summary === undefined ? "unknown" as const : "summary-only" as const;
+  const usage = objectValue(record.usage);
+  const fromHook = booleanValue(record.fromHook);
+  return {
+    sourceID: record.id,
+    trigger: "unknown",
+    resultKind,
+    checkpointCompleteness,
+    preContextTokens: tokensBefore,
+    retainedItemCount: retainedItems.length,
+    droppedItemCount,
+    nativeMetadata: {
+      boundaryKind,
+      ...(stringValue(record.firstKeptEntryId) === undefined
+        ? {}
+        : { firstKeptEntryID: record.firstKeptEntryId }),
+      ...(Array.isArray(record.retainedTail)
+        ? { retainedTailCount: record.retainedTail.length }
+        : {}),
+      ...(fromHook === undefined ? {} : { fromHook }),
+      ...(usage === undefined ? {} : { summaryUsage: usage }),
+      ...(issues.length === 0 ? {} : { captureIssues: issues }),
+    },
+    checkpointItems,
+  };
+}
+
 function sessionBounds(
   turns: Array<
     {
@@ -266,6 +446,9 @@ function decodeRecords(records: Record[]) {
         type: "compaction",
         sourceOrder: recordIndex + 1,
         ...(timestamp === 0 ? {} : { occurredAt: timestamp }),
+        compaction: numberCheckpointItems(
+          piCompactionDetails(record, records),
+        ),
       };
       contextEvents.push(event);
       pendingContextEvents.push(event);

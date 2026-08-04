@@ -9,7 +9,7 @@ function transcript(prompt: string) {
 {"type":"session","version":3,"id":"session","timestamp":"2026-07-11T13:36:32.689Z","cwd":"/Users/test/project"}
 {"type":"message","id":"user-1","timestamp":"2026-07-11T13:36:55.000Z","message":{"role":"user","content":[{"type":"text","text":"${prompt}"}]}}
 {"type":"message","id":"assistant-1","timestamp":"2026-07-11T13:36:59.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Stored answer"}],"provider":"anthropic","model":"claude-opus","usage":{"input":2,"output":3,"cacheRead":0,"cacheWrite":0,"reasoning":0,"cost":{"total":0.01}},"stopReason":"stop"}}
-{"type":"compaction","id":"compact-1","parentId":"assistant-1","timestamp":"2026-07-11T13:37:00.000Z","summary":"Sensitive generated summary"}
+{"type":"compaction","id":"compact-1","parentId":"assistant-1","timestamp":"2026-07-11T13:37:00.000Z","summary":"Sensitive generated summary","firstKeptEntryId":"assistant-1","retainedTail":{"legacy":true},"tokensBefore":50000,"usage":{"input":100,"output":10,"cacheRead":0,"cacheWrite":0,"reasoning":2,"totalTokens":110},"fromHook":false}
 {"type":"message","id":"user-2","parentId":"compact-1","timestamp":"2026-07-11T13:37:01.000Z","message":{"role":"user","content":[{"type":"text","text":"Continue"}]}}
 {"type":"message","id":"assistant-2","parentId":"user-2","timestamp":"2026-07-11T13:37:02.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Continued answer"}],"provider":"anthropic","model":"claude-opus","usage":{"input":4,"output":3,"cacheRead":1,"cacheWrite":0,"reasoning":0,"cost":{"total":0.01}},"stopReason":"stop"}}
 `.trim();
@@ -225,14 +225,42 @@ Deno.test("incrementally imports PI sessions and preserves the last good archive
       }).count,
       2,
     );
+    const compaction = repository.getSession("pi", "project/session")!
+      .turns[1].calls[0].contextEventsBefore![0];
+    strictEqual(compaction.type, "compaction");
+    strictEqual(compaction.sourceOrder, 4);
+    strictEqual(
+      compaction.occurredAt,
+      Date.parse("2026-07-11T13:37:00.000Z"),
+    );
+    strictEqual(compaction.compaction?.resultKind, "plaintext-summary");
+    strictEqual(compaction.compaction?.checkpointCompleteness, "complete");
+    strictEqual(compaction.compaction?.preContextTokens, 50_000);
+    strictEqual(compaction.compaction?.retainedItemCount, 1);
     deepStrictEqual(
-      repository.getSession("pi", "project/session")?.turns[1].calls[0]
-        .contextEventsBefore,
-      [{
-        type: "compaction",
-        sourceOrder: 4,
-        occurredAt: Date.parse("2026-07-11T13:37:00.000Z"),
-      }],
+      compaction.compaction?.checkpointItems.map((item) => ({
+        kind: item.kind,
+        sourceEntryID: item.sourceEntryID,
+      })),
+      [
+        { kind: "summary", sourceEntryID: "compact-1" },
+        { kind: "message", sourceEntryID: "assistant-1" },
+      ],
+    );
+    deepStrictEqual(
+      compaction.compaction?.nativeMetadata?.captureIssues,
+      ["retained-tail-not-array"],
+    );
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM compaction_details").get()!
+        .count,
+      1,
+    );
+    strictEqual(
+      db.prepare(
+        "SELECT COUNT(*) AS count FROM compaction_checkpoint_items",
+      ).get()!.count,
+      2,
     );
     strictEqual(
       db.prepare(`

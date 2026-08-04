@@ -73,8 +73,10 @@ Ignore assistant records whose reported token usage is entirely zero.
 
 OpenCode records a durable compaction signal as a synthetic user message with a
 part whose `data.type` is `compaction`. The following assistant call generates
-the compacted summary. Frugal Tokens preserves that call's usage and cost but
-does not retain its generated summary text.
+the compacted summary. Frugal Tokens preserves that call's usage and cost and a
+bounded summary checkpoint preview. Newer records may provide `tail_start_id`,
+which lets the importer also preserve the ordered retained tail; older records
+without that boundary are marked summary-only.
 
 The normalized context event is attached immediately before the first later
 model call whose provider request uses the compacted context. This may be in
@@ -97,31 +99,32 @@ Current source support is:
 | Codex | Explicit `event_msg/context_compacted`; affected call resolved when present |
 | PI | Explicit JSONL `compaction` record; affected call resolved when present |
 
-PI compaction support currently follows the importer's existing linear,
-append-order interpretation of a session file. A verified persisted event had
-`type`, `id`, `parentId`, `timestamp`, and `summary`; optional fields described
-elsewhere such as `firstKeptEntryId`, `tokensBefore`, and `fromHook` were absent.
-The summary is not retained. Because PI does not persist a separate assistant
-usage record for summary generation in this fixture, the first later assistant
-call with usage is the affected provider request. Branch reconstruction remains
-out of scope.
+PI compaction support follows the active `parentId` lineage when a
+`firstKeptEntryId` boundary is available, or uses a materialized `retainedTail`
+from newer records. The archive stores a bounded plaintext summary item,
+retained checkpoint items, `tokensBefore`, summary-generation usage metadata,
+and other non-content provenance when present. If the boundary is missing or
+malformed, the event still imports and is marked summary-only or partial. The
+first later assistant call with usage remains the affected provider request;
+full branch display remains out of scope.
 
 Claude Code records a compaction as a system entry with subtype
 `compact_boundary`. A verified manual event included optional metadata such as
-pre/post token counts and preserved-message UUIDs, but normalized detection
-uses only the explicit type/subtype and record order. The generated summary is
-a later synthetic user record that does not start a normalized turn and is not
-retained. The first later assistant message with usage is the affected provider
-request. `/compact` command text and cache-token changes are not detection
-signals.
+pre/post token counts, dropped tokens, duration, and preserved-message UUIDs.
+The generated summary is a later synthetic user record that does not start a
+normalized turn; the archive stores it as a bounded checkpoint item alongside
+resolvable preserved entries. The first later assistant message with usage is
+the affected provider request. `/compact` command text and cache-token changes
+are not detection signals.
 
 Codex writes a large top-level `compacted` record containing replacement
 history and encrypted compaction material, followed by an explicit
 `event_msg` whose payload type is `context_compacted`. Historical fixtures
-consistently contain the small explicit event, so it is the normalized signal
-and the adjacent records are not double-counted. Replacement history and
-encrypted content are not retained. The first later nonzero `token_count`
-model call is the affected provider request.
+consistently contain the small explicit event, so it remains the normalized
+signal and the adjacent records are not double-counted. The ordered replacement
+items are retained as bounded plaintext previews or opaque encrypted-item
+metadata; the encrypted bytes themselves are not copied. The first later
+nonzero `token_count` model call is the affected provider request.
 
 Codex also persists compaction machinery as an opaque total-only model call.
 The importer gives only that confirmed operation call a

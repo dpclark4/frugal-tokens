@@ -190,6 +190,18 @@ function redact(db: DatabaseSync) {
 
       UPDATE model_calls SET source_call_id = NULL;
 
+      UPDATE compaction_details
+      SET source_compaction_id = NULL,
+          native_metadata_json = NULL;
+
+      UPDATE compaction_checkpoint_items
+      SET source_entry_id = NULL,
+          content_preview = CASE
+            WHEN content_preview IS NULL THEN NULL ELSE '${REDACTED}'
+          END,
+          content_hash = NULL,
+          native_metadata_json = NULL;
+
       UPDATE tool_events
       SET source_tool_id = NULL,
           input_preview = CASE
@@ -276,6 +288,18 @@ function audit(db: DatabaseSync) {
         OR (preview IS NOT NULL AND preview <> '${REDACTED}')`,
     ],
     ["model_calls", "source_call_id IS NOT NULL"],
+    [
+      "compaction_details",
+      "source_compaction_id IS NOT NULL OR native_metadata_json IS NOT NULL",
+    ],
+    [
+      "compaction_checkpoint_items",
+      `source_entry_id IS NOT NULL
+        OR content_hash IS NOT NULL
+        OR native_metadata_json IS NOT NULL
+        OR (content_preview IS NOT NULL
+          AND content_preview <> '${REDACTED}')`,
+    ],
     [
       "tool_events",
       `source_tool_id IS NOT NULL

@@ -7,6 +7,8 @@ import {
 } from "../shared/sessionSchemas.ts";
 import { usageCallsFromSession } from "./usage.ts";
 import type {
+  CompactionCheckpointItemImport,
+  CompactionDetailImport,
   SessionCallImport,
   SessionContentImport,
   SessionContextEventImport,
@@ -15,6 +17,16 @@ import type {
   SourceSessionCheckpoint,
   SourceSessionImport,
 } from "./sessionRepository.ts";
+import {
+  contentText,
+  messageCheckpointItem,
+  nonnegativeInteger,
+  numberCheckpointItems,
+  objectValue,
+  stringArray,
+  stringValue,
+  textCheckpointItem,
+} from "./compactionImport.ts";
 
 const contentPreviewLimit = 2_048;
 
@@ -37,11 +49,15 @@ const recordSchema = z.object({
   type: z.string(),
   subtype: z.string().optional(),
   uuid: z.string().optional(),
+  parentUuid: z.string().nullable().optional(),
   timestamp: z.string().optional(),
   aiTitle: z.string().optional(),
   customTitle: z.string().optional(),
   isMeta: z.boolean().optional(),
   isSidechain: z.boolean().optional(),
+  isCompactSummary: z.unknown().optional(),
+  compactMetadata: z.unknown().optional(),
+  content: z.unknown().optional(),
   promptSource: z.string().optional(),
   cwd: z.string().optional(),
   origin: z.object({ kind: z.string().optional() }).passthrough().optional(),
@@ -213,6 +229,166 @@ function startsTurn(record: Record, hasTurns: boolean) {
     text.startsWith("❯ ") || (record.isSidechain === true && !hasTurns);
 }
 
+function claudeCheckpointItem(
+  record: Record,
+): CompactionCheckpointItemImport | undefined {
+  const role = record.message?.role ??
+    (record.type === "system" ? "system" : undefined);
+  const content = record.message?.content ?? record.content;
+  if (role === undefined && contentText(content) === undefined) return undefined;
+  return messageCheckpointItem({
+    sourceEntryID: record.uuid,
+    role,
+    content,
+    kind: role === "system" ? "system-message" : undefined,
+    nativeMetadata: {
+      sourceType: record.type,
+      ...(record.subtype === undefined ? {} : { sourceSubtype: record.subtype }),
+    },
+  });
+}
+
+function claudeCompactionDetails(
+  records: Record[],
+  markerIndex: number,
+): CompactionDetailImport {
+  const marker = records[markerIndex];
+  const issues: string[] = [];
+  const metadata = objectValue(marker.compactMetadata);
+  if (marker.compactMetadata !== undefined && metadata === undefined) {
+    issues.push("compact-metadata-not-object");
+  }
+  const triggerValue = stringValue(metadata?.trigger);
+  const trigger = triggerValue === "manual"
+    ? "manual" as const
+    : triggerValue === "automatic" || triggerValue === "auto"
+    ? "automatic" as const
+    : triggerValue === "threshold"
+    ? "threshold" as const
+    : triggerValue === "overflow"
+    ? "overflow" as const
+    : "unknown" as const;
+  if (metadata?.trigger !== undefined && trigger === "unknown") {
+    issues.push("trigger-unrecognized");
+  }
+  const preTokens = nonnegativeInteger(metadata?.preTokens);
+  const postTokens = nonnegativeInteger(metadata?.postTokens);
+  const droppedTokens = nonnegativeInteger(metadata?.cumulativeDroppedTokens);
+  if (metadata?.preTokens !== undefined && preTokens === undefined) {
+    issues.push("pre-tokens-invalid");
+  }
+  if (metadata?.postTokens !== undefined && postTokens === undefined) {
+    issues.push("post-tokens-invalid");
+  }
+  if (
+    metadata?.cumulativeDroppedTokens !== undefined &&
+    droppedTokens === undefined
+  ) {
+    issues.push("dropped-tokens-invalid");
+  }
+
+  let summaryRecord: Record | undefined;
+  let fallbackSummary: Record | undefined;
+  for (const candidate of records.slice(markerIndex + 1)) {
+    if (candidate.type !== "user") continue;
+    if (candidate.isCompactSummary === true) {
+      summaryRecord = candidate;
+      break;
+    }
+    if (startsTurn(candidate, true)) break;
+    if (fallbackSummary === undefined && userText(candidate)?.trim()) {
+      fallbackSummary = candidate;
+    }
+  }
+  summaryRecord ??= fallbackSummary;
+  const summaryText = summaryRecord === undefined
+    ? undefined
+    : userText(summaryRecord);
+  if (summaryText === undefined) issues.push("summary-message-missing");
+
+  const preservedMessages = objectValue(metadata?.preservedMessages);
+  const preservedIDs = stringArray(
+    preservedMessages?.uuids ?? preservedMessages?.allUuids,
+  );
+  if (
+    preservedMessages !== undefined && preservedIDs === undefined &&
+    (preservedMessages.uuids !== undefined ||
+      preservedMessages.allUuids !== undefined)
+  ) {
+    issues.push("preserved-message-ids-invalid");
+  }
+  const recordsByID = new Map(
+    records.flatMap((record) =>
+      record.uuid === undefined ? [] : [[record.uuid, record] as const]
+    ),
+  );
+  const preservedItems = (preservedIDs ?? []).flatMap((id) => {
+    if (id === summaryRecord?.uuid) return [];
+    const record = recordsByID.get(id);
+    if (record === undefined) {
+      issues.push("preserved-message-missing");
+      return [];
+    }
+    const item = claudeCheckpointItem(record);
+    if (item === undefined) {
+      issues.push("preserved-message-unsupported");
+      return [];
+    }
+    return [item];
+  });
+  const checkpointItems = [
+    ...(summaryText === undefined
+      ? []
+      : [textCheckpointItem({
+        sourceEntryID: summaryRecord?.uuid,
+        kind: "summary",
+        role: "user",
+        text: summaryText,
+      })]),
+    ...preservedItems,
+  ];
+  const preservedSegment = objectValue(metadata?.preservedSegment);
+  const segmentMetadata = preservedSegment === undefined
+    ? undefined
+    : Object.fromEntries(
+      ["headUuid", "anchorUuid", "tailUuid"].flatMap((key) => {
+        const value = stringValue(preservedSegment[key]);
+        return value === undefined ? [] : [[key, value]];
+      }),
+    );
+  const durationMs = nonnegativeInteger(metadata?.durationMs);
+  if (metadata?.durationMs !== undefined && durationMs === undefined) {
+    issues.push("duration-ms-invalid");
+  }
+  return {
+    sourceID: marker.uuid,
+    trigger,
+    resultKind: summaryText === undefined
+      ? "unavailable"
+      : "plaintext-summary",
+    checkpointCompleteness: preservedIDs !== undefined
+      ? summaryText === undefined ? "partial" : "complete"
+      : summaryText === undefined ? "unknown" : "summary-only",
+    preContextTokens: preTokens,
+    postContextTokens: postTokens,
+    droppedContextTokens: droppedTokens,
+    retainedItemCount: preservedItems.length,
+    nativeMetadata: {
+      ...(summaryRecord?.uuid === undefined
+        ? {}
+        : { summaryEntryID: summaryRecord.uuid }),
+      ...(preservedIDs === undefined ? {} : { preservedEntryIDs: preservedIDs }),
+      ...(segmentMetadata === undefined
+        ? {}
+        : { preservedSegment: segmentMetadata }),
+      ...(durationMs === undefined ? {} : { durationMs }),
+      ...(triggerValue === undefined ? {} : { nativeTrigger: triggerValue }),
+      ...(issues.length === 0 ? {} : { captureIssues: issues }),
+    },
+    checkpointItems,
+  };
+}
+
 function sessionBounds(
   turns: Array<
     {
@@ -254,6 +430,9 @@ function decodeRecords(records: Record[]) {
         type: "compaction",
         sourceOrder: recordIndex + 1,
         ...(timestamp === 0 ? {} : { occurredAt: timestamp }),
+        compaction: numberCheckpointItems(
+          claudeCompactionDetails(records, recordIndex),
+        ),
       };
       contextEvents.push(event);
       pendingContextEvents.push(event);
