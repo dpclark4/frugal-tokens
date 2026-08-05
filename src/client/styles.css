@@ -431,7 +431,6 @@ h1 {
     flex-direction: column;
     gap: 3px;
   }
-
 }
 
 .ttl-miss-lead {
@@ -1544,6 +1543,12 @@ table.data-table {
   background: var(--surface-1);
 }
 
+.session-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  background: var(--surface-1);
+}
+
 .session-row.row-open {
   background: #e8eee5;
 }
@@ -1558,6 +1563,23 @@ table.data-table {
   align-items: flex-start;
   gap: 10px;
   min-width: 0;
+}
+
+.session-open-indicator {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  transition: color .12s ease, transform .12s ease;
+}
+
+.session-row:hover .session-open-indicator,
+.session-row:focus-visible .session-open-indicator {
+  color: var(--accent);
+  transform: translateX(2px);
 }
 
 .session-copy {
