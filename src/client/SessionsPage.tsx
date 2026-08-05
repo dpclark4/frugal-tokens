@@ -30,7 +30,7 @@ import {
 import { contextRange, contextSize } from "../shared/contextMetrics.ts";
 import { displayModelName } from "../shared/modelNames.ts";
 import { rollupCosts } from "../shared/costMetrics.ts";
-import { getOverview, getSessions, syncSessions } from "./api.ts";
+import { getOverview, getSession, getSessions, syncSessions } from "./api.ts";
 import claudeCodeIcon from "./assets/icons/claudecode-color.svg";
 import codexIcon from "./assets/icons/codex-logo-light.svg";
 import openCodeIcon from "./assets/icons/opencode-logo-light.svg";
@@ -2054,6 +2054,10 @@ export function SessionsPage() {
   const [shareState, setShareState] = useState<"idle" | "copied" | "error">(
     "idle",
   );
+  const [expandedIDs, setExpandedIDs] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [details, setDetails] = useState<Record<string, SessionDetail>>({});
   const [error, setError] = useState<string>();
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string>();
@@ -2092,6 +2096,8 @@ export function SessionsPage() {
     setLoadMoreError(undefined);
     loadingMoreRef.current = false;
     setLoadingMore(false);
+    setExpandedIDs(new Set());
+    setDetails({});
     setLoadingSessions(true);
     getSessions(1, harness, missFilters).then((result) => {
       if (!active) return;
@@ -2196,6 +2202,34 @@ export function SessionsPage() {
     loadingSessions,
     missFilterKey,
   ]);
+
+  async function toggleSession(id: string) {
+    if (expandedIDs.has(id)) {
+      setExpandedIDs((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+      return;
+    }
+    setExpandedIDs((current) => new Set(current).add(id));
+    if (details[id]) return;
+    try {
+      const summary = data?.items.find((session) => session.id === id);
+      if (!summary) return;
+      const detail = await getSession(id, summary.harness);
+      setDetails((current) => ({ ...current, [id]: detail }));
+    } catch (reason) {
+      setExpandedIDs((current) => {
+        const next = new Set(current);
+        next.delete(id);
+        return next;
+      });
+      setError(
+        reason instanceof Error ? reason.message : "Unable to load session",
+      );
+    }
+  }
 
   async function shareReport() {
     if (!overview || !shareCacheMisses || !shareUsage) return;
@@ -2412,187 +2446,232 @@ export function SessionsPage() {
                       provider.toLowerCase().includes("anthropic")
                     );
                     return (
-                      <tr
-                        key={session.id}
-                        className="session-row"
-                        role="link"
-                        tabIndex={0}
-                        aria-label={`Open session: ${session.title}`}
-                        onClick={() =>
-                          navigate({
-                            to: "/sessions/$harness/$sessionId",
-                            params: {
-                              harness: session.harness,
-                              sessionId: session.id,
-                            },
-                            search: {
-                              misses: misses || undefined,
-                              paths: "relative",
-                              color: "time",
-                              model: "recorded",
-                              thinking: "recorded",
-                            },
-                          })}
-                        onKeyDown={(event) => {
-                          if (event.key !== "Enter" && event.key !== " ") {
-                            return;
-                          }
-                          event.preventDefault();
-                          navigate({
-                            to: "/sessions/$harness/$sessionId",
-                            params: {
-                              harness: session.harness,
-                              sessionId: session.id,
-                            },
-                            search: {
-                              misses: misses || undefined,
-                              paths: "relative",
-                              color: "time",
-                              model: "recorded",
-                              thinking: "recorded",
-                            },
-                          });
-                        }}
-                      >
-                        <td className="session-cell">
-                          <div className="session-identity">
-                            <span
-                              className="session-open-indicator"
-                              aria-hidden="true"
-                            >
-                              <ChevronRight size={15} />
-                            </span>
-                            <div className="session-copy">
-                              <strong
-                                className="session-title"
-                                title={sessionTitleTooltip}
-                              >
-                                {session.title}
-                              </strong>
-                              {sessionLocation !== undefined && (
-                                <small
-                                  className={session.workingDirectory !==
-                                      undefined
-                                    ? "session-working-directory"
-                                    : "session-source-path"}
-                                  title={sessionLocationTitle}
-                                >
-                                  {sessionLocation}
-                                </small>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        <td>
-                          <span className="model-leading-layout">
-                            <HarnessIcon harness={session.harness} />
-                            <span className="session-model-details">
-                              <ModelSummary models={session.models} />
-                              <SessionThinkingSummary
-                                thinking={session.thinking}
-                                modelCalls={session.modelCalls}
-                              />
-                            </span>
-                          </span>
-                        </td>
-                        <td
-                          className={span?.label ? undefined : "muted"}
-                          title={span
-                            ? `${fullTimestamp.format(span.start)} → ${
-                              fullTimestamp.format(span.end)
-                            }`
-                            : undefined}
+                      <Fragment key={session.id}>
+                        <tr
+                          className={`session-row${
+                            expandedIDs.has(session.id) ? " row-open" : ""
+                          }`}
+                          role="link"
+                          tabIndex={0}
+                          aria-label={`Open session: ${session.title}`}
+                          onClick={() => {
+                            navigate({
+                              to: "/sessions/$harness/$sessionId",
+                              params: {
+                                harness: session.harness,
+                                sessionId: session.id,
+                              },
+                              search: {
+                                misses: misses || undefined,
+                                paths: "relative",
+                                color: "time",
+                                model: "recorded",
+                                thinking: "recorded",
+                              },
+                            });
+                          }}
+                          onKeyDown={(event) => {
+                            if (event.key !== "Enter" && event.key !== " ") {
+                              return;
+                            }
+                            event.preventDefault();
+                            navigate({
+                              to: "/sessions/$harness/$sessionId",
+                              params: {
+                                harness: session.harness,
+                                sessionId: session.id,
+                              },
+                              search: {
+                                misses: misses || undefined,
+                                paths: "relative",
+                                color: "time",
+                                model: "recorded",
+                                thinking: "recorded",
+                              },
+                            });
+                          }}
                         >
-                          <span className="metric-stack session-elapsed">
-                            <span>{span?.label ?? "—"}</span>
-                            {sessionStart !== undefined && (
-                              <small
-                                className="session-started"
-                                title={`Started ${
-                                  fullTimestamp.format(sessionStart)
-                                }`}
+                          <td className="session-cell">
+                            <div className="session-identity">
+                              <button
+                                type="button"
+                                className="session-expand-button"
+                                aria-label={`${
+                                  expandedIDs.has(session.id)
+                                    ? "Collapse"
+                                    : "Expand"
+                                } ${session.title} inline`}
+                                aria-expanded={expandedIDs.has(session.id)}
+                                aria-controls={`session-detail-${session.id}`}
+                                title={`${
+                                  expandedIDs.has(session.id)
+                                    ? "Collapse"
+                                    : "Expand"
+                                } inline`}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  void toggleSession(session.id);
+                                }}
+                                onKeyDown={(event) => event.stopPropagation()}
                               >
-                                {sessionStarted.format(sessionStart)}
-                              </small>
-                            )}
-                          </span>
-                        </td>
-                        <td title="Inclusive of direct and subagent turns and calls">
-                          <span className="metric-stack">
-                            <span>
-                              {session.inclusiveUserTurns ??
-                                session.userTurns} turns
+                                {expandedIDs.has(session.id)
+                                  ? <ChevronDown size={15} />
+                                  : <ChevronRight size={15} />}
+                              </button>
+                              <div className="session-copy">
+                                <strong
+                                  className="session-title"
+                                  title={sessionTitleTooltip}
+                                >
+                                  {session.title}
+                                </strong>
+                                {sessionLocation !== undefined && (
+                                  <small
+                                    className={session.workingDirectory !==
+                                        undefined
+                                      ? "session-working-directory"
+                                      : "session-source-path"}
+                                    title={sessionLocationTitle}
+                                  >
+                                    {sessionLocation}
+                                  </small>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            <span className="model-leading-layout">
+                              <HarnessIcon harness={session.harness} />
+                              <span className="session-model-details">
+                                <ModelSummary models={session.models} />
+                                <SessionThinkingSummary
+                                  thinking={session.thinking}
+                                  modelCalls={session.modelCalls}
+                                />
+                              </span>
                             </span>
-                            <span>
-                              {session.inclusiveModelCalls ??
-                                session.modelCalls} calls
-                            </span>
-                            {(session.subagentCount ?? 0) > 0 && (
-                              <small>
-                                {session.subagentCount}{" "}
-                                subagent{session.subagentCount === 1 ? "" : "s"}
-                              </small>
-                            )}
-                          </span>
-                        </td>
-                        <td>
-                          <ContextMetric
-                            value={session.contextLatest}
-                            secondary={session.contextPeak}
-                            secondaryLabel="peak"
-                            title={session.contextLatest !== undefined &&
-                                session.contextPeak !== undefined
-                              ? `Latest root request: ${
-                                integer.format(session.contextLatest)
-                              } tokens · Peak root request: ${
-                                integer.format(session.contextPeak)
-                              } tokens${
-                                session.contextPeakTurn !== undefined &&
-                                  session.contextPeakCall !== undefined
-                                  ? ` (turn ${session.contextPeakTurn}, call #${session.contextPeakCall})`
-                                  : ""
+                          </td>
+                          <td
+                            className={span?.label ? undefined : "muted"}
+                            title={span
+                              ? `${fullTimestamp.format(span.start)} → ${
+                                fullTimestamp.format(span.end)
                               }`
                               : undefined}
-                          />
-                        </td>
-                        <td>
-                          <SessionInputMetric
-                            tokens={tokens}
-                            anthropic={anthropic}
-                          />
-                        </td>
-                        <td className="image-input-cell">
-                          <ImageInputIndicator count={imageInputs} />
-                        </td>
-                        <td>
-                          <SessionCacheStatus
-                            summary={session.cacheSummary}
-                            issues={session.cacheIssues}
-                            compactionCount={session.compactionCount}
-                          />
-                        </td>
-                        <td>
-                          <OutputMetric
-                            output={tokens.output}
-                            reasoning={tokens.reasoning}
-                          />
-                        </td>
-                        <td>
-                          <CostCell
-                            reported={hasInclusiveMetrics
-                              ? session.inclusiveReportedCost
-                              : session.reportedCost}
-                            computed={hasInclusiveMetrics
-                              ? session.inclusiveComputedCost
-                              : session.computedCost}
-                            direct={hasSubagents
-                              ? session.computedCost
-                              : undefined}
-                            subagents={subagentComputedCost}
-                            session
-                          />
-                        </td>
-                      </tr>
+                          >
+                            <span className="metric-stack session-elapsed">
+                              <span>{span?.label ?? "—"}</span>
+                              {sessionStart !== undefined && (
+                                <small
+                                  className="session-started"
+                                  title={`Started ${
+                                    fullTimestamp.format(sessionStart)
+                                  }`}
+                                >
+                                  {sessionStarted.format(sessionStart)}
+                                </small>
+                              )}
+                            </span>
+                          </td>
+                          <td title="Inclusive of direct and subagent turns and calls">
+                            <span className="metric-stack">
+                              <span>
+                                {session.inclusiveUserTurns ??
+                                  session.userTurns} turns
+                              </span>
+                              <span>
+                                {session.inclusiveModelCalls ??
+                                  session.modelCalls} calls
+                              </span>
+                              {(session.subagentCount ?? 0) > 0 && (
+                                <small>
+                                  {session.subagentCount}{" "}
+                                  subagent{session.subagentCount === 1
+                                    ? ""
+                                    : "s"}
+                                </small>
+                              )}
+                            </span>
+                          </td>
+                          <td>
+                            <ContextMetric
+                              value={session.contextLatest}
+                              secondary={session.contextPeak}
+                              secondaryLabel="peak"
+                              title={session.contextLatest !== undefined &&
+                                  session.contextPeak !== undefined
+                                ? `Latest root request: ${
+                                  integer.format(session.contextLatest)
+                                } tokens · Peak root request: ${
+                                  integer.format(session.contextPeak)
+                                } tokens${
+                                  session.contextPeakTurn !== undefined &&
+                                    session.contextPeakCall !== undefined
+                                    ? ` (turn ${session.contextPeakTurn}, call #${session.contextPeakCall})`
+                                    : ""
+                                }`
+                                : undefined}
+                            />
+                          </td>
+                          <td>
+                            <SessionInputMetric
+                              tokens={tokens}
+                              anthropic={anthropic}
+                            />
+                          </td>
+                          <td className="image-input-cell">
+                            <ImageInputIndicator count={imageInputs} />
+                          </td>
+                          <td>
+                            <SessionCacheStatus
+                              summary={session.cacheSummary}
+                              issues={session.cacheIssues}
+                              compactionCount={session.compactionCount}
+                            />
+                          </td>
+                          <td>
+                            <OutputMetric
+                              output={tokens.output}
+                              reasoning={tokens.reasoning}
+                            />
+                          </td>
+                          <td>
+                            <CostCell
+                              reported={hasInclusiveMetrics
+                                ? session.inclusiveReportedCost
+                                : session.reportedCost}
+                              computed={hasInclusiveMetrics
+                                ? session.inclusiveComputedCost
+                                : session.computedCost}
+                              direct={hasSubagents
+                                ? session.computedCost
+                                : undefined}
+                              subagents={subagentComputedCost}
+                              session
+                            />
+                          </td>
+                        </tr>
+                        {expandedIDs.has(session.id) && (
+                          <tr
+                            id={`session-detail-${session.id}`}
+                            className="detail-row"
+                          >
+                            <td colSpan={10}>
+                              {details[session.id]
+                                ? (
+                                  <SessionBreakdown
+                                    session={details[session.id]}
+                                  />
+                                )
+                                : (
+                                  <div className="loading inset-loading">
+                                    Grouping model calls by turn...
+                                  </div>
+                                )}
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
                     );
                   })}
                 </tbody>

@@ -1565,21 +1565,32 @@ table.data-table {
   min-width: 0;
 }
 
-.session-open-indicator {
+.session-expand-button {
   display: inline-flex;
-  width: 18px;
-  height: 18px;
-  flex: 0 0 18px;
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
   align-items: center;
   justify-content: center;
+  margin: -2px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
   color: var(--muted);
-  transition: color .12s ease, transform .12s ease;
+  cursor: pointer;
+  transition: background .12s ease, color .12s ease;
 }
 
-.session-row:hover .session-open-indicator,
-.session-row:focus-visible .session-open-indicator {
+.session-expand-button:hover,
+.session-expand-button:focus-visible {
+  background: var(--surface-2);
   color: var(--accent);
-  transform: translateX(2px);
+  outline: none;
+}
+
+.session-expand-button:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent);
 }
 
 .session-copy {
