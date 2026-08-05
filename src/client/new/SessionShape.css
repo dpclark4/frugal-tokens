@@ -290,7 +290,6 @@
 .shape-range span:last-child {
   text-align: right;
 }
-.new-page button:focus-visible,
 
 @media (max-width: 480px) {
   .session-shape-table-wrap { overflow: visible; }
