@@ -144,6 +144,115 @@ candidate is tool use with a large tool result followed by a small user
 follow-up, but this single capture does not establish causality or identify
 which part of the provider cache became ineligible.
 
+## Case 003 — Healthy-continuation full miss after image-bearing tool output
+
+**Date:** 2026-08-05  
+**Harness/provider:** Pi / `openai-codex`  
+**Model:** `gpt-5.6-sol`
+
+### Identifiers
+
+- Pi session ID: `019fd1f1-a3c0-7645-bce4-95811c5a5fb2`
+- Archive source session ID: `1153`
+- Pi turn/call: turn 1, call 3
+- Archive model-call ID: `127670`
+- Archive `source_call_id`: `decf7003`
+
+### Artifacts
+
+```text
+Pi session:
+~/.pi/agent/sessions/--Users-danclark-programming-frugal-tokens--/2026-08-05T12-41-42-080Z_019fd1f1-a3c0-7645-bce4-95811c5a5fb2.jsonl
+
+Telemetry:
+~/.pi/agent/diagnostics/cache-telemetry/2026-08-05T12-41-42-080Z_019fd1f1-a3c0-7645-bce4-95811c5a5fb2.jsonl
+
+WebSocket wiretap:
+~/.pi/agent/diagnostics/cache-telemetry/wiretap/codex-websocket-2026-08-05T12-41-41Z-44273.jsonl
+```
+
+### Observed sequence
+
+A gated probe sequentially read the supplied image, `FOUND_CASES.md`, then
+`tools/pi-cache-telemetry/triage.md`. Cache reads were:
+
+```text
+call 1: 0       baseline
+call 2: 1536
+call 3: 0       explicit full miss
+call 4: 4608    recovery
+call 5: 7680    recovery
+call 6: 8704    warm
+```
+
+The call-2 logical request contained an image-bearing `function_call_output` of
+389,654 bytes (`input_image` present). The call-3 WebSocket delta was one text
+`function_call_output` of 7,004 bytes. The candidate used `previous_response_id`,
+an exact input prefix, an unchanged envelope and prompt-cache key, and the
+same WebSocket connection. There were no WebSocket errors, reconnects or SSE
+fallbacks; the socket later closed cleanly with code `1000`.
+
+### Assessment
+
+This is a provider-reported **explicit full miss on a healthy continuation**
+(`cached_tokens: 0`), followed by cache recovery. It is a cleaner reproduction
+of the image/tool-output hypothesis than Case 001 and extends Case 002 from
+partial to full read loss. The single run does not prove that the image caused
+the miss; a text-only control is still required. The model went off-protocol
+and began archive investigation after call 3, but the cache sequence was
+already captured.
+
+### Controlled reproduction recipe
+
+Run each trial in a fresh Pi process with the telemetry extension and WebSocket
+wiretap, using `gpt-5.6-sol`, medium reasoning, and no repository edits:
+
+```bash
+tools/pi-cache-telemetry/run-with-codex-wiretap.sh \
+  -e ./tools/pi-cache-telemetry/extensions/cache-telemetry.ts
+```
+
+Use three gated user turns. The initial instruction should define all phases but
+say to execute only Phase 1 and reply `DONE`; send `PHASE 2 ONLY` and then
+`PHASE 3 ONLY` as the next user messages. Do not add other text.
+
+- **Phase 1 — image plus two text reads:** read one fresh image, then two
+  medium text fixtures. This tests whether an `input_image` inside a tool
+  result affects the next continuation. The observed image payload was about
+  390 KB; the text results were about 9–13 KB each.
+- **Phase 2 — three large text reads:** read three text fixtures producing
+  roughly 50 KB, 16 KB, and 11 KB results. This tests a warm continuation
+  after a new user phase boundary and a multi-output tool batch; it produced
+  the classified full miss in the controlled run.
+- **Phase 3 — four text reads:** read four fixtures producing roughly 11 KB,
+  9 KB, 20 KB, and 13 KB results. This tests whether the cache recovers and
+  remains warm after another multi-output batch.
+
+For repeated trials, use fresh files and images with different content and
+paths while preserving the phase's item count, media type, and approximate
+sizes. Keep the model, settings, instructions, and tool schema fixed. Record
+raw `cached_tokens`, not only the UI classification: a zero after a baseline
+may be explicit provider zero but is not a comparable full miss.
+
+### Controlled reproductions
+
+- **Run A — phase-1-only prompt:** session
+  `019fd1f1-a3c0-7645-bce4-95811c5a5fb2`, archive call `127670` /
+  `decf7003`. The model sequentially read the image and two text files, then
+  went off-protocol into archive investigation. Cache reads were
+  `0 -> 1536 -> 0 -> 4608 -> 7680 -> 8704`; the third call was the candidate
+  full miss.
+- **Run B — gated phases:** session
+  `019fd1f8-6fb5-7782-a323-8f784c0b0ac6`, archive call `127710` /
+  `f3b82c48`. Phase 1 completed with `DONE`; its raw sequence was
+  `0 -> 0` (baseline followed by an explicit zero). Phase 2 then produced
+  `8704 -> 0 -> 26112`, a classified full miss and recovery. Phase 3 stayed
+  warm at `26112 -> 26112`.
+
+Phase-boundary compliance varied between the trials: the first phase-only run
+continued beyond its listed work, while the later gated run stopped at `DONE`.
+That is a procedural confound to record separately from cache behavior.
+
 ## Working hypothesis for future cases
 
 This pattern could explain **some** Codex CLI misses, and possibly other
@@ -153,12 +262,21 @@ and a zero read without a transport failure may be a provider/cache event,
 metadata omission, prompt change, image/tool-output discontinuity, or another
 cause.
 
-A useful match signature is:
+Useful match signatures are:
 
 ```text
 warm read
 -> WebSocket error/abnormal close or fallback
 -> zero/low read on a full-context retry
+-> warm read afterward
+```
+
+A healthy-continuation variant is:
+
+```text
+warm read
+-> image/tool-output continuation
+-> explicit zero/low read
 -> warm read afterward
 ```
 
