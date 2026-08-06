@@ -49,6 +49,8 @@ const recordSchema = z.object({
   type: z.string(),
   subtype: z.string().optional(),
   uuid: z.string().optional(),
+  sessionId: z.string().optional(),
+  session_id: z.string().optional(),
   parentUuid: z.string().nullable().optional(),
   timestamp: z.string().optional(),
   aiTitle: z.string().optional(),
@@ -163,6 +165,29 @@ function readRecords(path: string) {
   return records;
 }
 
+export function claudeCodeSourceArtifactMetadata(text: string) {
+  const records = readRecordsFromText(text, true);
+  const sourceIdentity = records.find((record) => record.sessionId)?.sessionId;
+  if (sourceIdentity === undefined) return {};
+
+  // A fork preserves the original source session ID on its copied provider
+  // records, then resumes with its own ID. This is structural provenance, not
+  // a content-based similarity guess.
+  const recordOrigins = records.flatMap((record) =>
+    record.session_id === undefined ? [] : [record.session_id]
+  );
+  const firstOwnRecord = recordOrigins.indexOf(sourceIdentity);
+  const copiedOrigin = recordOrigins[0];
+  const parentSourceIdentity = copiedOrigin !== undefined &&
+      copiedOrigin !== sourceIdentity && firstOwnRecord > 0 &&
+      recordOrigins.slice(0, firstOwnRecord).every((origin) =>
+        origin === copiedOrigin
+      )
+    ? copiedOrigin
+    : undefined;
+  return { sourceIdentity, parentSourceIdentity };
+}
+
 function readRecordsFromText(text: string, strict = false) {
   const records: Record[] = [];
   for (const line of text.split("\n")) {
@@ -209,12 +234,29 @@ function userText(record: Record) {
   return content?.find((block) => block.type === "text")?.text;
 }
 
-function userInputs(record: Record): SessionContentImport[] {
+function userInputs(
+  record: Record,
+  sourceOrder: number,
+): SessionContentImport[] {
+  const source = record.uuid === undefined
+    ? {}
+    : { sourceID: `${record.uuid}:input:1` };
   const text = userText(record);
-  const inputs = text === undefined ? [] : [preview(text)];
-  for (const block of blocks(record)) {
+  const inputs = text === undefined ? [] : [{
+    ...preview(text),
+    ...source,
+    sourceOrder,
+  }];
+  for (const [index, block] of blocks(record).entries()) {
     if (block.type === "image") {
-      inputs.push({ kind: "image", mimeType: block.source?.media_type });
+      inputs.push({
+        kind: "image",
+        mimeType: block.source?.media_type,
+        ...(record.uuid === undefined
+          ? {}
+          : { sourceID: `${record.uuid}:input:${index + 1}` }),
+        sourceOrder,
+      });
     }
   }
   return inputs;
@@ -441,9 +483,14 @@ function decodeRecords(records: Record[]) {
     if (record.type === "user") {
       const content = record.message?.content;
       if (startsTurn(record, turns.length > 0)) {
-        const inputs = userInputs(record);
+        const inputs = userInputs(record, recordIndex + 1);
         turns.push({
           number: turns.length + 1,
+          ...(record.uuid === undefined ? {} : {
+            sourceID: record.uuid,
+            identityBasis: "stable-id" as const,
+          }),
+          sourceOrderStart: recordIndex + 1,
           startedAt: timestamp,
           calls: [],
           inputs,
@@ -472,6 +519,8 @@ function decodeRecords(records: Record[]) {
                 block.content ?? record.toolUseResult,
               );
               tool.outputPreview = tool.output?.preview;
+              tool.outputSourceEntryID = record.uuid;
+              tool.sourceOrderEnd = recordIndex + 1;
             }
           }
         }
@@ -509,6 +558,10 @@ function decodeRecords(records: Record[]) {
       const model = record.message.model ?? "unknown";
       const call: SessionCallImport = {
         id,
+        sourceID: id,
+        sourceOrderStart: recordIndex + 1,
+        sourceOrderEnd: recordIndex + 1,
+        identityBasis: "stable-id",
         callWithinTurn: turn.calls.length + 1,
         provider: "anthropic",
         model,
@@ -534,9 +587,10 @@ function decodeRecords(records: Record[]) {
     }
 
     decoded.call.completedAt = timestamp;
+    decoded.call.sourceOrderEnd = recordIndex + 1;
     decoded.call.activity.finishReason = record.message.stop_reason ??
       undefined;
-    for (const block of blocks(record)) {
+    for (const [blockIndex, block] of blocks(record).entries()) {
       const key = JSON.stringify(block);
       if (decoded.blocks.some((existing) => JSON.stringify(existing) === key)) {
         continue;
@@ -545,7 +599,13 @@ function decodeRecords(records: Record[]) {
       if (block.type === "text") {
         decoded.call.activity.hasText = true;
         if (block.text !== undefined) {
-          decoded.call.content?.push(preview(block.text));
+          decoded.call.content?.push({
+            ...preview(block.text),
+            ...(record.uuid === undefined
+              ? {}
+              : { sourceID: `${record.uuid}:content:${blockIndex + 1}` }),
+            sourceOrder: recordIndex + 1,
+          });
           decoded.call.preview ??= block.text;
         }
       }
@@ -558,6 +618,8 @@ function decodeRecords(records: Record[]) {
         decoded.call.activity.tools.push(
           {
             sourceID: block.id,
+            sourceEntryID: record.uuid,
+            sourceOrderStart: recordIndex + 1,
             name: block.name,
             status: "pending",
             startedAt: timestamp,
@@ -571,6 +633,10 @@ function decodeRecords(records: Record[]) {
         );
       }
     }
+  }
+  for (const [index, turn] of turns.entries()) {
+    turn.sourceOrderEnd =
+      (turns[index + 1]?.sourceOrderStart ?? records.length + 1) - 1;
   }
   const nonEmptyTurns = turns
     .filter((turn) => turn.calls.length > 0)

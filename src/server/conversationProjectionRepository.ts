@@ -59,6 +59,9 @@ export type SourceArtifactFamilyImport = {
   sourceID: number;
   externalID: string;
   artifacts: SourceArtifactFamilyMemberImport[];
+  // Child conversations retain their own linear projections. They are supplied
+  // here only to rebuild the merged root's inclusive rollup and summary.
+  subagents?: SourceSessionImport[];
 };
 
 type IdentityBasis = "stable-id" | "explicit-lineage" | "unresolved";
@@ -481,6 +484,10 @@ export class ConversationProjectionRepository {
       const canonicalTurnValues: SourceSessionImport["session"]["turns"] = [];
       const canonicalContexts = new Map<string, number>();
       const canonicalCallValues = new Map<number, (typeof allCalls)[number]>();
+      const launchTools = new Map<
+        string,
+        Array<{ modelCallID: number; toolEventID: number }>
+      >();
       const artifactTurnKeys = new Map<string, Set<string>>();
       const artifactCallKeys = new Map<string, Set<string>>();
       const artifactEntryKeys = new Map<string, Set<string>>();
@@ -811,6 +818,11 @@ export class ConversationProjectionRepository {
                       Number(tool.output?.truncated ?? false),
                     ) as { id: number }).id,
                 );
+                if (tool.childExternalID !== undefined) {
+                  const launches = launchTools.get(tool.childExternalID) ?? [];
+                  launches.push({ modelCallID: callID, toolEventID });
+                  launchTools.set(tool.childExternalID, launches);
+                }
                 if (
                   tool.output !== undefined || tool.outputPreview !== undefined
                 ) {
@@ -963,6 +975,32 @@ export class ConversationProjectionRepository {
         artifactPaths.set(artifact.externalID, pathEntryIDs);
       }
 
+      for (const [childExternalID, launches] of launchTools) {
+        const child = this.#prepare(`
+          SELECT id FROM conversations
+          WHERE source_id = ? AND external_id = ?
+        `).get(family.sourceID, childExternalID) as { id: number } | undefined;
+        if (child === undefined) continue;
+        for (const launch of launches) {
+          this.#prepare(`
+            UPDATE conversation_tool_events SET child_conversation_id = ?
+            WHERE id = ?
+          `).run(child.id, launch.toolEventID);
+        }
+        const launch = launches[0];
+        this.#prepare(`
+          INSERT OR IGNORE INTO conversation_subagent_launches (
+            parent_conversation_id, child_conversation_id, model_call_id,
+            tool_event_id, provenance
+          ) VALUES (?, ?, ?, ?, 'explicit-tool-link')
+        `).run(
+          conversationID,
+          child.id,
+          launch.modelCallID,
+          launch.toolEventID,
+        );
+      }
+
       const uniqueCalls = [...canonicalCallValues.values()];
       const totalTokens: TokenUsage = {
         uncachedInput: 0,
@@ -1017,7 +1055,18 @@ export class ConversationProjectionRepository {
           contextEvents: canonicalContextEvents,
         },
       };
-      const analyticsRollup = buildSessionRollup([canonicalSession]);
+      const familyRootExternalIDs = new Set(
+        family.artifacts.map((artifact) => artifact.externalID),
+      );
+      const familyTree = [
+        canonicalSession,
+        ...(family.subagents ?? []).map((subagent) =>
+          familyRootExternalIDs.has(subagent.parentExternalID ?? "")
+            ? { ...subagent, parentExternalID: canonicalSession.externalID }
+            : subagent
+        ),
+      ];
+      const analyticsRollup = buildSessionRollup(familyTree);
       this.#prepare(`
         INSERT INTO conversation_rollups (
           conversation_id, rollup_version, user_turns, model_calls,
@@ -1043,7 +1092,7 @@ export class ConversationProjectionRepository {
       this.#materializeSummary(
         conversationID,
         sessionDetailFromSourceImports(
-          [canonicalSession],
+          familyTree,
           canonicalSession.externalID,
           this.#sourceHarness(family.sourceID),
         ),

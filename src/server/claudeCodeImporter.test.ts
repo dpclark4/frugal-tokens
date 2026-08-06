@@ -173,6 +173,81 @@ Deno.test("imports a Claude Code root and namespaced child tree", async () => {
   }
 });
 
+Deno.test("projects Claude fork artifacts as one canonical conversation family", async () => {
+  const directory = Deno.makeTempDirSync();
+  const sessions = `${directory}/projects`;
+  const project = `${sessions}/project`;
+  const parent = "00000000-0000-4000-8000-000000000001";
+  const child = "00000000-0000-4000-8000-000000000002";
+  const sharedUser = `{"type":"user","uuid":"user-shared","sessionId":"${parent}","timestamp":"2026-08-01T10:00:00Z","promptSource":"typed","origin":{"kind":"human"},"message":{"content":"Shared"}}`;
+  const sharedAssistant = `{"type":"assistant","uuid":"assistant-shared","sessionId":"${parent}","session_id":"${parent}","timestamp":"2026-08-01T10:00:01Z","message":{"id":"call-shared","model":"claude-sonnet","content":[{"type":"text","text":"Shared answer"}],"usage":{"input_tokens":1,"cache_read_input_tokens":2,"cache_creation_input_tokens":3,"output_tokens":4}}}`;
+  write(
+    `${project}/${parent}.jsonl`,
+    `
+{"type":"ai-title","sessionId":"${parent}","aiTitle":"Fork family"}
+${sharedUser}
+${sharedAssistant}
+{"type":"user","uuid":"user-parent","sessionId":"${parent}","timestamp":"2026-08-01T10:00:02Z","promptSource":"typed","origin":{"kind":"human"},"message":{"content":"Parent"}}
+{"type":"assistant","uuid":"assistant-parent","sessionId":"${parent}","session_id":"${parent}","timestamp":"2026-08-01T10:00:03Z","message":{"id":"call-parent","model":"claude-sonnet","content":[{"type":"text","text":"Parent answer"}],"usage":{"input_tokens":1,"cache_read_input_tokens":2,"cache_creation_input_tokens":3,"output_tokens":4}}}
+    `,
+  );
+  write(
+    `${project}/${child}.jsonl`,
+    `
+{"type":"ai-title","sessionId":"${child}","aiTitle":"Fork family"}
+${sharedUser.replaceAll(`"${parent}"`, `"${child}"`).replace(`"session_id":"${child}"`, `"session_id":"${parent}"`)}
+${sharedAssistant.replaceAll(`"sessionId":"${parent}"`, `"sessionId":"${child}"`)}
+{"type":"user","uuid":"user-child","sessionId":"${child}","timestamp":"2026-08-01T10:00:04Z","promptSource":"typed","origin":{"kind":"human"},"message":{"content":"Child"}}
+{"type":"assistant","uuid":"assistant-child","sessionId":"${child}","session_id":"${child}","timestamp":"2026-08-01T10:00:05Z","message":{"id":"call-child","model":"claude-sonnet","content":[{"type":"text","text":"Child answer"}],"usage":{"input_tokens":1,"cache_read_input_tokens":2,"cache_creation_input_tokens":3,"output_tokens":4}}}
+    `,
+  );
+
+  const db = openArchiveDatabase(`${directory}/archive.sqlite`);
+  migrateTestDatabase(db);
+  const repository = new SessionRepository(db);
+  const conversations = new ConversationProjectionRepository(db);
+  try {
+    const result = await syncClaudeCodeSessions(sessions, repository, conversations);
+    strictEqual(result.projectionResults["conversation-v2"]!.imported, 2);
+    strictEqual(db.prepare("SELECT COUNT(*) AS count FROM conversations").get()!.count, 1);
+    strictEqual(db.prepare("SELECT COUNT(*) AS count FROM conversation_branches").get()!.count, 2);
+    strictEqual(db.prepare("SELECT COUNT(*) AS count FROM conversation_turns").get()!.count, 3);
+    strictEqual(db.prepare("SELECT COUNT(*) AS count FROM conversation_model_calls").get()!.count, 3);
+    strictEqual(db.prepare("SELECT COUNT(*) AS count FROM artifact_model_call_occurrences").get()!.count, 4);
+    deepStrictEqual(
+      db.prepare(`
+        SELECT occurrence_kind, COUNT(*) AS count
+        FROM artifact_model_call_occurrences
+        GROUP BY occurrence_kind ORDER BY occurrence_kind
+      `).all().map((row) => ({ ...row })),
+      [
+        { occurrence_kind: "copied", count: 1 },
+        { occurrence_kind: "executed", count: 3 },
+      ],
+    );
+    strictEqual(
+      db.prepare("SELECT model_calls FROM conversation_rollups").get()!.model_calls,
+      3,
+    );
+    strictEqual(
+      db.prepare(`
+        SELECT COUNT(*) AS count FROM conversation_branches
+        WHERE forked_from_branch_id IS NOT NULL
+          AND fork_point_provenance = 'inferred-confirmed'
+      `).get()!.count,
+      1,
+    );
+    strictEqual(
+      (await syncClaudeCodeSessions(sessions, repository, conversations))
+        .projectionResults["conversation-v2"]!.skipped,
+      2,
+    );
+  } finally {
+    db.close();
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
 Deno.test("skips unchanged Claude trees and reimports index and agent metadata changes", async () => {
   const directory = Deno.makeTempDirSync();
   const sessions = `${directory}/projects`;

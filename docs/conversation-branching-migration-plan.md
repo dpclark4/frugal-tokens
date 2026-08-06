@@ -908,7 +908,18 @@ Exit criteria:
 
 ### Milestone 8: Remaining harness topology and cleanup
 
-Status: not started.
+Status: in progress.
+
+Implementation record:
+
+- Claude Code root artifacts now retain their source session identity and detect
+  a fork only when a preserved foreign `session_id` forms a copied prefix before
+  the artifact resumes with its own identity.
+- Claude fork families use the existing generic family projection, so copied
+  turns and calls are canonicalized once while branches retain occurrences.
+- Linear Claude subagent conversations remain separate and their explicit tool
+  links are reattached to the merged root conversation; root inclusive rollups
+  and summaries continue to include them.
 
 Observed topology work before legacy cleanup:
 
