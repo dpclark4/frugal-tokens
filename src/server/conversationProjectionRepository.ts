@@ -231,7 +231,7 @@ export class ConversationProjectionRepository {
 
       const launchTools = new Map<
         string,
-        { modelCallID: number; toolEventID: number }
+        Array<{ modelCallID: number; toolEventID: number }>
       >();
       for (const value of values) {
         this.#insertLinearConversation(
@@ -244,9 +244,17 @@ export class ConversationProjectionRepository {
 
       for (const value of values) {
         if (value.parentExternalID === undefined) continue;
-        const launch = launchTools.get(
+        const launches = launchTools.get(
           `${value.parentExternalID}\0${value.externalID}`,
-        );
+        ) ?? [];
+        const childConversationID = conversationIDs.get(value.externalID)!;
+        for (const launch of launches) {
+          this.#prepare(`
+            UPDATE conversation_tool_events SET child_conversation_id = ?
+            WHERE id = ?
+          `).run(childConversationID, launch.toolEventID);
+        }
+        const launch = launches[0];
         this.#prepare(`
           INSERT INTO conversation_subagent_launches (
             parent_conversation_id, child_conversation_id, model_call_id,
@@ -1051,7 +1059,10 @@ export class ConversationProjectionRepository {
     value: SourceSessionImport,
     conversationID: number,
     sourceSessionID: number,
-    launchTools: Map<string, { modelCallID: number; toolEventID: number }>,
+    launchTools: Map<
+      string,
+      Array<{ modelCallID: number; toolEventID: number }>
+    >,
   ) {
     const analyticsRollup = buildSessionRollup([{
       ...value,
@@ -1291,10 +1302,10 @@ export class ConversationProjectionRepository {
             });
           }
           if (tool.childExternalID !== undefined) {
-            launchTools.set(
-              `${value.externalID}\0${tool.childExternalID}`,
-              { modelCallID: callID, toolEventID },
-            );
+            const key = `${value.externalID}\0${tool.childExternalID}`;
+            const launches = launchTools.get(key) ?? [];
+            launches.push({ modelCallID: callID, toolEventID });
+            launchTools.set(key, launches);
           }
         });
       }

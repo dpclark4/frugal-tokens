@@ -256,6 +256,10 @@ Deno.test("conversation compatibility repository keeps subagent launches separat
     root.session.title = "Root";
     root.session.turns[0].calls[0].activity.tools[0].childExternalID =
       "root::agent-child";
+    root.session.turns[1].calls[0].activity.tools = [{
+      ...root.session.turns[0].calls[0].activity.tools[0],
+      sourceID: "tool-resume",
+    }];
     const child = linearSession(sourceID);
     child.externalID = "root::agent-child";
     child.publicID = "child";
@@ -275,6 +279,15 @@ Deno.test("conversation compatibility repository keeps subagent launches separat
     strictEqual(
       detail.turns[0].calls[0].activity.tools[0].childSessionID,
       "child",
+    );
+    strictEqual(
+      detail.turns[1].calls[0].activity.tools[0].childSessionID,
+      "child",
+    );
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM conversation_subagent_launches")
+        .get()!.count,
+      1,
     );
     strictEqual(
       compatibility.listUsageCalls(undefined, "claude-code").length,

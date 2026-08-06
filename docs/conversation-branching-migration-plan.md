@@ -747,10 +747,12 @@ Implementation record:
 - Global delegation tests verify that mixed providers contribute each harness
   once and that global usage, overview, and cost totals equal the selected
   harness-level inputs.
-- The conversation cost shim retains reported per-call costs when a model has no
-  rate card. Codex intentionally no longer marks a session unpriced solely
-  because the legacy projection stored a synthetic context-operation record;
-  those records are compaction metadata, not model executions.
+- Canonical V2 calls materialize computed cost during import. Cost summaries and
+  subagent usage aggregate `computed cost -> reported cost` fallback in SQL
+  instead of repricing and reducing calls in JavaScript. Codex intentionally no
+  longer marks a session unpriced solely because the legacy projection stored a
+  synthetic context-operation record; those records are compaction metadata, not
+  model executions.
 - Unresolved occurrence identity remains explicit in the generic occurrence
   tables. It never deduplicates calls by content, and branch-local predecessor
   attribution uses confirmed executed occurrences; linear projections retain
@@ -759,12 +761,12 @@ Implementation record:
 Current checkpoint and measured performance:
 
 - On the development archive after materialization, observed API timings were
-  approximately 6-12 ms for overview, 63-123 ms for 30-day usage, 61-118 ms
-  for 30-day cache misses, and 27-45 ms for the first 25 sessions.
+  approximately 6-12 ms for overview, 63-123 ms for 30-day usage, 61-118 ms for
+  30-day cache misses, and 27-45 ms for the first 25 sessions.
 - The all-V2 facade now delegates global reads directly to one set-based
   conversation query instead of issuing one conversation query per harness.
-- Missing foreign-key replacement indexes reduced a live changed Codex
-  artifact synchronization from approximately 5.4 seconds to 0.6 seconds.
+- Missing foreign-key replacement indexes reduced a live changed Codex artifact
+  synchronization from approximately 5.4 seconds to 0.6 seconds.
   Prepared-statement reuse in both projection repositories removed repeated SQL
   compilation from clean imports.
 - An isolated clean rebuild of both legacy and conversation projections for the
@@ -783,11 +785,18 @@ Current checkpoint and measured performance:
   of parsing changed Pi and Codex artifacts twice. Conversation and legacy
   writers cache prepared statements for the repository lifetime.
 - A live compatibility audit passes the existing list, detail, usage, tool,
-  cache, rollup, subagent, initial-input, and cost contracts for Pi and Claude
-  Code after excluding internal row IDs and treating cost differences below
-  `1e-12` as floating-point accumulation noise. The audit found and corrected
-  working-directory compaction, call-preview formatting, and deterministic
-  cost-summary ordering differences.
+  cache, rollup, subagent, initial-input, and cost contracts for Pi, Claude
+  Code, and OpenCode after excluding internal row IDs and treating relative cost
+  differences below `1e-12` as floating-point accumulation noise. The OpenCode
+  audit is retained as named, independently runnable endpoint comparisons; its
+  576-session detail comparison completed in approximately 3.2 seconds. The
+  audits found and corrected working-directory compaction, call-preview
+  formatting, deterministic cost-summary ordering, and repeated child-session
+  tool-link differences.
+- OpenCode can reference one child session from both its initial task tool and
+  later resume tools. V2 now stores child-conversation navigation on every such
+  tool while retaining one canonical subagent-launch row, preventing resumed
+  links from either replacing the launch link or inflating subagent analytics.
 - The three observed Codex sibling artifacts are three independent legacy
   sessions with 4, 4, and 5 calls, while V2 stores conversation `1151` with
   three branches, seven canonical turns/calls, thirteen call occurrences, and
@@ -796,16 +805,6 @@ Current checkpoint and measured performance:
 
 Remaining work and foreseen risks:
 
-- Complete the live OpenCode compatibility audit. Its full-corpus comparison is
-  substantially larger than Pi and Claude Code and did not finish within the
-  initial 30-second diagnostic window; split the audit into named endpoint
-  comparisons so failures remain bounded and actionable.
-- Materialize effective per-call conversation cost during import and aggregate
-  it in SQL. V1 stores per-call cost and uses SQLite `SUM`, while the current V2
-  cost shim recomputes calls during reads and reduces them in JavaScript. The
-  values agree within floating-point noise, but this adds reader work and is not
-  the desired final rollup design. The attempted column migration was removed
-  from this stopping point rather than committing an incomplete cutover.
 - Reassess clean-import performance only against measured phases. OpenCode is
   now dominated by approximately 8.1 seconds of source extraction and 5.9
   seconds of dual archive writes; transaction batching and bulk snapshot reads

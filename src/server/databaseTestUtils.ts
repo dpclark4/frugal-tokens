@@ -20,6 +20,7 @@ const migrations = [
   "../../db/migrations/20260809140000_materialize_conversation_session_reads.sql",
   "../../db/migrations/20260809150000_add_conversation_replacement_indexes.sql",
   "../../db/migrations/20260809160000_materialize_conversation_call_cost.sql",
+  "../../db/migrations/20260809170000_link_conversation_tools_to_children.sql",
 ].map((path) => new URL(path, import.meta.url));
 
 export function migrateTestDatabase(db: DatabaseSync) {

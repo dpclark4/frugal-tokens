@@ -32,6 +32,7 @@
   "tasks": {
     "check": "deno check src/server/main.ts src/client/main.tsx vite.config.ts",
     "test": "deno test --allow-env --allow-read --allow-write",
+    "audit:conversation-parity": "deno run --env-file=.env --allow-env=FRUGAL_TOKENS_DATABASE_URL,HOME,USERPROFILE --allow-read --allow-write scripts/auditConversationParity.ts",
 
     "db:new": "deno run -A scripts/runDbmate.ts new",
     "db:migrate": "deno run --allow-env=FRUGAL_TOKENS_DATABASE_URL,HOME,USERPROFILE --allow-read --allow-write scripts/prepareDatabase.ts && deno run -A scripts/runDbmate.ts --no-dump-schema up",

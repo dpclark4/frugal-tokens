@@ -982,9 +982,13 @@ export class ConversationCompatibilityRepository {
     const tools = callIDs.length === 0 ? [] : this.db.prepare(`
       SELECT tool.id, tool.model_call_id, tool.name, tool.status,
         tool.started_at, tool.completed_at, tool.input_preview,
-        tool.output_preview, child.public_id AS child_public_id,
-        child.external_id AS child_external_id
+        tool.output_preview,
+        COALESCE(direct_child.public_id, child.public_id) AS child_public_id,
+        COALESCE(direct_child.external_id, child.external_id)
+          AS child_external_id
       FROM conversation_tool_events tool
+      LEFT JOIN conversations direct_child
+        ON direct_child.id = tool.child_conversation_id
       LEFT JOIN conversation_subagent_launches launch
         ON launch.tool_event_id = tool.id
       LEFT JOIN conversations child ON child.id = launch.child_conversation_id
