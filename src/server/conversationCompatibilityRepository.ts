@@ -8,21 +8,15 @@ import {
   sessionListResponseSchema,
   type SessionMissFilter,
   type SessionSummary,
+  sessionSummarySchema,
   type TokenUsage,
 } from "../shared/sessionSchemas.ts";
-import {
-  analyzeCacheMisses,
-  analyzeSessionCache,
-  sessionCacheIssues,
-} from "./cacheAnalysis.ts";
 import { computeModelCallCost } from "./pricing.ts";
-import { buildSessionRollup, type SessionRollup } from "./sessionRollups.ts";
 import type {
   InitialInputDistribution,
   InitialInputSample,
   ModelCallCostSummary,
   ReasoningSettingImport,
-  SourceSessionImport,
   StoredCacheMiss,
   StoredSessionShapeRollup,
 } from "./sessionRepository.ts";
@@ -207,22 +201,24 @@ export class ConversationCompatibilityRepository {
       (row.cache_write_tokens ?? 0) > 0
     );
     if (missFilters !== undefined) {
-      rows = missFilters.length === 0 ? [] : rows.filter((row) => {
-        const detail = this.#detail(row, new Set());
-        const issues = sessionCacheIssues(analyzeSessionCache(detail));
-        return issues.some((issue) =>
-          (missFilters.includes("ttl") && issue.cause === "ttl") ||
+      const matchingRoots = new Set(
+        this.listCacheMisses(undefined, harness).filter((miss) =>
+          (missFilters.includes("compaction") &&
+            miss.cause === "compaction") ||
+          (missFilters.includes("ttl") && miss.cause === "ttl") ||
           (missFilters.includes("thinking-change") &&
-            issue.cause === "thinking-change") ||
-          (missFilters.includes("full-miss") && issue.cause === undefined &&
-            issue.status === "full-miss") ||
+            miss.cause === "thinking-change") ||
+          (missFilters.includes("full-miss") && miss.cause === undefined &&
+            miss.status === "full-miss") ||
           (missFilters.includes("partial-miss") &&
-            issue.cause === undefined && issue.status === "partial-hit")
-        ) || (missFilters.includes("compaction") &&
-          this.#conversationMisses(row, row).some((miss) =>
-            miss.cause === "compaction"
-          ));
-      });
+            miss.cause === undefined && miss.status === "partial-hit")
+        ).map((miss) => `${miss.harness}:${miss.rootID}`),
+      );
+      rows = rows.filter((row) =>
+        matchingRoots.has(
+          `${row.harness}:${row.public_id ?? row.external_id}`,
+        )
+      );
     }
     const totalItems = rows.length;
     const items = rows.slice((page - 1) * pageSize, page * pageSize).map((
@@ -236,6 +232,36 @@ export class ConversationCompatibilityRepository {
         totalItems,
         totalPages: Math.ceil(totalItems / pageSize),
       },
+    });
+  }
+
+  enrichSessionSummaries(items: SessionSummary[]): SessionSummary[] {
+    if (items.length === 0) return [];
+    const predicates = items.map(() =>
+      "(so.harness = ? AND COALESCE(c.public_id, c.external_id) = ?)"
+    ).join(" OR ");
+    const rows = this.db.prepare(`
+      SELECT so.harness,
+        COALESCE(c.public_id, c.external_id) AS public_id,
+        cr.summary_json
+      FROM conversations c
+      JOIN sources so ON so.id = c.source_id
+      JOIN conversation_rollups cr ON cr.conversation_id = c.id
+      WHERE cr.summary_json IS NOT NULL AND (${predicates})
+    `).all(...items.flatMap((item) => [item.harness, item.id])) as Array<{
+      harness: Harness;
+      public_id: string;
+      summary_json: string;
+    }>;
+    const stored = new Map(rows.map((row) => [
+      `${row.harness}:${row.public_id}`,
+      sessionSummarySchema.parse(JSON.parse(row.summary_json)),
+    ]));
+    return items.map((item) => {
+      const enrichment = stored.get(`${item.harness}:${item.id}`);
+      return enrichment === undefined
+        ? item
+        : sessionSummarySchema.parse({ ...enrichment, ...item });
     });
   }
 
@@ -258,12 +284,167 @@ export class ConversationCompatibilityRepository {
   }
 
   listUsageCalls(startedAt?: number, harness?: Harness): UsageCall[] {
-    const rows = this.#rootRows(harness);
-    return rows.flatMap((row) => this.#canonicalUsageCalls(row)).filter((
-      call,
-    ) => startedAt === undefined || call.startedAt >= startedAt).sort((a, b) =>
-      a.startedAt - b.startedAt || a.turnID.localeCompare(b.turnID)
-    );
+    const rows = this.db.prepare(`
+      WITH RECURSIVE tree(conversation_id, root_id, parent_id) AS (
+        SELECT c.id, c.id, NULL
+        FROM conversations c
+        WHERE NOT EXISTS (
+          SELECT 1 FROM conversation_subagent_launches launch
+          WHERE launch.child_conversation_id = c.id
+        )
+        UNION ALL
+        SELECT launch.child_conversation_id, tree.root_id,
+          launch.parent_conversation_id
+        FROM conversation_subagent_launches launch
+        JOIN tree ON tree.conversation_id = launch.parent_conversation_id
+      ), path_calls AS (
+        SELECT occurrence.model_call_id, occurrence.branch_id,
+          occurrence.occurrence_kind, occurrence.source_order_start,
+          LAG(occurrence.model_call_id) OVER (
+            PARTITION BY occurrence.branch_id
+            ORDER BY occurrence.source_order_start, call.ordinal
+          ) AS previous_model_call_id,
+          LAG(occurrence.source_order_end) OVER (
+            PARTITION BY occurrence.branch_id
+            ORDER BY occurrence.source_order_start, call.ordinal
+          ) AS previous_source_order_end
+        FROM artifact_model_call_occurrences occurrence
+        JOIN conversation_model_calls call
+          ON call.id = occurrence.model_call_id
+        JOIN conversations occurrence_conversation
+          ON occurrence_conversation.id = call.conversation_id
+        JOIN sources occurrence_source
+          ON occurrence_source.id = occurrence_conversation.source_id
+        WHERE COALESCE(call.source_call_id, '')
+          NOT LIKE 'context-operation:%'
+          AND (? IS NULL OR occurrence_source.harness = ?)
+      ), origins AS (
+        SELECT *, ROW_NUMBER() OVER (
+          PARTITION BY model_call_id
+          ORDER BY source_order_start, branch_id
+        ) AS origin_rank
+        FROM path_calls
+        WHERE occurrence_kind = 'executed'
+      ), compactions AS MATERIALIZED (
+        SELECT entry.conversation_id, occurrence.branch_id,
+          occurrence.source_order_start,
+          json_extract(
+            entry.native_metadata_json,
+            '$.affectedCall.turn'
+          ) AS affected_turn,
+          json_extract(
+            entry.native_metadata_json,
+            '$.affectedCall.call'
+          ) AS affected_call
+        FROM conversation_entries entry
+        LEFT JOIN artifact_entry_occurrences occurrence
+          ON occurrence.entry_id = entry.id
+        WHERE entry.kind = 'context-event'
+          AND json_extract(entry.native_metadata_json, '$.type') = 'compaction'
+      )
+      SELECT call.*, turn.source_turn_id,
+        turn.ordinal AS turn_ordinal,
+        turn.reasoning_setting_name AS turn_reasoning_setting_name,
+        turn.reasoning_setting_value AS turn_reasoning_setting_value,
+        turn.reasoning_source_field_path AS turn_reasoning_source_field_path,
+        turn.reasoning_source_order AS turn_reasoning_source_order,
+        turn.reasoning_observed_at AS turn_reasoning_observed_at,
+        turn.reasoning_provenance AS turn_reasoning_provenance,
+        turn.started_at AS turn_started_at,
+        origin.source_order_start, origin.previous_model_call_id,
+        so.harness, c.external_id,
+        COALESCE(c.public_id, c.external_id) AS public_id,
+        COALESCE(root.public_id, root.external_id) AS root_public_id,
+        COALESCE(parent.public_id, parent.external_id) AS parent_public_id,
+        root.started_at AS root_started_at,
+        root.updated_at AS root_updated_at,
+        (
+          EXISTS (
+            SELECT 1 FROM compactions compaction
+            WHERE compaction.conversation_id = call.conversation_id
+              AND compaction.affected_turn = turn.ordinal
+              AND compaction.affected_call = call.call_within_turn
+          ) OR EXISTS (
+            SELECT 1 FROM compactions compaction
+            WHERE compaction.branch_id = origin.branch_id
+              AND compaction.source_order_start >
+                COALESCE(origin.previous_source_order_end, 0)
+              AND compaction.source_order_start <= origin.source_order_start
+          )
+        ) AS follows_compaction
+      FROM conversation_model_calls call
+      JOIN conversation_turns turn ON turn.id = call.turn_id
+      JOIN tree ON tree.conversation_id = call.conversation_id
+      JOIN conversations c ON c.id = call.conversation_id
+      JOIN conversations root ON root.id = tree.root_id
+      LEFT JOIN conversations parent ON parent.id = tree.parent_id
+      JOIN sources so ON so.id = c.source_id
+      LEFT JOIN origins origin
+        ON origin.model_call_id = call.id AND origin.origin_rank = 1
+      WHERE COALESCE(call.source_call_id, '') NOT LIKE 'context-operation:%'
+        AND (? IS NULL OR call.started_at >= ?)
+        AND (? IS NULL OR so.harness = ?)
+      ORDER BY call.started_at, call.id
+    `).all(
+      harness ?? null,
+      harness ?? null,
+      startedAt ?? null,
+      startedAt ?? null,
+      harness ?? null,
+      harness ?? null,
+    ) as Array<
+      CallRow & {
+        harness: Harness;
+        external_id: string;
+        public_id: string;
+        root_public_id: string;
+        parent_public_id: string | null;
+        root_started_at: number | null;
+        root_updated_at: number;
+        previous_model_call_id: number | null;
+        follows_compaction: number;
+      }
+    >;
+    return rows.map((row) => {
+      const effectiveReasoning = reasoningSetting(row) ?? reasoningSetting({
+        reasoning_setting_name: row.turn_reasoning_setting_name,
+        reasoning_setting_value: row.turn_reasoning_setting_value,
+        reasoning_source_field_path: row.turn_reasoning_source_field_path,
+        reasoning_source_order: row.turn_reasoning_source_order,
+        reasoning_observed_at: row.turn_reasoning_observed_at,
+        reasoning_provenance: row.turn_reasoning_provenance,
+      });
+      return {
+        modelCallID: row.id,
+        previousModelCallID: optional(row.previous_model_call_id),
+        turnRowID: row.turn_id,
+        harness: row.harness,
+        session: {
+          id: row.public_id,
+          rootID: row.root_public_id,
+          parentID: optional(row.parent_public_id),
+        },
+        cacheChainID: row.external_id,
+        turnID: `${row.public_id}:${row.turn_ordinal}`,
+        turnOrdinal: row.turn_ordinal,
+        images: optional(row.images),
+        sessionStartedAt: row.root_started_at ?? row.root_updated_at,
+        provider: row.provider,
+        model: row.model,
+        startedAt: row.started_at,
+        ...(effectiveReasoning === undefined
+          ? {}
+          : { reasoningSetting: effectiveReasoning }),
+        tokens: tokens(row),
+        reportedCost: optional(row.reported_cost),
+        computedCost: computeModelCallCost(
+          tokens(row),
+          row.model,
+          row.started_at,
+        ),
+        followsCompaction: row.follows_compaction === 1,
+      };
+    });
   }
 
   listToolCalls(
@@ -313,42 +494,83 @@ export class ConversationCompatibilityRepository {
     startedAt: number,
     harness?: Harness,
   ): ModelCallCostSummary {
-    const roots = this.#rootRows(harness);
-    const allCalls = roots.flatMap((root) => this.#canonicalUsageCalls(root));
-    const scoped = allCalls.filter((call) => call.startedAt >= startedAt);
-    const byRoot = Map.groupBy(
-      scoped,
-      (call) => `${call.harness}:${call.session.rootID}`,
-    );
-    const sessions = roots.filter((root) =>
-      (root.started_at ?? root.updated_at) >= startedAt
-    ).map((root) => {
-      const calls =
-        byRoot.get(`${root.harness}:${root.public_id ?? root.external_id}`) ??
-          [];
-      const rootID = root.public_id ?? root.external_id;
-      const rootCalls = calls.filter((call) => call.session.id === rootID);
-      return {
-        harness: root.harness,
-        rootID,
-        sessionStartedAt: root.started_at ?? root.updated_at,
-        rootCost: rootCalls.reduce(
-          (sum, call) => sum + (modelCallCost(call) ?? 0),
-          0,
+    type Row = {
+      conversation_id: number;
+      root_id: number;
+      harness: Harness;
+      root_public_id: string;
+      root_started_at: number | null;
+      root_updated_at: number;
+      model: string;
+      started_at: number;
+      reported_cost: number | null;
+      uncached_input_tokens: number;
+      cache_read_tokens: number;
+      cache_write_tokens: number | null;
+      cache_write_5m_tokens: number | null;
+      cache_write_1h_tokens: number | null;
+      fresh_prompt_tokens: number;
+      output_tokens: number;
+      reasoning_tokens: number;
+      processed_tokens: number;
+    };
+    const rows = this.db.prepare(`
+      WITH RECURSIVE tree(conversation_id, root_id) AS (
+        SELECT c.id, c.id FROM conversations c
+        WHERE NOT EXISTS (
+          SELECT 1 FROM conversation_subagent_launches launch
+          WHERE launch.child_conversation_id = c.id
+        )
+        UNION ALL
+        SELECT launch.child_conversation_id, tree.root_id
+        FROM conversation_subagent_launches launch
+        JOIN tree ON tree.conversation_id = launch.parent_conversation_id
+      )
+      SELECT call.conversation_id, tree.root_id, so.harness,
+        COALESCE(root.public_id, root.external_id) AS root_public_id,
+        root.started_at AS root_started_at, root.updated_at AS root_updated_at,
+        call.model, call.started_at, call.reported_cost,
+        call.uncached_input_tokens, call.cache_read_tokens,
+        call.cache_write_tokens, call.cache_write_5m_tokens,
+        call.cache_write_1h_tokens, call.fresh_prompt_tokens,
+        call.output_tokens, call.reasoning_tokens, call.processed_tokens
+      FROM conversation_model_calls call
+      JOIN tree ON tree.conversation_id = call.conversation_id
+      JOIN conversations c ON c.id = call.conversation_id
+      JOIN sources so ON so.id = c.source_id
+      JOIN conversations root ON root.id = tree.root_id
+      WHERE call.started_at >= ?
+        AND COALESCE(call.source_call_id, '') NOT LIKE 'context-operation:%'
+        AND (? IS NULL OR so.harness = ?)
+      ORDER BY call.started_at, call.id
+    `).all(startedAt, harness ?? null, harness ?? null) as Row[];
+    const costs = rows.map((row) => ({
+      row,
+      cost: computeModelCallCost(tokens(row), row.model, row.started_at) ??
+        optional(row.reported_cost),
+    }));
+    const sessions = [
+      ...Map.groupBy(
+        costs.filter(({ row }) =>
+          (row.root_started_at ?? row.root_updated_at) >= startedAt &&
+          row.conversation_id === row.root_id
         ),
-        hasUnpricedRootCost: rootCalls.some((call) =>
-          modelCallCost(call) === undefined
-        ),
-      };
-    });
+        ({ row }) => `${row.harness}:${row.root_id}`,
+      ).values(),
+    ].map((values) => ({
+      harness: values[0].row.harness,
+      rootID: values[0].row.root_public_id,
+      sessionStartedAt: values[0].row.root_started_at ??
+        values[0].row.root_updated_at,
+      rootCost: values.reduce((sum, value) => sum + (value.cost ?? 0), 0),
+      hasUnpricedRootCost: values.some((value) => value.cost === undefined),
+    }));
     return {
-      totalCost: scoped.reduce(
-        (sum, call) => sum + (modelCallCost(call) ?? 0),
+      totalCost: costs.reduce(
+        (sum, value) => sum + (value.cost ?? 0),
         0,
       ),
-      hasUnpricedTotalCost: scoped.some((call) =>
-        modelCallCost(call) === undefined
-      ),
+      hasUnpricedTotalCost: costs.some((value) => value.cost === undefined),
       totalSessionCost: sessions.reduce(
         (sum, session) => sum + session.rootCost,
         0,
@@ -361,30 +583,128 @@ export class ConversationCompatibilityRepository {
   }
 
   listCacheMisses(startedAt?: number, harness?: Harness): StoredCacheMiss[] {
-    return this.#rootRows(harness).flatMap((row) =>
-      this.#conversationMisses(row, row)
-    ).filter((miss) =>
-      startedAt === undefined ||
-      this.#callStartedAt(miss.modelCallID) >= startedAt
-    )
-      .sort((a, b) =>
-        this.#callStartedAt(a.modelCallID) -
-          this.#callStartedAt(b.modelCallID) ||
-        a.modelCallID - b.modelCallID
-      );
+    type Row = {
+      model_call_id: number;
+      previous_model_call_id: number | null;
+      conversation_id: number;
+      turn_id: number;
+      started_at: number;
+      gap_ms: number;
+      status: StoredCacheMiss["status"];
+      reason: StoredCacheMiss["reason"] | null;
+      cause: StoredCacheMiss["cause"] | null;
+      retained_ratio: number | null;
+      previous_reusable_tokens: number | null;
+      previous_context_tokens: number;
+      current_context_tokens: number;
+      actual_cache_read_tokens: number;
+      missed_tokens: number;
+      model_call_cost: number | null;
+      actual_missed_cost: number | null;
+      expected_read_cost: number | null;
+      estimated_extra_cost: number | null;
+      harness: Harness;
+      session_public_id: string;
+      root_public_id: string;
+      root_started_at: number | null;
+      root_updated_at: number;
+    };
+    const rows = this.db.prepare(`
+      WITH RECURSIVE tree(conversation_id, root_id) AS (
+        SELECT c.id, c.id FROM conversations c
+        WHERE NOT EXISTS (
+          SELECT 1 FROM conversation_subagent_launches launch
+          WHERE launch.child_conversation_id = c.id
+        )
+        UNION ALL
+        SELECT launch.child_conversation_id, tree.root_id
+        FROM conversation_subagent_launches launch
+        JOIN tree ON tree.conversation_id = launch.parent_conversation_id
+      )
+      SELECT miss.*, so.harness,
+        COALESCE(c.public_id, c.external_id) AS session_public_id,
+        COALESCE(root.public_id, root.external_id) AS root_public_id,
+        root.started_at AS root_started_at, root.updated_at AS root_updated_at
+      FROM conversation_cache_misses miss
+      JOIN conversations c ON c.id = miss.conversation_id
+      JOIN sources so ON so.id = c.source_id
+      JOIN tree ON tree.conversation_id = c.id
+      JOIN conversations root ON root.id = tree.root_id
+      WHERE (? IS NULL OR miss.started_at >= ?)
+        AND (? IS NULL OR so.harness = ?)
+      ORDER BY miss.started_at, miss.model_call_id
+    `).all(
+      startedAt ?? null,
+      startedAt ?? null,
+      harness ?? null,
+      harness ?? null,
+    ) as Row[];
+    return rows.map((row) => ({
+      harness: row.harness,
+      sessionID: row.session_public_id,
+      rootID: row.root_public_id,
+      sessionStartedAt: row.root_started_at ?? row.root_updated_at,
+      modelCallID: row.model_call_id,
+      ...(row.previous_model_call_id === null ? {} : {
+        previousModelCallID: row.previous_model_call_id,
+      }),
+      turnID: row.turn_id,
+      gap: row.gap_ms,
+      status: row.status,
+      ...(row.reason === null ? {} : { reason: row.reason }),
+      ...(row.cause === null ? {} : { cause: row.cause }),
+      ...(row.retained_ratio === null ? {} : {
+        retainedRatio: row.retained_ratio,
+      }),
+      ...(row.previous_reusable_tokens === null ? {} : {
+        previousReusableTokens: row.previous_reusable_tokens,
+      }),
+      previousContextTokens: row.previous_context_tokens,
+      currentContextTokens: row.current_context_tokens,
+      actualCacheReadTokens: row.actual_cache_read_tokens,
+      missedTokens: row.missed_tokens,
+      ...(row.model_call_cost === null ? {} : {
+        modelCallCost: row.model_call_cost,
+      }),
+      ...(row.actual_missed_cost === null ? {} : {
+        actualMissedCost: row.actual_missed_cost,
+      }),
+      ...(row.expected_read_cost === null ? {} : {
+        expectedReadCost: row.expected_read_cost,
+      }),
+      ...(row.estimated_extra_cost === null ? {} : {
+        estimatedExtraCost: row.estimated_extra_cost,
+      }),
+    }));
   }
 
   listOverviewRollups(
     startedAt: number,
     harness?: Harness,
   ): StoredOverviewRollup[] {
-    return this.#rollups(harness).filter(({ rollup }) =>
-      (rollup.lastActivityAt ?? 0) >= startedAt
-    ).map(({ row, rollup }) => ({
+    const rows = this.db.prepare(`
+      SELECT c.id, c.title, so.harness, cr.overview_json
+      FROM conversation_rollups cr
+      JOIN conversations c ON c.id = cr.conversation_id
+      JOIN sources so ON so.id = c.source_id
+      WHERE cr.last_activity_at >= ? AND cr.overview_json IS NOT NULL
+        AND (? IS NULL OR so.harness = ?)
+        AND NOT EXISTS (
+          SELECT 1 FROM conversation_subagent_launches launch
+          WHERE launch.child_conversation_id = c.id
+        )
+      ORDER BY c.id
+    `).all(startedAt, harness ?? null, harness ?? null) as Array<{
+      id: number;
+      title: string;
+      harness: Harness;
+      overview_json: string;
+    }>;
+    return rows.map((row) => ({
       rootSessionID: row.id,
       title: row.title,
       harness: row.harness,
-      overview: rollup.overview,
+      overview: JSON.parse(row.overview_json),
     }));
   }
 
@@ -392,16 +712,42 @@ export class ConversationCompatibilityRepository {
     startedAt: number,
     harness?: Harness,
   ): StoredSessionShapeRollup[] {
-    return this.#rollups(harness).filter(({ rollup }) =>
-      (rollup.lastActivityAt ?? 0) >= startedAt
-    ).map(({ row, rollup, root }) => ({
+    const rows = this.db.prepare(`
+      SELECT c.id, c.title, so.harness, cr.overview_json,
+        (
+          SELECT first_call.uncached_input_tokens +
+            first_call.cache_read_tokens +
+            COALESCE(first_call.cache_write_tokens, 0)
+          FROM conversation_model_calls first_call
+          WHERE first_call.conversation_id = c.id
+            AND COALESCE(first_call.source_call_id, '')
+              NOT LIKE 'context-operation:%'
+          ORDER BY first_call.ordinal
+          LIMIT 1
+        ) AS initial_input
+      FROM conversation_rollups cr
+      JOIN conversations c ON c.id = cr.conversation_id
+      JOIN sources so ON so.id = c.source_id
+      WHERE cr.last_activity_at >= ? AND cr.overview_json IS NOT NULL
+        AND (? IS NULL OR so.harness = ?)
+        AND NOT EXISTS (
+          SELECT 1 FROM conversation_subagent_launches launch
+          WHERE launch.child_conversation_id = c.id
+        )
+      ORDER BY c.id
+    `).all(startedAt, harness ?? null, harness ?? null) as Array<{
+      id: number;
+      title: string;
+      harness: Harness;
+      overview_json: string;
+      initial_input: number | null;
+    }>;
+    return rows.map((row) => ({
       rootSessionID: row.id,
       title: row.title,
       harness: row.harness,
-      overview: rollup.overview,
-      initialInput: root.session.turns[0]?.calls[0] === undefined
-        ? undefined
-        : this.#input(root.session.turns[0].calls[0].tokens),
+      overview: JSON.parse(row.overview_json),
+      initialInput: optional(row.initial_input),
     }));
   }
 
@@ -409,15 +755,44 @@ export class ConversationCompatibilityRepository {
     startedAt?: number,
     harness?: Harness,
   ): StoredUsageRollup[] {
-    return this.#rollups(harness).filter(({ rollup }) =>
-      startedAt === undefined || (rollup.lastActivityAt ?? 0) >= startedAt
-    ).map(({ row, rollup, root }) => ({
+    const rows = this.db.prepare(`
+      SELECT c.id, COALESCE(c.started_at, c.updated_at) AS session_started_at,
+        cr.uncached_input_tokens + cr.cache_read_tokens +
+          COALESCE(cr.cache_write_tokens, 0) AS direct_input,
+        cr.subagent_uncached_input_tokens + cr.subagent_cache_read_tokens +
+          COALESCE(cr.subagent_cache_write_tokens, 0) AS subagent_input,
+        cr.subagent_model_calls, cr.overview_json
+      FROM conversation_rollups cr
+      JOIN conversations c ON c.id = cr.conversation_id
+      JOIN sources so ON so.id = c.source_id
+      WHERE (? IS NULL OR cr.last_activity_at >= ?)
+        AND cr.overview_json IS NOT NULL
+        AND (? IS NULL OR so.harness = ?)
+        AND NOT EXISTS (
+          SELECT 1 FROM conversation_subagent_launches launch
+          WHERE launch.child_conversation_id = c.id
+        )
+      ORDER BY c.id
+    `).all(
+      startedAt ?? null,
+      startedAt ?? null,
+      harness ?? null,
+      harness ?? null,
+    ) as Array<{
+      id: number;
+      session_started_at: number;
+      direct_input: number;
+      subagent_input: number;
+      subagent_model_calls: number;
+      overview_json: string;
+    }>;
+    return rows.map((row) => ({
       rootSessionID: row.id,
-      sessionStartedAt: row.started_at ?? row.updated_at,
-      directInput: this.#input(root.session.tokens),
-      subagentInput: this.#input(rollup.subagentTokens),
-      subagentModelCalls: rollup.subagentModelCalls,
-      overview: rollup.overview,
+      sessionStartedAt: row.session_started_at,
+      directInput: row.direct_input,
+      subagentInput: row.subagent_input,
+      subagentModelCalls: row.subagent_model_calls,
+      overview: JSON.parse(row.overview_json),
     }));
   }
 
@@ -425,38 +800,82 @@ export class ConversationCompatibilityRepository {
     startedAt?: number,
     harness?: Harness,
   ): StoredSubagentUsage[] {
-    const result: StoredSubagentUsage[] = [];
-    for (const { row, tree } of this.#rollups(harness)) {
-      for (const subagent of tree.slice(1)) {
-        const calls = subagent.session.turns.flatMap((turn) => turn.calls)
-          .filter((call) =>
-            startedAt === undefined || call.startedAt >= startedAt
-          );
-        for (
-          const [date, dayCalls] of Map.groupBy(
-            calls,
-            (call) => this.#date(call.startedAt),
-          )
-        ) {
-          const costs = dayCalls.map(modelCallCost);
-          result.push({
-            rootSessionID: row.id,
-            subagentSessionID: Number(subagent.externalID.split(":").at(-1)) ||
-              this.#conversationID(row.source_id, subagent.externalID),
-            date,
-            input: dayCalls.reduce(
-              (sum, call) => sum + this.#input(call.tokens),
-              0,
-            ),
-            cost: costs.reduce<number>(
-              (sum, cost) => sum + (cost ?? 0),
-              0,
-            ),
-            hasUnpricedCost: costs.some((cost) => cost === undefined),
-          });
-        }
-      }
-    }
+    const rows = this.db.prepare(`
+      WITH RECURSIVE tree(conversation_id, root_id, depth) AS (
+        SELECT c.id, c.id, 0
+        FROM conversations c
+        WHERE NOT EXISTS (
+          SELECT 1 FROM conversation_subagent_launches launch
+          WHERE launch.child_conversation_id = c.id
+        )
+        UNION ALL
+        SELECT launch.child_conversation_id, tree.root_id, tree.depth + 1
+        FROM conversation_subagent_launches launch
+        JOIN tree ON tree.conversation_id = launch.parent_conversation_id
+      )
+      SELECT tree.root_id, call.conversation_id AS subagent_id,
+        call.model, call.started_at, call.reported_cost,
+        call.uncached_input_tokens, call.cache_read_tokens,
+        call.cache_write_tokens, call.cache_write_5m_tokens,
+        call.cache_write_1h_tokens, call.fresh_prompt_tokens,
+        call.output_tokens, call.reasoning_tokens, call.processed_tokens
+      FROM tree
+      JOIN conversation_model_calls call
+        ON call.conversation_id = tree.conversation_id
+      JOIN conversations root ON root.id = tree.root_id
+      JOIN sources so ON so.id = root.source_id
+      WHERE tree.depth > 0
+        AND COALESCE(call.source_call_id, '') NOT LIKE 'context-operation:%'
+        AND (? IS NULL OR call.started_at >= ?)
+        AND (? IS NULL OR so.harness = ?)
+      ORDER BY call.started_at, call.id
+    `).all(
+      startedAt ?? null,
+      startedAt ?? null,
+      harness ?? null,
+      harness ?? null,
+    ) as Array<{
+      root_id: number;
+      subagent_id: number;
+      model: string;
+      started_at: number;
+      reported_cost: number | null;
+      uncached_input_tokens: number;
+      cache_read_tokens: number;
+      cache_write_tokens: number | null;
+      cache_write_5m_tokens: number | null;
+      cache_write_1h_tokens: number | null;
+      fresh_prompt_tokens: number;
+      output_tokens: number;
+      reasoning_tokens: number;
+      processed_tokens: number;
+    }>;
+    const groups = Map.groupBy(
+      rows,
+      (row) =>
+        `${row.root_id}:${row.subagent_id}:${this.#date(row.started_at)}`,
+    );
+    const result = [...groups.values()].map((calls) => {
+      const costs = calls.map((call) =>
+        modelCallCost({
+          model: call.model,
+          startedAt: call.started_at,
+          reportedCost: optional(call.reported_cost),
+          tokens: tokens(call),
+        })
+      );
+      return {
+        rootSessionID: calls[0].root_id,
+        subagentSessionID: calls[0].subagent_id,
+        date: this.#date(calls[0].started_at),
+        input: calls.reduce(
+          (sum, call) => sum + this.#input(tokens(call)),
+          0,
+        ),
+        cost: costs.reduce<number>((sum, cost) => sum + (cost ?? 0), 0),
+        hasUnpricedCost: costs.some((cost) => cost === undefined),
+      };
+    });
     return result.sort((a, b) =>
       a.date.localeCompare(b.date) || a.rootSessionID - b.rootSessionID ||
       a.subagentSessionID - b.subagentSessionID
@@ -467,18 +886,44 @@ export class ConversationCompatibilityRepository {
     startedAt?: number,
     harness?: Harness,
   ): InitialInputSample[] {
-    return this.#rollups(harness).flatMap(({ row, root }) => {
-      const sessionStartedAt = row.started_at ?? row.updated_at;
-      const call = root.session.turns[0]?.calls[0];
-      return call === undefined ||
-          (startedAt !== undefined && sessionStartedAt < startedAt)
-        ? []
-        : [{
-          harness: row.harness,
-          sessionStartedAt,
-          input: this.#input(call.tokens),
-        }];
-    }).sort((a, b) => a.sessionStartedAt - b.sessionStartedAt);
+    const rows = this.db.prepare(`
+      SELECT so.harness,
+        COALESCE(c.started_at, c.updated_at) AS session_started_at,
+        first_call.uncached_input_tokens + first_call.cache_read_tokens +
+          COALESCE(first_call.cache_write_tokens, 0) AS input
+      FROM conversations c
+      JOIN sources so ON so.id = c.source_id
+      JOIN conversation_model_calls first_call ON first_call.id = (
+        SELECT candidate.id
+        FROM conversation_model_calls candidate
+        WHERE candidate.conversation_id = c.id
+          AND COALESCE(candidate.source_call_id, '')
+            NOT LIKE 'context-operation:%'
+        ORDER BY candidate.ordinal
+        LIMIT 1
+      )
+      WHERE NOT EXISTS (
+          SELECT 1 FROM conversation_subagent_launches launch
+          WHERE launch.child_conversation_id = c.id
+        )
+        AND (? IS NULL OR COALESCE(c.started_at, c.updated_at) >= ?)
+        AND (? IS NULL OR so.harness = ?)
+      ORDER BY session_started_at, c.id
+    `).all(
+      startedAt ?? null,
+      startedAt ?? null,
+      harness ?? null,
+      harness ?? null,
+    ) as Array<{
+      harness: Harness;
+      session_started_at: number;
+      input: number;
+    }>;
+    return rows.map((row) => ({
+      harness: row.harness,
+      sessionStartedAt: row.session_started_at,
+      input: row.input,
+    }));
   }
 
   initialInputDistribution(
@@ -798,320 +1243,6 @@ export class ConversationCompatibilityRepository {
     `).all(branchID) as CallRow[];
   }
 
-  #canonicalUsageCalls(
-    row: ConversationRow,
-    root: ConversationRow = row,
-    parentID?: string,
-    includeChildren = true,
-  ): UsageCall[] {
-    const calls = this.db.prepare(`
-      SELECT call.*, turn.source_turn_id, turn.ordinal AS turn_ordinal,
-        turn.reasoning_setting_name AS turn_reasoning_setting_name,
-        turn.reasoning_setting_value AS turn_reasoning_setting_value,
-        turn.reasoning_source_field_path AS turn_reasoning_source_field_path,
-        turn.reasoning_source_order AS turn_reasoning_source_order,
-        turn.reasoning_observed_at AS turn_reasoning_observed_at,
-        turn.reasoning_provenance AS turn_reasoning_provenance,
-        turn.started_at AS turn_started_at,
-        NULL AS source_order_start
-      FROM conversation_model_calls call
-      JOIN conversation_turns turn ON turn.id = call.turn_id
-      WHERE call.conversation_id = ?
-        AND COALESCE(call.source_call_id, '') NOT LIKE 'context-operation:%'
-      ORDER BY call.started_at, call.ordinal
-    `).all(row.id) as CallRow[];
-    const sessionID = row.public_id ?? row.external_id;
-    const rootID = root.public_id ?? root.external_id;
-    const own = calls.map((call) => ({
-      modelCallID: call.id,
-      previousModelCallID: this.#predecessorCallID(call.id),
-      harness: row.harness,
-      session: { id: sessionID, rootID, parentID },
-      cacheChainID: row.external_id,
-      turnID: `${sessionID}:${call.turn_ordinal}`,
-      turnOrdinal: call.turn_ordinal,
-      images: optional(call.images),
-      sessionStartedAt: root.started_at ?? root.updated_at,
-      provider: call.provider,
-      model: call.model,
-      startedAt: call.started_at,
-      ...((reasoningSetting(call) ?? reasoningSetting({
-          reasoning_setting_name: call.turn_reasoning_setting_name,
-          reasoning_setting_value: call.turn_reasoning_setting_value,
-          reasoning_source_field_path: call.turn_reasoning_source_field_path,
-          reasoning_source_order: call.turn_reasoning_source_order,
-          reasoning_observed_at: call.turn_reasoning_observed_at,
-          reasoning_provenance: call.turn_reasoning_provenance,
-        })) === undefined
-        ? {}
-        : {
-          reasoningSetting: reasoningSetting(call) ?? reasoningSetting({
-            reasoning_setting_name: call.turn_reasoning_setting_name,
-            reasoning_setting_value: call.turn_reasoning_setting_value,
-            reasoning_source_field_path: call.turn_reasoning_source_field_path,
-            reasoning_source_order: call.turn_reasoning_source_order,
-            reasoning_observed_at: call.turn_reasoning_observed_at,
-            reasoning_provenance: call.turn_reasoning_provenance,
-          }),
-        }),
-      tokens: tokens(call),
-      reportedCost: optional(call.reported_cost),
-      computedCost: computeModelCallCost(
-        tokens(call),
-        call.model,
-        call.started_at,
-      ),
-      followsCompaction: this.#callFollowsCompaction(call.id),
-    }));
-    if (!includeChildren) return own;
-    const children = this.db.prepare(`
-      SELECT ${conversationColumns}
-      FROM conversation_subagent_launches launch
-      JOIN conversations c ON c.id = launch.child_conversation_id
-      JOIN sources so ON so.id = c.source_id
-      JOIN conversation_rollups cr ON cr.conversation_id = c.id
-      WHERE launch.parent_conversation_id = ? ORDER BY c.id
-    `).all(row.id) as ConversationRow[];
-    return [
-      ...own,
-      ...children.flatMap((child) =>
-        this.#canonicalUsageCalls(child, root, sessionID, true)
-      ),
-    ];
-  }
-
-  #conversationMisses(
-    row: ConversationRow,
-    root: ConversationRow,
-    parentID?: string,
-  ): StoredCacheMiss[] {
-    const calls = this.#canonicalUsageCalls(
-      row,
-      root,
-      parentID,
-      false,
-    );
-    const byID = new Map(
-      calls.flatMap((call) =>
-        call.modelCallID === undefined
-          ? []
-          : [[call.modelCallID, call] as const]
-      ),
-    );
-    const own = calls.flatMap((call) => {
-      if (
-        call.modelCallID === undefined || call.previousModelCallID === undefined
-      ) return [];
-      const previous = byID.get(call.previousModelCallID);
-      if (previous === undefined) return [];
-      const analysis = analyzeCacheMisses([previous, call].map((item) => ({
-        id: String(item.modelCallID),
-        provider: item.provider,
-        model: item.model,
-        tokens: item.tokens,
-        startedAt: item.startedAt,
-        reasoningSetting: item.reasoningSetting,
-        followsCompaction: item.followsCompaction,
-      })))[0];
-      if (analysis === undefined) return [];
-      const { callID: _callID, previousCallID: _previousCallID, ...miss } =
-        analysis;
-      const turn = this.db.prepare(`
-        SELECT turn_id FROM conversation_model_calls WHERE id = ?
-      `).get(call.modelCallID) as { turn_id: number };
-      return [{
-        harness: row.harness,
-        sessionID: call.session.id,
-        rootID: call.session.rootID,
-        sessionStartedAt: root.started_at ?? root.updated_at,
-        modelCallID: call.modelCallID,
-        previousModelCallID: call.previousModelCallID,
-        turnID: turn.turn_id,
-        ...miss,
-      }];
-    });
-    const sessionID = row.public_id ?? row.external_id;
-    const children = this.db.prepare(`
-      SELECT ${conversationColumns}
-      FROM conversation_subagent_launches launch
-      JOIN conversations c ON c.id = launch.child_conversation_id
-      JOIN sources so ON so.id = c.source_id
-      JOIN conversation_rollups cr ON cr.conversation_id = c.id
-      WHERE launch.parent_conversation_id = ? ORDER BY c.id
-    `).all(row.id) as ConversationRow[];
-    return [
-      ...own,
-      ...children.flatMap((child) =>
-        this.#conversationMisses(child, root, sessionID)
-      ),
-    ];
-  }
-
-  #rollups(harness?: Harness) {
-    return this.#rootRows(harness).map((row) => {
-      const tree = this.#canonicalImportTree(row.id);
-      const root = tree.find((item) => item.parentExternalID === undefined)!;
-      return { row, tree, root, rollup: buildSessionRollup(tree) };
-    });
-  }
-
-  #canonicalImportTree(rootConversationID: number): SourceSessionImport[] {
-    const pending: Array<{ id: number; parentExternalID?: string }> = [{
-      id: rootConversationID,
-    }];
-    const result: SourceSessionImport[] = [];
-    while (pending.length > 0) {
-      const current = pending.shift()!;
-      const row = this.db.prepare(`
-        SELECT ${conversationColumns}
-        FROM conversations c
-        JOIN sources so ON so.id = c.source_id
-        JOIN conversation_rollups cr ON cr.conversation_id = c.id
-        WHERE c.id = ?
-      `).get(current.id) as ConversationRow;
-      const externalID = row.external_id;
-      result.push(this.#canonicalSourceImport(row, current.parentExternalID));
-      const children = this.db.prepare(`
-        SELECT child_conversation_id AS id
-        FROM conversation_subagent_launches
-        WHERE parent_conversation_id = ? ORDER BY id
-      `).all(current.id) as Array<{ id: number }>;
-      pending.push(...children.map((child) => ({
-        id: child.id,
-        parentExternalID: externalID,
-      })));
-    }
-    return result;
-  }
-
-  #canonicalSourceImport(
-    row: ConversationRow,
-    parentExternalID?: string,
-  ): SourceSessionImport {
-    const calls = this.db.prepare(`
-      SELECT call.id, call.turn_id, call.source_call_id, turn.source_turn_id,
-        turn.ordinal AS turn_ordinal, turn.started_at AS turn_started_at,
-        turn.reasoning_setting_name AS turn_reasoning_setting_name,
-        turn.reasoning_setting_value AS turn_reasoning_setting_value,
-        turn.reasoning_source_field_path AS turn_reasoning_source_field_path,
-        turn.reasoning_source_order AS turn_reasoning_source_order,
-        turn.reasoning_observed_at AS turn_reasoning_observed_at,
-        turn.reasoning_provenance AS turn_reasoning_provenance,
-        call.call_within_turn, call.provider, call.model, call.started_at,
-        call.completed_at, call.reported_cost, call.uncached_input_tokens,
-        call.cache_read_tokens, call.cache_write_tokens,
-        call.cache_write_5m_tokens, call.cache_write_1h_tokens,
-        call.fresh_prompt_tokens, call.output_tokens, call.reasoning_tokens,
-        call.processed_tokens, call.finish_reason, call.images, call.has_text,
-        call.has_reasoning, call.reasoning_setting_name,
-        call.reasoning_setting_value, call.reasoning_source_field_path,
-        call.reasoning_source_order, call.reasoning_observed_at,
-        call.reasoning_provenance, NULL AS source_order_start
-      FROM conversation_model_calls call
-      JOIN conversation_turns turn ON turn.id = call.turn_id
-      WHERE call.conversation_id = ?
-        AND COALESCE(call.source_call_id, '') NOT LIKE 'context-operation:%'
-      ORDER BY turn.ordinal, call.call_within_turn, call.ordinal
-    `).all(row.id) as CallRow[];
-    const callIDs = calls.map((call) => call.id);
-    const placeholders = callIDs.map(() => "?").join(", ");
-    const toolRows = callIDs.length === 0 ? [] : this.db.prepare(`
-      SELECT model_call_id, source_tool_id, name, status, started_at,
-        completed_at, input_preview, input_original_length, input_truncated,
-        output_preview, output_original_length, output_truncated
-      FROM conversation_tool_events
-      WHERE model_call_id IN (${placeholders})
-      ORDER BY model_call_id, ordinal
-    `).all(...callIDs) as Array<{
-      model_call_id: number;
-      source_tool_id: string | null;
-      name: string;
-      status: string;
-      started_at: number | null;
-      completed_at: number | null;
-      input_preview: string | null;
-      input_original_length: number | null;
-      input_truncated: number;
-      output_preview: string | null;
-      output_original_length: number | null;
-      output_truncated: number;
-    }>;
-    const grouped = Map.groupBy(calls, (call) => call.turn_id);
-    const turns = [...grouped.values()].map((turnCalls, index) => {
-      const first = turnCalls[0];
-      return {
-        number: index + 1,
-        startedAt: first.turn_started_at,
-        reasoningSetting: reasoningSetting({
-          reasoning_setting_name: first.turn_reasoning_setting_name,
-          reasoning_setting_value: first.turn_reasoning_setting_value,
-          reasoning_source_field_path: first.turn_reasoning_source_field_path,
-          reasoning_source_order: first.turn_reasoning_source_order,
-          reasoning_observed_at: first.turn_reasoning_observed_at,
-          reasoning_provenance: first.turn_reasoning_provenance,
-        }),
-        calls: turnCalls.map((call) => ({
-          id: call.source_call_id ?? String(call.id),
-          callWithinTurn: call.call_within_turn ?? 1,
-          provider: call.provider,
-          model: call.model,
-          startedAt: call.started_at,
-          completedAt: optional(call.completed_at),
-          reportedCost: optional(call.reported_cost),
-          tokens: tokens(call),
-          reasoningSetting: reasoningSetting(call),
-          activity: {
-            finishReason: optional(call.finish_reason),
-            images: optional(call.images),
-            hasText: Boolean(call.has_text),
-            hasReasoning: Boolean(call.has_reasoning),
-            tools: toolRows.filter((tool) => tool.model_call_id === call.id)
-              .map(
-                (tool) => ({
-                  sourceID: optional(tool.source_tool_id),
-                  name: tool.name,
-                  status: tool.status,
-                  startedAt: optional(tool.started_at),
-                  completedAt: optional(tool.completed_at),
-                  input: tool.input_preview === null ? undefined : {
-                    preview: tool.input_preview,
-                    originalLength: optional(tool.input_original_length),
-                    truncated: Boolean(tool.input_truncated),
-                  },
-                  output: tool.output_preview === null ? undefined : {
-                    preview: tool.output_preview,
-                    originalLength: optional(tool.output_original_length),
-                    truncated: Boolean(tool.output_truncated),
-                  },
-                }),
-              ),
-          },
-        })),
-      };
-    });
-    return {
-      sourceID: 0,
-      externalID: row.external_id,
-      parentExternalID,
-      observedAt: row.updated_at,
-      checkpoint: {},
-      session: {
-        title: row.title,
-        agent: optional(row.agent),
-        updatedAt: row.updated_at,
-        startedAt: optional(row.started_at),
-        endedAt: optional(row.ended_at),
-        providers: JSON.parse(row.providers_json),
-        models: JSON.parse(row.models_json),
-        userTurns: turns.length,
-        modelCalls: calls.length,
-        reportedCost: optional(row.reported_cost),
-        tokens: tokens(row),
-        turns,
-      },
-    };
-  }
-
   #parentPublicID(conversationID: number) {
     const row = this.db.prepare(`
       SELECT COALESCE(parent.public_id, parent.external_id) AS id
@@ -1120,14 +1251,6 @@ export class ConversationCompatibilityRepository {
       WHERE launch.child_conversation_id = ? LIMIT 1
     `).get(conversationID) as { id: string } | undefined;
     return row?.id;
-  }
-
-  #callStartedAt(callID: number) {
-    return Number(
-      (this.db.prepare(`
-      SELECT started_at FROM conversation_model_calls WHERE id = ?
-    `).get(callID) as { started_at: number }).started_at,
-    );
   }
 
   #input(value: TokenUsage) {
@@ -1141,96 +1264,5 @@ export class ConversationCompatibilityRepository {
       String(date.getMonth() + 1).padStart(2, "0"),
       String(date.getDate()).padStart(2, "0"),
     ].join("-");
-  }
-
-  #conversationID(sourceID: number, externalID: string) {
-    return Number(
-      (this.db.prepare(`
-      SELECT id FROM conversations
-      WHERE source_id = ? AND external_id = ? LIMIT 1
-    `).get(sourceID, externalID) as { id: number }).id,
-    );
-  }
-
-  #predecessorCallID(modelCallID: number): number | undefined {
-    const row = this.db.prepare(`
-      WITH origin AS (
-        SELECT branch_id, source_order_start
-        FROM artifact_model_call_occurrences
-        WHERE model_call_id = ? AND occurrence_kind = 'executed'
-        ORDER BY source_order_start, branch_id LIMIT 1
-      )
-      SELECT previous.model_call_id AS id
-      FROM origin
-      JOIN artifact_model_call_occurrences previous
-        ON previous.branch_id = origin.branch_id
-       AND previous.source_order_start < origin.source_order_start
-      JOIN conversation_model_calls call ON call.id = previous.model_call_id
-      WHERE COALESCE(call.source_call_id, '') NOT LIKE 'context-operation:%'
-      ORDER BY previous.source_order_start DESC, call.ordinal DESC LIMIT 1
-    `).get(modelCallID) as { id: number } | undefined;
-    if (row !== undefined) return row.id;
-    const fallback = this.db.prepare(`
-      SELECT previous.id
-      FROM conversation_model_calls current
-      JOIN conversation_model_calls previous
-        ON previous.conversation_id = current.conversation_id
-       AND previous.ordinal < current.ordinal
-      WHERE current.id = ?
-        AND COALESCE(previous.source_call_id, '')
-          NOT LIKE 'context-operation:%'
-      ORDER BY previous.ordinal DESC LIMIT 1
-    `).get(modelCallID) as { id: number } | undefined;
-    return fallback?.id;
-  }
-
-  #callFollowsCompaction(modelCallID: number): boolean {
-    const directlyLinked = this.db.prepare(`
-      SELECT EXISTS (
-        SELECT 1
-        FROM conversation_model_calls call
-        JOIN conversation_turns turn ON turn.id = call.turn_id
-        JOIN conversation_entries entry
-          ON entry.conversation_id = call.conversation_id
-        WHERE call.id = ? AND entry.kind = 'context-event'
-          AND json_extract(entry.native_metadata_json, '$.type') = 'compaction'
-          AND json_extract(
-            entry.native_metadata_json,
-            '$.affectedCall.turn'
-          ) = turn.ordinal
-          AND json_extract(
-            entry.native_metadata_json,
-            '$.affectedCall.call'
-          ) = call.call_within_turn
-      ) AS follows
-    `).get(modelCallID) as { follows: number };
-    if (directlyLinked.follows === 1) return true;
-    const row = this.db.prepare(`
-      WITH origin AS (
-        SELECT branch_id, source_order_start
-        FROM artifact_model_call_occurrences
-        WHERE model_call_id = ? AND occurrence_kind = 'executed'
-        ORDER BY source_order_start, branch_id LIMIT 1
-      ), predecessor AS (
-        SELECT MAX(previous.source_order_end) AS source_order_end
-        FROM origin
-        LEFT JOIN artifact_model_call_occurrences previous
-          ON previous.branch_id = origin.branch_id
-         AND previous.source_order_start < origin.source_order_start
-      )
-      SELECT EXISTS (
-        SELECT 1
-        FROM origin, predecessor
-        JOIN artifact_entry_occurrences occurrence
-          ON occurrence.branch_id = origin.branch_id
-        JOIN conversation_entries entry ON entry.id = occurrence.entry_id
-        WHERE entry.kind = 'context-event'
-          AND occurrence.source_order_start >
-            COALESCE(predecessor.source_order_end, 0)
-          AND occurrence.source_order_start <= origin.source_order_start
-          AND json_extract(entry.native_metadata_json, '$.type') = 'compaction'
-      ) AS follows
-    `).get(modelCallID) as { follows: number };
-    return row.follows === 1;
   }
 }

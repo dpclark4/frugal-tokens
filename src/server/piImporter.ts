@@ -7,7 +7,7 @@ import {
 import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
 
 const legacyParserVersion = "pi-6";
-const conversationParserVersion = "pi-conversation-v2-2";
+const conversationParserVersion = "pi-conversation-v2-3";
 
 export async function syncPiSessions(
   directory: string,

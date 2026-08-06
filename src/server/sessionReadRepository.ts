@@ -67,6 +67,14 @@ export class SessionReadRepository {
       !Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) ||
       pageSize < 1
     ) throw new RangeError("page and pageSize must be positive integers");
+    if (harnesses.every((item) => this.conversationHarnesses.has(item))) {
+      return this.conversations.listSessions(
+        page,
+        pageSize,
+        undefined,
+        missFilters,
+      );
+    }
     const items = harnesses.flatMap((harness) =>
       this.#provider(harness).listSessions(
         1,
@@ -97,6 +105,20 @@ export class SessionReadRepository {
 
   getSession(harness: Harness, id: string): SessionDetail | undefined {
     return this.#provider(harness).getSession(harness, id);
+  }
+
+  enrichSessionSummaries(items: SessionSummary[]): SessionSummary[] {
+    const conversationItems = items.filter((item) =>
+      this.conversationHarnesses.has(item.harness)
+    );
+    const enriched = new Map(
+      this.conversations.enrichSessionSummaries(conversationItems).map((
+        item,
+      ) => [`${item.harness}:${item.id}`, item]),
+    );
+    return items.map((item) =>
+      enriched.get(`${item.harness}:${item.id}`) ?? item
+    );
   }
 
   listUsageCalls(startedAt?: number, harness?: Harness) {

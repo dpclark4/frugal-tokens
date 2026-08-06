@@ -155,6 +155,7 @@ export function assertConversationCompatibilityParity(
   const normalizeUsage = ({
     modelCallID: _modelCallID,
     previousModelCallID: _previousModelCallID,
+    turnRowID: _turnRowID,
     computedCost: _computedCost,
     ...call
   }: ReturnType<

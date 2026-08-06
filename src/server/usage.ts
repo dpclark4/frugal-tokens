@@ -8,6 +8,7 @@ import type {
 export type UsageCall = {
   modelCallID?: number;
   previousModelCallID?: number;
+  turnRowID?: number;
   harness: SessionSummary["harness"];
   session: {
     id: string;

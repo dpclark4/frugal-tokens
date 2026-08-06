@@ -5,7 +5,13 @@ import type {
   SourceSessionImport,
 } from "./sessionRepository.ts";
 import { computeModelCallCost } from "./pricing.ts";
-import type { TokenUsage } from "../shared/sessionSchemas.ts";
+import type { SessionSummary, TokenUsage } from "../shared/sessionSchemas.ts";
+import { buildSessionRollup, type SessionRollup } from "./sessionRollups.ts";
+import { analyzeCacheMisses, type CacheAnalysisCall } from "./cacheAnalysis.ts";
+import {
+  enrichSessionSummary,
+  sessionDetailFromSourceImports,
+} from "./sessionSummaryEnrichment.ts";
 
 function tokenValues(tokens: TokenUsage) {
   return [
@@ -80,6 +86,19 @@ function addTokenUsage(total: TokenUsage, value: TokenUsage) {
   total.output += value.output;
   total.reasoning += value.reasoning;
   total.processed += value.processed;
+}
+
+function analyticsRollupValues(rollup: SessionRollup) {
+  return [
+    rollup.version,
+    rollup.firstActivityAt ?? null,
+    rollup.lastActivityAt ?? null,
+    rollup.subagentModelCalls,
+    rollup.subagentTokens.uncachedInput,
+    rollup.subagentTokens.cacheRead,
+    rollup.subagentTokens.cacheWrite ?? null,
+    JSON.stringify(rollup.overview),
+  ];
 }
 
 /** Transactional writer for the additive conversation-v2 shadow projection. */
@@ -226,6 +245,35 @@ export class ConversationProjectionRepository {
           launch?.modelCallID ?? null,
           launch?.toolEventID ?? null,
           launch === undefined ? "source-ancestry" : "explicit-tool-link",
+        );
+      }
+      const byExternalID = new Map(
+        values.map((value) => [value.externalID, value]),
+      );
+      const harness = this.#sourceHarness(sourceID);
+      const rootExternalID = (value: SourceSessionImport) => {
+        let current = value;
+        const visited = new Set<string>();
+        while (current.parentExternalID !== undefined) {
+          if (visited.has(current.externalID)) {
+            throw new Error("Conversation subagent cycle");
+          }
+          visited.add(current.externalID);
+          current = byExternalID.get(current.parentExternalID)!;
+        }
+        return current.externalID;
+      };
+      for (
+        const [rootID, tree] of Map.groupBy(values, rootExternalID).entries()
+      ) {
+        const conversationID = conversationIDs.get(rootID)!;
+        this.#updateAnalyticsRollup(
+          conversationID,
+          buildSessionRollup(tree),
+        );
+        this.#materializeSummary(
+          conversationID,
+          sessionDetailFromSourceImports(tree, rootID, harness),
         );
       }
       this.db.exec("COMMIT");
@@ -409,6 +457,7 @@ export class ConversationProjectionRepository {
         lastEntryID: number | null;
       }>();
       const canonicalCalls = new Map<string, number>();
+      const canonicalTurnValues: SourceSessionImport["session"]["turns"] = [];
       const canonicalContexts = new Map<string, number>();
       const canonicalCallValues = new Map<number, (typeof allCalls)[number]>();
       const artifactTurnKeys = new Map<string, Set<string>>();
@@ -609,6 +658,7 @@ export class ConversationProjectionRepository {
 
           if (canonicalTurn === undefined) {
             turnOrdinal++;
+            canonicalTurnValues.push({ ...turn, number: turnOrdinal });
             const turnID: number = Number(
               (this.db.prepare(`
               INSERT INTO conversation_turns (
@@ -901,27 +951,76 @@ export class ConversationProjectionRepository {
       const computedCosts = uniqueCalls.map((call) =>
         computeModelCallCost(call.tokens, call.model, call.startedAt)
       );
+      const reportedCost = reportedCosts.length > 0 &&
+          reportedCosts.every((cost) => cost !== undefined)
+        ? reportedCosts.reduce<number>((sum, cost) => sum + cost!, 0)
+        : undefined;
+      const computedCost = computedCosts.length > 0 &&
+          computedCosts.every((cost) => cost !== undefined)
+        ? computedCosts.reduce<number>((sum, cost) => sum + cost!, 0)
+        : undefined;
+      const canonicalContextEvents = [
+        ...new Map(
+          ordered.flatMap((artifact) =>
+            artifact.value.session.contextEvents ?? []
+          ).map((event) => [JSON.stringify(event), event]),
+        ).values(),
+      ].toSorted((a, b) => a.sourceOrder - b.sourceOrder);
+      const canonicalSession: SourceSessionImport = {
+        sourceID: family.sourceID,
+        externalID: family.externalID,
+        observedAt: Math.max(...ordered.map((item) => item.value.observedAt)),
+        checkpoint: {},
+        session: {
+          title: root.value.session.title,
+          agent: root.value.session.agent,
+          updatedAt: Math.max(
+            ...ordered.map((item) => item.value.session.updatedAt),
+          ),
+          startedAt: startedAt.length === 0
+            ? undefined
+            : Math.min(...startedAt),
+          endedAt: endedAt.length === 0 ? undefined : Math.max(...endedAt),
+          providers,
+          models,
+          userTurns: canonicalTurnValues.length,
+          modelCalls: uniqueCalls.length,
+          reportedCost,
+          tokens: totalTokens,
+          turns: canonicalTurnValues,
+          contextEvents: canonicalContextEvents,
+        },
+      };
+      const analyticsRollup = buildSessionRollup([canonicalSession]);
       this.db.prepare(`
         INSERT INTO conversation_rollups (
           conversation_id, rollup_version, user_turns, model_calls,
           reported_cost, computed_cost, uncached_input_tokens,
           cache_read_tokens, cache_write_tokens, cache_write_5m_tokens,
           cache_write_1h_tokens, fresh_prompt_tokens, output_tokens,
-          reasoning_tokens, processed_tokens
-        ) VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          reasoning_tokens, processed_tokens, first_activity_at,
+          last_activity_at, subagent_model_calls,
+          subagent_uncached_input_tokens, subagent_cache_read_tokens,
+          subagent_cache_write_tokens, overview_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         conversationID,
+        analyticsRollup.version,
         canonicalTurns.size,
         uniqueCalls.length,
-        reportedCosts.length > 0 &&
-          reportedCosts.every((cost) => cost !== undefined)
-          ? reportedCosts.reduce<number>((sum, cost) => sum + cost!, 0)
-          : null,
-        computedCosts.length > 0 &&
-          computedCosts.every((cost) => cost !== undefined)
-          ? computedCosts.reduce<number>((sum, cost) => sum + cost!, 0)
-          : null,
+        reportedCost ?? null,
+        computedCost ?? null,
         ...tokenValues(totalTokens),
+        ...analyticsRollupValues(analyticsRollup).slice(1),
+      );
+      this.#insertCacheMisses(conversationID, canonicalSession.session);
+      this.#materializeSummary(
+        conversationID,
+        sessionDetailFromSourceImports(
+          [canonicalSession],
+          canonicalSession.externalID,
+          this.#sourceHarness(family.sourceID),
+        ),
       );
       this.db.exec("COMMIT");
     } catch (error) {
@@ -936,6 +1035,10 @@ export class ConversationProjectionRepository {
     sourceSessionID: number,
     launchTools: Map<string, { modelCallID: number; toolEventID: number }>,
   ) {
+    const analyticsRollup = buildSessionRollup([{
+      ...value,
+      parentExternalID: undefined,
+    }]);
     const branchID = Number(
       (this.db.prepare(`
       INSERT INTO conversation_branches (
@@ -954,6 +1057,8 @@ export class ConversationProjectionRepository {
     let previousEntryID: number | null = null;
     let entrySourceOrder = 0;
     let callOrdinal = 0;
+    const turnIDs = new Map<number, number>();
+    const callIDs = new Map<string, number>();
 
     const insertEntry = (options: {
       turnID?: number;
@@ -1036,6 +1141,7 @@ export class ConversationProjectionRepository {
           ) as { id: number }).id,
       );
       previousTurnID = turnID;
+      turnIDs.set(turn.number, turnID);
 
       (turn.inputs ?? []).forEach((input, index) =>
         insertEntry({
@@ -1084,6 +1190,7 @@ export class ConversationProjectionRepository {
               ...reasoningValues(call.reasoningSetting),
             ) as { id: number }).id,
         );
+        callIDs.set(`${turn.number}:${call.callWithinTurn}`, callID);
         this.db.prepare(`
           INSERT INTO artifact_model_call_occurrences (
             source_session_id, branch_id, model_call_id, source_turn_id,
@@ -1183,21 +1290,152 @@ export class ConversationProjectionRepository {
     this.db.prepare(`
       UPDATE conversation_branches SET head_entry_id = ? WHERE id = ?
     `).run(previousEntryID, branchID);
+    this.#insertCacheMisses(conversationID, value.session, callIDs, turnIDs);
     this.db.prepare(`
       INSERT INTO conversation_rollups (
         conversation_id, rollup_version, user_turns, model_calls,
         reported_cost, computed_cost, uncached_input_tokens,
         cache_read_tokens, cache_write_tokens, cache_write_5m_tokens,
         cache_write_1h_tokens, fresh_prompt_tokens, output_tokens,
-        reasoning_tokens, processed_tokens
-      ) VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        reasoning_tokens, processed_tokens, first_activity_at,
+        last_activity_at, subagent_model_calls,
+        subagent_uncached_input_tokens, subagent_cache_read_tokens,
+        subagent_cache_write_tokens, overview_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       conversationID,
+      analyticsRollup.version,
       value.session.userTurns,
       value.session.modelCalls,
       value.session.reportedCost ?? null,
       computedConversationCost(value) ?? null,
       ...tokenValues(value.session.tokens),
+      ...analyticsRollupValues(analyticsRollup).slice(1),
     );
+  }
+
+  #updateAnalyticsRollup(conversationID: number, rollup: SessionRollup) {
+    this.db.prepare(`
+      UPDATE conversation_rollups SET
+        rollup_version = ?, first_activity_at = ?, last_activity_at = ?,
+        subagent_model_calls = ?, subagent_uncached_input_tokens = ?,
+        subagent_cache_read_tokens = ?, subagent_cache_write_tokens = ?,
+        overview_json = ?
+      WHERE conversation_id = ?
+    `).run(...analyticsRollupValues(rollup), conversationID);
+  }
+
+  #insertCacheMisses(
+    conversationID: number,
+    session: Pick<SourceSessionImport["session"], "turns" | "contextEvents">,
+    knownCallIDs?: Map<string, number>,
+    knownTurnIDs?: Map<number, number>,
+  ) {
+    const callRows = knownCallIDs === undefined
+      ? this.db.prepare(`
+        SELECT call.id, call.call_within_turn, turn.id AS turn_id,
+          turn.ordinal AS turn_ordinal
+        FROM conversation_model_calls call
+        JOIN conversation_turns turn ON turn.id = call.turn_id
+        WHERE call.conversation_id = ?
+        ORDER BY turn.ordinal, call.call_within_turn, call.ordinal
+      `).all(conversationID) as Array<{
+        id: number;
+        call_within_turn: number;
+        turn_id: number;
+        turn_ordinal: number;
+      }>
+      : [];
+    const callIDs = knownCallIDs ?? new Map(callRows.map((row) => [
+      `${row.turn_ordinal}:${row.call_within_turn}`,
+      row.id,
+    ]));
+    const turnIDs = knownTurnIDs ?? new Map(callRows.map((row) => [
+      row.turn_ordinal,
+      row.turn_id,
+    ]));
+    const compactionCallKeys = new Set(
+      (session.contextEvents ?? []).filter((event) =>
+        event.type === "compaction" && event.affectedCall !== undefined
+      ).map((event) =>
+        `${event.affectedCall!.turn}:${event.affectedCall!.call}`
+      ),
+    );
+    const cacheCalls: CacheAnalysisCall[] = session.turns.flatMap((turn) =>
+      turn.calls.map((call) => ({
+        id: `${turn.number}:${call.callWithinTurn}`,
+        provider: call.provider,
+        model: call.model,
+        startedAt: call.startedAt,
+        tokens: call.tokens,
+        reasoningSetting: call.reasoningSetting ?? turn.reasoningSetting,
+        followsCompaction: compactionCallKeys.has(
+          `${turn.number}:${call.callWithinTurn}`,
+        ),
+      }))
+    );
+    const callsByID = new Map(cacheCalls.map((call) => [call.id, call]));
+    const insert = this.db.prepare(`
+      INSERT INTO conversation_cache_misses (
+        model_call_id, previous_model_call_id, conversation_id, turn_id,
+        started_at, gap_ms, status, reason, cause, retained_ratio,
+        previous_reusable_tokens, previous_context_tokens,
+        current_context_tokens, actual_cache_read_tokens, missed_tokens,
+        model_call_cost, actual_missed_cost, expected_read_cost,
+        estimated_extra_cost
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    for (const miss of analyzeCacheMisses(cacheCalls)) {
+      const currentTurn = Number(miss.callID.split(":")[0]);
+      const modelCallID = callIDs.get(miss.callID);
+      const previousModelCallID = callIDs.get(miss.previousCallID);
+      const turnID = turnIDs.get(currentTurn);
+      const call = callsByID.get(miss.callID);
+      if (
+        modelCallID === undefined || previousModelCallID === undefined ||
+        turnID === undefined || call === undefined
+      ) {
+        throw new Error(`Unknown conversation cache miss call: ${miss.callID}`);
+      }
+      insert.run(
+        modelCallID,
+        previousModelCallID,
+        conversationID,
+        turnID,
+        call.startedAt,
+        miss.gap,
+        miss.status,
+        miss.reason ?? null,
+        miss.cause ?? null,
+        miss.retainedRatio ?? null,
+        miss.previousReusableTokens ?? null,
+        miss.previousContextTokens,
+        miss.currentContextTokens,
+        miss.actualCacheReadTokens,
+        miss.missedTokens,
+        miss.modelCallCost ?? null,
+        miss.actualMissedCost ?? null,
+        miss.expectedReadCost ?? null,
+        miss.estimatedExtraCost ?? null,
+      );
+    }
+  }
+
+  #materializeSummary(
+    conversationID: number,
+    detail: Parameters<typeof enrichSessionSummary>[0],
+  ) {
+    this.db.prepare(`
+      UPDATE conversation_rollups SET summary_json = ?
+      WHERE conversation_id = ?
+    `).run(JSON.stringify(enrichSessionSummary(detail)), conversationID);
+  }
+
+  #sourceHarness(sourceID: number) {
+    const row = this.db.prepare(
+      "SELECT harness FROM sources WHERE id = ?",
+    ).get(sourceID) as { harness: SessionSummary["harness"] } | undefined;
+    if (row === undefined) throw new Error(`Unknown source: ${sourceID}`);
+    return row.harness;
   }
 }

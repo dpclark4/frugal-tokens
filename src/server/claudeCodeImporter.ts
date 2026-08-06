@@ -11,7 +11,7 @@ import {
 import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
 
 const legacyParserVersion = "claude-code-5";
-const conversationParserVersion = "claude-code-conversation-v2-2";
+const conversationParserVersion = "claude-code-conversation-v2-3";
 const conversationProjectionName = "conversation-v2";
 
 function externalID(

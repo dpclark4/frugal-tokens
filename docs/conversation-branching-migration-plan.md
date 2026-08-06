@@ -721,7 +721,7 @@ Exit criteria:
 
 ### Milestone 5: Analytics and per-harness read cutover
 
-Status: complete.
+Status: in progress.
 
 Implementation record:
 
@@ -735,9 +735,15 @@ Implementation record:
   `FRUGAL_TOKENS_CONVERSATION_READ_HARNESSES` to a comma-separated subset moves
   omitted harnesses back to legacy reads, and an empty value rolls all harnesses
   back.
-- Startup refreshes both projections before accepting API traffic, preventing a
-  parser-version migration from briefly serving a stale conversation projection.
-  Legacy writes, checkpoints, and behavioral tests remain active.
+- The API binds before the startup refresh and keeps each harness on legacy
+  reads until that harness completes a successful V2 synchronization. This
+  prevents stale V2 reads and preserves the legacy rollback path, but the
+  current synchronous import loop can still monopolize the server event loop.
+- Conversation overview, activity, usage, session-shape, and initial-input
+  analytics read materialized conversation rollups with set-based SQL. Session
+  list enrichment and cache misses now have disposable V2 materializations
+  instead of reconstructing every session tree or replaying all calls per
+  request.
 - Global delegation tests verify that mixed providers contribute each harness
   once and that global usage, overview, and cost totals equal the selected
   harness-level inputs.
@@ -749,6 +755,42 @@ Implementation record:
   tables. It never deduplicates calls by content, and branch-local predecessor
   attribution uses confirmed executed occurrences; linear projections retain
   ordinal fallback where source occurrence order is unavailable.
+
+Current checkpoint and measured performance:
+
+- On the development archive, V2 overview completed in approximately 6-8 ms
+  and 30-day usage in approximately 28 ms after the rollup query cutover.
+- Before session-list materialization, hydrating and analyzing 25 details took
+  approximately 409 ms from V2 versus 54 ms from V1. The materialized summary
+  path is implemented and awaits full live/API timing after its projection
+  backfill completes.
+- Before cache-miss materialization, a 30-day V2 cache-miss read took
+  approximately 1.3-2.4 seconds versus approximately 12 ms from V1. The V2
+  cache-miss table and read query are implemented and await full live/API
+  timing after backfill.
+- A clean dual-projection rebuild of the development archive took approximately
+  72 seconds. An unchanged follow-up synchronization skipped all artifacts in
+  roughly 100 ms across harnesses, so the regression is concentrated in full
+  rebuilds and parser-version backfills rather than steady-state startup.
+
+Remaining work and foreseen risks:
+
+- Make import execution cooperative or move it off the API event loop. Binding
+  the listener before synchronization is insufficient while synchronous
+  normalization and SQLite writes prevent requests from being scheduled.
+- Benchmark isolated V1, isolated V2, and dual-projection clean imports. Reuse
+  one normalized value across projections for every harness, reuse prepared
+  statements, and batch V2 writes before accepting the current clean-build
+  cost.
+- Complete the live materialization backfill, remeasure every existing API
+  endpoint, and retain legacy reads for any harness that does not meet contract
+  and practical latency parity.
+- Run the complete existing test suite, including legacy importer and analytics
+  tests. Targeted compatibility, projection, importer, and type checks remain
+  green; no old test should be removed or weakened to complete the cutover.
+- Verify the three observed Codex sibling artifacts remain one V2 conversation
+  with three branches while the legacy projection retains three independent
+  session values after the final backfill.
 
 Work:
 

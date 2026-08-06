@@ -15,6 +15,9 @@ const migrations = [
   "../../db/migrations/20260806120000_add_conversation_projection.sql",
   "../../db/migrations/20260807120000_add_source_artifact_identity_lineage.sql",
   "../../db/migrations/20260808120000_add_conversation_entry_turn.sql",
+  "../../db/migrations/20260809120000_add_conversation_analytics_rollups.sql",
+  "../../db/migrations/20260809130000_add_conversation_read_indexes.sql",
+  "../../db/migrations/20260809140000_materialize_conversation_session_reads.sql",
 ].map((path) => new URL(path, import.meta.url));
 
 export function migrateTestDatabase(db: DatabaseSync) {

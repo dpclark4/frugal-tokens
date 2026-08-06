@@ -3,17 +3,8 @@ import { cors } from "hono/cors";
 import { serveStatic } from "hono/deno";
 import { createMiddleware } from "hono/factory";
 import { priceSessionDetail } from "./pricing.ts";
-import {
-  analyzeSessionCache,
-  CACHE_TTL_1H_MS,
-  sessionCacheIssues,
-  summarizeSessionCache,
-} from "./cacheAnalysis.ts";
-import type {
-  SessionDetail,
-  SessionSummary,
-  TokenUsage,
-} from "../shared/sessionSchemas.ts";
+import { analyzeSessionCache, CACHE_TTL_1H_MS } from "./cacheAnalysis.ts";
+import type { SessionSummary } from "../shared/sessionSchemas.ts";
 import {
   parseSessionMissFilters,
   sessionMissFilterSchema,
@@ -32,8 +23,6 @@ import {
 } from "./overviewAnalytics.ts";
 import { aggregateActivityOverview } from "./activityOverview.ts";
 import { aggregateSessionShape } from "./sessionShapeAnalytics.ts";
-import { contextRange } from "../shared/contextMetrics.ts";
-import { rollupCosts } from "../shared/costMetrics.ts";
 import { expandHomePath, openArchiveDatabase, sqlitePath } from "./database.ts";
 import { SessionRepository } from "./sessionRepository.ts";
 import { ConversationCompatibilityRepository } from "./conversationCompatibilityRepository.ts";
@@ -43,6 +32,7 @@ import { syncPiSessions } from "./piImporter.ts";
 import { syncCodexSessions } from "./codexImporter.ts";
 import { syncClaudeCodeSessions } from "./claudeCodeImporter.ts";
 import { syncOpenCodeSessions } from "./openCodeImporter.ts";
+import { enrichSessionSummary } from "./sessionSummaryEnrichment.ts";
 
 function configuredPath<T>(
   harness: string,
@@ -116,7 +106,7 @@ const supportedHarnesses: SessionSummary["harness"][] = [
 const configuredConversationHarnesses = Deno.env.get(
   "FRUGAL_TOKENS_CONVERSATION_READ_HARNESSES",
 );
-const conversationReadHarnesses = new Set<SessionSummary["harness"]>(
+const desiredConversationReadHarnesses = new Set<SessionSummary["harness"]>(
   configuredConversationHarnesses === undefined
     ? supportedHarnesses
     : configuredConversationHarnesses.trim() === ""
@@ -131,10 +121,11 @@ const conversationReadHarnesses = new Set<SessionSummary["harness"]>(
         return true;
       }),
 );
+const activeConversationReadHarnesses = new Set<SessionSummary["harness"]>();
 const readRepository = new SessionReadRepository(
   archiveRepository,
   conversationCompatibilityRepository,
-  conversationReadHarnesses,
+  activeConversationReadHarnesses,
 );
 const syncIntervalSeconds = (() => {
   const value = Deno.env.get("FRUGAL_TOKENS_SYNC_INTERVAL_SECONDS");
@@ -153,25 +144,22 @@ const syncIntervalSeconds = (() => {
   return seconds;
 })();
 
+type SyncResult = {
+  discovered: number;
+  imported: number;
+  skipped: number;
+  failed: number;
+  timings?: Record<string, number>;
+  projectionResults?: Record<string, {
+    imported: number;
+    skipped: number;
+    failed: number;
+  }>;
+};
+
 async function runSync(
   harness: SessionSummary["harness"],
-  sync: () =>
-    | {
-      discovered: number;
-      imported: number;
-      skipped: number;
-      failed: number;
-      timings?: Record<string, number>;
-    }
-    | Promise<
-      {
-        discovered: number;
-        imported: number;
-        skipped: number;
-        failed: number;
-        timings?: Record<string, number>;
-      }
-    >,
+  sync: () => SyncResult | Promise<SyncResult>,
 ) {
   const startedAt = performance.now();
   const result = await sync();
@@ -187,6 +175,19 @@ async function runSync(
       (performance.now() - startedAt).toFixed(1)
     }ms${phases}`,
   );
+  if (desiredConversationReadHarnesses.has(harness)) {
+    const projection = result.projectionResults?.["conversation-v2"];
+    if (projection !== undefined && projection.failed === 0) {
+      activeConversationReadHarnesses.add(harness);
+      console.info(`[reads] harness=${harness} provider=conversation-v2`);
+    } else {
+      activeConversationReadHarnesses.delete(harness);
+      console.warn(
+        `[reads] harness=${harness} provider=legacy reason=conversation-v2-sync-failed`,
+      );
+    }
+  }
+  return result;
 }
 
 async function syncSources() {
@@ -240,6 +241,16 @@ async function syncSources() {
   );
 }
 
+let activeSourceSync: Promise<void> | undefined;
+function syncSourcesOnce() {
+  if (activeSourceSync !== undefined) return activeSourceSync;
+  const running = syncSources().finally(() => {
+    if (activeSourceSync === running) activeSourceSync = undefined;
+  });
+  activeSourceSync = running;
+  return running;
+}
+
 async function syncSourcesPeriodically(intervalSeconds: number) {
   console.info(`[sync] periodic sync enabled interval=${intervalSeconds}s`);
   while (true) {
@@ -247,7 +258,7 @@ async function syncSourcesPeriodically(intervalSeconds: number) {
       setTimeout(resolve, intervalSeconds * 1_000)
     );
     try {
-      await syncSources();
+      await syncSourcesOnce();
     } catch (error) {
       console.error(
         `[sync] periodic sync failed: ${
@@ -275,7 +286,7 @@ app.use("/api/*", logApiRequest);
 app.get("/health", (context) => context.json({ status: "ok" }));
 
 app.post("/api/sync", async (context) => {
-  await syncSources();
+  await syncSourcesOnce();
   return context.json({ status: "ok" });
 });
 
@@ -287,158 +298,15 @@ function repositoryForHarness(harness: SessionSummary["harness"]) {
   };
 }
 
-type SubagentTotals = { count: number; modelCalls: number };
-
-function sumOptional(values: (number | undefined)[]) {
-  const present = values.filter((value): value is number =>
-    value !== undefined
-  );
-  return present.length === 0
-    ? undefined
-    : present.reduce((total, value) => total + value, 0);
-}
-
-function sumTokens(values: TokenUsage[]): TokenUsage {
-  return {
-    uncachedInput: values.reduce(
-      (total, tokens) => total + tokens.uncachedInput,
-      0,
-    ),
-    cacheRead: values.reduce((total, tokens) => total + tokens.cacheRead, 0),
-    cacheWrite: sumOptional(values.map((tokens) => tokens.cacheWrite)),
-    cacheWrite5m: sumOptional(values.map((tokens) => tokens.cacheWrite5m)),
-    cacheWrite1h: sumOptional(values.map((tokens) => tokens.cacheWrite1h)),
-    freshPrompt: values.reduce(
-      (total, tokens) => total + tokens.freshPrompt,
-      0,
-    ),
-    output: values.reduce((total, tokens) => total + tokens.output, 0),
-    reasoning: values.reduce((total, tokens) => total + tokens.reasoning, 0),
-    processed: values.reduce((total, tokens) => total + tokens.processed, 0),
-  };
-}
-
-type SessionTreeMetrics = {
-  sessions: SessionDetail[];
-  userTurns: number;
-  modelCalls: number;
-  imageInputs: number;
-  tokens: TokenUsage;
-  reportedCost?: number;
-  computedCost?: number;
-};
-
-function imageInputCount(session: Pick<SessionDetail, "turns">) {
-  return session.turns.reduce(
-    (total, turn) =>
-      total + turn.calls.reduce(
-        (callTotal, call) => callTotal + (call.activity.images ?? 0),
-        0,
-      ),
-    0,
-  );
-}
-
-function sessionTreeMetrics(session: SessionDetail): SessionTreeMetrics {
-  const sessions = [
-    session,
-    ...session.subagents.flatMap((subagent) =>
-      sessionTreeMetrics(subagent).sessions
-    ),
-  ];
-  const reportedCosts = sessions.map((item) => item.reportedCost);
-  const computed = rollupCosts(sessions.map((item) => item.computedCost));
-  return {
-    sessions,
-    userTurns: sessions.reduce((total, item) => total + item.userTurns, 0),
-    modelCalls: sessions.reduce((total, item) => total + item.modelCalls, 0),
-    imageInputs: sessions.reduce(
-      (total, item) => total + imageInputCount(item),
-      0,
-    ),
-    tokens: sumTokens(sessions.map((item) => item.tokens)),
-    reportedCost: reportedCosts.every((cost) => cost !== undefined)
-      ? reportedCosts.reduce((total, cost) => total + cost!, 0)
-      : undefined,
-    computedCost: computed.cost,
-  };
-}
-
-function subagentTotals(
-  subagents: SessionDetail["subagents"],
-): SubagentTotals {
-  return subagents.reduce<SubagentTotals>(
-    (total, subagent) => {
-      const nested = subagentTotals(subagent.subagents);
-      return {
-        count: total.count + 1 + nested.count,
-        modelCalls: total.modelCalls + subagent.modelCalls + nested.modelCalls,
-      };
-    },
-    { count: 0, modelCalls: 0 },
-  );
-}
-
-function compactionCount(session: SessionDetail): number {
-  return (session.contextEvents ?? []).filter((event) =>
-    event.type === "compaction"
-  )
-    .length +
-    session.turns.reduce(
-      (total, turn) =>
-        total + turn.calls.reduce(
-          (callTotal, call) =>
-            callTotal + (call.contextEventsBefore ?? []).filter((event) =>
-              event.type === "compaction"
-            ).length,
-          0,
-        ),
-      0,
-    ) + session.subagents.reduce(
-      (total, subagent) => total + compactionCount(subagent),
-      0,
-    );
-}
-
 function priceSummaries(items: SessionSummary[]) {
   return items.map((item) => {
+    if (
+      item.cacheSummary !== undefined && item.compactionCount !== undefined &&
+      item.inclusiveTokens !== undefined
+    ) return item;
     const detail = repositoryForHarness(item.harness)?.getSession(item.id);
     if (!detail) return item;
-    const priced = priceSessionDetail(detail);
-    const analyzed = analyzeSessionCache(priced);
-    const subagents = subagentTotals(priced.subagents);
-    const inclusive = sessionTreeMetrics(priced);
-    const context = contextRange(
-      priced.turns.flatMap((turn) =>
-        turn.calls.map((call) => ({
-          startedAt: call.startedAt,
-          tokens: call.tokens,
-          turn: turn.number,
-          call: call.callWithinTurn,
-        }))
-      ),
-    );
-    return {
-      ...item,
-      userTurns: priced.userTurns,
-      modelCalls: priced.modelCalls,
-      computedCost: priced.computedCost,
-      cacheSummary: summarizeSessionCache(analyzed),
-      cacheIssues: sessionCacheIssues(analyzed),
-      compactionCount: compactionCount(analyzed),
-      contextLatest: context.latest?.size,
-      contextPeak: context.peak?.size,
-      contextPeakTurn: context.peak?.call.turn,
-      contextPeakCall: context.peak?.call.call,
-      subagentCount: subagents.count,
-      subagentModelCalls: subagents.modelCalls,
-      inclusiveUserTurns: inclusive.userTurns,
-      inclusiveModelCalls: inclusive.modelCalls,
-      inclusiveReportedCost: inclusive.reportedCost,
-      inclusiveComputedCost: inclusive.computedCost,
-      inclusiveImageInputs: inclusive.imageInputs,
-      inclusiveTokens: inclusive.tokens,
-    };
+    return enrichSessionSummary(detail);
   });
 }
 
@@ -817,7 +685,9 @@ app.get("/api/sessions", (context) => {
   );
   const queryDuration = performance.now() - queryStartedAt;
   const enrichmentStartedAt = performance.now();
-  const items = priceSummaries(result.items);
+  const items = priceSummaries(
+    readRepository.enrichSessionSummaries(result.items),
+  );
   const enrichmentDuration = performance.now() - enrichmentStartedAt;
   const totalDuration = performance.now() - requestStartedAt;
   context.header(
@@ -860,13 +730,13 @@ if (serveStaticAssets) {
   app.get("*", serveStatic({ root: "./dist", path: "index.html" }));
 }
 
-await syncSources();
-if (syncIntervalSeconds !== undefined) {
-  void syncSourcesPeriodically(syncIntervalSeconds);
-}
 const port = Number.parseInt(Deno.env.get("PORT") ?? "9000", 10);
 Deno.serve({
   port,
   onListen: ({ port }) =>
     console.log(`Frugal Tokens API listening on http://localhost:${port}`),
 }, app.fetch);
+await syncSourcesOnce();
+if (syncIntervalSeconds !== undefined) {
+  void syncSourcesPeriodically(syncIntervalSeconds);
+}

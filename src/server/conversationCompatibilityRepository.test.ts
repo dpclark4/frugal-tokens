@@ -126,6 +126,12 @@ Deno.test("conversation compatibility repository preserves linear read contracts
       legacyList.items.map(({ internalID: _id, ...item }) => item),
     );
     deepStrictEqual(compatibilityList.pagination, legacyList.pagination);
+    const enriched = compatibility.enrichSessionSummaries(
+      compatibilityList.items,
+    )[0];
+    strictEqual(enriched.compactionCount, 1);
+    strictEqual(enriched.cacheSummary?.compactionRelatedMisses, 1);
+    strictEqual(enriched.inclusiveModelCalls, 2);
 
     const legacyDetail = legacy.getSession("pi", "linear")!;
     const compatibilityDetail = compatibility.getSession("pi", "linear")!;
@@ -138,6 +144,7 @@ Deno.test("conversation compatibility repository preserves linear read contracts
         computedCost: _cost,
         modelCallID: _modelCallID,
         previousModelCallID: _previousModelCallID,
+        turnRowID: _turnRowID,
         ...call
       }) => call),
       legacy.listUsageCalls(undefined, "pi"),
