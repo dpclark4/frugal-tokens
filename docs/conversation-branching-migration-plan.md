@@ -610,7 +610,34 @@ Exit criteria:
 
 ### Milestone 3: Codex family importer
 
-Status: not started.
+Status: complete.
+
+Implementation record:
+
+- Generic source-artifact identity and lineage tables retain provider identity,
+  unresolved parent identity, resolved parent artifacts, relationship kind, and
+  provenance without introducing Codex-specific canonical tables.
+- File projection orchestration builds connected artifact families, validates
+  ancestry, computes dependency digests from parser version, checksum, lineage,
+  and availability, and reads each required artifact through a shared
+  observation cache.
+- The Codex metadata pass records session and `forked_from_id` identity while
+  the normalized import retains stable turn, response, message, tool, and
+  source-order evidence.
+- `ConversationProjectionRepository` transactionally replaces a generic
+  artifact family, constructs canonical turn and entry topology, resolves
+  branch parents, fork points, and heads, and writes executed, copied, or
+  unknown entry and call occurrences with bounded evidence.
+- Confirmed stable or explicit-lineage identity deduplicates canonical calls;
+  unresolved copied-looking content remains separate. Conversation rollups sum
+  unique canonical calls once.
+- Codex uses the family importer under a bumped V2 parser version while legacy
+  imports, reads, and checkpoints remain authoritative and unchanged.
+- Sanitized and synthetic tests cover sibling and nested forks, different fork
+  points, parent continuation and append, new and late members, missing and
+  reappearing parents, no-new-turn forks, copied multi-call/tool turns,
+  compaction boundaries, missing identity, malformed cycles, idempotent skips,
+  and transactional last-good retention.
 
 Work:
 

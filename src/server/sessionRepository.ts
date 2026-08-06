@@ -82,8 +82,37 @@ export type SourceSessionCheckpoint = {
   lastError?: string;
 };
 
+export type SourceArtifactMetadata = {
+  externalID: string;
+  identities: Array<{ namespace: string; value: string }>;
+  lineage: Array<{
+    relationship: string;
+    parentIdentityNamespace: string;
+    parentIdentityValue: string;
+    provenance: string;
+  }>;
+};
+
+export type SourceArtifactProjectionRecord = {
+  sourceSessionID: number;
+  externalID: string;
+  artifactPath?: string;
+  availability: "available" | "missing";
+  sourceIdentity?: string;
+  parentSourceIdentity?: string;
+  parentSourceSessionID?: number;
+  sourceSize?: number;
+  sourceModifiedAt?: number;
+  checksum?: string;
+  parserVersion?: string;
+  dependencyDigest?: string;
+  lastError?: string;
+};
+
 export type SessionContentImport = {
   kind: string;
+  sourceID?: string;
+  sourceOrder?: number;
   preview?: string;
   originalLength?: number;
   truncated?: boolean;
@@ -98,6 +127,10 @@ export type SessionToolImport =
   >
   & {
     sourceID?: string;
+    sourceEntryID?: string;
+    outputSourceEntryID?: string;
+    sourceOrderStart?: number;
+    sourceOrderEnd?: number;
     childExternalID?: string;
     input?: Omit<SessionContentImport, "kind" | "mimeType" | "contentHash">;
     output?: Omit<SessionContentImport, "kind" | "mimeType" | "contentHash">;
@@ -118,6 +151,10 @@ export type SessionCallImport =
     "activity" | "contextEventsBefore"
   >
   & {
+    sourceID?: string;
+    sourceOrderStart?: number;
+    sourceOrderEnd?: number;
+    identityBasis?: "stable-id" | "explicit-lineage" | "unresolved";
     activity: Omit<ModelCall["activity"], "tools"> & {
       tools: SessionToolImport[];
     };
@@ -125,17 +162,21 @@ export type SessionCallImport =
     reasoningSetting?: ReasoningSettingImport;
   };
 
-export type CompactionCheckpointItemImport = Omit<
-  CompactionCheckpointItem,
-  "ordinal"
-> & { ordinal?: number };
+export type CompactionCheckpointItemImport =
+  & Omit<
+    CompactionCheckpointItem,
+    "ordinal"
+  >
+  & { ordinal?: number };
 
-export type CompactionDetailImport = Omit<
-  CompactionDetail,
-  "checkpointItems"
-> & {
-  checkpointItems: CompactionCheckpointItemImport[];
-};
+export type CompactionDetailImport =
+  & Omit<
+    CompactionDetail,
+    "checkpointItems"
+  >
+  & {
+    checkpointItems: CompactionCheckpointItemImport[];
+  };
 
 export type SessionContextEventImport = Omit<ContextEvent, "compaction"> & {
   affectedCall?: {
@@ -147,6 +188,10 @@ export type SessionContextEventImport = Omit<ContextEvent, "compaction"> & {
 
 export type SessionTurnImport = {
   number: number;
+  sourceID?: string;
+  sourceOrderStart?: number;
+  sourceOrderEnd?: number;
+  identityBasis?: "stable-id" | "explicit-lineage" | "unresolved";
   startedAt: number;
   inputs?: SessionContentImport[];
   reasoningSetting?: ReasoningSettingImport;
@@ -611,6 +656,138 @@ export class SessionRepository {
       projectionName,
       error instanceof Error ? error.message : String(error),
     );
+  }
+
+  replaceSourceArtifactMetadata(
+    sourceID: number,
+    values: SourceArtifactMetadata[],
+  ) {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      for (const value of values) {
+        const sourceSessionID = this.#sourceSessionID(
+          sourceID,
+          value.externalID,
+        );
+        this.db.prepare(
+          "DELETE FROM source_artifact_lineage WHERE child_source_session_id = ?",
+        ).run(sourceSessionID);
+        this.db.prepare(
+          "DELETE FROM source_artifact_identities WHERE source_session_id = ?",
+        ).run(sourceSessionID);
+        for (const identity of value.identities) {
+          this.db.prepare(`
+            INSERT INTO source_artifact_identities (
+              source_session_id, source_id, identity_namespace, identity_value
+            ) VALUES (?, ?, ?, ?)
+          `).run(
+            sourceSessionID,
+            sourceID,
+            identity.namespace,
+            identity.value,
+          );
+        }
+        for (const lineage of value.lineage) {
+          this.db.prepare(`
+            INSERT INTO source_artifact_lineage (
+              child_source_session_id, relationship_kind,
+              parent_identity_namespace, parent_identity_value, provenance
+            ) VALUES (?, ?, ?, ?, ?)
+          `).run(
+            sourceSessionID,
+            lineage.relationship,
+            lineage.parentIdentityNamespace,
+            lineage.parentIdentityValue,
+            lineage.provenance,
+          );
+        }
+      }
+      this.db.prepare(`
+        UPDATE source_artifact_lineage AS lineage
+        SET parent_source_session_id = (
+          SELECT identity.source_session_id
+          FROM source_artifact_identities AS identity
+          JOIN source_sessions AS parent
+            ON parent.id = identity.source_session_id
+          JOIN source_sessions AS child
+            ON child.id = lineage.child_source_session_id
+          WHERE identity.source_id = ?
+            AND identity.identity_namespace = lineage.parent_identity_namespace
+            AND identity.identity_value = lineage.parent_identity_value
+            AND parent.source_id = child.source_id
+        )
+        WHERE lineage.child_source_session_id IN (
+          SELECT id FROM source_sessions WHERE source_id = ?
+        )
+      `).run(sourceID, sourceID);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  listSourceArtifactsForProjection(
+    sourceID: number,
+    projectionName: string,
+    identityNamespace: string,
+    relationship: string,
+  ): SourceArtifactProjectionRecord[] {
+    const rows = this.db.prepare(`
+      SELECT ss.id AS source_session_id, ss.external_id, ss.artifact_path,
+        ss.availability, ss.source_size, ss.source_modified_at,
+        identity.identity_value AS source_identity,
+        lineage.parent_identity_value AS parent_source_identity,
+        lineage.parent_source_session_id, aip.source_checksum,
+        aip.parser_version, aip.dependency_digest, aip.last_error
+      FROM source_sessions AS ss
+      LEFT JOIN source_artifact_identities AS identity
+        ON identity.source_session_id = ss.id
+        AND identity.identity_namespace = ?
+      LEFT JOIN source_artifact_lineage AS lineage
+        ON lineage.child_source_session_id = ss.id
+        AND lineage.relationship_kind = ?
+        AND lineage.parent_identity_namespace = ?
+      LEFT JOIN artifact_import_projections AS aip
+        ON aip.source_session_id = ss.id AND aip.projection_name = ?
+      WHERE ss.source_id = ?
+      ORDER BY ss.external_id
+    `).all(
+      identityNamespace,
+      relationship,
+      identityNamespace,
+      projectionName,
+      sourceID,
+    ) as Array<{
+      source_session_id: number;
+      external_id: string;
+      artifact_path: string | null;
+      availability: "available" | "missing";
+      source_size: number | null;
+      source_modified_at: number | null;
+      source_identity: string | null;
+      parent_source_identity: string | null;
+      parent_source_session_id: number | null;
+      source_checksum: string | null;
+      parser_version: string | null;
+      dependency_digest: string | null;
+      last_error: string | null;
+    }>;
+    return rows.map((row) => ({
+      sourceSessionID: Number(row.source_session_id),
+      externalID: row.external_id,
+      artifactPath: optional(row.artifact_path),
+      availability: row.availability,
+      sourceIdentity: optional(row.source_identity),
+      parentSourceIdentity: optional(row.parent_source_identity),
+      parentSourceSessionID: optional(row.parent_source_session_id),
+      sourceSize: optional(row.source_size),
+      sourceModifiedAt: optional(row.source_modified_at),
+      checksum: optional(row.source_checksum),
+      parserVersion: optional(row.parser_version),
+      dependencyDigest: optional(row.dependency_digest),
+      lastError: optional(row.last_error),
+    }));
   }
 
   recordUnchangedSourceSession(

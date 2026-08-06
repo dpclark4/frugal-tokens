@@ -65,6 +65,7 @@ const recordSchema = z.object({
     call_id: z.string().optional(),
     id: z.string().optional(),
     turn_id: z.string().optional(),
+    forked_from_id: z.string().optional(),
     cwd: z.string().optional(),
     message: z.unknown().optional(),
     summary: z.unknown().optional(),
@@ -186,12 +187,21 @@ function serializedPreview(value: unknown) {
   };
 }
 
-function messageContent(record: Record): SessionContentImport[] {
-  return (record.payload?.content ?? []).flatMap((block) => {
-    if (block.text !== undefined) return [preview(block.text)];
+function messageContent(
+  record: Record,
+  sourceOrder?: number,
+): SessionContentImport[] {
+  return (record.payload?.content ?? []).flatMap((block, index) => {
+    const identity = record.payload?.id === undefined
+      ? {}
+      : { sourceID: `${record.payload.id}:content:${index + 1}` };
+    const order = sourceOrder === undefined ? {} : { sourceOrder };
+    if (block.text !== undefined) {
+      return [{ ...preview(block.text), ...identity, ...order }];
+    }
     if (block.type !== "input_image") return [];
     const mimeType = block.image_url?.match(/^data:([^;,]+)[;,]/)?.[1];
-    return [{ kind: "image", mimeType }];
+    return [{ kind: "image", mimeType, ...identity, ...order }];
   });
 }
 
@@ -286,6 +296,8 @@ function sessionBounds(
 type CodexCallTiming = {
   startedAt: number;
   completedAt?: number;
+  sourceOrderStart: number;
+  sourceOrderEnd: number;
 };
 
 type CodexTurnTiming = {
@@ -324,11 +336,13 @@ function maxRecordTime(records: Record[]) {
 }
 
 function maxToolOutputTime(records: Record[]) {
-  return maxRecordTime(records.filter((record) =>
-    record.type === "response_item" &&
-    (record.payload?.type === "custom_tool_call_output" ||
-      record.payload?.type === "function_call_output")
-  ));
+  return maxRecordTime(
+    records.filter((record) =>
+      record.type === "response_item" &&
+      (record.payload?.type === "custom_tool_call_output" ||
+        record.payload?.type === "function_call_output")
+    ),
+  );
 }
 
 function isAssistantOutput(record: Record) {
@@ -416,7 +430,7 @@ function inferCodexCallTimings(records: Record[]) {
       const range = records.slice(rangeStart, tokenIndex + 1);
       const toolRequestIndexes = range.flatMap((record, index) =>
         record.type === "response_item" &&
-            record.payload?.type === "custom_tool_call"
+          record.payload?.type === "custom_tool_call"
           ? [rangeStart + index]
           : []
       );
@@ -449,7 +463,8 @@ function inferCodexCallTimings(records: Record[]) {
       const hasToolRequest = toolRequestIndexes.length > 0;
       let completedAt = hasToolRequest ? toolEnd : assistantEnd;
       if (
-        completedAt === undefined && callIndex === turn.tokenIndexes.length - 1 &&
+        completedAt === undefined &&
+        callIndex === turn.tokenIndexes.length - 1 &&
         !hasToolRequest
       ) {
         completedAt = turn.completedAt ?? (
@@ -462,7 +477,12 @@ function inferCodexCallTimings(records: Record[]) {
         completedAt = undefined;
       }
 
-      calls.push({ startedAt, completedAt });
+      calls.push({
+        startedAt,
+        completedAt,
+        sourceOrderStart: rangeStart + 1,
+        sourceOrderEnd: tokenIndex + 1,
+      });
       previousTokenIndex = tokenIndex;
       previousModelOutputIndex = toolRequestIndexes.at(-1) ??
         assistantOutputIndexes.at(-1) ?? tokenIndex;
@@ -480,14 +500,13 @@ function codexReasoningSetting(payload: NonNullable<Record["payload"]>) {
       sourceFieldPath: "payload.effort",
     };
   }
-  const collaborationEffort =
-    payload.collaboration_mode?.settings?.reasoning_effort;
+  const collaborationEffort = payload.collaboration_mode?.settings
+    ?.reasoning_effort;
   if (collaborationEffort != null) {
     return {
       settingName: "reasoning_effort",
       settingValue: collaborationEffort,
-      sourceFieldPath:
-        "payload.collaboration_mode.settings.reasoning_effort",
+      sourceFieldPath: "payload.collaboration_mode.settings.reasoning_effort",
     };
   }
   const threadEffort = payload.thread_settings?.reasoning_effort;
@@ -650,6 +669,7 @@ function decodeRecords(records: Record[]) {
   let pendingHasText = false;
   let pendingTools: SessionToolImport[] = [];
   let pendingContent: SessionContentImport[] = [];
+  let pendingCallSourceIDs: string[] = [];
   const callTimings = inferCodexCallTimings(records);
   type PendingContextEvent = SessionContextEventImport & {
     affectedCallReference?: SessionCallImport;
@@ -686,13 +706,15 @@ function decodeRecords(records: Record[]) {
         type: "compaction",
         sourceOrder: recordIndex + 1,
         ...(time === 0 ? {} : { occurredAt: time }),
-        compaction: numberCheckpointItems(pendingCompaction ?? {
-          trigger: "unknown",
-          resultKind: "unavailable",
-          checkpointCompleteness: "unknown",
-          nativeMetadata: { captureIssues: ["compacted-record-missing"] },
-          checkpointItems: [],
-        }),
+        compaction: numberCheckpointItems(
+          pendingCompaction ?? {
+            trigger: "unknown",
+            resultKind: "unavailable",
+            checkpointCompleteness: "unknown",
+            nativeMetadata: { captureIssues: ["compacted-record-missing"] },
+            checkpointItems: [],
+          },
+        ),
       };
       pendingCompaction = undefined;
       contextEvents.push(event);
@@ -733,6 +755,11 @@ function decodeRecords(records: Record[]) {
     if (record.type === "event_msg" && payload?.type === "task_started") {
       turns.push({
         number: turns.length + 1,
+        ...(payload.turn_id === undefined ? {} : {
+          sourceID: payload.turn_id,
+          identityBasis: "stable-id" as const,
+        }),
+        sourceOrderStart: recordIndex + 1,
         startedAt: eventTime(record),
         ...(activeReasoningSetting === undefined ? {} : {
           reasoningSetting: {
@@ -745,6 +772,7 @@ function decodeRecords(records: Record[]) {
       pendingHasText = false;
       pendingTools = [];
       pendingContent = [];
+      pendingCallSourceIDs = [];
       continue;
     }
 
@@ -758,6 +786,8 @@ function decodeRecords(records: Record[]) {
       if (currentTurn.calls.length > 0) {
         turns.push({
           number: turns.length + 1,
+          sourceOrderStart: recordIndex + 1,
+          identityBasis: "unresolved" as const,
           startedAt: time,
           ...(activeReasoningSetting === undefined ? {} : {
             reasoningSetting: {
@@ -768,7 +798,7 @@ function decodeRecords(records: Record[]) {
           calls: [],
         });
       }
-      turns.at(-1)!.inputs = messageContent(record);
+      turns.at(-1)!.inputs = messageContent(record, recordIndex + 1);
       continue;
     }
 
@@ -779,6 +809,8 @@ function decodeRecords(records: Record[]) {
       if (currentTurn.calls.length > 0) {
         turns.push({
           number: turns.length + 1,
+          sourceOrderStart: recordIndex + 1,
+          identityBasis: "unresolved" as const,
           startedAt: time,
           ...(activeReasoningSetting === undefined ? {} : {
             reasoningSetting: {
@@ -808,12 +840,17 @@ function decodeRecords(records: Record[]) {
         status: "pending",
         startedAt: time,
         sourceID: payload.call_id ?? payload.id,
+        sourceEntryID: payload.id,
+        sourceOrderStart: recordIndex + 1,
         input,
         ...(input?.preview === undefined
           ? {}
           : { inputPreview: input.preview }),
       };
       pendingTools.push(tool);
+      if (record.payload!.id !== undefined) {
+        pendingCallSourceIDs.push(record.payload!.id);
+      }
       if (tool.sourceID) tools.set(tool.sourceID, tool);
       continue;
     }
@@ -829,13 +866,18 @@ function decodeRecords(records: Record[]) {
         tool.completedAt = time;
         tool.output = serializedPreview(payload.output);
         tool.outputPreview = tool.output?.preview;
+        tool.outputSourceEntryID = payload.id;
+        tool.sourceOrderEnd = recordIndex + 1;
       }
       continue;
     }
 
     if (record.type === "response_item" && hasText(record)) {
       pendingHasText = true;
-      pendingContent.push(...messageContent(record));
+      pendingContent.push(...messageContent(record, recordIndex + 1));
+      if (record.payload?.id !== undefined) {
+        pendingCallSourceIDs.push(record.payload.id);
+      }
       continue;
     }
 
@@ -871,6 +913,19 @@ function decodeRecords(records: Record[]) {
       : 0;
     const call: SessionCallImport = {
       id: `${turn.number}-${turn.calls.length + 1}`,
+      ...(pendingCallSourceIDs[0] === undefined
+        ? turn.sourceID === undefined
+          ? { identityBasis: "unresolved" as const }
+          : {
+            sourceID: `${turn.sourceID}:call:${turn.calls.length + 1}`,
+            identityBasis: "explicit-lineage" as const,
+          }
+        : {
+          sourceID: pendingCallSourceIDs[0],
+          identityBasis: "stable-id" as const,
+        }),
+      sourceOrderStart: timing?.sourceOrderStart ?? recordIndex + 1,
+      sourceOrderEnd: timing?.sourceOrderEnd ?? recordIndex + 1,
       callWithinTurn: turn.calls.length + 1,
       ...(pendingContent.find((item) => item.kind === "text")?.preview ===
           undefined
@@ -911,6 +966,12 @@ function decodeRecords(records: Record[]) {
     pendingHasText = false;
     pendingTools = [];
     pendingContent = [];
+    pendingCallSourceIDs = [];
+  }
+
+  for (const [index, turn] of turns.entries()) {
+    turn.sourceOrderEnd =
+      (turns[index + 1]?.sourceOrderStart ?? records.length + 1) - 1;
   }
 
   const nonEmptyTurns = turns
@@ -1141,7 +1202,9 @@ function codexSession(records: Record[], id: string, updatedAt: number) {
 function sessionWorkingDirectory(records: Record[]) {
   return records.find((record) =>
     record.type === "session_meta" && record.payload?.cwd
-  )?.payload?.cwd ?? records.find((record) => record.payload?.cwd)?.payload?.cwd;
+  )?.payload?.cwd ?? records.find((record) =>
+    record.payload?.cwd
+  )?.payload?.cwd;
 }
 
 export function normalizeCodexSession(
@@ -1154,4 +1217,23 @@ export function normalizeCodexSession(
   return workingDirectory === undefined
     ? normalized
     : { ...normalized, workingDirectory };
+}
+
+export type CodexSourceArtifactMetadata = {
+  sourceIdentity?: string;
+  parentSourceIdentity?: string;
+};
+
+export function codexSourceArtifactMetadata(
+  text: string,
+): CodexSourceArtifactMetadata {
+  const records = readRecordsFromText(text, true);
+  const metadata = records.find((record) => record.type === "session_meta")
+    ?.payload;
+  return {
+    ...(metadata?.id === undefined ? {} : { sourceIdentity: metadata.id }),
+    ...(metadata?.forked_from_id === undefined
+      ? {}
+      : { parentSourceIdentity: metadata.forked_from_id }),
+  };
 }
