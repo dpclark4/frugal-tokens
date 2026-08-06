@@ -6,7 +6,10 @@ import { syncOpenCodeSessions } from "./openCodeImporter.ts";
 import { SessionRepository } from "./sessionRepository.ts";
 import { analyzeSessionCache } from "./cacheAnalysis.ts";
 import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
-import { assertLinearConversationParity } from "./conversationProjectionTestUtils.ts";
+import {
+  assertConversationCompatibilityParity,
+  assertLinearConversationParity,
+} from "./conversationProjectionTestUtils.ts";
 
 function sourceDatabase(path: string) {
   const db = new DatabaseSync(path);
@@ -274,6 +277,12 @@ Deno.test("incrementally imports OpenCode session trees", () => {
       1,
     );
     assertLinearConversationParity(archive, "opencode");
+    assertConversationCompatibilityParity(
+      archive,
+      repository,
+      "opencode",
+      "root",
+    );
     const detail = repository.getSession("opencode", "root")!;
     strictEqual(detail.workingDirectory, "/Users/test/project");
     strictEqual(detail.subagents[0].id, "child");

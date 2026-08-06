@@ -11,7 +11,7 @@ import { SessionRepository } from "./sessionRepository.ts";
 import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
 
 const legacyParserVersion = "codex-12";
-const conversationParserVersion = "codex-conversation-v2-family-1";
+const conversationParserVersion = "codex-conversation-v2-family-2";
 const sourceIdentityNamespace = "session";
 const forkRelationship = "fork";
 

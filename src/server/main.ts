@@ -36,7 +36,9 @@ import { contextRange } from "../shared/contextMetrics.ts";
 import { rollupCosts } from "../shared/costMetrics.ts";
 import { expandHomePath, openArchiveDatabase, sqlitePath } from "./database.ts";
 import { SessionRepository } from "./sessionRepository.ts";
+import { ConversationCompatibilityRepository } from "./conversationCompatibilityRepository.ts";
 import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
+import { SessionReadRepository } from "./sessionReadRepository.ts";
 import { syncPiSessions } from "./piImporter.ts";
 import { syncCodexSessions } from "./codexImporter.ts";
 import { syncClaudeCodeSessions } from "./claudeCodeImporter.ts";
@@ -102,6 +104,37 @@ const archiveDatabase = openArchiveDatabase(sqlitePath(archiveURL));
 const archiveRepository = new SessionRepository(archiveDatabase);
 const conversationProjectionRepository = new ConversationProjectionRepository(
   archiveDatabase,
+);
+const conversationCompatibilityRepository =
+  new ConversationCompatibilityRepository(archiveDatabase);
+const supportedHarnesses: SessionSummary["harness"][] = [
+  "opencode",
+  "claude-code",
+  "pi",
+  "codex",
+];
+const configuredConversationHarnesses = Deno.env.get(
+  "FRUGAL_TOKENS_CONVERSATION_READ_HARNESSES",
+);
+const conversationReadHarnesses = new Set<SessionSummary["harness"]>(
+  configuredConversationHarnesses === undefined
+    ? supportedHarnesses
+    : configuredConversationHarnesses.trim() === ""
+    ? []
+    : configuredConversationHarnesses.split(",").map((value) => value.trim())
+      .filter((value): value is SessionSummary["harness"] => {
+        if (!supportedHarnesses.includes(value as SessionSummary["harness"])) {
+          throw new Error(
+            `Invalid conversation read harness: ${value}`,
+          );
+        }
+        return true;
+      }),
+);
+const readRepository = new SessionReadRepository(
+  archiveRepository,
+  conversationCompatibilityRepository,
+  conversationReadHarnesses,
 );
 const syncIntervalSeconds = (() => {
   const value = Deno.env.get("FRUGAL_TOKENS_SYNC_INTERVAL_SECONDS");
@@ -249,8 +282,8 @@ app.post("/api/sync", async (context) => {
 function repositoryForHarness(harness: SessionSummary["harness"]) {
   return {
     listSessions: (page: number, pageSize: number) =>
-      archiveRepository.listSessions(page, pageSize, harness),
-    getSession: (id: string) => archiveRepository.getSession(harness, id),
+      readRepository.listSessions(page, pageSize, harness),
+    getSession: (id: string) => readRepository.getSession(harness, id),
   };
 }
 
@@ -427,7 +460,7 @@ app.get("/api/tool-calls", (context) => {
   const start = new Date(
     new Date(end).setHours(0, 0, 0, 0) - (range - 1) * 86_400_000,
   ).getTime();
-  const calls = archiveRepository.listToolCalls(
+  const calls = readRepository.listToolCalls(
     start,
     end,
     harness === "all" ? undefined : harness as SessionSummary["harness"],
@@ -465,7 +498,7 @@ app.get("/api/performance", (context) => {
   // Include the preceding cache TTL so requests at the range boundary can be
   // compared with their immediately preceding context.
   const cacheStart = start - CACHE_TTL_1H_MS;
-  const calls = archiveRepository.listUsageCalls(
+  const calls = readRepository.listUsageCalls(
     cacheStart,
     harness === "all" ? undefined : harness as SessionSummary["harness"],
   );
@@ -489,11 +522,11 @@ const cacheMissOverview = (context: Context) => {
   ).getTime();
   const sourceDurations = new Map<string, number>();
   const sourceStartedAt = performance.now();
-  const storedMisses = archiveRepository.listCacheMisses(
+  const storedMisses = readRepository.listCacheMisses(
     start,
     harness === "all" ? undefined : harness as SessionSummary["harness"],
   );
-  const storedCosts = archiveRepository.summarizeModelCallCosts(
+  const storedCosts = readRepository.summarizeModelCallCosts(
     start,
     harness === "all" ? undefined : harness as SessionSummary["harness"],
   );
@@ -554,7 +587,7 @@ app.get("/api/session-shape", (context) => {
     ? undefined
     : harness as SessionSummary["harness"];
   const loadStartedAt = performance.now();
-  const loaded = archiveRepository.listSessionShapeRollups(
+  const loaded = readRepository.listSessionShapeRollups(
     start,
     selectedHarness,
   );
@@ -598,7 +631,7 @@ app.get("/api/activity-overview", (context) => {
     ? undefined
     : harness as SessionSummary["harness"];
   const loadStartedAt = performance.now();
-  const loaded = archiveRepository.listOverviewRollups(start, selectedHarness);
+  const loaded = readRepository.listOverviewRollups(start, selectedHarness);
   const loadDuration = performance.now() - loadStartedAt;
   const aggregationStartedAt = performance.now();
   const overview = aggregateActivityOverview(loaded, start, end, range);
@@ -640,13 +673,13 @@ app.get("/api/overview", (context) => {
     ? "partial"
     : "full";
   const initialInputStartedAt = performance.now();
-  const initialInput = archiveRepository.initialInputDistribution(
+  const initialInput = readRepository.initialInputDistribution(
     start,
     harness === "all" ? undefined : harness as SessionSummary["harness"],
   );
   const initialInputDuration = performance.now() - initialInputStartedAt;
   const loadStartedAt = performance.now();
-  const loaded = archiveRepository.listOverviewRollups(
+  const loaded = readRepository.listOverviewRollups(
     start - ROTATION_INACTIVITY_MINUTES * 60_000,
     harness === "all" ? undefined : harness as SessionSummary["harness"],
   );
@@ -702,11 +735,11 @@ app.get("/api/usage", (context) => {
   const selectedHarness = harness === "all"
     ? undefined
     : harness as SessionSummary["harness"];
-  const rollups = archiveRepository.listUsageRollups(start, selectedHarness);
+  const rollups = readRepository.listUsageRollups(start, selectedHarness);
   const subagentUsage = rollups.some((rollup) => rollup.subagentModelCalls > 0)
-    ? archiveRepository.listSubagentUsage(start, selectedHarness)
+    ? readRepository.listSubagentUsage(start, selectedHarness)
     : [];
-  const initialInputSamples = archiveRepository.listInitialInputSamples(
+  const initialInputSamples = readRepository.listInitialInputSamples(
     start,
     selectedHarness,
   );
@@ -776,7 +809,7 @@ app.get("/api/sessions", (context) => {
     }, 400);
   }
   const queryStartedAt = performance.now();
-  const result = archiveRepository.listSessions(
+  const result = readRepository.listSessions(
     page,
     pageSize,
     harness === "all" ? undefined : harness as SessionSummary["harness"],
@@ -808,7 +841,7 @@ app.get("/api/sessions/:id", (context) => {
   if (!["opencode", "claude-code", "pi", "codex"].includes(harness)) {
     return context.json({ error: "Invalid harness" }, 400);
   }
-  const session = archiveRepository.getSession(
+  const session = readRepository.getSession(
     harness as SessionSummary["harness"],
     context.req.param("id"),
   );
@@ -827,13 +860,13 @@ if (serveStaticAssets) {
   app.get("*", serveStatic({ root: "./dist", path: "index.html" }));
 }
 
+await syncSources();
+if (syncIntervalSeconds !== undefined) {
+  void syncSourcesPeriodically(syncIntervalSeconds);
+}
 const port = Number.parseInt(Deno.env.get("PORT") ?? "9000", 10);
 Deno.serve({
   port,
   onListen: ({ port }) =>
     console.log(`Frugal Tokens API listening on http://localhost:${port}`),
 }, app.fetch);
-await syncSources();
-if (syncIntervalSeconds !== undefined) {
-  void syncSourcesPeriodically(syncIntervalSeconds);
-}

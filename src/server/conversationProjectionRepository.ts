@@ -142,8 +142,8 @@ export class ConversationProjectionRepository {
           (this.db.prepare(`
           INSERT INTO conversations (
             source_id, external_id, title, working_directory, updated_at,
-            started_at, ended_at, providers_json, models_json
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            started_at, ended_at, providers_json, models_json, agent, public_id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT (source_id, external_id) DO UPDATE SET
             title = excluded.title,
             working_directory = excluded.working_directory,
@@ -151,7 +151,9 @@ export class ConversationProjectionRepository {
             started_at = excluded.started_at,
             ended_at = excluded.ended_at,
             providers_json = excluded.providers_json,
-            models_json = excluded.models_json
+            models_json = excluded.models_json,
+            agent = excluded.agent,
+            public_id = excluded.public_id
           RETURNING id
         `).get(
               sourceID,
@@ -163,6 +165,8 @@ export class ConversationProjectionRepository {
               value.session.endedAt ?? null,
               JSON.stringify(value.session.providers),
               JSON.stringify(value.session.models),
+              value.session.agent ?? null,
+              value.publicID ?? value.externalID,
             ) as { id: number }).id,
         );
         conversationIDs.set(value.externalID, conversationID);
@@ -356,8 +360,8 @@ export class ConversationProjectionRepository {
         (this.db.prepare(`
         INSERT INTO conversations (
           source_id, external_id, title, working_directory, updated_at,
-          started_at, ended_at, providers_json, models_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          started_at, ended_at, providers_json, models_json, agent, public_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING id
       `).get(
             family.sourceID,
@@ -371,6 +375,8 @@ export class ConversationProjectionRepository {
             endedAt.length === 0 ? null : Math.max(...endedAt),
             JSON.stringify(providers),
             JSON.stringify(models),
+            root.value.session.agent ?? null,
+            root.value.publicID ?? family.externalID,
           ) as { id: number }).id,
       );
 
@@ -434,6 +440,7 @@ export class ConversationProjectionRepository {
 
       const insertEntry = (options: {
         parentEntryID: number | null;
+        turnID?: number;
         stableSourceID?: string;
         kind: string;
         role?: string;
@@ -450,8 +457,8 @@ export class ConversationProjectionRepository {
           conversation_id, parent_entry_id, producer_model_call_id,
           producer_tool_event_id, output_ordinal, stable_source_id, kind, role,
           occurred_at, content_preview, original_length, truncated, mime_type,
-          content_hash, native_metadata_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          content_hash, native_metadata_json, turn_id, content_kind
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING id
       `).get(
             conversationID,
@@ -471,6 +478,8 @@ export class ConversationProjectionRepository {
             options.nativeMetadata === undefined
               ? null
               : JSON.stringify(options.nativeMetadata),
+            options.turnID ?? null,
+            options.content?.kind ?? null,
           ) as { id: number }).id,
         );
 
@@ -622,6 +631,7 @@ export class ConversationProjectionRepository {
             for (const input of turn.inputs ?? []) {
               const entryID = insertEntry({
                 parentEntryID: previousEntryID,
+                turnID,
                 stableSourceID: input.sourceID,
                 kind: "message",
                 role: "user",
@@ -685,6 +695,7 @@ export class ConversationProjectionRepository {
               (call.content ?? []).forEach((content, index) => {
                 const entryID = insertEntry({
                   parentEntryID: previousEntryID,
+                  turnID,
                   stableSourceID: content.sourceID,
                   kind: "message",
                   role: content.kind === "reasoning"
@@ -729,6 +740,7 @@ export class ConversationProjectionRepository {
                 ) {
                   const entryID = insertEntry({
                     parentEntryID: previousEntryID,
+                    turnID,
                     stableSourceID: tool.outputSourceEntryID,
                     kind: "tool-result",
                     role: "tool",
@@ -944,6 +956,7 @@ export class ConversationProjectionRepository {
     let callOrdinal = 0;
 
     const insertEntry = (options: {
+      turnID?: number;
       stableSourceID?: string;
       kind: string;
       role?: string;
@@ -961,8 +974,8 @@ export class ConversationProjectionRepository {
           conversation_id, parent_entry_id, producer_model_call_id,
           producer_tool_event_id, output_ordinal, stable_source_id, kind, role,
           occurred_at, content_preview, original_length, truncated, mime_type,
-          content_hash, native_metadata_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          content_hash, native_metadata_json, turn_id, content_kind
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         RETURNING id
       `).get(
             conversationID,
@@ -982,6 +995,8 @@ export class ConversationProjectionRepository {
             options.nativeMetadata === undefined
               ? null
               : JSON.stringify(options.nativeMetadata),
+            options.turnID ?? null,
+            options.content?.kind ?? null,
           ) as { id: number }).id,
       );
       previousEntryID = entryID;
@@ -1024,6 +1039,7 @@ export class ConversationProjectionRepository {
 
       (turn.inputs ?? []).forEach((input, index) =>
         insertEntry({
+          turnID,
           stableSourceID: `turn:${turn.number}:input:${index + 1}`,
           kind: "message",
           role: "user",
@@ -1083,6 +1099,7 @@ export class ConversationProjectionRepository {
 
         (call.content ?? []).forEach((content, index) =>
           insertEntry({
+            turnID,
             stableSourceID:
               `turn:${turn.number}:call:${call.callWithinTurn}:output:${
                 index + 1
@@ -1124,6 +1141,7 @@ export class ConversationProjectionRepository {
           );
           if (tool.output !== undefined || tool.outputPreview !== undefined) {
             insertEntry({
+              turnID,
               stableSourceID:
                 `turn:${turn.number}:call:${call.callWithinTurn}:tool:${
                   index + 1

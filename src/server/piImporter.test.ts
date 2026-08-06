@@ -4,7 +4,10 @@ import { syncPiSessions } from "./piImporter.ts";
 import { SessionRepository } from "./sessionRepository.ts";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
 import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
-import { assertLinearConversationParity } from "./conversationProjectionTestUtils.ts";
+import {
+  assertConversationCompatibilityParity,
+  assertLinearConversationParity,
+} from "./conversationProjectionTestUtils.ts";
 
 function transcript(prompt: string) {
   return `
@@ -50,6 +53,7 @@ Deno.test("imports PI sessions directly from the configured directory", async ()
       2,
     );
     assertLinearConversationParity(db, "pi");
+    assertConversationCompatibilityParity(db, repository, "pi", "root-session");
     strictEqual(
       repository.getSession("pi", "root-session")?.title,
       "Root session",

@@ -11,7 +11,7 @@ import {
 import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
 
 const legacyParserVersion = "claude-code-5";
-const conversationParserVersion = "claude-code-conversation-v2-1";
+const conversationParserVersion = "claude-code-conversation-v2-2";
 const conversationProjectionName = "conversation-v2";
 
 function externalID(
@@ -110,8 +110,7 @@ export async function syncClaudeCodeSessions(
         candidate.id,
         conversationProjectionName,
       );
-    const physicalUnchanged =
-      previous?.parserVersion === legacyParserVersion &&
+    const physicalUnchanged = previous?.parserVersion === legacyParserVersion &&
       previous.sourceSize === candidate.size &&
       previous.sourceModifiedAt === candidate.changeHint &&
       previous.lastError === undefined &&

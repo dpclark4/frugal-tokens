@@ -33,27 +33,27 @@ legacy path is retired.
 
 Use these terms consistently in schema, code, tests, and UI:
 
-| Term | Meaning |
-|---|---|
-| Source | A configured harness location, such as a directory or database. |
+| Term            | Meaning                                                                                                                                 |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Source          | A configured harness location, such as a directory or database.                                                                         |
 | Source artifact | The currently observed state of one importable source object, such as a Codex rollout JSONL file. It is not immutable revision history. |
-| Conversation | The logical session and analytics counting unit. |
-| Branch | A resumable path/head in a conversation. |
-| Entry | A canonical transcript event such as a message, tool result, or compaction event. |
-| Occurrence | Evidence that a canonical entry or call appeared in a source artifact. |
-| Model call | One actual model execution and its usage/cost facts. |
-| Turn | A normalized user-work grouping over entries and model calls. |
-| Subagent launch | A relationship in which one conversation launches another. It is separate from branching. |
-| Projection | A parsed representation built from source artifacts, such as the legacy archive or the new conversation model. |
+| Conversation    | The logical session and analytics counting unit.                                                                                        |
+| Branch          | A resumable path/head in a conversation.                                                                                                |
+| Entry           | A canonical transcript event such as a message, tool result, or compaction event.                                                       |
+| Occurrence      | Evidence that a canonical entry or call appeared in a source artifact.                                                                  |
+| Model call      | One actual model execution and its usage/cost facts.                                                                                    |
+| Turn            | A normalized user-work grouping over entries and model calls.                                                                           |
+| Subagent launch | A relationship in which one conversation launches another. It is separate from branching.                                               |
+| Projection      | A parsed representation built from source artifacts, such as the legacy archive or the new conversation model.                          |
 
-In this document, `1 --- 1` means one-to-one, `1 ---< *` means one-to-many,
-and `* >---< *` means many-to-many.
+In this document, `1 --- 1` means one-to-one, `1 ---< *` means one-to-many, and
+`* >---< *` means many-to-many.
 
 ## Observed Codex behavior
 
-The issue was reproduced with three Codex 0.146.0 rollout artifacts.
-Identifiers are retained here because they are useful for local investigation;
-committed automated fixtures must be sanitized.
+The issue was reproduced with three Codex 0.146.0 rollout artifacts. Identifiers
+are retained here because they are useful for local investigation; committed
+automated fixtures must be sanitized.
 
 ```text
 Original
@@ -209,13 +209,13 @@ first and last observed times
 ```
 
 It is not immutable audit history. If reproducible historical imports become a
-requirement, add `ImportRevision` later and attach occurrences to revisions.
-Do not imply revision history by storing observations against an otherwise
-mutable artifact.
+requirement, add `ImportRevision` later and attach occurrences to revisions. Do
+not imply revision history by storing observations against an otherwise mutable
+artifact.
 
-During the additive migration, the existing `source_sessions` table may
-continue serving this role to minimize disruption. A final cleanup may rename
-it after all legacy session semantics have been removed.
+During the additive migration, the existing `source_sessions` table may continue
+serving this role to minimize disruption. A final cleanup may rename it after
+all legacy session semantics have been removed.
 
 ### Conversations
 
@@ -248,8 +248,8 @@ placed on branch ancestry.
 
 ### Entries
 
-Entries preserve the general transcript graph. Each entry has at most one
-parent in the initial tree model. Multiple children represent forks.
+Entries preserve the general transcript graph. Each entry has at most one parent
+in the initial tree model. Multiple children represent forks.
 
 Entries produced by a model call or tool event need deterministic order and
 role. The schema should support fields equivalent to:
@@ -264,12 +264,12 @@ stable source entry identity when available
 bounded content metadata
 ```
 
-At most one producer may be set. Produced entries require an output ordinal,
-and output ordinals must be unique within a producer.
+At most one producer may be set. Produced entries require an output ordinal, and
+output ordinals must be unique within a producer.
 
-A future harness with true branch merging would require an edge table and a
-DAG model. Current observed harness semantics are trees; merge support is not
-part of this migration.
+A future harness with true branch merging would require an edge table and a DAG
+model. Current observed harness semantics are trees; merge support is not part
+of this migration.
 
 ### Turns
 
@@ -277,10 +277,10 @@ Turns are normalized user-work groupings used by analytics and the linear table
 UI. They belong to conversations and may retain a parent-turn relationship for
 efficient branch-aware queries.
 
-A model call is canonically owned by its conversation. Its nullable `turn_id`
-is a replaceable classification. Do not introduce a `TurnModelCall`
-many-to-many relation: one canonical call belongs to at most one canonical
-user turn, even when that turn appears in several artifact paths.
+A model call is canonically owned by its conversation. Its nullable `turn_id` is
+a replaceable classification. Do not introduce a `TurnModelCall` many-to-many
+relation: one canonical call belongs to at most one canonical user turn, even
+when that turn appears in several artifact paths.
 
 ### Model calls and occurrences
 
@@ -309,9 +309,9 @@ Fork A occurrence    -> copied on Fork A
 Fork B occurrence    -> copied on Fork B
 ```
 
-The call is stored and priced once. Branch-local attribution is derived from
-its confirmed executed occurrence. An `origin_branch_id` may be materialized
-later for performance, but occurrence provenance remains authoritative.
+The call is stored and priced once. Branch-local attribution is derived from its
+confirmed executed occurrence. An `origin_branch_id` may be materialized later
+for performance, but occurrence provenance remains authoritative.
 
 Do not add generic raw-record archival in this migration. Raw JSONL storage
 would increase storage and privacy scope. Targeted occurrence rows with source
@@ -382,8 +382,8 @@ Turn count per conversation
   = unique executed canonical turns
 ```
 
-Conversation totals and branch-local totals are additive. Branch-path totals
-are not additive because paths share ancestors.
+Conversation totals and branch-local totals are additive. Branch-path totals are
+not additive because paths share ancestors.
 
 ## Import and checkpoint design
 
@@ -395,9 +395,8 @@ once, checksummed once, and supplied to active projections.
 
 Automated tests must use sanitized committed fixtures or temporary test files,
 not live home-directory data. Live files are machine-specific, mutable,
-privacy-sensitive, unavailable in CI, and much larger than necessary. Real
-files remain useful for local investigation and optional manual integration
-checks.
+privacy-sensitive, unavailable in CI, and much larger than necessary. Real files
+remain useful for local investigation and optional manual integration checks.
 
 ### Physical fingerprint versus projection dependency
 
@@ -431,9 +430,9 @@ artifact_import_projections
   UNIQUE(source_artifact_id, projection_name)
 ```
 
-The exact representation may vary for database-backed harnesses. OpenCode
-change hints must not be forced into file checksum semantics. Claude dependency
-digests and existing file stat/checksum optimizations must remain supported.
+The exact representation may vary for database-backed harnesses. OpenCode change
+hints must not be forced into file checksum semantics. Claude dependency digests
+and existing file stat/checksum optimizations must remain supported.
 
 ### Codex family digest
 
@@ -499,8 +498,8 @@ identity coverage, and all existing Milestone 4 and 5 exit criteria still apply.
 ## Delivery milestones
 
 Each milestone has an independent stopping point. Do not begin the next
-milestone merely because the previous implementation compiles; satisfy its
-exit criteria first.
+milestone merely because the previous implementation compiles; satisfy its exit
+criteria first.
 
 ### Milestone 0: Baseline behavior and fixtures
 
@@ -512,8 +511,8 @@ Implementation record:
   `src/server/fixtures/codex-branching/` with their expected topology and
   counting contracts documented in the fixture README.
 - `src/server/codexBranchingFixtures.test.ts` protects both the future logical
-  conversation contract and the current three-independent-linear-sessions
-  Codex behavior.
+  conversation contract and the current three-independent-linear-sessions Codex
+  behavior.
 - `src/server/fileSessionImporter.test.ts` protects the file import lifecycle,
   including checksum skips, metadata-only changes, parser bumps, last-good
   projection retention, missing artifacts, and reappearance.
@@ -538,7 +537,8 @@ Exit criteria:
 - Fixtures contain only the identity, ancestry, timing, minimal content, tool,
   compaction, and usage fields needed by their tests.
 - The expected `1 conversation / 3 branches / 7 unique turns / 13
-  occurrences` contract is explicit in tests or fixture documentation.
+  occurrences`
+  contract is explicit in tests or fixture documentation.
 
 ### Milestone 1: Projection-specific checkpoints
 
@@ -585,9 +585,9 @@ Implementation record:
   launches, and conversation rollups without changing legacy read tables.
 - `ConversationProjectionRepository` transactionally replaces linear sessions
   and trees, preserving the prior V2 projection if a replacement fails.
-- Codex, Pi, Claude Code, and OpenCode populate `conversation-v2` in shadow
-  mode with independent checkpoints; source observations and dependency
-  snapshots remain shared with legacy orchestration.
+- Codex, Pi, Claude Code, and OpenCode populate `conversation-v2` in shadow mode
+  with independent checkpoints; source observations and dependency snapshots
+  remain shared with legacy orchestration.
 - Cross-projection tests compare linear metadata, turns, calls, usage, models,
   tools, timestamps, and reported costs. V2 replacement is idempotent and all
   server reads remain on the legacy repository.
@@ -624,10 +624,10 @@ Implementation record:
 - The Codex metadata pass records session and `forked_from_id` identity while
   the normalized import retains stable turn, response, message, tool, and
   source-order evidence.
-- `ConversationProjectionRepository` transactionally replaces a generic
-  artifact family, constructs canonical turn and entry topology, resolves
-  branch parents, fork points, and heads, and writes executed, copied, or
-  unknown entry and call occurrences with bounded evidence.
+- `ConversationProjectionRepository` transactionally replaces a generic artifact
+  family, constructs canonical turn and entry topology, resolves branch parents,
+  fork points, and heads, and writes executed, copied, or unknown entry and call
+  occurrences with bounded evidence.
 - Confirmed stable or explicit-lineage identity deduplicates canonical calls;
   unresolved copied-looking content remains separate. Conversation rollups sum
   unique canonical calls once.
@@ -681,7 +681,25 @@ Exit criteria:
 
 ### Milestone 4: Parallel conversation repository and parity reporting
 
-Status: not started.
+Status: complete.
+
+Implementation record:
+
+- `ConversationCompatibilityRepository` reconstructs the existing list, detail,
+  usage, tool, cache, cost, overview, session-shape, subagent, and initial-input
+  contracts from conversation tables. Existing detail responses continue to
+  expose one selected linear path.
+- Selected paths come from branch occurrences, while canonical usage and
+  analytics traverse unique conversation calls. Cache predecessors follow the
+  executed occurrence on its branch, including the shared predecessor at a fork,
+  rather than global artifact or timestamp order.
+- Linear importer tests now compare legacy and conversation list, detail, usage,
+  tool, cache, cost, rollup, subagent, and initial-input reads. JSON response
+  parity treats absent properties and properties whose value is `undefined` as
+  equivalent because both serialize identically.
+- Codex fork tests cover selected sibling paths, canonical unique-call counts,
+  branch-local cache ancestry, compaction placement, and separation of branches
+  from subagent launches.
 
 Work:
 
@@ -698,13 +716,39 @@ Exit criteria:
 - Sibling and nested branch traversal returns correct paths.
 - Conversation usage counts canonical calls once.
 - Branch-local attribution uses confirmed executed occurrences.
-- The first call after each fork uses the shared predecessor for cache
-  analysis.
+- The first call after each fork uses the shared predecessor for cache analysis.
 - Fork branches never appear as subagents.
 
 ### Milestone 5: Analytics and per-harness read cutover
 
-Status: not started.
+Status: complete.
+
+Implementation record:
+
+- `SessionReadRepository` delegates every harness to exactly one provider and
+  combines harness-level results for global endpoints. It namespaces internal
+  session, turn, and call identifiers when providers are mixed so rollback
+  cannot merge unrelated analytics records that happen to share a table-local
+  integer ID.
+- All existing API reads use the facade. OpenCode, Claude Code, Pi, and Codex
+  default to conversation reads; setting
+  `FRUGAL_TOKENS_CONVERSATION_READ_HARNESSES` to a comma-separated subset moves
+  omitted harnesses back to legacy reads, and an empty value rolls all harnesses
+  back.
+- Startup refreshes both projections before accepting API traffic, preventing a
+  parser-version migration from briefly serving a stale conversation projection.
+  Legacy writes, checkpoints, and behavioral tests remain active.
+- Global delegation tests verify that mixed providers contribute each harness
+  once and that global usage, overview, and cost totals equal the selected
+  harness-level inputs.
+- The conversation cost shim retains reported per-call costs when a model has no
+  rate card. Codex intentionally no longer marks a session unpriced solely
+  because the legacy projection stored a synthetic context-operation record;
+  those records are compaction metadata, not model executions.
+- Unresolved occurrence identity remains explicit in the generic occurrence
+  tables. It never deduplicates calls by content, and branch-local predecessor
+  attribution uses confirmed executed occurrences; linear projections retain
+  ordinal fallback where source occurrence order is unavailable.
 
 Work:
 
@@ -803,8 +847,8 @@ and analytics contract tests.
 
 ## Test preservation and verification strategy
 
-Existing tests are requirements, not disposable implementation tests.
-Throughout migration:
+Existing tests are requirements, not disposable implementation tests. Throughout
+migration:
 
 ```text
 Existing tests -> protect current behavior
@@ -849,9 +893,9 @@ Add migration tests that begin with the current schema and representative data,
 apply new migrations, keep legacy reads working, populate V2, and verify that a
 V2 failure cannot damage V1.
 
-Per project instructions, implementation agents should run the smallest
-relevant verification once after a milestone appears complete and report both
-checks run and relevant checks not run.
+Per project instructions, implementation agents should run the smallest relevant
+verification once after a milestone appears complete and report both checks run
+and relevant checks not run.
 
 ## Compatibility, cutover, and rollback
 
@@ -875,8 +919,8 @@ Do not build a long-lived SQL union that attempts to merge legacy and V2 rows
 for the same harness. Delegate a harness to exactly one read provider, then
 combine harness-level results through repository interfaces.
 
-API additions should be optional until the new UI ships. The existing UI
-should continue receiving one linear path throughout backend migration.
+API additions should be optional until the new UI ships. The existing UI should
+continue receiving one linear path throughout backend migration.
 
 ## Explicit non-goals
 

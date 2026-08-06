@@ -7,7 +7,10 @@ import { analyzeSessionCache } from "./cacheAnalysis.ts";
 import { priceSessionDetail } from "./pricing.ts";
 import { contextRange } from "../shared/contextMetrics.ts";
 import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
-import { assertLinearConversationParity } from "./conversationProjectionTestUtils.ts";
+import {
+  assertConversationCompatibilityParity,
+  assertLinearConversationParity,
+} from "./conversationProjectionTestUtils.ts";
 
 const transcript = `
 {"id":"session","timestamp":"2026-07-11T13:59:59.000Z","instructions":null,"git":null}
@@ -61,6 +64,7 @@ Deno.test("imports Codex sessions for SQLite reads", async () => {
     );
 
     assertLinearConversationParity(db, "codex");
+    assertConversationCompatibilityParity(db, repository, "codex", "2026/07/11/rollout-session");
 
     const id = "2026/07/11/rollout-session";
     strictEqual(repository.listSessions(1, 10, "codex").items[0].id, id);

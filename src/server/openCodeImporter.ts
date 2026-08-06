@@ -13,7 +13,7 @@ import {
 import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
 
 const parserVersion = "opencode-8";
-const conversationParserVersion = "opencode-conversation-v2-1";
+const conversationParserVersion = "opencode-conversation-v2-2";
 const conversationProjectionName = "conversation-v2";
 
 type AggregateRow = {

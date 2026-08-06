@@ -1,6 +1,8 @@
 import { deepStrictEqual } from "node:assert/strict";
 import type { DatabaseSync } from "node:sqlite";
 import type { SessionSummary } from "../shared/sessionSchemas.ts";
+import type { SessionRepository } from "./sessionRepository.ts";
+import { ConversationCompatibilityRepository } from "./conversationCompatibilityRepository.ts";
 
 export function assertLinearConversationParity(
   db: DatabaseSync,
@@ -116,4 +118,140 @@ export function assertLinearConversationParity(
     ORDER BY c.external_id, ct.ordinal, cmc.call_within_turn, cte.ordinal
   `).all(harness).map((row) => ({ ...row }));
   deepStrictEqual(v2Tools, legacyTools);
+}
+
+function withoutInternalIDs<T extends { internalID?: number }>(value: T) {
+  const { internalID: _internalID, ...rest } = value;
+  return rest;
+}
+
+export function assertConversationCompatibilityParity(
+  db: DatabaseSync,
+  legacy: SessionRepository,
+  harness: SessionSummary["harness"],
+  id: string,
+) {
+  const conversations = new ConversationCompatibilityRepository(db);
+  const legacyList = legacy.listSessions(1, 1_000, harness);
+  const conversationList = conversations.listSessions(1, 1_000, harness);
+  deepStrictEqual(
+    conversationList.items.map(withoutInternalIDs),
+    legacyList.items.map(withoutInternalIDs),
+  );
+  deepStrictEqual(conversationList.pagination, legacyList.pagination);
+
+  const legacyDetail = legacy.getSession(harness, id);
+  const conversationDetail = conversations.getSession(harness, id);
+  const normalizeDetail = (detail: typeof legacyDetail): unknown =>
+    detail === undefined ? undefined : JSON.parse(JSON.stringify({
+      ...withoutInternalIDs(detail),
+      subagents: detail.subagents.map((child) => normalizeDetail(child)),
+    }));
+  deepStrictEqual(
+    normalizeDetail(conversationDetail),
+    normalizeDetail(legacyDetail),
+  );
+
+  const normalizeUsage = ({
+    modelCallID: _modelCallID,
+    previousModelCallID: _previousModelCallID,
+    computedCost: _computedCost,
+    ...call
+  }: ReturnType<
+    ConversationCompatibilityRepository["listUsageCalls"]
+  >[number]) => call;
+  deepStrictEqual(
+    conversations.listUsageCalls(undefined, harness).map(normalizeUsage),
+    legacy.listUsageCalls(undefined, harness),
+  );
+
+  const withoutModelCallID = <T extends { modelCallID: number }>(value: T) => {
+    const { modelCallID: _modelCallID, ...rest } = value;
+    return rest;
+  };
+  deepStrictEqual(
+    conversations.listToolCalls(0, Number.MAX_SAFE_INTEGER, harness).map(
+      withoutModelCallID,
+    ),
+    legacy.listToolCalls(0, Number.MAX_SAFE_INTEGER, harness).map(
+      withoutModelCallID,
+    ),
+  );
+
+  const normalizeMiss = <
+    T extends {
+      modelCallID: number;
+      previousModelCallID?: number;
+      turnID: number;
+    },
+  >(value: T) => {
+    const {
+      modelCallID: _modelCallID,
+      previousModelCallID: _previousModelCallID,
+      turnID: _turnID,
+      ...rest
+    } = value;
+    return rest;
+  };
+  deepStrictEqual(
+    conversations.listCacheMisses(undefined, harness).map(normalizeMiss),
+    legacy.listCacheMisses(undefined, harness).map(normalizeMiss),
+  );
+
+  const normalizeRoot = <T extends { rootSessionID: number }>(value: T) => {
+    const { rootSessionID: _rootSessionID, ...rest } = value;
+    return rest;
+  };
+  deepStrictEqual(
+    conversations.listOverviewRollups(0, harness).map(normalizeRoot),
+    legacy.listOverviewRollups(0, harness).map(normalizeRoot),
+  );
+  deepStrictEqual(
+    conversations.listSessionShapeRollups(0, harness).map(normalizeRoot),
+    legacy.listSessionShapeRollups(0, harness).map(normalizeRoot),
+  );
+  deepStrictEqual(
+    conversations.listUsageRollups(undefined, harness).map(normalizeRoot),
+    legacy.listUsageRollups(undefined, harness).map(normalizeRoot),
+  );
+  const normalizeSubagentUsage = ({
+    rootSessionID: _rootSessionID,
+    subagentSessionID: _subagentSessionID,
+    ...usage
+  }: ReturnType<
+    ConversationCompatibilityRepository["listSubagentUsage"]
+  >[number]) => usage;
+  deepStrictEqual(
+    conversations.listSubagentUsage(undefined, harness).map(
+      normalizeSubagentUsage,
+    ),
+    legacy.listSubagentUsage(undefined, harness).map(normalizeSubagentUsage),
+  );
+  deepStrictEqual(
+    conversations.listInitialInputSamples(undefined, harness),
+    legacy.listInitialInputSamples(undefined, harness),
+  );
+  deepStrictEqual(
+    conversations.initialInputDistribution(0, harness),
+    legacy.initialInputDistribution(0, harness),
+  );
+  const normalizeCosts = (
+    summary: ReturnType<
+      ConversationCompatibilityRepository["summarizeModelCallCosts"]
+    >,
+  ) =>
+    harness !== "codex" ? summary : {
+      totalCost: summary.totalCost,
+      totalSessionCost: summary.totalSessionCost,
+      sessions: summary.sessions.map((session) => ({
+        harness: session.harness,
+        rootID: session.rootID,
+        sessionStartedAt: session.sessionStartedAt,
+        rootCost: session.rootCost,
+      })),
+    };
+  deepStrictEqual(
+    normalizeCosts(conversations.summarizeModelCallCosts(0, harness)),
+    normalizeCosts(legacy.summarizeModelCallCosts(0, harness)),
+  );
 }

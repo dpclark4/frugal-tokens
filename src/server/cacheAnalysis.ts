@@ -7,13 +7,8 @@ import type {
   TurnCacheSummary,
 } from "../shared/sessionSchemas.ts";
 import { hasInputContext } from "../shared/contextMetrics.ts";
-import {
-  computeModelCallCost,
-  estimateModelCacheMissCost,
-} from "./pricing.ts";
-import {
-  estimateCacheMissTokens,
-} from "./cacheMissPricing.ts";
+import { computeModelCallCost, estimateModelCacheMissCost } from "./pricing.ts";
+import { estimateCacheMissTokens } from "./cacheMissPricing.ts";
 import type { UsageCall } from "./usage.ts";
 
 export const CACHE_HIT_RATIO = 0.9;
@@ -197,13 +192,11 @@ function cacheMissRecord(
     actualCacheReadTokens: tokenEstimate.actualCacheRead,
     missedTokens: tokenEstimate.missedTokens,
     ...(modelCallCost === undefined ? {} : { modelCallCost }),
-    ...(costEstimate === undefined
-      ? {}
-      : {
-        actualMissedCost: costEstimate.actualMissedCost,
-        expectedReadCost: costEstimate.expectedReadCost,
-        estimatedExtraCost: costEstimate.estimatedExtraCost,
-      }),
+    ...(costEstimate === undefined ? {} : {
+      actualMissedCost: costEstimate.actualMissedCost,
+      expectedReadCost: costEstimate.expectedReadCost,
+      estimatedExtraCost: costEstimate.estimatedExtraCost,
+    }),
   };
 }
 
@@ -251,6 +244,11 @@ export function categorizeUsageCallCache(
   calls: UsageCall[],
 ): AssessedUsageCall[] {
   const categorized: AssessedUsageCall[] = [];
+  const callsByID = new Map(
+    calls.flatMap((call) =>
+      call.modelCallID === undefined ? [] : [[call.modelCallID, call] as const]
+    ),
+  );
   for (
     const chain of Map.groupBy(
       calls,
@@ -259,17 +257,20 @@ export function categorizeUsageCallCache(
   ) {
     let previous: UsageCall | undefined;
     for (const call of chain.toSorted((a, b) => a.startedAt - b.startedAt)) {
-      const rawAssessment = assessCache(previous, call);
+      const comparable = call.previousModelCallID === undefined
+        ? previous
+        : callsByID.get(call.previousModelCallID);
+      const rawAssessment = assessCache(comparable, call);
       const cacheAssessment = classifyCacheMiss(
         rawAssessment,
-        previous,
+        comparable,
         call,
         call.followsCompaction ?? false,
       );
       categorized.push({
         ...call,
         cacheAssessment,
-        ...(previous ? { previousComparableCall: previous } : {}),
+        ...(comparable ? { previousComparableCall: comparable } : {}),
       });
       if (hasInputContext(call.tokens)) previous = call;
     }
@@ -454,8 +455,7 @@ export function summarizeSessionCache(session: SessionDetail): CacheSummary {
     summary.unknown += nested.unknown;
     summary.compactionRelatedMisses += nested.compactionRelatedMisses;
     summary.ttlRelatedMisses += nested.ttlRelatedMisses;
-    summary.thinkingChangeRelatedMisses +=
-      nested.thinkingChangeRelatedMisses;
+    summary.thinkingChangeRelatedMisses += nested.thinkingChangeRelatedMisses;
     summary.unexpectedMisses += nested.unexpectedMisses;
   }
   return summary;
@@ -478,9 +478,9 @@ export function sessionCacheIssues(
         );
         if (misses.length === 0) continue;
         for (const status of ["full-miss", "partial-hit"] as const) {
-          if (!misses.some((call) =>
-            call.cacheAssessment?.status === status
-          )) continue;
+          if (!misses.some((call) => call.cacheAssessment?.status === status)) {
+            continue;
+          }
           issues.push({
             status,
             ...(cause ? { cause } : {}),
