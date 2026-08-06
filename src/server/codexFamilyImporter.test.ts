@@ -1,5 +1,6 @@
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { syncCodexSessions } from "./codexImporter.ts";
+import { ConversationCompatibilityRepository } from "./conversationCompatibilityRepository.ts";
 import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
 import { openArchiveDatabase } from "./database.ts";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
@@ -136,6 +137,115 @@ Deno.test("Codex sibling artifacts project one canonical conversation family", a
       conversationID,
     );
     strictEqual(count(db, "conversation_model_calls"), 7);
+  } finally {
+    db.close();
+  }
+});
+
+Deno.test("Codex rewind with a queued prompt projects as one branched conversation", async () => {
+  const directory = Deno.makeTempDirSync();
+  const source = `${directory}/sessions`;
+  Deno.mkdirSync(source, { recursive: true });
+  const metadata = (id: string, forkedFrom?: string) => ({
+    timestamp: "2026-08-06T23:00:00.000Z",
+    type: "session_meta",
+    payload: {
+      id,
+      cwd: "/workspace/project",
+      ...(forkedFrom === undefined ? {} : { forked_from_id: forkedFrom }),
+    },
+  });
+  const task = (id: string, second: number) => ({
+    timestamp: `2026-08-06T23:00:0${second}.000Z`,
+    type: "event_msg",
+    payload: { type: "task_started", turn_id: id, started_at: second },
+  });
+  const message = (
+    id: string,
+    role: "user" | "assistant",
+    text: string,
+    second: number,
+  ) => ({
+    timestamp: `2026-08-06T23:00:0${second}.100Z`,
+    type: "response_item",
+    payload: {
+      type: "message",
+      id,
+      role,
+      content: [{
+        type: role === "user" ? "input_text" : "output_text",
+        text,
+      }],
+    },
+  });
+  const usage = (second: number) => ({
+    timestamp: `2026-08-06T23:00:0${second}.200Z`,
+    type: "event_msg",
+    payload: {
+      type: "token_count",
+      info: {
+        last_token_usage: {
+          input_tokens: 10,
+          cached_input_tokens: 0,
+          output_tokens: 1,
+          reasoning_output_tokens: 0,
+        },
+      },
+    },
+  });
+  const rootID = "rewind-root";
+  const childID = "rewind-child";
+  const shared = [
+    task("shared-turn-1", 1),
+    message("shared-user-1", "user", "1", 1),
+    message("shared-response-1", "assistant", "one", 1),
+    usage(1),
+    // Codex can queue this prompt without emitting another task_started.
+    message("shared-user-2", "user", "2", 2),
+    message("shared-response-2", "assistant", "two", 2),
+    usage(2),
+  ];
+  writeJsonl(`${source}/rollout-root.jsonl`, [
+    metadata(rootID),
+    { type: "turn_context", payload: { model: "gpt-test-codex" } },
+    ...shared,
+    task("root-turn-3", 3),
+    message("root-user-3", "user", "3", 3),
+    message("root-response-3", "assistant", "three", 3),
+    usage(3),
+  ]);
+  writeJsonl(`${source}/rollout-child.jsonl`, [
+    metadata(childID, rootID),
+    // A rewind artifact includes the copied parent's metadata after its own.
+    metadata(rootID),
+    { type: "turn_context", payload: { model: "gpt-test-codex" } },
+    ...shared,
+    task("child-turn-3", 4),
+    message("child-user-3", "user", "3'", 4),
+    message("child-response-3", "assistant", "three prime", 4),
+    usage(4),
+  ]);
+
+  const db = openArchiveDatabase(":memory:");
+  migrateTestDatabase(db);
+  const sessions = new SessionRepository(db);
+  const conversations = new ConversationProjectionRepository(db);
+  try {
+    const result = await syncCodexSessions(source, sessions, conversations);
+    strictEqual(result.projectionResults["conversation-v2"].failed, 0);
+    strictEqual(count(db, "conversations"), 1);
+    strictEqual(count(db, "conversation_branches"), 2);
+    strictEqual(count(db, "conversation_turns"), 4);
+    strictEqual(count(db, "conversation_model_calls"), 4);
+    strictEqual(count(db, "artifact_model_call_occurrences"), 6);
+    strictEqual(
+      new ConversationCompatibilityRepository(db).listSessions(
+        1,
+        10,
+        "codex",
+      ).items.length,
+      1,
+    );
   } finally {
     db.close();
   }

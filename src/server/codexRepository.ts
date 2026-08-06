@@ -798,7 +798,17 @@ function decodeRecords(records: Record[]) {
           calls: [],
         });
       }
-      turns.at(-1)!.inputs = messageContent(record, recordIndex + 1);
+      const inputTurn = turns.at(-1)!;
+      if (
+        inputTurn.identityBasis === "unresolved" && payload.id !== undefined
+      ) {
+        // Queued prompts can start a logical turn without a new task_started
+        // event. The message ID survives rewind copies and is strong identity
+        // evidence for canonicalizing that turn across fork artifacts.
+        inputTurn.sourceID = `user-message:${payload.id}`;
+        inputTurn.identityBasis = "stable-id";
+      }
+      inputTurn.inputs = messageContent(record, recordIndex + 1);
       continue;
     }
 
