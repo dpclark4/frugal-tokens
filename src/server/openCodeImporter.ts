@@ -10,8 +10,11 @@ import {
   SessionRepository,
   type SourceSessionCheckpoint,
 } from "./sessionRepository.ts";
+import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
 
 const parserVersion = "opencode-8";
+const conversationParserVersion = "opencode-conversation-v2-5";
+const conversationProjectionName = "conversation-v2";
 
 type AggregateRow = {
   session_id: string;
@@ -207,6 +210,7 @@ function recordUnchangedTree(
   value: OpenCodeCandidate,
   observedAt: number,
   checkpoint?: SourceSessionCheckpoint,
+  projectionName = "legacy",
 ) {
   for (const session of value.sessions) {
     repository.recordUnchangedSourceSession(
@@ -215,13 +219,25 @@ function recordUnchangedTree(
       `session:${session.id}`,
       observedAt,
       checkpoint,
+      projectionName,
     );
   }
+}
+
+function currentProjection(
+  checkpoint: SourceSessionCheckpoint | undefined,
+  version: string,
+  contentChecksum: string,
+) {
+  return checkpoint?.parserVersion === version &&
+    checkpoint.checksum === contentChecksum &&
+    checkpoint.lastError === undefined;
 }
 
 export function syncOpenCodeSessions(
   path: string,
   repository: SessionRepository,
+  conversations?: ConversationProjectionRepository,
 ) {
   const source = new DatabaseSync(path, { readOnly: true });
   const observedAt = Date.now();
@@ -234,6 +250,7 @@ export function syncOpenCodeSessions(
   let imported = 0;
   let skipped = 0;
   let failed = 0;
+  const v2 = { imported: 0, skipped: 0, failed: 0 };
   let candidates: OpenCodeCandidate[] = [];
   let discoveryDuration = 0;
   let checkpointDuration = 0;
@@ -248,62 +265,57 @@ export function syncOpenCodeSessions(
     for (const initial of candidates) {
       const checkpointStartedAt = performance.now();
       const previous = repository.checkpoint(sourceID, initial.id);
+      const previousV2 = conversations === undefined
+        ? undefined
+        : repository.checkpoint(
+          sourceID,
+          initial.id,
+          conversationProjectionName,
+        );
       checkpointDuration += performance.now() - checkpointStartedAt;
       if (
         previous?.parserVersion === parserVersion &&
-        previous.changeHint === initial.changeHint
+        previous.changeHint === initial.changeHint &&
+        previous.lastError === undefined &&
+        (conversations === undefined ||
+          (previousV2?.parserVersion === conversationParserVersion &&
+            previousV2.changeHint === initial.changeHint &&
+            previousV2.lastError === undefined))
       ) {
         skipped++;
+        if (conversations !== undefined) v2.skipped++;
         continue;
       }
 
       let transaction = false;
+      let rows: OpenCodeSnapshot;
+      let fresh: OpenCodeCandidate;
+      let contentChecksum: string;
+      let normalized: ReturnType<typeof normalizeOpenCodeSessionTree>;
       try {
         const sourceReadStartedAt = performance.now();
         source.exec("BEGIN");
         transaction = true;
-        const rows = snapshot(source, initial.id);
-        const fresh = snapshotCandidate(rows);
-        const contentChecksum = checksum(rows);
+        rows = snapshot(source, initial.id);
+        fresh = snapshotCandidate(rows);
+        contentChecksum = checksum(rows);
         sourceReadDuration += performance.now() - sourceReadStartedAt;
-        const checkpoint: SourceSessionCheckpoint = {
-          changeHint: fresh.changeHint,
-          sourceSize: fresh.rowCount,
-          sourceModifiedAt: fresh.updatedAt,
-          checksum: contentChecksum,
-          parserVersion,
-        };
         const normalizeStartedAt = performance.now();
-        const normalized = normalizeOpenCodeSessionTree({
+        normalized = normalizeOpenCodeSessionTree({
           ...rows,
           sourceID,
           observedAt,
-          checkpoint,
+          checkpoint: {
+            changeHint: fresh.changeHint,
+            sourceSize: fresh.rowCount,
+            sourceModifiedAt: fresh.updatedAt,
+            checksum: contentChecksum,
+            parserVersion,
+          },
         });
         normalizeDuration += performance.now() - normalizeStartedAt;
         source.exec("COMMIT");
         transaction = false;
-
-        if (
-          previous?.parserVersion === parserVersion &&
-          previous.checksum === contentChecksum
-        ) {
-          const archiveWriteStartedAt = performance.now();
-          recordUnchangedTree(
-            repository,
-            sourceID,
-            fresh,
-            observedAt,
-            checkpoint,
-          );
-          archiveWriteDuration += performance.now() - archiveWriteStartedAt;
-          skipped++;
-          continue;
-        }
-        const archiveWriteStartedAt = performance.now();
-        repository.replaceSourceSessionTree(normalized);
-        archiveWriteDuration += performance.now() - archiveWriteStartedAt;
-        imported++;
       } catch (error) {
         if (transaction) source.exec("ROLLBACK");
         console.warn(
@@ -318,6 +330,101 @@ export function syncOpenCodeSessions(
           error,
         );
         failed++;
+        if (conversations !== undefined) {
+          repository.recordProjectionError(
+            sourceID,
+            initial.id,
+            conversationProjectionName,
+            error,
+          );
+          v2.failed++;
+        }
+        continue;
+      }
+
+      const legacyCheckpoint: SourceSessionCheckpoint = {
+        changeHint: fresh.changeHint,
+        sourceSize: fresh.rowCount,
+        sourceModifiedAt: fresh.updatedAt,
+        checksum: contentChecksum,
+        parserVersion,
+      };
+      if (currentProjection(previous, parserVersion, contentChecksum)) {
+        const archiveWriteStartedAt = performance.now();
+        recordUnchangedTree(
+          repository,
+          sourceID,
+          fresh,
+          observedAt,
+          legacyCheckpoint,
+        );
+        archiveWriteDuration += performance.now() - archiveWriteStartedAt;
+        skipped++;
+      } else {
+        try {
+          const archiveWriteStartedAt = performance.now();
+          repository.replaceSourceSessionTree(normalized);
+          archiveWriteDuration += performance.now() - archiveWriteStartedAt;
+          imported++;
+        } catch (error) {
+          console.warn(
+            `[sync] harness=opencode session=${initial.id} projection=legacy failed`,
+            error,
+          );
+          repository.recordSourceSessionError(
+            sourceID,
+            initial.id,
+            `session:${initial.id}`,
+            observedAt,
+            error,
+          );
+          failed++;
+        }
+      }
+
+      if (conversations !== undefined) {
+        if (
+          currentProjection(
+            previousV2,
+            conversationParserVersion,
+            contentChecksum,
+          )
+        ) {
+          v2.skipped++;
+        } else {
+          try {
+            const archiveWriteStartedAt = performance.now();
+            conversations.replaceLinearSessionTree(normalized);
+            recordUnchangedTree(
+              repository,
+              sourceID,
+              fresh,
+              observedAt,
+              {
+                changeHint: fresh.changeHint,
+                sourceSize: fresh.rowCount,
+                sourceModifiedAt: fresh.updatedAt,
+                checksum: contentChecksum,
+                parserVersion: conversationParserVersion,
+              },
+              conversationProjectionName,
+            );
+            archiveWriteDuration += performance.now() - archiveWriteStartedAt;
+            v2.imported++;
+          } catch (error) {
+            console.warn(
+              `[sync] harness=opencode session=${initial.id} projection=${conversationProjectionName} failed`,
+              error,
+            );
+            repository.recordProjectionError(
+              sourceID,
+              initial.id,
+              conversationProjectionName,
+              error,
+            );
+            v2.failed++;
+          }
+        }
       }
     }
     const finalizeStartedAt = performance.now();
@@ -335,6 +442,12 @@ export function syncOpenCodeSessions(
       imported,
       skipped,
       failed,
+      projectionResults: {
+        legacy: { imported, skipped, failed },
+        ...(conversations === undefined
+          ? {}
+          : { [conversationProjectionName]: v2 }),
+      },
       timings: {
         discovery: discoveryDuration,
         checkpoints: checkpointDuration,

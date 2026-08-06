@@ -54,6 +54,12 @@ Deno.test("normalizes model changes without creating command turns", () => {
       {
         number: 1,
         startedAt: Date.parse("2026-06-25T19:51:53.000Z"),
+        inputs: [{
+          kind: "text",
+          preview: "Start with Sonnet",
+          originalLength: 17,
+          truncated: false,
+        }],
         calls: [{
           id: "call-sonnet",
           callWithinTurn: 1,
@@ -84,6 +90,12 @@ Deno.test("normalizes model changes without creating command turns", () => {
       {
         number: 2,
         startedAt: Date.parse("2026-06-25T19:52:01.000Z"),
+        inputs: [{
+          kind: "text",
+          preview: "❯ Continue with Opus",
+          originalLength: 20,
+          truncated: false,
+        }],
         calls: [{
           id: "call-opus",
           callWithinTurn: 1,
@@ -168,6 +180,12 @@ Deno.test("normalizes an SDK prompt and deduplicates streamed usage", () => {
     turns: [{
       number: 1,
       startedAt: Date.parse("2026-06-25T20:00:00.000Z"),
+      inputs: [{
+        kind: "text",
+        preview: "hi",
+        originalLength: 2,
+        truncated: false,
+      }],
       calls: [{
         id: "sdk-call",
         callWithinTurn: 1,
@@ -244,6 +262,12 @@ Deno.test("normalizes a linked subagent without folding child usage into parent"
     turns: [{
       number: 1,
       startedAt: Date.parse("2026-06-25T21:00:00.000Z"),
+      inputs: [{
+        kind: "text",
+        preview: "Delegate this task",
+        originalLength: 18,
+        truncated: false,
+      }],
       calls: [
         {
           id: "parent-call-1",
@@ -331,6 +355,12 @@ Deno.test("normalizes a linked subagent without folding child usage into parent"
       turns: [{
         number: 1,
         startedAt: Date.parse("2026-06-25T21:00:01.500Z"),
+        inputs: [{
+          kind: "text",
+          preview: "Investigate the issue",
+          originalLength: 21,
+          truncated: false,
+        }],
         calls: [{
           id: "child-call",
           callWithinTurn: 1,

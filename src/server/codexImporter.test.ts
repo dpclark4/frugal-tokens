@@ -6,6 +6,11 @@ import { SessionRepository } from "./sessionRepository.ts";
 import { analyzeSessionCache } from "./cacheAnalysis.ts";
 import { priceSessionDetail } from "./pricing.ts";
 import { contextRange } from "../shared/contextMetrics.ts";
+import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
+import {
+  assertConversationCompatibilityParity,
+  assertLinearConversationParity,
+} from "./conversationProjectionTestUtils.ts";
 
 const transcript = `
 {"id":"session","timestamp":"2026-07-11T13:59:59.000Z","instructions":null,"git":null}
@@ -43,9 +48,23 @@ Deno.test("imports Codex sessions for SQLite reads", async () => {
   const db = openArchiveDatabase(`${directory}/archive.sqlite`);
   migrateTestDatabase(db);
   const repository = new SessionRepository(db);
+  const conversations = new ConversationProjectionRepository(db);
   try {
-    const result = await syncCodexSessions(sessions, repository);
+    const result = await syncCodexSessions(sessions, repository, conversations);
     strictEqual(result.imported, 1);
+    strictEqual(result.projectionResults["conversation-v2"].imported, 1);
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM conversations").get()!.count,
+      1,
+    );
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM conversation_branches").get()!
+        .count,
+      1,
+    );
+
+    assertLinearConversationParity(db, "codex");
+    assertConversationCompatibilityParity(db, repository, "codex", "2026/07/11/rollout-session");
 
     const id = "2026/07/11/rollout-session";
     strictEqual(repository.listSessions(1, 10, "codex").items[0].id, id);
@@ -162,6 +181,38 @@ Deno.test("imports Codex sessions for SQLite reads", async () => {
         WHERE preview LIKE '%sensitive-summary%'
       `).get()!.count,
       0,
+    );
+    const parity = db.prepare(`
+      SELECT s.user_turns AS legacy_turns, s.model_calls AS legacy_calls,
+        s.processed_tokens AS legacy_tokens,
+        cr.user_turns AS v2_turns, cr.model_calls AS v2_calls,
+        cr.processed_tokens AS v2_tokens
+      FROM sessions s
+      JOIN source_sessions ss ON ss.id = s.source_session_id
+      JOIN conversations c
+        ON c.source_id = ss.source_id AND c.external_id = ss.external_id
+      JOIN conversation_rollups cr ON cr.conversation_id = c.id
+    `).get()!;
+    deepStrictEqual({ ...parity }, {
+      legacy_turns: 3,
+      legacy_calls: 3,
+      legacy_tokens: 4501,
+      v2_turns: 3,
+      v2_calls: 3,
+      v2_tokens: 4501,
+    });
+
+    const unchanged = await syncCodexSessions(
+      sessions,
+      repository,
+      conversations,
+    );
+    strictEqual(unchanged.skipped, 1);
+    strictEqual(unchanged.projectionResults["conversation-v2"].skipped, 1);
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM conversation_model_calls")
+        .get()!.count,
+      3,
     );
   } finally {
     db.close();

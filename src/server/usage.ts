@@ -6,6 +6,9 @@ import type {
 } from "../shared/sessionSchemas.ts";
 
 export type UsageCall = {
+  modelCallID?: number;
+  previousModelCallID?: number;
+  turnRowID?: number;
   harness: SessionSummary["harness"];
   session: {
     id: string;
