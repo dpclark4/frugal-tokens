@@ -721,7 +721,7 @@ Exit criteria:
 
 ### Milestone 5: Analytics and per-harness read cutover
 
-Status: in progress.
+Status: complete.
 
 Implementation record:
 
@@ -802,8 +802,14 @@ Current checkpoint and measured performance:
   three branches, seven canonical turns/calls, thirteen call occurrences, and
   109,290 unique processed tokens. Both fork branches resolve to the original
   artifact through generic source-artifact lineage.
+- The complete existing suite passes with 146 tests, including legacy importer,
+  analytics, conversation compatibility, Codex family, and projection lifecycle
+  coverage. A development startup applied the cost and tool-link migrations,
+  rebuilt changed V2 projections without missing-column errors, and completed a
+  subsequent synchronized startup successfully. Browser-level branch behavior
+  remains Milestone 7 work.
 
-Remaining work and foreseen risks:
+Deferred operational risks:
 
 - Reassess clean-import performance only against measured phases. OpenCode is
   now dominated by approximately 8.1 seconds of source extraction and 5.9
@@ -813,21 +819,20 @@ Remaining work and foreseen risks:
   refresh and legacy reads remain available until each V2 projection succeeds,
   but cooperative or worker-based execution remains an optional operational
   improvement after import throughput and parity work.
-- Run the complete existing test suite, including legacy importer and analytics
-  tests. No old test should be removed or weakened to complete the cutover.
 - Keep legacy writes and the per-harness rollback facade in place. Stopping
   legacy writes, removing legacy tables, and adding the branch-aware API remain
   later milestones and are not cleanup work within Milestone 5.
 
-Work:
+Completed work:
 
-- Update activity, usage, cost, cache, performance, tool, session-shape, and
-  related analytics to consume conversation-aware repository interfaces.
-- Allow the server repository facade to select legacy or V2 reads by harness.
-- Cut Codex over only after parity and fork semantics pass.
-- Cut other harnesses over individually after their linear adapters pass.
-- Aggregate global analytics from each harness provider without duplicating a
-  harness in both projections.
+- Activity, usage, cost, cache, performance, tool, session-shape, and related
+  analytics consume conversation-aware repository interfaces.
+- The server facade selects legacy or V2 reads per harness and global analytics
+  include each harness exactly once.
+- Codex fork semantics and the linear OpenCode, Claude Code, and Pi adapters
+  have passed their current compatibility boundaries. Native harness topology
+  beyond that linear boundary is tracked in Milestone 8 and must not be mistaken
+  for completed branch support.
 
 Exit criteria for each harness:
 
@@ -845,6 +850,10 @@ Status: not started.
 Work:
 
 - Keep the existing linear turn response as the default selected path.
+- Make metric scope explicit in the response: conversation-wide unique totals,
+  selected branch-path totals, and branch-local executed totals must not be
+  mixed under one unlabeled header. The current compatibility detail can show a
+  selected five-call Codex path alongside seven-call conversation token totals.
 - Add optional branch metadata to shared schemas.
 - Support a branch query parameter on session detail.
 - Use the root conversation ID as the stable session route ID.
@@ -897,22 +906,60 @@ Exit criteria:
 - Linear sessions remain visually unchanged.
 - Keyboard and narrow-screen behavior remain usable.
 
-### Milestone 8: Cleanup and later harness trees
+### Milestone 8: Remaining harness topology and cleanup
 
 Status: not started.
 
-Work after all harnesses use V2:
+Observed topology work before legacy cleanup:
 
-- Stop legacy projection writes.
-- Remove legacy repository compatibility code.
-- Remove old canonical tables in a later migration.
+- Implement native Pi entry-tree import. A live Pi v3 artifact with several
+  `id`/`parentId` forks currently becomes one unresolved linear V2 branch. This
+  preserves V1 parity and conversation-wide executed-call totals but can create
+  a transcript path that never existed and can choose the wrong cache
+  predecessor across forks. Preserve topology-bearing native entries, derive
+  paths from entry ancestry rather than repeated occurrences, identify branch
+  heads/fork points, and add a sanitized nested-tree fixture.
+- Implement Claude Code fork-family import. Live `/fork` artifacts
+  `1f205a16-7df8-4077-be9b-ee37debaa0d2` and
+  `a637fc4a-3d50-4478-9ba0-bd23babb2758` are currently separate V1 and V2
+  sessions with four calls each. Their first two calls have the same provider
+  message IDs, source UUID ancestry, timestamps, and usage, while each artifact
+  then has two distinct calls. The fork artifact also records the `/fork`
+  operation and original session ID. Treat this as a candidate two-branch
+  family, confirm lineage rules against sanitized fixtures, and deduplicate only
+  confirmed copied executions as done for Codex.
+- Verify OpenCode fork behavior separately. Determine whether a fork copies
+  message/part rows, preserves or regenerates stable IDs, records explicit
+  lineage, or starts a new context without copied execution records. Do not
+  infer identity from `(fork #N)` titles or content. Keep `session.parent_id`
+  classified as subagent ancestry unless live evidence establishes another
+  relationship.
+- Review occurrence uniqueness before native in-file trees. For Pi, prefer one
+  physical occurrence per source record and derive branch membership from entry
+  ancestry; change occurrence keys only if observed harness semantics require
+  several physical occurrence rows for one artifact/entity pair.
+- Add pricing-version metadata for materialized computed costs so rate-card
+  corrections can trigger targeted repricing rather than unrelated parser
+  version bumps.
+
+Compatibility-code cleanup after topology and branch UI validation:
+
+- Stop legacy projection writes only after a deliberate V2-only burn-in.
+- Remove `SessionReadRepository`, mixed-provider ID namespacing, rollback
+  configuration, and legacy read/write paths.
+- Extract durable source-artifact and projection-checkpoint responsibilities
+  from `SessionRepository` before removing the legacy session repository.
+- Rename `ConversationCompatibilityRepository` to the durable conversation read
+  boundary and consider separating analytics queries; split
+  `ConversationProjectionRepository` only where topology and materialization
+  responsibilities have stable boundaries.
 - Rename source-session terminology to source-artifact terminology where useful.
-- Update demo database create, merge, deployment, and redaction scripts.
-- Update harness and schema documentation.
-- Implement Pi and Claude native entry trees in separate follow-up milestones.
+- Remove old canonical tables in a later, separate migration.
+- Update demo database create, merge, deployment, redaction, harness, and schema
+  documentation.
 
-Do not remove legacy storage until every harness has passed its new repository
-and analytics contract tests.
+Do not remove legacy storage until every harness has passed its intended native
+topology, repository, analytics, and branch-UI contract tests.
 
 ## Test preservation and verification strategy
 
