@@ -11,7 +11,6 @@ import {
   sessionSummarySchema,
   type TokenUsage,
 } from "../shared/sessionSchemas.ts";
-import { computeModelCallCost } from "./pricing.ts";
 import type {
   InitialInputDistribution,
   InitialInputSample,
@@ -83,6 +82,7 @@ type CallRow = {
   started_at: number;
   completed_at: number | null;
   reported_cost: number | null;
+  computed_cost: number | null;
   uncached_input_tokens: number;
   cache_read_tokens: number;
   cache_write_tokens: number | null;
@@ -173,16 +173,6 @@ function percentile(values: number[], quantile: number) {
   const remainder = index - lower;
   return sorted[lower] + (sorted[lower + 1] - sorted[lower]) * remainder ||
     sorted[lower];
-}
-
-function modelCallCost(
-  call: Pick<
-    UsageCall,
-    "tokens" | "model" | "startedAt" | "reportedCost"
-  >,
-) {
-  return computeModelCallCost(call.tokens, call.model, call.startedAt) ??
-    call.reportedCost;
 }
 
 /** Existing session/analytics contracts reconstructed from conversation tables. */
@@ -442,11 +432,7 @@ export class ConversationCompatibilityRepository {
           : { reasoningSetting: effectiveReasoning }),
         tokens: tokens(row),
         reportedCost: optional(row.reported_cost),
-        computedCost: computeModelCallCost(
-          tokens(row),
-          row.model,
-          row.started_at,
-        ),
+        computedCost: optional(row.computed_cost),
         followsCompaction: row.follows_compaction === 1,
       };
     });
@@ -499,25 +485,15 @@ export class ConversationCompatibilityRepository {
     startedAt: number,
     harness?: Harness,
   ): ModelCallCostSummary {
-    type Row = {
-      conversation_id: number;
-      root_id: number;
+    type CostRow = {
+      total_cost: number | null;
+      total_unpriced: number;
+      root_cost: number | null;
+      root_unpriced: number;
       harness: Harness;
       root_public_id: string;
       root_started_at: number | null;
       root_updated_at: number;
-      model: string;
-      started_at: number;
-      reported_cost: number | null;
-      uncached_input_tokens: number;
-      cache_read_tokens: number;
-      cache_write_tokens: number | null;
-      cache_write_5m_tokens: number | null;
-      cache_write_1h_tokens: number | null;
-      fresh_prompt_tokens: number;
-      output_tokens: number;
-      reasoning_tokens: number;
-      processed_tokens: number;
     };
     const rows = this.db.prepare(`
       WITH RECURSIVE tree(conversation_id, root_id) AS (
@@ -530,60 +506,54 @@ export class ConversationCompatibilityRepository {
         SELECT launch.child_conversation_id, tree.root_id
         FROM conversation_subagent_launches launch
         JOIN tree ON tree.conversation_id = launch.parent_conversation_id
+      ), scoped AS (
+        SELECT call.conversation_id, tree.root_id, so.harness,
+          COALESCE(root.public_id, root.external_id) AS root_public_id,
+          root.started_at AS root_started_at,
+          root.updated_at AS root_updated_at,
+          COALESCE(call.computed_cost, call.reported_cost) AS cost
+        FROM conversation_model_calls call
+        JOIN tree ON tree.conversation_id = call.conversation_id
+        JOIN conversations c ON c.id = call.conversation_id
+        JOIN sources so ON so.id = c.source_id
+        JOIN conversations root ON root.id = tree.root_id
+        WHERE call.started_at >= ?
+          AND COALESCE(call.source_call_id, '')
+            NOT LIKE 'context-operation:%'
+          AND (? IS NULL OR so.harness = ?)
       )
-      SELECT call.conversation_id, tree.root_id, so.harness,
-        COALESCE(root.public_id, root.external_id) AS root_public_id,
-        root.started_at AS root_started_at, root.updated_at AS root_updated_at,
-        call.model, call.started_at, call.reported_cost,
-        call.uncached_input_tokens, call.cache_read_tokens,
-        call.cache_write_tokens, call.cache_write_5m_tokens,
-        call.cache_write_1h_tokens, call.fresh_prompt_tokens,
-        call.output_tokens, call.reasoning_tokens, call.processed_tokens
-      FROM conversation_model_calls call
-      JOIN tree ON tree.conversation_id = call.conversation_id
-      JOIN conversations c ON c.id = call.conversation_id
-      JOIN sources so ON so.id = c.source_id
-      JOIN conversations root ON root.id = tree.root_id
-      WHERE call.started_at >= ?
-        AND COALESCE(call.source_call_id, '') NOT LIKE 'context-operation:%'
-        AND (? IS NULL OR so.harness = ?)
-      ORDER BY call.started_at, call.id
-    `).all(startedAt, harness ?? null, harness ?? null) as Row[];
-    const costs = rows.map((row) => ({
-      row,
-      cost: computeModelCallCost(tokens(row), row.model, row.started_at) ??
-        optional(row.reported_cost),
-    }));
-    const sessions = [
-      ...Map.groupBy(
-        costs.filter(({ row }) =>
-          (row.root_started_at ?? row.root_updated_at) >= startedAt &&
-          row.conversation_id === row.root_id
-        ),
-        ({ row }) => `${row.harness}:${row.root_id}`,
-      ).values(),
-    ].map((values) => ({
-      harness: values[0].row.harness,
-      rootID: values[0].row.root_public_id,
-      sessionStartedAt: values[0].row.root_started_at ??
-        values[0].row.root_updated_at,
-      rootCost: values.reduce((sum, value) => sum + (value.cost ?? 0), 0),
-      hasUnpricedRootCost: values.some((value) => value.cost === undefined),
-    })).sort((a, b) => a.rootID.localeCompare(b.rootID));
+      SELECT harness, root_public_id, root_started_at, root_updated_at,
+        SUM(cost) AS total_cost,
+        MAX(cost IS NULL) AS total_unpriced,
+        SUM(CASE WHEN conversation_id = root_id THEN cost ELSE 0 END)
+          AS root_cost,
+        MAX(CASE WHEN conversation_id = root_id AND cost IS NULL
+          THEN 1 ELSE 0 END) AS root_unpriced
+      FROM scoped
+      GROUP BY harness, root_id, root_public_id,
+        root_started_at, root_updated_at
+      ORDER BY root_public_id
+    `).all(startedAt, harness ?? null, harness ?? null) as CostRow[];
+    const sessionRows = rows.filter((row) =>
+      (row.root_started_at ?? row.root_updated_at) >= startedAt
+    );
     return {
-      totalCost: costs.reduce(
-        (sum, value) => sum + (value.cost ?? 0),
+      totalCost: rows.reduce((sum, row) => sum + (row.total_cost ?? 0), 0),
+      hasUnpricedTotalCost: rows.some((row) => row.total_unpriced === 1),
+      totalSessionCost: sessionRows.reduce(
+        (sum, row) => sum + (row.root_cost ?? 0),
         0,
       ),
-      hasUnpricedTotalCost: costs.some((value) => value.cost === undefined),
-      totalSessionCost: sessions.reduce(
-        (sum, session) => sum + session.rootCost,
-        0,
+      hasUnpricedSessionCost: sessionRows.some((row) =>
+        row.root_unpriced === 1
       ),
-      hasUnpricedSessionCost: sessions.some((session) =>
-        session.hasUnpricedRootCost
-      ),
-      sessions,
+      sessions: sessionRows.map((row) => ({
+        harness: row.harness,
+        rootID: row.root_public_id,
+        sessionStartedAt: row.root_started_at ?? row.root_updated_at,
+        rootCost: row.root_cost ?? 0,
+        hasUnpricedRootCost: row.root_unpriced === 1,
+      })),
     };
   }
 
@@ -819,11 +789,14 @@ export class ConversationCompatibilityRepository {
         JOIN tree ON tree.conversation_id = launch.parent_conversation_id
       )
       SELECT tree.root_id, call.conversation_id AS subagent_id,
-        call.model, call.started_at, call.reported_cost,
-        call.uncached_input_tokens, call.cache_read_tokens,
-        call.cache_write_tokens, call.cache_write_5m_tokens,
-        call.cache_write_1h_tokens, call.fresh_prompt_tokens,
-        call.output_tokens, call.reasoning_tokens, call.processed_tokens
+        date(call.started_at / 1000, 'unixepoch', 'localtime') AS date,
+        SUM(
+          call.uncached_input_tokens + call.cache_read_tokens +
+          COALESCE(call.cache_write_tokens, 0)
+        ) AS input,
+        SUM(COALESCE(call.computed_cost, call.reported_cost)) AS cost,
+        MAX(call.computed_cost IS NULL AND call.reported_cost IS NULL)
+          AS has_unpriced_cost
       FROM tree
       JOIN conversation_model_calls call
         ON call.conversation_id = tree.conversation_id
@@ -833,7 +806,8 @@ export class ConversationCompatibilityRepository {
         AND COALESCE(call.source_call_id, '') NOT LIKE 'context-operation:%'
         AND (? IS NULL OR call.started_at >= ?)
         AND (? IS NULL OR so.harness = ?)
-      ORDER BY call.started_at, call.id
+      GROUP BY tree.root_id, call.conversation_id, date
+      ORDER BY date, tree.root_id, call.conversation_id
     `).all(
       startedAt ?? null,
       startedAt ?? null,
@@ -842,49 +816,19 @@ export class ConversationCompatibilityRepository {
     ) as Array<{
       root_id: number;
       subagent_id: number;
-      model: string;
-      started_at: number;
-      reported_cost: number | null;
-      uncached_input_tokens: number;
-      cache_read_tokens: number;
-      cache_write_tokens: number | null;
-      cache_write_5m_tokens: number | null;
-      cache_write_1h_tokens: number | null;
-      fresh_prompt_tokens: number;
-      output_tokens: number;
-      reasoning_tokens: number;
-      processed_tokens: number;
+      date: string;
+      input: number;
+      cost: number | null;
+      has_unpriced_cost: number;
     }>;
-    const groups = Map.groupBy(
-      rows,
-      (row) =>
-        `${row.root_id}:${row.subagent_id}:${this.#date(row.started_at)}`,
-    );
-    const result = [...groups.values()].map((calls) => {
-      const costs = calls.map((call) =>
-        modelCallCost({
-          model: call.model,
-          startedAt: call.started_at,
-          reportedCost: optional(call.reported_cost),
-          tokens: tokens(call),
-        })
-      );
-      return {
-        rootSessionID: calls[0].root_id,
-        subagentSessionID: calls[0].subagent_id,
-        date: this.#date(calls[0].started_at),
-        input: calls.reduce(
-          (sum, call) => sum + this.#input(tokens(call)),
-          0,
-        ),
-        cost: costs.reduce<number>((sum, cost) => sum + (cost ?? 0), 0),
-        hasUnpricedCost: costs.some((cost) => cost === undefined),
-      };
-    });
-    return result.sort((a, b) =>
-      a.date.localeCompare(b.date) || a.rootSessionID - b.rootSessionID ||
-      a.subagentSessionID - b.subagentSessionID
-    );
+    return rows.map((row) => ({
+      rootSessionID: row.root_id,
+      subagentSessionID: row.subagent_id,
+      date: row.date,
+      input: row.input,
+      cost: row.cost ?? 0,
+      hasUnpricedCost: row.has_unpriced_cost === 1,
+    }));
   }
 
   listInitialInputSamples(
@@ -1269,18 +1213,5 @@ export class ConversationCompatibilityRepository {
       WHERE launch.child_conversation_id = ? LIMIT 1
     `).get(conversationID) as { id: string } | undefined;
     return row?.id;
-  }
-
-  #input(value: TokenUsage) {
-    return value.uncachedInput + value.cacheRead + (value.cacheWrite ?? 0);
-  }
-
-  #date(value: number) {
-    const date = new Date(value);
-    return [
-      date.getFullYear(),
-      String(date.getMonth() + 1).padStart(2, "0"),
-      String(date.getDate()).padStart(2, "0"),
-    ].join("-");
   }
 }

@@ -720,15 +720,15 @@ export class ConversationProjectionRepository {
                   INSERT INTO conversation_model_calls (
                     conversation_id, turn_id, source_call_id, ordinal,
                     call_within_turn, provider, model, started_at, completed_at,
-                    reported_cost, uncached_input_tokens, cache_read_tokens,
-                    cache_write_tokens, cache_write_5m_tokens,
+                    reported_cost, computed_cost, uncached_input_tokens,
+                    cache_read_tokens, cache_write_tokens, cache_write_5m_tokens,
                     cache_write_1h_tokens, fresh_prompt_tokens, output_tokens,
                     reasoning_tokens, processed_tokens, finish_reason, images,
                     has_text, has_reasoning, reasoning_setting_name,
                     reasoning_setting_value, reasoning_source_field_path,
                     reasoning_source_order, reasoning_observed_at,
                     reasoning_provenance
-                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                   RETURNING id
                 `).get(
                       conversationID,
@@ -741,6 +741,11 @@ export class ConversationProjectionRepository {
                       call.startedAt,
                       call.completedAt ?? null,
                       call.reportedCost ?? null,
+                      computeModelCallCost(
+                        call.tokens,
+                        call.model,
+                        call.startedAt,
+                      ) ?? null,
                       ...tokenValues(call.tokens),
                       call.activity.finishReason ?? null,
                       call.activity.images ?? null,
@@ -1174,15 +1179,15 @@ export class ConversationProjectionRepository {
           INSERT INTO conversation_model_calls (
             conversation_id, turn_id, source_call_id, ordinal,
             call_within_turn, provider, model, started_at, completed_at,
-            reported_cost, uncached_input_tokens, cache_read_tokens,
-            cache_write_tokens, cache_write_5m_tokens,
+            reported_cost, computed_cost, uncached_input_tokens,
+            cache_read_tokens, cache_write_tokens, cache_write_5m_tokens,
             cache_write_1h_tokens, fresh_prompt_tokens, output_tokens,
             reasoning_tokens, processed_tokens, finish_reason, images,
             has_text, has_reasoning, reasoning_setting_name,
             reasoning_setting_value, reasoning_source_field_path,
             reasoning_source_order, reasoning_observed_at,
             reasoning_provenance
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           RETURNING id
         `).get(
               conversationID,
@@ -1195,6 +1200,11 @@ export class ConversationProjectionRepository {
               call.startedAt,
               call.completedAt ?? null,
               call.reportedCost ?? null,
+              computeModelCallCost(
+                call.tokens,
+                call.model,
+                call.startedAt,
+              ) ?? null,
               ...tokenValues(call.tokens),
               call.activity.finishReason ?? null,
               call.activity.images ?? null,

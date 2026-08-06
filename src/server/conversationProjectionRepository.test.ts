@@ -3,6 +3,7 @@ import { openArchiveDatabase } from "./database.ts";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
 import { SessionRepository, type SourceSessionImport } from "./sessionRepository.ts";
 import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
+import { computeModelCallCost } from "./pricing.ts";
 
 const tokens = {
   uncachedInput: 10,
@@ -31,7 +32,7 @@ function linearImport(sourceID: number): SourceSessionImport {
       startedAt: 1,
       endedAt: 3,
       providers: ["openai"],
-      models: ["gpt-test"],
+      models: ["gpt-5.6-sol"],
       userTurns: 1,
       modelCalls: 1,
       tokens,
@@ -48,9 +49,10 @@ function linearImport(sourceID: number): SourceSessionImport {
           id: "call-1",
           callWithinTurn: 1,
           provider: "openai",
-          model: "gpt-test",
+          model: "gpt-5.6-sol",
           startedAt: 2,
           completedAt: 3,
+          reportedCost: 99,
           tokens,
           activity: {
             hasText: true,
@@ -102,6 +104,11 @@ Deno.test("linear conversation replacement is idempotent and transactional", () 
       db.prepare("SELECT COUNT(*) AS count FROM conversation_model_calls")
         .get()!.count,
       1,
+    );
+    strictEqual(
+      db.prepare("SELECT computed_cost FROM conversation_model_calls").get()!
+        .computed_cost,
+      computeModelCallCost(tokens, "gpt-5.6-sol", 2),
     );
     strictEqual(
       db.prepare("SELECT COUNT(*) AS count FROM artifact_model_call_occurrences")
