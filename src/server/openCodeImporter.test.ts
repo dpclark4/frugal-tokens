@@ -5,6 +5,8 @@ import { openArchiveDatabase } from "./database.ts";
 import { syncOpenCodeSessions } from "./openCodeImporter.ts";
 import { SessionRepository } from "./sessionRepository.ts";
 import { analyzeSessionCache } from "./cacheAnalysis.ts";
+import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
+import { assertLinearConversationParity } from "./conversationProjectionTestUtils.ts";
 
 function sourceDatabase(path: string) {
   const db = new DatabaseSync(path);
@@ -255,9 +257,23 @@ Deno.test("incrementally imports OpenCode session trees", () => {
   const archive = openArchiveDatabase(`${directory}/archive.sqlite`);
   migrateTestDatabase(archive);
   const repository = new SessionRepository(archive);
+  const conversations = new ConversationProjectionRepository(archive);
   try {
-    const first = syncOpenCodeSessions(sourcePath, repository);
+    const first = syncOpenCodeSessions(sourcePath, repository, conversations);
     strictEqual(first.imported, 1);
+    strictEqual(first.projectionResults["conversation-v2"]!.imported, 1);
+    strictEqual(
+      archive.prepare("SELECT COUNT(*) AS count FROM conversations").get()!
+        .count,
+      2,
+    );
+    strictEqual(
+      archive.prepare(`
+        SELECT COUNT(*) AS count FROM conversation_subagent_launches
+      `).get()!.count,
+      1,
+    );
+    assertLinearConversationParity(archive, "opencode");
     const detail = repository.getSession("opencode", "root")!;
     strictEqual(detail.workingDirectory, "/Users/test/project");
     strictEqual(detail.subagents[0].id, "child");

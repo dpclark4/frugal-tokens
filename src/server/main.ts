@@ -36,6 +36,7 @@ import { contextRange } from "../shared/contextMetrics.ts";
 import { rollupCosts } from "../shared/costMetrics.ts";
 import { expandHomePath, openArchiveDatabase, sqlitePath } from "./database.ts";
 import { SessionRepository } from "./sessionRepository.ts";
+import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
 import { syncPiSessions } from "./piImporter.ts";
 import { syncCodexSessions } from "./codexImporter.ts";
 import { syncClaudeCodeSessions } from "./claudeCodeImporter.ts";
@@ -99,6 +100,9 @@ if (!archiveURL) {
 }
 const archiveDatabase = openArchiveDatabase(sqlitePath(archiveURL));
 const archiveRepository = new SessionRepository(archiveDatabase);
+const conversationProjectionRepository = new ConversationProjectionRepository(
+  archiveDatabase,
+);
 const syncIntervalSeconds = (() => {
   const value = Deno.env.get("FRUGAL_TOKENS_SYNC_INTERVAL_SECONDS");
   if (value === undefined || value === "0") return undefined;
@@ -157,22 +161,45 @@ async function syncSources() {
   if (openCodePath) {
     await runSync(
       "opencode",
-      () => syncOpenCodeSessions(openCodePath, archiveRepository),
+      () =>
+        syncOpenCodeSessions(
+          openCodePath,
+          archiveRepository,
+          conversationProjectionRepository,
+        ),
     );
   }
   if (claudeDirectory) {
     await runSync(
       "claude-code",
-      () => syncClaudeCodeSessions(claudeDirectory, archiveRepository),
+      () =>
+        syncClaudeCodeSessions(
+          claudeDirectory,
+          archiveRepository,
+          conversationProjectionRepository,
+        ),
     );
   }
   if (piDirectory) {
-    await runSync("pi", () => syncPiSessions(piDirectory, archiveRepository));
+    await runSync(
+      "pi",
+      () =>
+        syncPiSessions(
+          piDirectory,
+          archiveRepository,
+          conversationProjectionRepository,
+        ),
+    );
   }
   if (codexDirectory) {
     await runSync(
       "codex",
-      () => syncCodexSessions(codexDirectory, archiveRepository),
+      () =>
+        syncCodexSessions(
+          codexDirectory,
+          archiveRepository,
+          conversationProjectionRepository,
+        ),
     );
   }
   console.info(

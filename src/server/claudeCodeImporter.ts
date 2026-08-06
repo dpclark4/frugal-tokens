@@ -3,9 +3,16 @@ import {
   discoverClaudeCodeSessions,
   normalizeClaudeCodeSessionTree,
 } from "./claudeCodeRepository.ts";
-import { SessionRepository } from "./sessionRepository.ts";
+import {
+  SessionRepository,
+  type SourceSessionCheckpoint,
+  type SourceSessionImport,
+} from "./sessionRepository.ts";
+import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
 
-const parserVersion = "claude-code-5";
+const legacyParserVersion = "claude-code-5";
+const conversationParserVersion = "claude-code-conversation-v2-1";
+const conversationProjectionName = "conversation-v2";
 
 function externalID(
   candidate: ClaudeCodeSessionCandidate,
@@ -21,12 +28,8 @@ function recordUnchangedTree(
   sourceID: number,
   candidate: ClaudeCodeSessionCandidate,
   observedAt: number,
-  checkpoint?: {
-    sourceSize: number;
-    sourceModifiedAt: number;
-    checksum?: string;
-    parserVersion: string;
-  },
+  checkpoint?: SourceSessionCheckpoint,
+  projectionName = "legacy",
 ) {
   for (const dependency of candidate.dependencies) {
     if (!dependency.artifactPath.endsWith(".jsonl")) continue;
@@ -36,6 +39,7 @@ function recordUnchangedTree(
       dependency.artifactPath,
       observedAt,
       checkpoint,
+      projectionName,
     );
   }
 }
@@ -70,9 +74,19 @@ async function fingerprint(
   ).join("");
 }
 
+function currentProjection(
+  checkpoint: SourceSessionCheckpoint | undefined,
+  parserVersion: string,
+  checksum: string,
+) {
+  return checkpoint?.parserVersion === parserVersion &&
+    checkpoint.checksum === checksum && checkpoint.lastError === undefined;
+}
+
 export async function syncClaudeCodeSessions(
   directory: string,
   repository: SessionRepository,
+  conversations?: ConversationProjectionRepository,
 ) {
   const observedAt = Date.now();
   const sourceID = repository.ensureSource(
@@ -85,16 +99,31 @@ export async function syncClaudeCodeSessions(
   let imported = 0;
   let skipped = 0;
   let failed = 0;
+  const v2 = { imported: 0, skipped: 0, failed: 0 };
 
   for (const candidate of candidates) {
     const previous = repository.checkpoint(sourceID, candidate.id);
-    if (
-      previous?.parserVersion === parserVersion &&
+    const previousV2 = conversations === undefined
+      ? undefined
+      : repository.checkpoint(
+        sourceID,
+        candidate.id,
+        conversationProjectionName,
+      );
+    const physicalUnchanged =
+      previous?.parserVersion === legacyParserVersion &&
       previous.sourceSize === candidate.size &&
-      previous.sourceModifiedAt === candidate.changeHint
-    ) {
+      previous.sourceModifiedAt === candidate.changeHint &&
+      previous.lastError === undefined &&
+      (conversations === undefined ||
+        (previousV2?.parserVersion === conversationParserVersion &&
+          previousV2.sourceSize === candidate.size &&
+          previousV2.sourceModifiedAt === candidate.changeHint &&
+          previousV2.lastError === undefined));
+    if (physicalUnchanged) {
       recordUnchangedTree(repository, sourceID, candidate, observedAt);
       skipped++;
+      if (conversations !== undefined) v2.skipped++;
       continue;
     }
 
@@ -124,34 +153,89 @@ export async function syncClaudeCodeSessions(
         );
       }
       const checksum = await fingerprint(candidate, snapshots);
-      const checkpoint = {
+      const legacyCheckpoint: SourceSessionCheckpoint = {
         sourceSize: candidate.size,
         sourceModifiedAt: candidate.changeHint,
         checksum,
-        parserVersion,
+        parserVersion: legacyParserVersion,
       };
-      if (
-        previous?.parserVersion === parserVersion &&
-        previous.checksum === checksum
-      ) {
+      let normalized: SourceSessionImport[] | undefined;
+      const normalize = (checkpoint: SourceSessionCheckpoint) =>
+        normalized ??= normalizeClaudeCodeSessionTree({
+          candidate,
+          snapshots,
+          sourceID,
+          observedAt,
+          checkpoint,
+        });
+
+      if (currentProjection(previous, legacyParserVersion, checksum)) {
         recordUnchangedTree(
           repository,
           sourceID,
           candidate,
           observedAt,
-          checkpoint,
+          legacyCheckpoint,
         );
         skipped++;
-        continue;
+      } else {
+        try {
+          repository.replaceSourceSessionTree(normalize(legacyCheckpoint));
+          imported++;
+        } catch (error) {
+          console.warn(
+            `[sync] harness=claude-code source=${candidate.path} projection=legacy failed`,
+            error,
+          );
+          repository.recordSourceSessionError(
+            sourceID,
+            candidate.id,
+            candidate.artifactPath,
+            observedAt,
+            error,
+          );
+          failed++;
+        }
       }
-      repository.replaceSourceSessionTree(normalizeClaudeCodeSessionTree({
-        candidate,
-        snapshots,
-        sourceID,
-        observedAt,
-        checkpoint,
-      }));
-      imported++;
+
+      if (conversations !== undefined) {
+        if (
+          currentProjection(previousV2, conversationParserVersion, checksum)
+        ) {
+          v2.skipped++;
+        } else {
+          const v2Checkpoint: SourceSessionCheckpoint = {
+            sourceSize: candidate.size,
+            sourceModifiedAt: candidate.changeHint,
+            checksum,
+            parserVersion: conversationParserVersion,
+          };
+          try {
+            conversations.replaceLinearSessionTree(normalize(v2Checkpoint));
+            recordUnchangedTree(
+              repository,
+              sourceID,
+              candidate,
+              observedAt,
+              v2Checkpoint,
+              conversationProjectionName,
+            );
+            v2.imported++;
+          } catch (error) {
+            console.warn(
+              `[sync] harness=claude-code source=${candidate.path} projection=${conversationProjectionName} failed`,
+              error,
+            );
+            repository.recordProjectionError(
+              sourceID,
+              candidate.id,
+              conversationProjectionName,
+              error,
+            );
+            v2.failed++;
+          }
+        }
+      }
     } catch (error) {
       console.warn(
         `[sync] harness=claude-code source=${candidate.path} failed`,
@@ -165,6 +249,15 @@ export async function syncClaudeCodeSessions(
         error,
       );
       failed++;
+      if (conversations !== undefined) {
+        repository.recordProjectionError(
+          sourceID,
+          candidate.id,
+          conversationProjectionName,
+          error,
+        );
+        v2.failed++;
+      }
     }
   }
 
@@ -174,5 +267,11 @@ export async function syncClaudeCodeSessions(
     imported,
     skipped,
     failed,
+    projectionResults: {
+      legacy: { imported, skipped, failed },
+      ...(conversations === undefined
+        ? {}
+        : { [conversationProjectionName]: v2 }),
+    },
   };
 }

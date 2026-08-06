@@ -3,6 +3,8 @@ import { openArchiveDatabase } from "./database.ts";
 import { syncPiSessions } from "./piImporter.ts";
 import { SessionRepository } from "./sessionRepository.ts";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
+import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
+import { assertLinearConversationParity } from "./conversationProjectionTestUtils.ts";
 
 function transcript(prompt: string) {
   return `
@@ -27,10 +29,27 @@ Deno.test("imports PI sessions directly from the configured directory", async ()
   const db = openArchiveDatabase(`${directory}/archive.sqlite`);
   migrateTestDatabase(db);
   const repository = new SessionRepository(db);
+  const conversations = new ConversationProjectionRepository(db);
   try {
-    const result = await syncPiSessions(sessions, repository);
+    const result = await syncPiSessions(sessions, repository, conversations);
     strictEqual(result.discovered, 1);
     strictEqual(result.imported, 1);
+    strictEqual(result.projectionResults["conversation-v2"].imported, 1);
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM conversations").get()!.count,
+      1,
+    );
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM conversation_branches").get()!
+        .count,
+      1,
+    );
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM conversation_model_calls")
+        .get()!.count,
+      2,
+    );
+    assertLinearConversationParity(db, "pi");
     strictEqual(
       repository.getSession("pi", "root-session")?.title,
       "Root session",

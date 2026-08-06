@@ -472,6 +472,30 @@ This is not an atomic dual-write requirement. Until cutover, legacy remains
 user-facing. A V2 failure must not damage legacy data, and a failed V2 family
 rebuild must retain the previous successful V2 projection.
 
+## Revised delivery sequence after Milestone 2
+
+The implementation will use the existing application contracts as the primary
+validation surface for the new model. This adjusts sequencing without weakening
+the milestone correctness boundaries:
+
+1. Complete Codex family import and occurrence correctness in Milestone 3.
+2. Build a V2 compatibility repository that implements the existing session,
+   usage, tool, cache, rollup, and analytics read contracts from conversation
+   tables while selecting one linear branch path by default.
+3. Port existing behavioral tests to that repository and cut reads over by
+   harness as soon as parity and intentional Codex fork semantics pass. Much of
+   Milestones 4 and 5 may therefore be delivered together rather than keeping a
+   long-lived parallel read implementation.
+4. Continue legacy projection writes during this validation period so each
+   harness retains a tested rollback path. The accelerated read cutover does not
+   accelerate destructive cleanup.
+5. Add the branch-aware API and UI only after existing endpoints have validated
+   the conversation model in normal application use.
+
+This compatibility-first cutover avoids simultaneously debugging a new storage
+model, new endpoint contract, and new UI. Per-harness delegation, unresolved
+identity coverage, and all existing Milestone 4 and 5 exit criteria still apply.
+
 ## Delivery milestones
 
 Each milestone has an independent stopping point. Do not begin the next
@@ -518,7 +542,21 @@ Exit criteria:
 
 ### Milestone 1: Projection-specific checkpoints
 
-Status: not started.
+Status: complete.
+
+Implementation record:
+
+- `artifact_import_projections` stores parser, checksum/change-hint,
+  dependency-digest, import, and error state independently per source artifact
+  and projection; the migration backfills existing state as `legacy`.
+- Legacy checkpoint columns remain dual-written during the additive migration,
+  while repository checkpoint reads use the projection-specific rows.
+- File observation now reads and checksums a changed artifact once, shares one
+  observation with active shadow projections, and tracks projection outcomes
+  independently.
+- Shadow parser bumps and failures do not invalidate or roll back the legacy
+  parser checkpoint or visible legacy projection. OpenCode change hints and
+  Claude dependency fingerprints retain their existing semantics.
 
 Work:
 
@@ -538,7 +576,21 @@ Exit criteria:
 
 ### Milestone 2: Additive shadow schema and linear adapters
 
-Status: not started.
+Status: complete.
+
+Implementation record:
+
+- The additive conversation projection stores conversations, branches, entries,
+  normalized turns, canonical calls, tools, entry/call occurrences, subagent
+  launches, and conversation rollups without changing legacy read tables.
+- `ConversationProjectionRepository` transactionally replaces linear sessions
+  and trees, preserving the prior V2 projection if a replacement fails.
+- Codex, Pi, Claude Code, and OpenCode populate `conversation-v2` in shadow
+  mode with independent checkpoints; source observations and dependency
+  snapshots remain shared with legacy orchestration.
+- Cross-projection tests compare linear metadata, turns, calls, usage, models,
+  tools, timestamps, and reported costs. V2 replacement is idempotent and all
+  server reads remain on the legacy repository.
 
 Work:
 

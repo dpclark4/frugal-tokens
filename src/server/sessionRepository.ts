@@ -77,6 +77,9 @@ export type SourceSessionCheckpoint = {
   sourceModifiedAt?: number;
   checksum?: string;
   parserVersion?: string;
+  dependencyDigest?: string;
+  importedAt?: number;
+  lastError?: string;
 };
 
 export type SessionContentImport = {
@@ -543,24 +546,71 @@ export class SessionRepository {
   checkpoint(
     sourceID: number,
     externalID: string,
+    projectionName = "legacy",
   ): SourceSessionCheckpoint | undefined {
     const row = this.db.prepare(`
-      SELECT change_hint, source_size, source_modified_at, checksum, parser_version
-      FROM source_sessions WHERE source_id = ? AND external_id = ?
-    `).get(sourceID, externalID) as {
+      SELECT ss.change_hint, ss.source_size, ss.source_modified_at,
+        aip.source_checksum, aip.source_change_hint, aip.parser_version,
+        aip.dependency_digest, aip.imported_at, aip.last_error
+      FROM source_sessions ss
+      LEFT JOIN artifact_import_projections aip
+        ON aip.source_session_id = ss.id AND aip.projection_name = ?
+      WHERE ss.source_id = ? AND ss.external_id = ?
+    `).get(projectionName, sourceID, externalID) as {
       change_hint: string | null;
       source_size: number | null;
       source_modified_at: number | null;
-      checksum: string | null;
+      source_checksum: string | null;
+      source_change_hint: string | null;
       parser_version: string | null;
+      dependency_digest: string | null;
+      imported_at: number | null;
+      last_error: string | null;
     } | undefined;
     return row && {
-      changeHint: optional(row.change_hint),
+      changeHint: optional(row.source_change_hint ?? row.change_hint),
       sourceSize: optional(row.source_size),
       sourceModifiedAt: optional(row.source_modified_at),
-      checksum: optional(row.checksum),
+      checksum: optional(row.source_checksum),
       parserVersion: optional(row.parser_version),
+      dependencyDigest: optional(row.dependency_digest),
+      importedAt: optional(row.imported_at),
+      lastError: optional(row.last_error),
     };
+  }
+
+  recordProjectionCheckpoint(
+    sourceID: number,
+    externalID: string,
+    projectionName: string,
+    checkpoint: SourceSessionCheckpoint,
+  ) {
+    this.#upsertProjectionCheckpoint(
+      this.#sourceSessionID(sourceID, externalID),
+      projectionName,
+      checkpoint,
+      true,
+    );
+  }
+
+  recordProjectionError(
+    sourceID: number,
+    externalID: string,
+    projectionName: string,
+    error: unknown,
+  ) {
+    const sourceSessionID = this.#sourceSessionID(sourceID, externalID);
+    this.db.prepare(`
+      INSERT INTO artifact_import_projections (
+        source_session_id, projection_name, last_error
+      ) VALUES (?, ?, ?)
+      ON CONFLICT (source_session_id, projection_name) DO UPDATE SET
+        last_error = excluded.last_error
+    `).run(
+      sourceSessionID,
+      projectionName,
+      error instanceof Error ? error.message : String(error),
+    );
   }
 
   recordUnchangedSourceSession(
@@ -569,6 +619,7 @@ export class SessionRepository {
     artifactPath: string,
     observedAt: number,
     checkpoint?: SourceSessionCheckpoint,
+    projectionName = "legacy",
   ) {
     this.db.prepare(`
       INSERT INTO source_sessions (
@@ -589,7 +640,7 @@ export class SessionRepository {
           excluded.parser_version, source_sessions.parser_version
         ),
         last_seen_at = excluded.last_seen_at,
-        last_error = NULL
+        last_error = CASE WHEN ? THEN NULL ELSE source_sessions.last_error END
     `).run(
       sourceID,
       externalID,
@@ -598,11 +649,20 @@ export class SessionRepository {
       checkpoint?.changeHint ?? null,
       checkpoint?.sourceSize ?? null,
       checkpoint?.sourceModifiedAt ?? null,
-      checkpoint?.checksum ?? null,
-      checkpoint?.parserVersion ?? null,
+      projectionName === "legacy" ? checkpoint?.checksum ?? null : null,
+      projectionName === "legacy" ? checkpoint?.parserVersion ?? null : null,
       observedAt,
       observedAt,
+      Number(projectionName === "legacy"),
     );
+    if (checkpoint !== undefined) {
+      this.#upsertProjectionCheckpoint(
+        this.#sourceSessionID(sourceID, externalID),
+        projectionName,
+        checkpoint,
+        false,
+      );
+    }
   }
 
   recordSourceSessionError(
@@ -630,6 +690,12 @@ export class SessionRepository {
       observedAt,
       observedAt,
       error instanceof Error ? error.message : String(error),
+    );
+    this.recordProjectionError(
+      sourceID,
+      externalID,
+      "legacy",
+      error,
     );
   }
 
@@ -1832,6 +1898,7 @@ export class SessionRepository {
     }
 
     const checkpoint = value.checkpoint;
+    const importedAt = checkpoint.importedAt ?? Date.now();
     this.db.prepare(`
         UPDATE source_sessions SET
           change_hint = ?, source_size = ?, source_modified_at = ?, checksum = ?,
@@ -1843,8 +1910,14 @@ export class SessionRepository {
       checkpoint.sourceModifiedAt ?? null,
       checkpoint.checksum ?? null,
       checkpoint.parserVersion ?? null,
-      checkpoint.importedAt ?? Date.now(),
+      importedAt,
       sourceSessionID,
+    );
+    this.#upsertProjectionCheckpoint(
+      sourceSessionID,
+      "legacy",
+      { ...checkpoint, importedAt },
+      true,
     );
   }
 
@@ -2164,6 +2237,37 @@ export class SessionRepository {
       rollup.subagentReportedCost ?? null,
       rollup.subagentComputedCost ?? null,
       JSON.stringify(rollup.overview),
+    );
+  }
+
+  #upsertProjectionCheckpoint(
+    sourceSessionID: number,
+    projectionName: string,
+    checkpoint: SourceSessionCheckpoint,
+    markImported: boolean,
+  ) {
+    this.db.prepare(`
+      INSERT INTO artifact_import_projections (
+        source_session_id, projection_name, parser_version, source_checksum,
+        source_change_hint, dependency_digest, imported_at, last_error
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+      ON CONFLICT (source_session_id, projection_name) DO UPDATE SET
+        parser_version = excluded.parser_version,
+        source_checksum = excluded.source_checksum,
+        source_change_hint = excluded.source_change_hint,
+        dependency_digest = excluded.dependency_digest,
+        imported_at = CASE WHEN ? THEN excluded.imported_at
+          ELSE artifact_import_projections.imported_at END,
+        last_error = NULL
+    `).run(
+      sourceSessionID,
+      projectionName,
+      checkpoint.parserVersion ?? null,
+      checkpoint.checksum ?? null,
+      checkpoint.changeHint ?? null,
+      checkpoint.dependencyDigest ?? null,
+      checkpoint.importedAt ?? (markImported ? Date.now() : null),
+      Number(markImported),
     );
   }
 

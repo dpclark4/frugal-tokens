@@ -11,6 +11,8 @@ const migrations = [
   "../../db/migrations/20260717140000_add_session_rollups.sql",
   "../../db/migrations/20260717150000_add_source_session_working_directory.sql",
   "../../db/migrations/20260804120000_add_compaction_details.sql",
+  "../../db/migrations/20260805120000_add_artifact_import_projections.sql",
+  "../../db/migrations/20260806120000_add_conversation_projection.sql",
 ].map((path) => new URL(path, import.meta.url));
 
 export function migrateTestDatabase(db: DatabaseSync) {

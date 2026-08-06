@@ -3,6 +3,8 @@ import { syncClaudeCodeSessions } from "./claudeCodeImporter.ts";
 import { openArchiveDatabase } from "./database.ts";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
 import { SessionRepository } from "./sessionRepository.ts";
+import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
+import { assertLinearConversationParity } from "./conversationProjectionTestUtils.ts";
 
 function write(path: string, content: string) {
   Deno.mkdirSync(path.slice(0, path.lastIndexOf("/")), { recursive: true });
@@ -51,9 +53,31 @@ Deno.test("imports a Claude Code root and namespaced child tree", async () => {
   const db = openArchiveDatabase(`${directory}/archive.sqlite`);
   migrateTestDatabase(db);
   const repository = new SessionRepository(db);
+  const conversations = new ConversationProjectionRepository(db);
   try {
-    const result = await syncClaudeCodeSessions(sessions, repository);
+    const result = await syncClaudeCodeSessions(
+      sessions,
+      repository,
+      conversations,
+    );
     strictEqual(result.imported, 1);
+    strictEqual(result.projectionResults["conversation-v2"]!.imported, 1);
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM conversations").get()!.count,
+      2,
+    );
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM conversation_branches").get()!
+        .count,
+      2,
+    );
+    strictEqual(
+      db.prepare(`
+        SELECT COUNT(*) AS count FROM conversation_subagent_launches
+      `).get()!.count,
+      1,
+    );
+    assertLinearConversationParity(db, "claude-code");
     const detail = repository.getSession("claude-code", "project/root")!;
     strictEqual(detail.title, "Indexed root");
     strictEqual(detail.workingDirectory, "/Users/test/project");
