@@ -103,7 +103,20 @@ function analyticsRollupValues(rollup: SessionRollup) {
 
 /** Transactional writer for the additive conversation-v2 shadow projection. */
 export class ConversationProjectionRepository {
+  #statements = new Map<
+    string,
+    ReturnType<DatabaseSync["prepare"]>
+  >();
+
   constructor(private db: DatabaseSync) {}
+
+  #prepare(sql: string) {
+    const existing = this.#statements.get(sql);
+    if (existing !== undefined) return existing;
+    const statement = this.db.prepare(sql);
+    this.#statements.set(sql, statement);
+    return statement;
+  }
 
   replaceLinearSession(value: SourceSessionImport) {
     this.replaceLinearSessionTree([value]);
@@ -139,7 +152,7 @@ export class ConversationProjectionRepository {
       // Legacy tree replacement removes source-session identities that no
       // longer exist. Their linear V2 branches are left with a null source
       // reference and can be removed without touching merely-missing sources.
-      this.db.prepare(`
+      this.#prepare(`
         DELETE FROM conversations
         WHERE source_id = ? AND id IN (
           SELECT conversation_id FROM conversation_branches
@@ -149,7 +162,7 @@ export class ConversationProjectionRepository {
       const conversationIDs = new Map<string, number>();
       const sourceSessionIDs = new Map<string, number>();
       for (const value of values) {
-        const sourceSession = this.db.prepare(`
+        const sourceSession = this.#prepare(`
           SELECT id FROM source_sessions
           WHERE source_id = ? AND external_id = ?
         `).get(sourceID, value.externalID) as { id: number } | undefined;
@@ -158,7 +171,7 @@ export class ConversationProjectionRepository {
         }
         sourceSessionIDs.set(value.externalID, Number(sourceSession.id));
         const conversationID = Number(
-          (this.db.prepare(`
+          (this.#prepare(`
           INSERT INTO conversations (
             source_id, external_id, title, working_directory, updated_at,
             started_at, ended_at, providers_json, models_json, agent, public_id
@@ -193,25 +206,25 @@ export class ConversationProjectionRepository {
 
       const ids = [...conversationIDs.values()];
       const placeholders = ids.map(() => "?").join(", ");
-      this.db.prepare(`
+      this.#prepare(`
         DELETE FROM conversation_subagent_launches
         WHERE parent_conversation_id IN (${placeholders}) OR
           child_conversation_id IN (${placeholders})
       `).run(...ids, ...ids);
       for (const conversationID of ids) {
-        this.db.prepare(
+        this.#prepare(
           "DELETE FROM conversation_branches WHERE conversation_id = ?",
         ).run(conversationID);
-        this.db.prepare(
+        this.#prepare(
           "DELETE FROM conversation_entries WHERE conversation_id = ?",
         ).run(conversationID);
-        this.db.prepare(
+        this.#prepare(
           "DELETE FROM conversation_model_calls WHERE conversation_id = ?",
         ).run(conversationID);
-        this.db.prepare(
+        this.#prepare(
           "DELETE FROM conversation_turns WHERE conversation_id = ?",
         ).run(conversationID);
-        this.db.prepare(
+        this.#prepare(
           "DELETE FROM conversation_rollups WHERE conversation_id = ?",
         ).run(conversationID);
       }
@@ -234,7 +247,7 @@ export class ConversationProjectionRepository {
         const launch = launchTools.get(
           `${value.parentExternalID}\0${value.externalID}`,
         );
-        this.db.prepare(`
+        this.#prepare(`
           INSERT INTO conversation_subagent_launches (
             parent_conversation_id, child_conversation_id, model_call_id,
             tool_event_id, provenance
@@ -372,7 +385,7 @@ export class ConversationProjectionRepository {
     try {
       const sourceSessionIDs = new Map<string, number>();
       for (const artifact of ordered) {
-        const row = this.db.prepare(`
+        const row = this.#prepare(`
           SELECT id FROM source_sessions
           WHERE source_id = ? AND external_id = ?
         `).get(family.sourceID, artifact.externalID) as
@@ -388,24 +401,24 @@ export class ConversationProjectionRepository {
       const sourcePlaceholders = sourceSessionIDValues.map(() => "?").join(
         ", ",
       );
-      const oldConversationIDs = (this.db.prepare(`
+      const oldConversationIDs = (this.#prepare(`
         SELECT DISTINCT conversation_id AS id FROM conversation_branches
         WHERE source_session_id IN (${sourcePlaceholders})
       `).all(...sourceSessionIDValues) as Array<{ id: number }>).map((row) =>
         Number(row.id)
       );
-      const target = this.db.prepare(`
+      const target = this.#prepare(`
         SELECT id FROM conversations WHERE source_id = ? AND external_id = ?
       `).get(family.sourceID, family.externalID) as { id: number } | undefined;
       if (target !== undefined) oldConversationIDs.push(Number(target.id));
       for (const conversationID of new Set(oldConversationIDs)) {
-        this.db.prepare("DELETE FROM conversations WHERE id = ?").run(
+        this.#prepare("DELETE FROM conversations WHERE id = ?").run(
           conversationID,
         );
       }
 
       const conversationID = Number(
-        (this.db.prepare(`
+        (this.#prepare(`
         INSERT INTO conversations (
           source_id, external_id, title, working_directory, updated_at,
           started_at, ended_at, providers_json, models_json, agent, public_id
@@ -431,7 +444,7 @@ export class ConversationProjectionRepository {
       const branchIDs = new Map<string, number>();
       for (const artifact of ordered) {
         const branchID = Number(
-          (this.db.prepare(`
+          (this.#prepare(`
           INSERT INTO conversation_branches (
             conversation_id, source_session_id, external_id,
             fork_point_provenance, updated_at
@@ -501,7 +514,7 @@ export class ConversationProjectionRepository {
         nativeMetadata?: unknown;
       }) =>
         Number(
-          (this.db.prepare(`
+          (this.#prepare(`
         INSERT INTO conversation_entries (
           conversation_id, parent_entry_id, producer_model_call_id,
           producer_tool_event_id, output_ordinal, stable_source_id, kind, role,
@@ -542,7 +555,7 @@ export class ConversationProjectionRepository {
         kind: "executed" | "copied" | "unknown";
         basis: IdentityBasis;
       }) =>
-        this.db.prepare(`
+        this.#prepare(`
         INSERT INTO artifact_entry_occurrences (
           source_session_id, branch_id, entry_id, source_entry_id,
           source_order_start, source_order_end, occurrence_kind,
@@ -660,7 +673,7 @@ export class ConversationProjectionRepository {
             turnOrdinal++;
             canonicalTurnValues.push({ ...turn, number: turnOrdinal });
             const turnID: number = Number(
-              (this.db.prepare(`
+              (this.#prepare(`
               INSERT INTO conversation_turns (
                 conversation_id, parent_turn_id, source_turn_id, ordinal,
                 started_at, reasoning_setting_name, reasoning_setting_value,
@@ -703,7 +716,7 @@ export class ConversationProjectionRepository {
               if (callID === undefined) {
                 callOrdinal++;
                 callID = Number(
-                  (this.db.prepare(`
+                  (this.#prepare(`
                   INSERT INTO conversation_model_calls (
                     conversation_id, turn_id, source_call_id, ordinal,
                     call_within_turn, provider, model, started_at, completed_at,
@@ -761,7 +774,7 @@ export class ConversationProjectionRepository {
               });
               call.activity.tools.forEach((tool, index) => {
                 const toolEventID = Number(
-                  (this.db.prepare(`
+                  (this.#prepare(`
                   INSERT INTO conversation_tool_events (
                     model_call_id, source_tool_id, ordinal, name, status,
                     started_at, completed_at, input_preview,
@@ -872,7 +885,7 @@ export class ConversationProjectionRepository {
                 `Conflicting canonical call shape: ${turn.sourceID ?? turnKey}`,
               );
             }
-            this.db.prepare(`
+            this.#prepare(`
               INSERT INTO artifact_model_call_occurrences (
                 source_session_id, branch_id, model_call_id, source_turn_id,
                 source_call_id, source_order_start, source_order_end,
@@ -917,7 +930,7 @@ export class ConversationProjectionRepository {
             ? "unresolved"
             : "inferred-confirmed";
         }
-        this.db.prepare(`
+        this.#prepare(`
           UPDATE conversation_branches SET forked_from_branch_id = ?,
             fork_point_entry_id = ?, head_entry_id = ?,
             fork_point_provenance = ?
@@ -992,7 +1005,7 @@ export class ConversationProjectionRepository {
         },
       };
       const analyticsRollup = buildSessionRollup([canonicalSession]);
-      this.db.prepare(`
+      this.#prepare(`
         INSERT INTO conversation_rollups (
           conversation_id, rollup_version, user_turns, model_calls,
           reported_cost, computed_cost, uncached_input_tokens,
@@ -1040,7 +1053,7 @@ export class ConversationProjectionRepository {
       parentExternalID: undefined,
     }]);
     const branchID = Number(
-      (this.db.prepare(`
+      (this.#prepare(`
       INSERT INTO conversation_branches (
         conversation_id, source_session_id, external_id,
         fork_point_provenance, updated_at
@@ -1074,7 +1087,7 @@ export class ConversationProjectionRepository {
       sourceOrder?: number;
     }) => {
       const entryID = Number(
-        (this.db.prepare(`
+        (this.#prepare(`
         INSERT INTO conversation_entries (
           conversation_id, parent_entry_id, producer_model_call_id,
           producer_tool_event_id, output_ordinal, stable_source_id, kind, role,
@@ -1105,7 +1118,7 @@ export class ConversationProjectionRepository {
           ) as { id: number }).id,
       );
       previousEntryID = entryID;
-      this.db.prepare(`
+      this.#prepare(`
         INSERT INTO artifact_entry_occurrences (
           source_session_id, branch_id, entry_id, source_entry_id,
           source_order_start, source_order_end, occurrence_kind, identity_basis
@@ -1123,7 +1136,7 @@ export class ConversationProjectionRepository {
 
     for (const turn of value.session.turns) {
       const turnID: number = Number(
-        (this.db.prepare(`
+        (this.#prepare(`
         INSERT INTO conversation_turns (
           conversation_id, parent_turn_id, source_turn_id, ordinal, started_at,
           reasoning_setting_name, reasoning_setting_value,
@@ -1157,7 +1170,7 @@ export class ConversationProjectionRepository {
       for (const call of turn.calls) {
         callOrdinal++;
         const callID = Number(
-          (this.db.prepare(`
+          (this.#prepare(`
           INSERT INTO conversation_model_calls (
             conversation_id, turn_id, source_call_id, ordinal,
             call_within_turn, provider, model, started_at, completed_at,
@@ -1191,7 +1204,7 @@ export class ConversationProjectionRepository {
             ) as { id: number }).id,
         );
         callIDs.set(`${turn.number}:${call.callWithinTurn}`, callID);
-        this.db.prepare(`
+        this.#prepare(`
           INSERT INTO artifact_model_call_occurrences (
             source_session_id, branch_id, model_call_id, source_turn_id,
             source_call_id, occurrence_kind, identity_basis
@@ -1222,7 +1235,7 @@ export class ConversationProjectionRepository {
 
         call.activity.tools.forEach((tool, index) => {
           const toolEventID = Number(
-            (this.db.prepare(`
+            (this.#prepare(`
             INSERT INTO conversation_tool_events (
               model_call_id, source_tool_id, ordinal, name, status,
               started_at, completed_at, input_preview, input_original_length,
@@ -1287,11 +1300,11 @@ export class ConversationProjectionRepository {
       });
     });
 
-    this.db.prepare(`
+    this.#prepare(`
       UPDATE conversation_branches SET head_entry_id = ? WHERE id = ?
     `).run(previousEntryID, branchID);
     this.#insertCacheMisses(conversationID, value.session, callIDs, turnIDs);
-    this.db.prepare(`
+    this.#prepare(`
       INSERT INTO conversation_rollups (
         conversation_id, rollup_version, user_turns, model_calls,
         reported_cost, computed_cost, uncached_input_tokens,
@@ -1315,7 +1328,7 @@ export class ConversationProjectionRepository {
   }
 
   #updateAnalyticsRollup(conversationID: number, rollup: SessionRollup) {
-    this.db.prepare(`
+    this.#prepare(`
       UPDATE conversation_rollups SET
         rollup_version = ?, first_activity_at = ?, last_activity_at = ?,
         subagent_model_calls = ?, subagent_uncached_input_tokens = ?,
@@ -1332,7 +1345,7 @@ export class ConversationProjectionRepository {
     knownTurnIDs?: Map<number, number>,
   ) {
     const callRows = knownCallIDs === undefined
-      ? this.db.prepare(`
+      ? this.#prepare(`
         SELECT call.id, call.call_within_turn, turn.id AS turn_id,
           turn.ordinal AS turn_ordinal
         FROM conversation_model_calls call
@@ -1375,7 +1388,7 @@ export class ConversationProjectionRepository {
       }))
     );
     const callsByID = new Map(cacheCalls.map((call) => [call.id, call]));
-    const insert = this.db.prepare(`
+    const insert = this.#prepare(`
       INSERT INTO conversation_cache_misses (
         model_call_id, previous_model_call_id, conversation_id, turn_id,
         started_at, gap_ms, status, reason, cause, retained_ratio,
@@ -1425,14 +1438,14 @@ export class ConversationProjectionRepository {
     conversationID: number,
     detail: Parameters<typeof enrichSessionSummary>[0],
   ) {
-    this.db.prepare(`
+    this.#prepare(`
       UPDATE conversation_rollups SET summary_json = ?
       WHERE conversation_id = ?
     `).run(JSON.stringify(enrichSessionSummary(detail)), conversationID);
   }
 
   #sourceHarness(sourceID: number) {
-    const row = this.db.prepare(
+    const row = this.#prepare(
       "SELECT harness FROM sources WHERE id = ?",
     ).get(sourceID) as { harness: SessionSummary["harness"] } | undefined;
     if (row === undefined) throw new Error(`Unknown source: ${sourceID}`);

@@ -240,17 +240,28 @@ export function assertConversationCompatibilityParity(
     summary: ReturnType<
       ConversationCompatibilityRepository["summarizeModelCallCosts"]
     >,
-  ) =>
-    harness !== "codex" ? summary : {
-      totalCost: summary.totalCost,
-      totalSessionCost: summary.totalSessionCost,
+  ) => {
+    const cost = (value: number) => Math.round(value * 1e12) / 1e12;
+    const normalized = {
+      ...summary,
+      totalCost: cost(summary.totalCost),
+      totalSessionCost: cost(summary.totalSessionCost),
+      sessions: summary.sessions.map((session) => ({
+        ...session,
+        rootCost: cost(session.rootCost),
+      })),
+    };
+    return harness !== "codex" ? normalized : {
+      totalCost: normalized.totalCost,
+      totalSessionCost: normalized.totalSessionCost,
       sessions: summary.sessions.map((session) => ({
         harness: session.harness,
         rootID: session.rootID,
         sessionStartedAt: session.sessionStartedAt,
-        rootCost: session.rootCost,
+        rootCost: cost(session.rootCost),
       })),
     };
+  };
   deepStrictEqual(
     normalizeCosts(conversations.summarizeModelCallCosts(0, harness)),
     normalizeCosts(legacy.summarizeModelCallCosts(0, harness)),

@@ -758,39 +758,67 @@ Implementation record:
 
 Current checkpoint and measured performance:
 
-- On the development archive, V2 overview completed in approximately 6-8 ms
-  and 30-day usage in approximately 28 ms after the rollup query cutover.
-- Before session-list materialization, hydrating and analyzing 25 details took
-  approximately 409 ms from V2 versus 54 ms from V1. The materialized summary
-  path is implemented and awaits full live/API timing after its projection
-  backfill completes.
-- Before cache-miss materialization, a 30-day V2 cache-miss read took
-  approximately 1.3-2.4 seconds versus approximately 12 ms from V1. The V2
-  cache-miss table and read query are implemented and await full live/API
-  timing after backfill.
-- A clean dual-projection rebuild of the development archive took approximately
-  72 seconds. An unchanged follow-up synchronization skipped all artifacts in
-  roughly 100 ms across harnesses, so the regression is concentrated in full
-  rebuilds and parser-version backfills rather than steady-state startup.
+- On the development archive after materialization, observed API timings were
+  approximately 6-12 ms for overview, 63-123 ms for 30-day usage, 61-118 ms
+  for 30-day cache misses, and 27-45 ms for the first 25 sessions.
+- The all-V2 facade now delegates global reads directly to one set-based
+  conversation query instead of issuing one conversation query per harness.
+- Missing foreign-key replacement indexes reduced a live changed Codex
+  artifact synchronization from approximately 5.4 seconds to 0.6 seconds.
+  Prepared-statement reuse in both projection repositories removed repeated SQL
+  compilation from clean imports.
+- An isolated clean rebuild of both legacy and conversation projections for the
+  full development corpus completed in 23.8 seconds: OpenCode 15.6 seconds,
+  Claude Code 0.25 seconds, Pi 2.36 seconds, and Codex 5.54 seconds. The earlier
+  baseline for the same dual-projection startup path was approximately 72
+  seconds.
+- The follow-up pass completed in 0.58 seconds while one active Codex artifact
+  changed and was reimported in 0.35 seconds; the other 783 artifacts were
+  recognized as unchanged in approximately 0.23 seconds combined.
+- Batching complete OpenCode source snapshots increased source-read and archive
+  time and was rejected. A direct transaction benchmark showed only about 14 ms
+  of avoidable commit overhead across 772 writes, so transaction batching does
+  not explain the remaining clean-import time.
+- File-backed shadow projections now reuse the normalized legacy value instead
+  of parsing changed Pi and Codex artifacts twice. Conversation and legacy
+  writers cache prepared statements for the repository lifetime.
+- A live compatibility audit passes the existing list, detail, usage, tool,
+  cache, rollup, subagent, initial-input, and cost contracts for Pi and Claude
+  Code after excluding internal row IDs and treating cost differences below
+  `1e-12` as floating-point accumulation noise. The audit found and corrected
+  working-directory compaction, call-preview formatting, and deterministic
+  cost-summary ordering differences.
+- The three observed Codex sibling artifacts are three independent legacy
+  sessions with 4, 4, and 5 calls, while V2 stores conversation `1151` with
+  three branches, seven canonical turns/calls, thirteen call occurrences, and
+  109,290 unique processed tokens. Both fork branches resolve to the original
+  artifact through generic source-artifact lineage.
 
 Remaining work and foreseen risks:
 
-- Make import execution cooperative or move it off the API event loop. Binding
-  the listener before synchronization is insufficient while synchronous
-  normalization and SQLite writes prevent requests from being scheduled.
-- Benchmark isolated V1, isolated V2, and dual-projection clean imports. Reuse
-  one normalized value across projections for every harness, reuse prepared
-  statements, and batch V2 writes before accepting the current clean-build
-  cost.
-- Complete the live materialization backfill, remeasure every existing API
-  endpoint, and retain legacy reads for any harness that does not meet contract
-  and practical latency parity.
+- Complete the live OpenCode compatibility audit. Its full-corpus comparison is
+  substantially larger than Pi and Claude Code and did not finish within the
+  initial 30-second diagnostic window; split the audit into named endpoint
+  comparisons so failures remain bounded and actionable.
+- Materialize effective per-call conversation cost during import and aggregate
+  it in SQL. V1 stores per-call cost and uses SQLite `SUM`, while the current V2
+  cost shim recomputes calls during reads and reduces them in JavaScript. The
+  values agree within floating-point noise, but this adds reader work and is not
+  the desired final rollup design. The attempted column migration was removed
+  from this stopping point rather than committing an incomplete cutover.
+- Reassess clean-import performance only against measured phases. OpenCode is
+  now dominated by approximately 8.1 seconds of source extraction and 5.9
+  seconds of dual archive writes; transaction batching and bulk snapshot reads
+  have been measured and are not current optimization candidates.
+- Import remains synchronous on the API event loop. The listener binds before
+  refresh and legacy reads remain available until each V2 projection succeeds,
+  but cooperative or worker-based execution remains an optional operational
+  improvement after import throughput and parity work.
 - Run the complete existing test suite, including legacy importer and analytics
-  tests. Targeted compatibility, projection, importer, and type checks remain
-  green; no old test should be removed or weakened to complete the cutover.
-- Verify the three observed Codex sibling artifacts remain one V2 conversation
-  with three branches while the legacy projection retains three independent
-  session values after the final backfill.
+  tests. No old test should be removed or weakened to complete the cutover.
+- Keep legacy writes and the per-harness rollback facade in place. Stopping
+  legacy writes, removing legacy tables, and adding the branch-aware API remain
+  later milestones and are not cleanup work within Milestone 5.
 
 Work:
 

@@ -40,6 +40,10 @@ export class SessionReadRepository {
       : this.legacy;
   }
 
+  #allConversationReads() {
+    return harnesses.every((item) => this.conversationHarnesses.has(item));
+  }
+
   #scopedID(kind: "session" | "turn" | "call", harness: Harness, id: number) {
     const key = `${kind}:${harness}:${id}`;
     const existing = this.#scopedIDs.get(key);
@@ -67,7 +71,7 @@ export class SessionReadRepository {
       !Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) ||
       pageSize < 1
     ) throw new RangeError("page and pageSize must be positive integers");
-    if (harnesses.every((item) => this.conversationHarnesses.has(item))) {
+    if (this.#allConversationReads()) {
       return this.conversations.listSessions(
         page,
         pageSize,
@@ -122,6 +126,9 @@ export class SessionReadRepository {
   }
 
   listUsageCalls(startedAt?: number, harness?: Harness) {
+    if (harness === undefined && this.#allConversationReads()) {
+      return this.conversations.listUsageCalls(startedAt);
+    }
     return harness === undefined
       ? harnesses.flatMap((item) =>
         this.#provider(item).listUsageCalls(startedAt, item).map((call) => ({
@@ -142,6 +149,9 @@ export class SessionReadRepository {
   }
 
   listCacheMisses(startedAt?: number, harness?: Harness) {
+    if (harness === undefined && this.#allConversationReads()) {
+      return this.conversations.listCacheMisses(startedAt);
+    }
     return harness === undefined
       ? harnesses.flatMap((item) =>
         this.#provider(item).listCacheMisses(startedAt, item).map((miss) => ({
@@ -170,6 +180,9 @@ export class SessionReadRepository {
         harness,
       );
     }
+    if (this.#allConversationReads()) {
+      return this.conversations.summarizeModelCallCosts(startedAt);
+    }
     const values = harnesses.map((item) =>
       this.#provider(item).summarizeModelCallCosts(startedAt, item)
     );
@@ -188,6 +201,9 @@ export class SessionReadRepository {
   }
 
   listToolCalls(startedAt: number, endedAt: number, harness?: Harness) {
+    if (harness === undefined && this.#allConversationReads()) {
+      return this.conversations.listToolCalls(startedAt, endedAt);
+    }
     return harness === undefined
       ? harnesses.flatMap((item) =>
         this.#provider(item).listToolCalls(startedAt, endedAt, item).map(
@@ -201,6 +217,9 @@ export class SessionReadRepository {
   }
 
   listOverviewRollups(startedAt: number, harness?: Harness) {
+    if (harness === undefined && this.#allConversationReads()) {
+      return this.conversations.listOverviewRollups(startedAt);
+    }
     return harness === undefined
       ? harnesses.flatMap((item) =>
         this.#provider(item).listOverviewRollups(startedAt, item).map(
@@ -218,6 +237,9 @@ export class SessionReadRepository {
   }
 
   listSessionShapeRollups(startedAt: number, harness?: Harness) {
+    if (harness === undefined && this.#allConversationReads()) {
+      return this.conversations.listSessionShapeRollups(startedAt);
+    }
     return harness === undefined
       ? harnesses.flatMap((item) =>
         this.#provider(item).listSessionShapeRollups(startedAt, item).map(
@@ -235,6 +257,9 @@ export class SessionReadRepository {
   }
 
   listUsageRollups(startedAt?: number, harness?: Harness) {
+    if (harness === undefined && this.#allConversationReads()) {
+      return this.conversations.listUsageRollups(startedAt);
+    }
     return harness === undefined
       ? harnesses.flatMap((item) =>
         this.#provider(item).listUsageRollups(startedAt, item).map((
@@ -252,6 +277,9 @@ export class SessionReadRepository {
   }
 
   listSubagentUsage(startedAt?: number, harness?: Harness) {
+    if (harness === undefined && this.#allConversationReads()) {
+      return this.conversations.listSubagentUsage(startedAt);
+    }
     return harness === undefined
       ? harnesses.flatMap((item) =>
         this.#provider(item).listSubagentUsage(startedAt, item).map((
@@ -274,6 +302,9 @@ export class SessionReadRepository {
   }
 
   listInitialInputSamples(startedAt?: number, harness?: Harness) {
+    if (harness === undefined && this.#allConversationReads()) {
+      return this.conversations.listInitialInputSamples(startedAt);
+    }
     return harness === undefined
       ? harnesses.flatMap((item) =>
         this.#provider(item).listInitialInputSamples(startedAt, item)

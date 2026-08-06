@@ -30,7 +30,7 @@ export async function syncPiSessions(
           conversations.replaceLinearSession(
             sourceSessionImportFromFile(
               observation,
-              normalizePiSession(observation.candidate, observation.text),
+              observation.normalize(),
               conversationParserVersion,
             ),
           ),

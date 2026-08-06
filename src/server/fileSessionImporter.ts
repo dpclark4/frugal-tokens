@@ -30,6 +30,7 @@ export type FileProjectionObservation = {
   bytes: Uint8Array;
   text: string;
   checksum: string;
+  normalize: () => NormalizedFileSession;
 };
 
 export type FileSessionShadowProjection = {
@@ -251,13 +252,16 @@ export async function syncFileSessions(options: {
     ) {
       throw new Error("Source changed while it was being read");
     }
-    const observation = {
+    const text = new TextDecoder().decode(bytes);
+    let normalized: NormalizedFileSession | undefined;
+    const observation: FileProjectionObservation = {
       sourceID,
       observedAt,
       candidate,
       bytes,
-      text: new TextDecoder().decode(bytes),
+      text,
       checksum: await checksum(bytes),
+      normalize: () => normalized ??= options.normalize(candidate, text),
     };
     observations.set(candidate.id, observation);
     return observation;
@@ -372,11 +376,10 @@ export async function syncFileSessions(options: {
       legacyResult.skipped++;
     } else {
       try {
-        const normalized = options.normalize(candidate, observation.text);
         options.repository.replaceSourceSession(
           sourceSessionImportFromFile(
             observation,
-            normalized,
+            observation.normalize(),
             options.parserVersion,
           ),
         );

@@ -66,10 +66,7 @@ export async function syncCodexSessions(
               parentSourceIdentity: record.parentSourceIdentity,
               value: sourceSessionImportFromFile(
                 observation,
-                normalizeCodexSession(
-                  observation.candidate,
-                  observation.text,
-                ),
+                observation.normalize(),
                 conversationParserVersion,
               ),
             })),

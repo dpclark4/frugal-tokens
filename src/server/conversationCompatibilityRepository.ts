@@ -20,6 +20,10 @@ import type {
   StoredCacheMiss,
   StoredSessionShapeRollup,
 } from "./sessionRepository.ts";
+import {
+  conciseSessionPreview,
+  sessionToolTarget,
+} from "./sessionRepository.ts";
 import type { ToolCallObservation } from "./toolCallAnalytics.ts";
 import type { StoredOverviewRollup } from "./overviewAnalytics.ts";
 import type {
@@ -27,6 +31,7 @@ import type {
   StoredUsageRollup,
 } from "./usageAnalytics.ts";
 import type { UsageCall } from "./usage.ts";
+import { compactHomePath } from "./database.ts";
 
 type Harness = SessionSummary["harness"];
 
@@ -564,7 +569,7 @@ export class ConversationCompatibilityRepository {
         values[0].row.root_updated_at,
       rootCost: values.reduce((sum, value) => sum + (value.cost ?? 0), 0),
       hasUnpricedRootCost: values.some((value) => value.cost === undefined),
-    }));
+    })).sort((a, b) => a.rootID.localeCompare(b.rootID));
     return {
       totalCost: costs.reduce(
         (sum, value) => sum + (value.cost ?? 0),
@@ -971,11 +976,14 @@ export class ConversationCompatibilityRepository {
     `).get(branch.source_session_id) as
       | { artifact_path: string | null }
       | undefined;
+    const workingDirectory = optional(row.working_directory);
     return {
       id: row.public_id ?? row.external_id,
       internalID: row.id,
       sourcePath: optional(source?.artifact_path ?? null),
-      workingDirectory: optional(row.working_directory),
+      workingDirectory: workingDirectory === undefined
+        ? undefined
+        : compactHomePath(workingDirectory),
       harness: row.harness,
       title: row.title,
       updatedAt: row.updated_at,
@@ -1089,12 +1097,22 @@ export class ConversationCompatibilityRepository {
         const callTools = tools.filter((tool) =>
           tool.model_call_id === call.id
         );
+        const textPreview = conciseSessionPreview(
+          text?.content_preview ?? undefined,
+        );
+        const previewTool = callTools.find((tool) =>
+          tool.input_preview !== null
+        );
+        const toolTarget = sessionToolTarget(
+          previewTool?.input_preview ?? undefined,
+        );
         const hydrated: ModelCall = {
           id: call.source_call_id ?? String(call.id),
           callWithinTurn: call.call_within_turn ?? 1,
-          preview: optional(
-            text?.content_preview ?? callTools[0]?.input_preview ?? null,
-          ),
+          preview: textPreview ??
+            (previewTool !== undefined && toolTarget !== undefined
+              ? conciseSessionPreview(`${previewTool.name}: ${toolTarget}`)
+              : undefined),
           ...(text === undefined ? {} : {
             responsePreview: text.content_preview!,
             responseOriginalLength: optional(text.original_length),

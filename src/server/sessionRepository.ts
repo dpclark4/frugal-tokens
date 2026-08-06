@@ -462,7 +462,7 @@ function optional<T>(value: T | null): T | undefined {
   return value === null ? undefined : value;
 }
 
-function concisePreview(value?: string) {
+export function conciseSessionPreview(value?: string) {
   if (value === undefined) return undefined;
   const normalized = value.replace(/\s+/g, " ").trim();
   if (normalized.length === 0) return undefined;
@@ -471,11 +471,11 @@ function concisePreview(value?: string) {
     : `${normalized.slice(0, 63).trimEnd()}…`;
 }
 
-function toolTarget(value?: string) {
+export function sessionToolTarget(value?: string) {
   if (value === undefined) return undefined;
   try {
     const parsed = JSON.parse(value);
-    if (typeof parsed === "string") return concisePreview(parsed);
+    if (typeof parsed === "string") return conciseSessionPreview(parsed);
     if (parsed && typeof parsed === "object") {
       for (
         const key of [
@@ -490,24 +490,28 @@ function toolTarget(value?: string) {
         ]
       ) {
         const candidate = (parsed as Record<string, unknown>)[key];
-        if (typeof candidate === "string") return concisePreview(candidate);
+        if (typeof candidate === "string") {
+          return conciseSessionPreview(candidate);
+        }
       }
     }
   } catch {
     // Non-JSON tool inputs are useful as-is.
   }
-  return concisePreview(value);
+  return conciseSessionPreview(value);
 }
 
 function callPreview(contents: ContentRow[], tools: ToolRow[]) {
   const text = contents.find((content) =>
     content.kind === "text" && content.preview !== null
   )?.preview;
-  const contentPreview = concisePreview(text ?? undefined);
+  const contentPreview = conciseSessionPreview(text ?? undefined);
   if (contentPreview !== undefined) return contentPreview;
   const tool = tools.find((item) => item.input_preview !== null);
-  const target = toolTarget(tool?.input_preview ?? undefined);
-  return tool && target ? concisePreview(`${tool.name}: ${target}`) : undefined;
+  const target = sessionToolTarget(tool?.input_preview ?? undefined);
+  return tool && target
+    ? conciseSessionPreview(`${tool.name}: ${target}`)
+    : undefined;
 }
 
 function reasoningSetting(row: ReasoningSettingRow) {
@@ -569,7 +573,20 @@ function summary(row: SummaryRow): SessionSummary {
 }
 
 export class SessionRepository {
+  #statements = new Map<
+    string,
+    ReturnType<DatabaseSync["prepare"]>
+  >();
+
   constructor(private db: DatabaseSync) {}
+
+  #prepare(sql: string) {
+    const existing = this.#statements.get(sql);
+    if (existing !== undefined) return existing;
+    const statement = this.db.prepare(sql);
+    this.#statements.set(sql, statement);
+    return statement;
+  }
 
   ensureSource(
     harness: Harness,
@@ -578,7 +595,7 @@ export class SessionRepository {
     location: string,
   ) {
     return Number(
-      (this.db.prepare(`
+      (this.#prepare(`
       INSERT INTO sources (harness, kind, label, location, created_at)
       VALUES (?, ?, ?, ?, ?)
       ON CONFLICT (harness, location) DO UPDATE SET
@@ -593,7 +610,7 @@ export class SessionRepository {
     externalID: string,
     projectionName = "legacy",
   ): SourceSessionCheckpoint | undefined {
-    const row = this.db.prepare(`
+    const row = this.#prepare(`
       SELECT ss.change_hint, ss.source_size, ss.source_modified_at,
         aip.source_checksum, aip.source_change_hint, aip.parser_version,
         aip.dependency_digest, aip.imported_at, aip.last_error
@@ -645,7 +662,7 @@ export class SessionRepository {
     error: unknown,
   ) {
     const sourceSessionID = this.#sourceSessionID(sourceID, externalID);
-    this.db.prepare(`
+    this.#prepare(`
       INSERT INTO artifact_import_projections (
         source_session_id, projection_name, last_error
       ) VALUES (?, ?, ?)
@@ -669,14 +686,14 @@ export class SessionRepository {
           sourceID,
           value.externalID,
         );
-        this.db.prepare(
+        this.#prepare(
           "DELETE FROM source_artifact_lineage WHERE child_source_session_id = ?",
         ).run(sourceSessionID);
-        this.db.prepare(
+        this.#prepare(
           "DELETE FROM source_artifact_identities WHERE source_session_id = ?",
         ).run(sourceSessionID);
         for (const identity of value.identities) {
-          this.db.prepare(`
+          this.#prepare(`
             INSERT INTO source_artifact_identities (
               source_session_id, source_id, identity_namespace, identity_value
             ) VALUES (?, ?, ?, ?)
@@ -688,7 +705,7 @@ export class SessionRepository {
           );
         }
         for (const lineage of value.lineage) {
-          this.db.prepare(`
+          this.#prepare(`
             INSERT INTO source_artifact_lineage (
               child_source_session_id, relationship_kind,
               parent_identity_namespace, parent_identity_value, provenance
@@ -702,7 +719,7 @@ export class SessionRepository {
           );
         }
       }
-      this.db.prepare(`
+      this.#prepare(`
         UPDATE source_artifact_lineage AS lineage
         SET parent_source_session_id = (
           SELECT identity.source_session_id
@@ -733,7 +750,7 @@ export class SessionRepository {
     identityNamespace: string,
     relationship: string,
   ): SourceArtifactProjectionRecord[] {
-    const rows = this.db.prepare(`
+    const rows = this.#prepare(`
       SELECT ss.id AS source_session_id, ss.external_id, ss.artifact_path,
         ss.availability, ss.source_size, ss.source_modified_at,
         identity.identity_value AS source_identity,
@@ -798,7 +815,7 @@ export class SessionRepository {
     checkpoint?: SourceSessionCheckpoint,
     projectionName = "legacy",
   ) {
-    this.db.prepare(`
+    this.#prepare(`
       INSERT INTO source_sessions (
         source_id, external_id, public_id, artifact_path, availability,
         change_hint, source_size, source_modified_at, checksum, parser_version,
@@ -849,7 +866,7 @@ export class SessionRepository {
     observedAt: number,
     error: unknown,
   ) {
-    this.db.prepare(`
+    this.#prepare(`
       INSERT INTO source_sessions (
         source_id, external_id, public_id, artifact_path, availability, first_seen_at,
         last_seen_at, last_error
@@ -877,7 +894,7 @@ export class SessionRepository {
   }
 
   markMissingSourceSessions(sourceID: number, observedAt: number) {
-    this.db.prepare(`
+    this.#prepare(`
       UPDATE source_sessions SET availability = 'missing'
       WHERE source_id = ? AND last_seen_at <> ?
     `).run(sourceID, observedAt);
@@ -889,7 +906,7 @@ export class SessionRepository {
     observedAt: number,
   ) {
     if (externalIDs.length === 0) return;
-    this.db.prepare(`
+    this.#prepare(`
       UPDATE source_sessions SET availability = 'available', last_seen_at = ?
       WHERE source_id = ? AND external_id IN (${
       externalIDs.map(() => "?").join(", ")
@@ -921,7 +938,7 @@ export class SessionRepository {
     `;
     const parameters = harness === undefined ? [] : [harness];
     const totalItems = Number(
-      (this.db.prepare(`
+      (this.#prepare(`
       SELECT COUNT(*) AS count
       FROM sessions s
       JOIN source_sessions ss ON ss.id = s.source_session_id
@@ -929,7 +946,7 @@ export class SessionRepository {
       WHERE ss.parent_id IS NULL${hasInput}${filter}${missFilter}
     `).get(...parameters) as { count: number }).count,
     );
-    const rows = this.db.prepare(`
+    const rows = this.#prepare(`
       SELECT ${summaryColumns}
       FROM sessions s
       JOIN source_sessions ss ON ss.id = s.source_session_id
@@ -952,7 +969,7 @@ export class SessionRepository {
   }
 
   getSession(harness: Harness, id: string): SessionDetail | undefined {
-    const row = this.db.prepare(`
+    const row = this.#prepare(`
       SELECT ${summaryColumns}
       FROM sessions s
       JOIN source_sessions ss ON ss.id = s.source_session_id
@@ -984,7 +1001,7 @@ export class SessionRepository {
     const harnessFilter = harness === undefined
       ? ""
       : "\n          AND so.harness = ?";
-    const rows = this.db.prepare(`
+    const rows = this.#prepare(`
       WITH scoped AS (
         SELECT mcr.session_id, mcr.root_session_id, mcr.cost,
           so.harness,
@@ -1076,7 +1093,7 @@ export class SessionRepository {
       params.push(harness);
     }
     const where = filters.length === 0 ? "" : `WHERE ${filters.join(" AND ")}`;
-    const rows = this.db.prepare(`
+    const rows = this.#prepare(`
       SELECT cm.model_call_id, cm.previous_model_call_id, cm.session_id,
         cm.turn_id, cm.started_at, cm.gap_ms, cm.status, cm.reason, cm.cause,
         cm.retained_ratio, cm.previous_reusable_tokens,
@@ -1154,7 +1171,7 @@ export class SessionRepository {
       model_completed_at: number | null;
     };
     const harnessFilter = harness === undefined ? "" : " AND so.harness = ?";
-    const rows = this.db.prepare(`
+    const rows = this.#prepare(`
       SELECT mc.id AS model_call_id, te.name, te.input_preview,
         te.started_at AS tool_started_at,
         te.completed_at AS tool_completed_at,
@@ -1188,7 +1205,7 @@ export class SessionRepository {
     startedAt: number,
     harness?: Harness,
   ): StoredOverviewRollup[] {
-    const rows = this.db.prepare(`
+    const rows = this.#prepare(`
       SELECT sr.root_session_id, sr.overview_json, s.title, so.harness
       FROM session_rollups sr
       JOIN sessions s ON s.source_session_id = sr.root_session_id
@@ -1215,7 +1232,7 @@ export class SessionRepository {
     startedAt: number,
     harness?: Harness,
   ): StoredSessionShapeRollup[] {
-    const rows = this.db.prepare(`
+    const rows = this.#prepare(`
       SELECT sr.root_session_id, sr.overview_json, s.title, so.harness,
         (
           SELECT first_mc.uncached_input_tokens + first_mc.cache_read_tokens +
@@ -1257,7 +1274,7 @@ export class SessionRepository {
     startedAt?: number,
     harness?: Harness,
   ): StoredUsageRollup[] {
-    const rows = this.db.prepare(`
+    const rows = this.#prepare(`
       SELECT sr.root_session_id,
         COALESCE(s.started_at, s.updated_at) AS session_started_at,
         s.uncached_input_tokens + s.cache_read_tokens +
@@ -1299,7 +1316,7 @@ export class SessionRepository {
     startedAt?: number,
     harness?: Harness,
   ): StoredSubagentUsage[] {
-    const rows = this.db.prepare(`
+    const rows = this.#prepare(`
       SELECT mcr.root_session_id, mcr.session_id AS subagent_session_id,
         date(t.started_at / 1000, 'unixepoch', 'localtime') AS date,
         SUM(
@@ -1356,7 +1373,7 @@ export class SessionRepository {
       session_started_at: number;
       input: number;
     };
-    const rows = this.db.prepare(`
+    const rows = this.#prepare(`
       SELECT so.harness,
         COALESCE(s.started_at, s.updated_at) AS session_started_at,
         mc.uncached_input_tokens + mc.cache_read_tokens +
@@ -1403,7 +1420,7 @@ export class SessionRepository {
       median: number | null;
       p90: number | null;
     };
-    const row = this.db.prepare(`
+    const row = this.#prepare(`
       WITH samples AS (
         SELECT mc.uncached_input_tokens + mc.cache_read_tokens +
           COALESCE(mc.cache_write_tokens, 0) AS input
@@ -1497,7 +1514,7 @@ export class SessionRepository {
       reasoning_observed_at: number | null;
       reasoning_provenance: ReasoningSettingImport["provenance"] | null;
     };
-    const rows = this.db.prepare(`
+    const rows = this.#prepare(`
       WITH RECURSIVE session_tree(id, root_id) AS (
         SELECT ss.id, ss.id
         FROM source_sessions ss
@@ -1645,7 +1662,7 @@ export class SessionRepository {
     const rollup = buildSessionRollup(values);
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      const upsertIdentity = this.db.prepare(`
+      const upsertIdentity = this.#prepare(`
         INSERT INTO source_sessions (
           source_id, external_id, public_id, artifact_path, working_directory,
           availability, first_seen_at, last_seen_at
@@ -1674,7 +1691,7 @@ export class SessionRepository {
         const parentID = value.parentExternalID === undefined
           ? null
           : this.#sourceSessionID(sourceID, value.parentExternalID);
-        this.db.prepare(`
+        this.#prepare(`
           UPDATE source_sessions SET parent_id = ?, tree_root_id = ?
           WHERE source_id = ? AND external_id = ?
         `).run(parentID, rootID, sourceID, value.externalID);
@@ -1693,7 +1710,7 @@ export class SessionRepository {
       const currentIDs = values.map((value) =>
         this.#sourceSessionID(sourceID, value.externalID)
       );
-      this.db.prepare(`
+      this.#prepare(`
         DELETE FROM source_sessions
         WHERE tree_root_id = ? AND id NOT IN (${
         currentIDs.map(() => "?").join(",")
@@ -1715,7 +1732,7 @@ export class SessionRepository {
       ? null
       : this.#sourceSessionID(value.sourceID, value.parentExternalID);
     const sourceSessionID = Number(
-      (this.db.prepare(`
+      (this.#prepare(`
         INSERT INTO source_sessions (
           source_id, external_id, public_id, parent_id, tree_root_id,
           artifact_path, working_directory, availability, first_seen_at,
@@ -1743,12 +1760,12 @@ export class SessionRepository {
       ) as { id: number }).id,
     );
 
-    this.db.prepare("DELETE FROM sessions WHERE source_session_id = ?").run(
+    this.#prepare("DELETE FROM sessions WHERE source_session_id = ?").run(
       sourceSessionID,
     );
     const session = value.session;
     const tokenValues = this.#tokenValues(session.tokens);
-    this.db.prepare(`
+    this.#prepare(`
         INSERT INTO sessions (
           source_session_id, title, agent, updated_at, started_at, ended_at,
           providers_json, models_json, user_turns, model_calls, reported_cost,
@@ -1783,7 +1800,7 @@ export class SessionRepository {
       const existing = reasoningSettingIDs.get(key);
       if (existing !== undefined) return existing;
       const id = Number(
-        (this.db.prepare(`
+        (this.#prepare(`
           INSERT INTO reasoning_setting_events (
             session_id, setting_name, setting_value, source_field_path,
             source_order, observed_at
@@ -1805,7 +1822,7 @@ export class SessionRepository {
     const callIDs = new Map<string, number>();
     const turnIDs = new Map<number, number>();
     const rootSessionID = treeRootID ?? sourceSessionID;
-    const insertModelCallRollup = this.db.prepare(`
+    const insertModelCallRollup = this.#prepare(`
       INSERT INTO model_call_rollups (
         model_call_id, session_id, root_session_id, started_at, cost,
         cost_source
@@ -1813,7 +1830,7 @@ export class SessionRepository {
     `);
     for (const turn of session.turns) {
       const turnID = Number(
-        (this.db.prepare(`
+        (this.#prepare(`
           INSERT INTO turns (session_id, ordinal, started_at)
           VALUES (?, ?, ?) RETURNING id
         `).get(sourceSessionID, turn.number, turn.startedAt) as { id: number })
@@ -1827,7 +1844,7 @@ export class SessionRepository {
         turn.inputs ?? [],
       );
       if (turn.reasoningSetting !== undefined) {
-        this.db.prepare(`
+        this.#prepare(`
           INSERT INTO turn_reasoning_settings (
             turn_id, setting_event_id, provenance
           ) VALUES (?, ?, ?)
@@ -1841,7 +1858,7 @@ export class SessionRepository {
       for (const call of turn.calls) {
         const modelID = this.#modelID(call.provider, call.model);
         const callID = Number(
-          (this.db.prepare(`
+          (this.#prepare(`
             INSERT INTO model_calls (
               turn_id, source_call_id, ordinal, model_id, started_at,
               completed_at, reported_cost, uncached_input_tokens,
@@ -1885,7 +1902,7 @@ export class SessionRepository {
             : null,
         );
         if (call.reasoningSetting !== undefined) {
-          this.db.prepare(`
+          this.#prepare(`
             INSERT INTO model_call_reasoning_settings (
               model_call_id, setting_event_id, provenance
             ) VALUES (?, ?, ?)
@@ -1905,7 +1922,7 @@ export class SessionRepository {
           const childID = tool.childExternalID === undefined
             ? null
             : this.#sourceSessionID(value.sourceID, tool.childExternalID);
-          this.db.prepare(`
+          this.#prepare(`
               INSERT INTO tool_events (
                 model_call_id, source_tool_id, ordinal, name, status,
                 started_at, completed_at, child_source_session_id,
@@ -1932,14 +1949,14 @@ export class SessionRepository {
       }
     }
 
-    const insertContextEvent = this.db.prepare(`
+    const insertContextEvent = this.#prepare(`
       INSERT INTO context_events (
         session_id, event_type, source_order, occurred_at,
         affected_model_call_id
       ) VALUES (?, ?, ?, ?, ?)
       RETURNING id
     `);
-    const insertCompactionDetail = this.db.prepare(`
+    const insertCompactionDetail = this.#prepare(`
       INSERT INTO compaction_details (
         context_event_id, source_compaction_id, trigger_kind, result_kind,
         checkpoint_completeness, pre_context_tokens, post_context_tokens,
@@ -1947,7 +1964,7 @@ export class SessionRepository {
         native_metadata_json
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    const insertCompactionItem = this.db.prepare(`
+    const insertCompactionItem = this.#prepare(`
       INSERT INTO compaction_checkpoint_items (
         context_event_id, ordinal, source_entry_id, item_kind, role,
         content_availability, content_preview, original_length, truncated,
@@ -2031,7 +2048,7 @@ export class SessionRepository {
       }))
     );
     const cacheMisses = analyzeCacheMisses(cacheCalls);
-    const insertCacheMiss = this.db.prepare(`
+    const insertCacheMiss = this.#prepare(`
       INSERT INTO cache_misses (
         model_call_id, previous_model_call_id, session_id, turn_id,
         started_at, gap_ms, status, reason, cause, retained_ratio,
@@ -2076,7 +2093,7 @@ export class SessionRepository {
 
     const checkpoint = value.checkpoint;
     const importedAt = checkpoint.importedAt ?? Date.now();
-    this.db.prepare(`
+    this.#prepare(`
         UPDATE source_sessions SET
           change_hint = ?, source_size = ?, source_modified_at = ?, checksum = ?,
           parser_version = ?, imported_at = ?, last_error = NULL
@@ -2110,7 +2127,7 @@ export class SessionRepository {
       };
     }
     const nextVisited = new Set(visited).add(row.source_session_id);
-    const contextEventRows = this.db.prepare(`
+    const contextEventRows = this.#prepare(`
       SELECT ce.id, ce.event_type, ce.source_order, ce.occurred_at,
         ce.affected_model_call_id,
         cd.source_compaction_id,
@@ -2128,7 +2145,7 @@ export class SessionRepository {
       WHERE ce.session_id = ?
       ORDER BY ce.source_order
     `).all(row.source_session_id) as ContextEventRow[];
-    const checkpointItemRows = this.db.prepare(`
+    const checkpointItemRows = this.#prepare(`
       SELECT cci.context_event_id, cci.ordinal, cci.source_entry_id,
         cci.item_kind, cci.role, cci.content_availability,
         cci.content_preview, cci.original_length, cci.truncated,
@@ -2188,7 +2205,7 @@ export class SessionRepository {
         ...(compaction === undefined ? {} : { compaction }),
       };
     };
-    const calls = this.db.prepare(`
+    const calls = this.#prepare(`
       SELECT mc.turn_id, ${callColumns},
         rse.setting_name AS reasoning_setting_name,
         rse.setting_value AS reasoning_setting_value,
@@ -2211,7 +2228,7 @@ export class SessionRepository {
         !call.source_call_id?.startsWith("context-operation:")
       )
       : calls;
-    const tools = visibleCalls.length === 0 ? [] : this.db.prepare(`
+    const tools = visibleCalls.length === 0 ? [] : this.#prepare(`
       SELECT te.model_call_id, te.name, te.status, te.started_at,
         te.completed_at,
         COALESCE(child.public_id, child.external_id) AS child_public_id,
@@ -2222,7 +2239,7 @@ export class SessionRepository {
       ORDER BY te.model_call_id, te.ordinal
     `).all(...visibleCalls.map((call) => call.id)) as ToolRow[];
     const toolsByCall = Map.groupBy(tools, (tool) => tool.model_call_id);
-    const contents = visibleCalls.length === 0 ? [] : this.db.prepare(`
+    const contents = visibleCalls.length === 0 ? [] : this.#prepare(`
       SELECT model_call_id, kind, preview, original_length, truncated
       FROM call_content
       WHERE model_call_id IN (${visibleCalls.map(() => "?").join(",")})
@@ -2233,7 +2250,7 @@ export class SessionRepository {
       (content) => content.model_call_id,
     );
     const callsByTurn = Map.groupBy(visibleCalls, (call) => call.turn_id);
-    const turnInputRows = this.db.prepare(`
+    const turnInputRows = this.#prepare(`
       SELECT turn_id, kind, preview, original_length, truncated, mime_type
       FROM turn_inputs
       WHERE turn_id IN (
@@ -2242,7 +2259,7 @@ export class SessionRepository {
       ORDER BY turn_id, ordinal
     `).all(row.source_session_id) as TurnInputRow[];
     const inputsByTurn = Map.groupBy(turnInputRows, (input) => input.turn_id);
-    const turns = (this.db.prepare(`
+    const turns = (this.#prepare(`
       SELECT t.id, t.ordinal, t.started_at,
         rse.setting_name AS reasoning_setting_name,
         rse.setting_value AS reasoning_setting_value,
@@ -2322,7 +2339,7 @@ export class SessionRepository {
       ...turn,
       number: index + 1,
     }));
-    const children = this.db.prepare(`
+    const children = this.#prepare(`
       SELECT ${summaryColumns}
       FROM sessions s
       JOIN source_sessions ss ON ss.id = s.source_session_id
@@ -2348,7 +2365,7 @@ export class SessionRepository {
 
   #insertSessionRollup(rootSessionID: number, rollup: SessionRollup) {
     const subagentTokens = this.#tokenValues(rollup.subagentTokens);
-    this.db.prepare(`
+    this.#prepare(`
       INSERT INTO session_rollups (
         root_session_id, rollup_version, first_activity_at, last_activity_at,
         computed_cost, thinking_latest, thinking_values_json,
@@ -2423,7 +2440,7 @@ export class SessionRepository {
     checkpoint: SourceSessionCheckpoint,
     markImported: boolean,
   ) {
-    this.db.prepare(`
+    this.#prepare(`
       INSERT INTO artifact_import_projections (
         source_session_id, projection_name, parser_version, source_checksum,
         source_change_hint, dependency_digest, imported_at, last_error
@@ -2449,7 +2466,7 @@ export class SessionRepository {
   }
 
   #sourceSessionID(sourceID: number, externalID: string): number {
-    const row = this.db.prepare(`
+    const row = this.#prepare(`
       SELECT id FROM source_sessions WHERE source_id = ? AND external_id = ?
     `).get(sourceID, externalID) as { id: number } | undefined;
     if (!row) throw new Error(`Unknown source session: ${externalID}`);
@@ -2458,7 +2475,7 @@ export class SessionRepository {
 
   #modelID(provider: string, name: string): number {
     return Number(
-      (this.db.prepare(`
+      (this.#prepare(`
       INSERT INTO models (provider, name) VALUES (?, ?)
       ON CONFLICT (provider, name) DO UPDATE SET name = excluded.name
       RETURNING id
@@ -2486,7 +2503,7 @@ export class SessionRepository {
     ownerID: number,
     content: SessionContentImport[],
   ) {
-    const statement = this.db.prepare(`
+    const statement = this.#prepare(`
       INSERT INTO ${table} (
         ${foreignKey}, ordinal, kind, preview, original_length, truncated,
         mime_type, content_hash

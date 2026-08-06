@@ -1,0 +1,39 @@
+-- migrate:up
+CREATE INDEX conversation_turns_parent_idx
+  ON conversation_turns(parent_turn_id);
+CREATE INDEX conversation_model_calls_turn_idx
+  ON conversation_model_calls(turn_id);
+CREATE INDEX conversation_branches_parent_idx
+  ON conversation_branches(forked_from_branch_id);
+CREATE INDEX conversation_branches_fork_entry_idx
+  ON conversation_branches(fork_point_entry_id);
+CREATE INDEX conversation_branches_head_entry_idx
+  ON conversation_branches(head_entry_id);
+CREATE INDEX artifact_entry_occurrences_entry_idx
+  ON artifact_entry_occurrences(entry_id);
+CREATE INDEX artifact_model_call_occurrences_call_idx
+  ON artifact_model_call_occurrences(model_call_id);
+CREATE INDEX conversation_subagent_launches_entry_idx
+  ON conversation_subagent_launches(launch_entry_id);
+CREATE INDEX conversation_subagent_launches_call_idx
+  ON conversation_subagent_launches(model_call_id);
+CREATE INDEX conversation_subagent_launches_tool_idx
+  ON conversation_subagent_launches(tool_event_id);
+CREATE INDEX conversation_cache_misses_previous_call_idx
+  ON conversation_cache_misses(previous_model_call_id);
+CREATE INDEX conversation_cache_misses_turn_idx
+  ON conversation_cache_misses(turn_id);
+
+-- migrate:down
+DROP INDEX conversation_cache_misses_turn_idx;
+DROP INDEX conversation_cache_misses_previous_call_idx;
+DROP INDEX conversation_subagent_launches_tool_idx;
+DROP INDEX conversation_subagent_launches_call_idx;
+DROP INDEX conversation_subagent_launches_entry_idx;
+DROP INDEX artifact_model_call_occurrences_call_idx;
+DROP INDEX artifact_entry_occurrences_entry_idx;
+DROP INDEX conversation_branches_head_entry_idx;
+DROP INDEX conversation_branches_fork_entry_idx;
+DROP INDEX conversation_branches_parent_idx;
+DROP INDEX conversation_model_calls_turn_idx;
+DROP INDEX conversation_turns_parent_idx;

@@ -368,6 +368,19 @@ Deno.test("session read repository delegates each harness to exactly one provide
       reads.listUsageCalls(undefined, "pi").length +
         reads.listUsageCalls(undefined, "opencode").length,
     );
+    const allConversationReads = new SessionReadRepository(
+      legacy,
+      compatibility,
+      new Set(["opencode", "claude-code", "pi", "codex"]),
+    );
+    deepStrictEqual(
+      allConversationReads.listCacheMisses(),
+      compatibility.listCacheMisses(),
+    );
+    deepStrictEqual(
+      allConversationReads.listUsageRollups(),
+      compatibility.listUsageRollups(),
+    );
     strictEqual(
       reads.listOverviewRollups(0).length,
       reads.listOverviewRollups(0, "pi").length +
