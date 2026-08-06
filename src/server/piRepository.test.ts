@@ -52,6 +52,12 @@ Deno.test("normalizes PI JSONL sessions with tool activity and reported cost", (
     turns: [{
       number: 1,
       startedAt: Date.parse("2026-07-11T13:36:55.000Z"),
+      inputs: [{
+        kind: "text",
+        preview: "Inspect sessions",
+        originalLength: 16,
+        truncated: false,
+      }],
       calls: [
         {
           id: "assistant-1",
