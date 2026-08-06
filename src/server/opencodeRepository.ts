@@ -53,6 +53,7 @@ const messageDataSchema = z.object({
 const partDataSchema = z.object({
   type: z.string(),
   text: z.unknown().optional(),
+  synthetic: z.boolean().optional(),
   mime: z.string().optional(),
   callID: z.string().optional(),
   tool: z.string().optional(),
@@ -199,7 +200,7 @@ function decodeParts(rows: OpenCodePartRow[], strict = false) {
       },
       content: [],
     };
-    if (part.type === "text") {
+    if (part.type === "text" && !part.synthetic) {
       current.activity.hasText = typeof part.text === "string";
       if (typeof part.text === "string") current.content.push(preview(part.text));
     }
