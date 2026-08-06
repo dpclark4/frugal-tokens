@@ -158,7 +158,7 @@ Deno.test("conversation compatibility repository preserves linear read contracts
   }
 });
 
-Deno.test("conversation compatibility repository selects a Codex branch without duplicating usage", async () => {
+Deno.test("conversation compatibility repository linearizes Codex branches without duplicating usage", async () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   const legacy = new SessionRepository(db);
@@ -179,7 +179,7 @@ Deno.test("conversation compatibility repository selects a Codex branch without 
     strictEqual(list.items[0].modelCalls, 7);
 
     const detail = compatibility.getSession("codex", list.items[0].id)!;
-    strictEqual(detail.turns.length, 5);
+    strictEqual(detail.turns.length, 7);
     deepStrictEqual(
       detail.turns.map((turn) => turn.calls[0].id),
       [
@@ -187,6 +187,8 @@ Deno.test("conversation compatibility repository selects a Codex branch without 
         "response-shared-2",
         "tool-entry-original-3",
         "response-original-4",
+        "response-fork-a-3",
+        "response-fork-a-4",
         "response-fork-b-5",
       ],
     );
@@ -204,7 +206,10 @@ Deno.test("conversation compatibility repository selects a Codex branch without 
       7,
     );
     const analyzed = analyzeSessionCache(detail);
-    strictEqual(analyzed.turns.at(-1)!.calls[0].cacheAssessment?.status, "hit");
+    strictEqual(
+      analyzed.turns.at(-1)!.calls[0].cacheAssessment?.status,
+      "partial-hit",
+    );
     strictEqual(
       analyzed.turns[3].calls[0].contextEventsBefore?.[0]?.type,
       "compaction",

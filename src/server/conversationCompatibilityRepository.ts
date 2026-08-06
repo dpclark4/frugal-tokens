@@ -103,6 +103,7 @@ type CallRow = {
   reasoning_observed_at: number | null;
   reasoning_provenance: ReasoningSettingImport["provenance"] | null;
   source_order_start: number | null;
+  branch_id: number;
 };
 
 const conversationColumns = `
@@ -961,8 +962,7 @@ export class ConversationCompatibilityRepository {
   #detail(row: ConversationRow, visited: Set<number>): SessionDetail {
     if (visited.has(row.id)) throw new Error("Conversation subagent cycle");
     const nextVisited = new Set(visited).add(row.id);
-    const branch = this.#selectedBranch(row.id);
-    const calls = branch === undefined ? [] : this.#branchCalls(branch.id);
+    const calls = this.#conversationCalls(row.id);
     const callIDs = calls.map((call) => call.id);
     const placeholders = callIDs.map(() => "?").join(", ");
     const contentRows = callIDs.length === 0 ? [] : this.db.prepare(`
@@ -1013,14 +1013,12 @@ export class ConversationCompatibilityRepository {
         entry.content_preview,
         entry.original_length, entry.truncated, entry.mime_type
       FROM conversation_entries entry
-      JOIN artifact_entry_occurrences occurrence ON occurrence.entry_id = entry.id
-      WHERE occurrence.branch_id = ?
-        AND entry.turn_id IN (${turnPlaceholders})
+      WHERE entry.turn_id IN (${turnPlaceholders})
         AND entry.role = 'user'
         AND entry.producer_model_call_id IS NULL
         AND entry.producer_tool_event_id IS NULL
-      ORDER BY occurrence.source_order_start, entry.id
-    `).all(branch!.id, ...turnIDs) as Array<{
+      ORDER BY entry.id
+    `).all(...turnIDs) as Array<{
       turn_id: number;
       kind: string;
       content_preview: string | null;
@@ -1032,8 +1030,11 @@ export class ConversationCompatibilityRepository {
     const groupedCalls = Map.groupBy(calls, (call) => call.turn_id);
     const hydratedByCallID = new Map<number, ModelCall>();
     const turnOrder = [...groupedCalls.entries()].sort(([, a], [, b]) =>
+      a[0].turn_started_at - b[0].turn_started_at ||
+      a[0].started_at - b[0].started_at ||
+      a[0].branch_id - b[0].branch_id ||
       (a[0].source_order_start ?? a[0].turn_ordinal) -
-      (b[0].source_order_start ?? b[0].turn_ordinal)
+        (b[0].source_order_start ?? b[0].turn_ordinal)
     );
     const turns = turnOrder.map(([turnID, turnCalls], turnIndex) => {
       const first = turnCalls[0];
@@ -1119,15 +1120,20 @@ export class ConversationCompatibilityRepository {
       };
     });
 
-    const contextRows = branch === undefined ? [] : this.db.prepare(`
-      SELECT entry.native_metadata_json, occurrence.source_order_start
+    const contextRows = this.db.prepare(`
+      SELECT entry.native_metadata_json, occurrence.source_order_start,
+        occurrence.branch_id
       FROM conversation_entries entry
       JOIN artifact_entry_occurrences occurrence ON occurrence.entry_id = entry.id
-      WHERE occurrence.branch_id = ? AND entry.kind = 'context-event'
+      JOIN conversation_branches branch ON branch.id = occurrence.branch_id
+      WHERE branch.conversation_id = ?
+        AND occurrence.occurrence_kind <> 'copied'
+        AND entry.kind = 'context-event'
       ORDER BY occurrence.source_order_start, entry.id
-    `).all(branch.id) as Array<{
+    `).all(row.id) as Array<{
       native_metadata_json: string;
       source_order_start: number | null;
+      branch_id: number;
     }>;
     const sessionContextEvents: ContextEvent[] = [];
     for (const contextRow of contextRows) {
@@ -1144,6 +1150,7 @@ export class ConversationCompatibilityRepository {
         );
       if (target === undefined && contextRow.source_order_start !== null) {
         const nextCall = calls.find((call) =>
+          call.branch_id === contextRow.branch_id &&
           call.source_order_start !== null &&
           call.source_order_start > contextRow.source_order_start!
         );
@@ -1180,7 +1187,9 @@ export class ConversationCompatibilityRepository {
     };
   }
 
-  #branchCalls(branchID: number): CallRow[] {
+  // TODO: Expose branch topology in the public detail contract instead of
+  // presenting sibling continuations as a chronological activity feed.
+  #conversationCalls(conversationID: number): CallRow[] {
     return this.db.prepare(`
       SELECT call.id, call.turn_id, call.source_call_id, turn.source_turn_id,
         turn.ordinal AS turn_ordinal, turn.started_at AS turn_started_at,
@@ -1199,14 +1208,18 @@ export class ConversationCompatibilityRepository {
         call.has_reasoning, call.reasoning_setting_name,
         call.reasoning_setting_value, call.reasoning_source_field_path,
         call.reasoning_source_order, call.reasoning_observed_at,
-        call.reasoning_provenance, occurrence.source_order_start
+        call.reasoning_provenance, occurrence.source_order_start,
+        occurrence.branch_id
       FROM artifact_model_call_occurrences occurrence
+      JOIN conversation_branches branch ON branch.id = occurrence.branch_id
       JOIN conversation_model_calls call ON call.id = occurrence.model_call_id
       JOIN conversation_turns turn ON turn.id = call.turn_id
-      WHERE occurrence.branch_id = ?
+      WHERE branch.conversation_id = ?
+        AND occurrence.occurrence_kind <> 'copied'
         AND COALESCE(call.source_call_id, '') NOT LIKE 'context-operation:%'
-      ORDER BY occurrence.source_order_start, call.ordinal
-    `).all(branchID) as CallRow[];
+      ORDER BY call.started_at, occurrence.branch_id,
+        occurrence.source_order_start, call.ordinal
+    `).all(conversationID) as CallRow[];
   }
 
   #parentPublicID(conversationID: number) {
