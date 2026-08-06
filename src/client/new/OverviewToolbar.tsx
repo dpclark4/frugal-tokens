@@ -1,7 +1,13 @@
 import "./OverviewToolbar.css";
 
 export type OverviewRange = 30 | 90;
-export type OverviewHarness = "all" | "claude-code" | "opencode" | "pi" | "codex";
+export type OverviewHarness =
+  | "all"
+  | "claude-code"
+  | "opencode"
+  | "pi"
+  | "codex"
+  | "cursor";
 
 type OverviewToolbarProps = {
   range: OverviewRange;
@@ -37,13 +43,15 @@ export function OverviewToolbar({
           <span>Harness</span>
           <select
             value={harness}
-            onChange={(event) => onHarnessChange(event.target.value as OverviewHarness)}
+            onChange={(event) =>
+              onHarnessChange(event.target.value as OverviewHarness)}
           >
             <option value="all">All harnesses</option>
             <option value="claude-code">Claude Code</option>
             <option value="opencode">OpenCode</option>
             <option value="pi">PI</option>
             <option value="codex">Codex</option>
+            <option value="cursor">Cursor</option>
           </select>
         </label>
       </div>

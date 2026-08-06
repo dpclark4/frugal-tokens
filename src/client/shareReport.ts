@@ -79,6 +79,7 @@ function harnessLabel(harness: string) {
     codex: "Codex",
     opencode: "OpenCode",
     pi: "Pi",
+    cursor: "Cursor",
   };
   return labels[harness] ?? harness;
 }

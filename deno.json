@@ -42,12 +42,12 @@
     "demo:db:merge": "deno run --allow-read --allow-write scripts/mergeDemoDatabases.ts",
 
     "dev": "deno run -A npm:concurrently@10.0.3 --kill-others-on-fail --names api,web 'deno task dev:server' 'deno task dev:client'",
-    "dev:server": "deno task --env-file=.env db:migrate && deno run --env-file=.env --allow-env=OPENCODE_DB_PATH,CLAUDE_CODE_PROJECT_PATH,PI_SESSION_DIR,CODEX_SESSION_DIR,FRUGAL_TOKENS_DATABASE_URL,FRUGAL_TOKENS_SYNC_INTERVAL_SECONDS,SERVE_STATIC,PORT,HOME,USERPROFILE --allow-read --allow-write --allow-net --watch=src/server,src/shared src/server/main.ts",
+    "dev:server": "deno task --env-file=.env db:migrate && deno run --env-file=.env --allow-env=OPENCODE_DB_PATH,CLAUDE_CODE_PROJECT_PATH,PI_SESSION_DIR,CODEX_SESSION_DIR,CURSOR_CHATS_PATH,CURSOR_SSE_CAPTURE_PATH,CURSOR_SSE_CAPTURE_DIR,FRUGAL_TOKENS_DATABASE_URL,FRUGAL_TOKENS_SYNC_INTERVAL_SECONDS,SERVE_STATIC,PORT,HOME,USERPROFILE --allow-read --allow-write --allow-net --watch=src/server,src/shared src/server/main.ts",
     "dev:client": "deno run -A npm:vite@8.1.4",
 
     "build": "deno run -A npm:vite@8.1.4 build",
-    "start": "export SERVE_STATIC=true && deno task --env-file=.env db:migrate && deno run --env-file=.env --allow-env=OPENCODE_DB_PATH,CLAUDE_CODE_PROJECT_PATH,PI_SESSION_DIR,CODEX_SESSION_DIR,FRUGAL_TOKENS_DATABASE_URL,FRUGAL_TOKENS_SYNC_INTERVAL_SECONDS,SERVE_STATIC,PORT,HOME,USERPROFILE --allow-read --allow-write --allow-net src/server/main.ts",
-    "start:api": "deno task db:migrate && deno run --allow-env=OPENCODE_DB_PATH,CLAUDE_CODE_PROJECT_PATH,PI_SESSION_DIR,CODEX_SESSION_DIR,FRUGAL_TOKENS_DATABASE_URL,FRUGAL_TOKENS_SYNC_INTERVAL_SECONDS,SERVE_STATIC,PORT,HOME,USERPROFILE --allow-read --allow-write --allow-net src/server/main.ts",
+    "start": "export SERVE_STATIC=true && deno task --env-file=.env db:migrate && deno run --env-file=.env --allow-env=OPENCODE_DB_PATH,CLAUDE_CODE_PROJECT_PATH,PI_SESSION_DIR,CODEX_SESSION_DIR,CURSOR_CHATS_PATH,CURSOR_SSE_CAPTURE_PATH,CURSOR_SSE_CAPTURE_DIR,FRUGAL_TOKENS_DATABASE_URL,FRUGAL_TOKENS_SYNC_INTERVAL_SECONDS,SERVE_STATIC,PORT,HOME,USERPROFILE --allow-read --allow-write --allow-net src/server/main.ts",
+    "start:api": "deno task db:migrate && deno run --allow-env=OPENCODE_DB_PATH,CLAUDE_CODE_PROJECT_PATH,PI_SESSION_DIR,CODEX_SESSION_DIR,CURSOR_CHATS_PATH,CURSOR_SSE_CAPTURE_PATH,CURSOR_SSE_CAPTURE_DIR,FRUGAL_TOKENS_DATABASE_URL,FRUGAL_TOKENS_SYNC_INTERVAL_SECONDS,SERVE_STATIC,PORT,HOME,USERPROFILE --allow-read --allow-write --allow-net src/server/main.ts",
 
     "demo:deploy:frontend": "deno run --env-file=.env.demo --allow-env --allow-run=deno scripts/deployDemoFrontend.ts",
     "demo:deploy:backend": "deno run --env-file=.env.demo --allow-env=DEPLOY_RAILWAY_SERVICE --allow-run=railway scripts/deployDemoBackend.ts",

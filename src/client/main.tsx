@@ -94,7 +94,7 @@ const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   validateSearch: z.object({
-    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex"]).catch(
+    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex", "cursor"]).catch(
       "all",
     ),
     misses: z.string().optional(),
@@ -105,7 +105,7 @@ const newRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/new",
   validateSearch: z.object({
-    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex"]).catch(
+    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex", "cursor"]).catch(
       "all",
     ),
     range: z.coerce.number().pipe(z.union([z.literal(30), z.literal(90)]))
@@ -117,7 +117,7 @@ const performanceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/performance",
   validateSearch: z.object({
-    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex"]).catch(
+    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex", "cursor"]).catch(
       "all",
     ),
     openai: z.string().catch("all"),
@@ -129,7 +129,7 @@ const toolCallsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tool-calls",
   validateSearch: z.object({
-    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex"]).catch(
+    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex", "cursor"]).catch(
       "all",
     ),
     range: z.coerce.number().pipe(
@@ -155,7 +155,7 @@ const sessionDetailRoute = createRoute({
     thinking: z.string().catch("recorded"),
   }),
   parseParams: (params) => ({
-    harness: z.enum(["opencode", "claude-code", "pi", "codex"]).parse(
+    harness: z.enum(["opencode", "claude-code", "pi", "codex", "cursor"]).parse(
       params.harness,
     ),
     sessionId: params.sessionId,

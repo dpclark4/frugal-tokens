@@ -73,15 +73,17 @@ function dateKey(value: number) {
 
 function visibleCalls(session: SourceSessionImport["session"]) {
   return session.turns.flatMap((turn) =>
-    turn.calls.filter((call) => !call.id.startsWith("context-operation:"))
-      .map((call) => ({ turn, call }))
+    turn.calls.filter((call) =>
+      !call.id.startsWith("context-operation:") &&
+      !call.id.startsWith("unmeasured:")
+    ).map((call) => ({ turn, call }))
   );
 }
 
 function completeComputedCost(calls: SessionCallImport[]) {
   if (calls.length === 0) return undefined;
   const costs = calls.map((call) =>
-    computeModelCallCost(call.tokens, call.model, call.startedAt)
+    computeModelCallCost(call.tokens, call.model, call.startedAt, call.provider)
   );
   return costs.some((cost) => cost === undefined)
     ? undefined
@@ -202,7 +204,8 @@ export function buildSessionRollup(
   for (const session of [root, ...descendants]) {
     for (const turn of session.session.turns) {
       const calls = turn.calls.filter((call) =>
-        !call.id.startsWith("context-operation:")
+        !call.id.startsWith("context-operation:") &&
+        !call.id.startsWith("unmeasured:")
       );
       if (calls.length === 0) continue;
       const date = dateKey(turn.startedAt);
@@ -245,6 +248,7 @@ export function buildSessionRollup(
           call.tokens,
           call.model,
           call.startedAt,
+          call.provider,
         );
         const cost = computed ?? call.reportedCost;
         day.input += input;

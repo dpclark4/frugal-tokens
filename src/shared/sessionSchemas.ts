@@ -1,6 +1,12 @@
 import { z } from "zod";
 
-export const harnessSchema = z.enum(["opencode", "claude-code", "pi", "codex"]);
+export const harnessSchema = z.enum([
+  "opencode",
+  "claude-code",
+  "pi",
+  "codex",
+  "cursor",
+]);
 
 export const sessionMissFilterValues = [
   "compaction",

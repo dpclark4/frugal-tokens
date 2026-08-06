@@ -40,6 +40,7 @@ import claudeCodeIcon from "./assets/icons/claudecode-color.svg";
 import codexIcon from "./assets/icons/codex-logo-light.svg";
 import openCodeIcon from "./assets/icons/opencode-logo-light.svg";
 import piIcon from "./assets/icons/pi-logo.svg";
+import cursorIcon from "./assets/icons/cursor-logo.svg";
 import "./SessionDetailPage.css";
 
 const route = getRouteApi("/sessions/$harness/$sessionId");
@@ -96,6 +97,7 @@ function harnessName(harness: SessionDetail["harness"]) {
   if (harness === "claude-code") return "Claude Code";
   if (harness === "codex") return "Codex";
   if (harness === "pi") return "PI";
+  if (harness === "cursor") return "Cursor";
   return "OpenCode";
 }
 
@@ -106,6 +108,8 @@ function HarnessMark({ harness }: { harness: SessionDetail["harness"] }) {
     ? codexIcon
     : harness === "pi"
     ? piIcon
+    : harness === "cursor"
+    ? cursorIcon
     : openCodeIcon;
   return <img className="sd-harness-mark" src={src} alt="" />;
 }
@@ -229,6 +233,7 @@ function scenarioCallCost(
     scenarioTokens(call.tokens, targetModel, thinking, call.provider),
     targetModel,
     call.startedAt,
+    call.provider,
   );
 }
 

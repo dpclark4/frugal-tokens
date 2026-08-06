@@ -6,7 +6,7 @@ response is advertised as text/event-stream. This addon forwards every chunk
 unchanged and records request/model/turn metadata plus token counters.
 
 By default it writes metadata to:
-  /tmp/frugal-tokens-cursor-sse/events.jsonl
+  ~/.local/share/frugal-tokens/cursor-capture/events.jsonl
 
 CURSOR_SSE_CAPTURE_RAW=1 remains available for protocol debugging, but is not
 needed for normal operation. Raw bodies can contain prompts, code, responses,
@@ -31,8 +31,11 @@ TARGETS = {
     ("agentn.global.api5.cursor.sh", "/agent.v1.AgentService/Run"),
 }
 OUTPUT_DIR = Path(
-    os.environ.get("CURSOR_SSE_CAPTURE_DIR", "/tmp/frugal-tokens-cursor-sse")
-)
+    os.environ.get(
+        "CURSOR_SSE_CAPTURE_DIR",
+        str(Path.home() / ".local/share/frugal-tokens/cursor-capture"),
+    )
+).expanduser()
 CAPTURE_RAW = os.environ.get("CURSOR_SSE_CAPTURE_RAW") == "1"
 MAX_FRAME_BYTES = 128 * 1024 * 1024
 
@@ -585,6 +588,7 @@ def responseheaders(flow: http.HTTPFlow) -> None:
         "kind": "response-start",
         "flowId": flow.id,
         "requestId": request_id,
+        "startedAt": state["startedAt"],
         "status": flow.response.status_code,
         "contentType": flow.response.headers.get("content-type", ""),
         "connectContentEncoding": flow.response.headers.get(
@@ -632,6 +636,9 @@ def responseheaders(flow: http.HTTPFlow) -> None:
                             "flowId": flow.id,
                             "requestId": request_id,
                             "usageSequence": state["usageSequence"],
+                            "capturedAt": time.time(),
+                            "startedAt": state["startedAt"],
+                            "endedAt": time.time(),
                             "request": request_metadata,
                             **usage,
                             "events": _event_snapshot(state),
@@ -655,6 +662,7 @@ def responseheaders(flow: http.HTTPFlow) -> None:
                 "kind": "response-end",
                 "flowId": flow.id,
                 "requestId": request_id,
+                "endedAt": time.time(),
                 "chunks": state["chunks"],
                 "bytes": state["bytes"],
                 "frames": state["frames"],

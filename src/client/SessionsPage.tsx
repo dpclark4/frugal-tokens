@@ -35,6 +35,7 @@ import claudeCodeIcon from "./assets/icons/claudecode-color.svg";
 import codexIcon from "./assets/icons/codex-logo-light.svg";
 import openCodeIcon from "./assets/icons/opencode-logo-light.svg";
 import piIcon from "./assets/icons/pi-logo.svg";
+import cursorIcon from "./assets/icons/cursor-logo.svg";
 import { UsageChart } from "./UsageChart.tsx";
 import { TtlMissCard } from "./TtlMissCard.tsx";
 import { SiteHeader } from "./SiteHeader.tsx";
@@ -1059,6 +1060,8 @@ function HarnessIcon({ harness }: { harness: SessionSummary["harness"] }) {
     ? "Codex"
     : harness === "pi"
     ? "PI"
+    : harness === "cursor"
+    ? "Cursor"
     : "OpenCode";
   const src = harness === "claude-code"
     ? claudeCodeIcon
@@ -1066,6 +1069,8 @@ function HarnessIcon({ harness }: { harness: SessionSummary["harness"] }) {
     ? codexIcon
     : harness === "pi"
     ? piIcon
+    : harness === "cursor"
+    ? cursorIcon
     : openCodeIcon;
   return (
     <span className={`harness-icon harness-${harness}`} title={title}>
@@ -2365,6 +2370,7 @@ export function SessionsPage() {
                 <option value="opencode">OpenCode</option>
                 <option value="pi">PI</option>
                 <option value="codex">Codex</option>
+                <option value="cursor">Cursor</option>
               </select>
             </label>
           </div>
