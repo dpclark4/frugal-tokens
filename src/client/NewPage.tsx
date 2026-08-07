@@ -36,7 +36,9 @@ export function NewPage() {
       }).catch((reason) => {
         if (active && currentRequest === request) {
           setError(
-            reason instanceof Error ? reason.message : "Unable to load overview",
+            reason instanceof Error
+              ? reason.message
+              : "Unable to load overview",
           );
         }
       });
@@ -85,7 +87,7 @@ export function NewPage() {
         </div>
       </section>
 
-      <SpendComposition />
+      {data && <SpendComposition data={data.spendComposition} />}
     </main>
   );
 }

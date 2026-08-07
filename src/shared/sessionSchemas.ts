@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { modelProviderValues } from "./modelMetadata.ts";
 
 export const harnessSchema = z.enum(["opencode", "claude-code", "pi", "codex"]);
 
@@ -387,8 +388,13 @@ export const workRhythmDataSchema = z.object({
   }),
   weekdayActivity: z.array(z.object({
     weekday: z.union([
-      z.literal(0), z.literal(1), z.literal(2), z.literal(3),
-      z.literal(4), z.literal(5), z.literal(6),
+      z.literal(0),
+      z.literal(1),
+      z.literal(2),
+      z.literal(3),
+      z.literal(4),
+      z.literal(5),
+      z.literal(6),
     ]),
     label: z.string(),
     averageMinutes: z.number().nonnegative(),
@@ -407,6 +413,58 @@ export const workRhythmDataSchema = z.object({
   days: z.record(z.string(), workRhythmDaySchema),
 });
 
+const spendCompositionModelSchema = z.object({
+  model: z.string(),
+  provider: z.enum(modelProviderValues),
+  tier: z.string(),
+  tierRank: z.number().int().nonnegative(),
+  generation: z.string().optional(),
+  variant: z.string().optional(),
+  spend: z.number().nonnegative(),
+  processedInput: z.number().int().nonnegative(),
+  effectiveCostPerMillion: z.number().nonnegative().optional(),
+  spendRank: z.number().int().positive(),
+  tokenRank: z.number().int().positive(),
+  selectedBySpend: z.boolean(),
+  selectedByTokens: z.boolean(),
+  hasUnpricedCost: z.boolean(),
+});
+
+export const spendCompositionSchema = z.object({
+  spend: z.number().nonnegative(),
+  processedInput: z.number().int().nonnegative(),
+  hasUnpricedCost: z.boolean(),
+  models: z.array(spendCompositionModelSchema).max(10),
+  other: z.object({
+    spend: z.number().nonnegative(),
+    processedInput: z.number().int().nonnegative(),
+    hasUnpricedCost: z.boolean(),
+  }).optional(),
+  days: z.array(z.object({
+    date: z.string(),
+    models: z.array(z.object({
+      model: z.string(),
+      spend: z.number().nonnegative(),
+      processedInput: z.number().int().nonnegative(),
+      hasUnpricedCost: z.boolean(),
+    })),
+    otherSpend: z.number().nonnegative(),
+    otherProcessedInput: z.number().int().nonnegative(),
+    otherHasUnpricedCost: z.boolean(),
+    otherModels: z.array(z.object({
+      model: z.string(),
+      provider: z.enum(modelProviderValues),
+      tier: z.string(),
+      tierRank: z.number().int().nonnegative(),
+      generation: z.string().optional(),
+      variant: z.string().optional(),
+      spend: z.number().nonnegative(),
+      processedInput: z.number().int().nonnegative(),
+      hasUnpricedCost: z.boolean(),
+    })),
+  })),
+});
+
 export const activityOverviewResponseSchema = z.object({
   rangeDays: z.union([z.literal(30), z.literal(90)]),
   startDate: z.string(),
@@ -420,6 +478,7 @@ export const activityOverviewResponseSchema = z.object({
     hasUnpricedCost: z.boolean(),
   }),
   workRhythm: workRhythmDataSchema,
+  spendComposition: spendCompositionSchema,
   days: z.array(z.object({
     date: z.string(),
     processedInput: z.number().int().nonnegative(),
@@ -724,6 +783,7 @@ export type WorkRhythmData = z.infer<typeof workRhythmDataSchema>;
 export type ActivityOverviewResponse = z.infer<
   typeof activityOverviewResponseSchema
 >;
+export type SpendCompositionData = z.infer<typeof spendCompositionSchema>;
 export type OverviewResponse = z.infer<typeof overviewResponseSchema>;
 export type SessionShapeResponse = z.infer<typeof sessionShapeResponseSchema>;
 export type PerformanceResponse = z.infer<typeof performanceResponseSchema>;

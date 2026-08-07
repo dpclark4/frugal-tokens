@@ -1,6 +1,7 @@
 import type { ActivityOverviewResponse } from "../shared/sessionSchemas.ts";
 import type { StoredOverviewRollup } from "./overviewAnalytics.ts";
 import { aggregateWorkRhythm } from "./workRhythm.ts";
+import { modelMetadata } from "../shared/modelMetadata.ts";
 
 export const ACTIVITY_INACTIVITY_MINUTES = 10;
 
@@ -8,9 +9,11 @@ type ModelBucket = {
   model: string;
   input: number;
   spend: number;
+  hasUnpricedCost: boolean;
 };
 
-type TopSession = ActivityOverviewResponse["days"][number]["topSessions"][number];
+type TopSession =
+  ActivityOverviewResponse["days"][number]["topSessions"][number];
 
 type DayBucket = {
   processedInput: number;
@@ -42,6 +45,121 @@ function localDayBounds(date: string): Interval {
   };
 }
 
+function spendComposition(
+  days: Map<string, DayBucket>,
+  start: number,
+  end: number,
+) {
+  const allModels = new Map<string, ModelBucket>();
+  for (const day of days.values()) {
+    for (const model of day.models.values()) {
+      const total = allModels.get(model.model) ?? {
+        model: model.model,
+        input: 0,
+        spend: 0,
+        hasUnpricedCost: false,
+      };
+      total.input += model.input;
+      total.spend += model.spend;
+      total.hasUnpricedCost ||= model.hasUnpricedCost;
+      allModels.set(model.model, total);
+    }
+  }
+
+  const bySpend = [...allModels.values()].toSorted((a, b) =>
+    b.spend - a.spend || b.input - a.input || a.model.localeCompare(b.model)
+  );
+  const byTokens = [...allModels.values()].toSorted((a, b) =>
+    b.input - a.input || b.spend - a.spend || a.model.localeCompare(b.model)
+  );
+  const spendRanks = new Map(
+    bySpend.map((model, index) => [model.model, index + 1]),
+  );
+  const tokenRanks = new Map(
+    byTokens.map((model, index) => [model.model, index + 1]),
+  );
+  const selectedIds = new Set([
+    ...bySpend.slice(0, 5).map((model) => model.model),
+    ...byTokens.slice(0, 5).map((model) => model.model),
+  ]);
+  const selected = bySpend.filter((model) => selectedIds.has(model.model));
+  const omitted = bySpend.filter((model) => !selectedIds.has(model.model));
+  const other = omitted.length === 0 ? undefined : omitted.reduce(
+    (total, model) => ({
+      spend: total.spend + model.spend,
+      processedInput: total.processedInput + model.input,
+      hasUnpricedCost: total.hasUnpricedCost || model.hasUnpricedCost,
+    }),
+    { spend: 0, processedInput: 0, hasUnpricedCost: false },
+  );
+
+  const chartDates: string[] = [];
+  for (
+    let date = Temporal.PlainDate.from(dateKey(start));
+    Temporal.PlainDate.compare(date, Temporal.PlainDate.from(dateKey(end))) <=
+      0;
+    date = date.add({ days: 1 })
+  ) chartDates.push(date.toString());
+
+  return {
+    spend: bySpend.reduce((sum, model) => sum + model.spend, 0),
+    processedInput: bySpend.reduce((sum, model) => sum + model.input, 0),
+    hasUnpricedCost: bySpend.some((model) => model.hasUnpricedCost),
+    models: selected.map((model) => ({
+      model: model.model,
+      ...modelMetadata(model.model),
+      spend: model.spend,
+      processedInput: model.input,
+      effectiveCostPerMillion: model.input === 0
+        ? undefined
+        : model.spend / model.input * 1_000_000,
+      spendRank: spendRanks.get(model.model)!,
+      tokenRank: tokenRanks.get(model.model)!,
+      selectedBySpend: spendRanks.get(model.model)! <= 5,
+      selectedByTokens: tokenRanks.get(model.model)! <= 5,
+      hasUnpricedCost: model.hasUnpricedCost,
+    })),
+    other,
+    days: chartDates.map(
+      (date) => {
+        const dayModels = [...(days.get(date)?.models.values() ?? [])];
+        const models = dayModels.filter((model) => selectedIds.has(model.model))
+          .map((model) => ({
+            model: model.model,
+            spend: model.spend,
+            processedInput: model.input,
+            hasUnpricedCost: model.hasUnpricedCost,
+          }));
+        const otherModels = dayModels.filter((model) =>
+          !selectedIds.has(model.model)
+        );
+        return {
+          date,
+          models,
+          otherSpend: otherModels.reduce((sum, model) => sum + model.spend, 0),
+          otherProcessedInput: otherModels.reduce(
+            (sum, model) => sum + model.input,
+            0,
+          ),
+          otherHasUnpricedCost: otherModels.some((model) =>
+            model.hasUnpricedCost
+          ),
+          otherModels: otherModels.toSorted((a, b) =>
+            b.spend - a.spend || b.input - a.input ||
+            a.model.localeCompare(b.model)
+          ).map((model) => ({
+            model: model.model,
+            ...modelMetadata(model.model),
+            spend: model.spend,
+            processedInput: model.input,
+            hasUnpricedCost: model.hasUnpricedCost,
+          })),
+        };
+      },
+    ),
+  };
+}
+
 function estimatedActiveMs(date: string, intervals: Interval[]) {
   const day = localDayBounds(date);
   const clipped = intervals.filter((interval) =>
@@ -60,7 +178,9 @@ function estimatedActiveMs(date: string, intervals: Interval[]) {
       merged.push({ ...interval });
     }
   }
-  return Math.round(merged.reduce((sum, interval) => sum + interval.end - interval.start, 0));
+  return Math.round(
+    merged.reduce((sum, interval) => sum + interval.end - interval.start, 0),
+  );
 }
 
 export function aggregateActivityOverview(
@@ -83,12 +203,16 @@ export function aggregateActivityOverview(
     sessions++;
 
     for (const interval of root.overview.executionIntervals) {
-      if (interval.executionEndAt + inactivityBuffer < start || interval.startedAt > end) {
+      if (
+        interval.executionEndAt + inactivityBuffer < start ||
+        interval.startedAt > end
+      ) {
         continue;
       }
       activityIntervals.push({
         start: interval.startedAt,
-        end: Math.max(interval.startedAt, interval.executionEndAt) + inactivityBuffer,
+        end: Math.max(interval.startedAt, interval.executionEndAt) +
+          inactivityBuffer,
       });
     }
 
@@ -115,9 +239,11 @@ export function aggregateActivityOverview(
           model: model.model,
           input: 0,
           spend: 0,
+          hasUnpricedCost: false,
         };
         modelBucket.input += model.input;
         modelBucket.spend += model.cost;
+        modelBucket.hasUnpricedCost ||= model.hasUnpricedCost;
         bucket.models.set(model.model, modelBucket);
       }
 
@@ -157,6 +283,7 @@ export function aggregateActivityOverview(
       hasUnpricedCost: [...days.values()].some((day) => day.hasUnpricedCost),
     },
     workRhythm: aggregateWorkRhythm(roots, start, end, timeZone),
+    spendComposition: spendComposition(days, start, end),
     days: [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(
       ([date, day]) => ({
         date,
@@ -167,10 +294,12 @@ export function aggregateActivityOverview(
         turns: day.turns,
         estimatedActiveMs: estimatedActiveMs(date, activityIntervals),
         models: [...day.models.values()].toSorted((a, b) =>
-          b.spend - a.spend || b.input - a.input || a.model.localeCompare(b.model)
-        ).slice(0, 3),
+          b.spend - a.spend || b.input - a.input ||
+          a.model.localeCompare(b.model)
+        ).slice(0, 3).map(({ hasUnpricedCost: _, ...model }) => model),
         topSessions: day.topSessions.toSorted((a, b) =>
-          b.spend - a.spend || b.processedInput - a.processedInput || a.id - b.id
+          b.spend - a.spend || b.processedInput - a.processedInput ||
+          a.id - b.id
         ).slice(0, 3),
       }),
     ),

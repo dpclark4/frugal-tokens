@@ -2,6 +2,7 @@ import { deepStrictEqual, strictEqual } from "node:assert";
 import { activityOverviewResponseSchema } from "../shared/sessionSchemas.ts";
 import type { StoredOverviewRollup } from "./overviewAnalytics.ts";
 import { aggregateActivityOverview } from "./activityOverview.ts";
+import type { OverviewDayRollup } from "./sessionRollups.ts";
 
 function day(
   date: string,
@@ -10,6 +11,7 @@ function day(
   cacheRead: number,
   cost: number,
   hasUnpricedCost = false,
+  models: OverviewDayRollup["models"] = [],
 ) {
   return {
     date,
@@ -22,7 +24,7 @@ function day(
     cost,
     hasPricedCost: !hasUnpricedCost,
     hasUnpricedCost,
-    models: [],
+    models,
   };
 }
 
@@ -113,4 +115,63 @@ Deno.test("activity overview returns period totals and daily drill-down data", (
       }],
     },
   ]);
+});
+
+Deno.test("spend composition selects the union of top spend and token models", () => {
+  const at = new Date(2026, 6, 1, 12).getTime();
+  const values = [
+    ["claude-fable-5", 10, 1],
+    ["claude-opus-5", 9, 2],
+    ["claude-sonnet-5", 8, 3],
+    ["gpt-5.6-sol", 7, 4],
+    ["gpt-5.6-terra", 6, 5],
+    ["grok-4-5", 1, 100],
+    ["kimi-k3", 0.5, 90],
+    ["gpt-5.6-luna", 0.1, 0.1],
+  ] as const;
+  const models: OverviewDayRollup["models"] = values.map(
+    ([model, cost, inputMillions]) => ({
+      model,
+      cost,
+      input: inputMillions * 1_000_000,
+      cacheRead: 0,
+      hasPricedCost: true,
+      hasUnpricedCost: false,
+    }),
+  );
+  models[0].hasUnpricedCost = true;
+  const totalCost = models.reduce((sum, model) => sum + model.cost, 0);
+  const roots: StoredOverviewRollup[] = [{
+    rootSessionID: 1,
+    overview: {
+      days: [day("2026-07-01", at, 205_100_000, 0, totalCost, false, models)],
+      executionIntervals: [],
+    },
+  }];
+
+  const result = aggregateActivityOverview(
+    roots,
+    new Date(2026, 6, 1).getTime(),
+    new Date(2026, 6, 1, 23, 59).getTime(),
+    30,
+  ).spendComposition;
+
+  deepStrictEqual(
+    result.models.map((model) => model.model),
+    values.slice(0, 7).map(([model]) => model),
+  );
+  strictEqual(result.other?.spend, 0.1);
+  strictEqual(result.days[0].otherModels[0].model, "gpt-5.6-luna");
+  strictEqual(
+    result.models.find((model) => model.model === "grok-4-5")?.selectedByTokens,
+    true,
+  );
+  strictEqual(
+    result.models.find((model) => model.model === "grok-4-5")?.selectedBySpend,
+    false,
+  );
+  strictEqual(result.models[0].provider, "anthropic");
+  strictEqual(result.models[0].hasUnpricedCost, true);
+  strictEqual(result.models[0].effectiveCostPerMillion, 10);
+  activityOverviewResponseSchema.shape.spendComposition.parse(result);
 });
