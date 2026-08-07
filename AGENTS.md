@@ -25,6 +25,11 @@ Conserve tool calls and tokens during implementation.
   self-explanatory heading or label. Only add supporting copy when the user
   explicitly asks for it or when it is necessary to prevent misunderstanding
   or error, and never use it to restate the heading.
+- Omit headings, legends, labels, and instructions when their meaning can be
+  reliably inferred from the surrounding context, layout, axes, or controls.
+- Treat supplemental text as an attention and space cost. Include non-primary
+  copy deliberately only when it communicates information the interface cannot
+  convey more directly; otherwise favor less text and visual clutter.
 
 ## Analytics Dashboard Design
 

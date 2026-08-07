@@ -58,13 +58,13 @@
 }
 
 .usage-metric-primary > strong {
-  font-size: 36px;
+  font-size: 32px;
   font-weight: 650;
   line-height: 1.05;
 }
 
 .usage-metric-secondary > strong {
-  font-size: 27px;
+  font-size: 24px;
   font-weight: 620;
   line-height: 1.08;
 }

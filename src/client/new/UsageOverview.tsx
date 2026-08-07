@@ -50,7 +50,7 @@ export function UsageOverview({ data }: { data?: ActivityOverviewResponse }) {
   return (
     <section className="signal-summary" aria-labelledby="signal-summary-title">
       <header className="usage-overview-header">
-        <h2 id="signal-summary-title">Usage overview</h2>
+        <h2 id="signal-summary-title">Usage</h2>
       </header>
       <div className="usage-metric-grid">
         <Metric

@@ -88,9 +88,9 @@ export function NewPage() {
           </div>
           {data && <WorkRhythm data={data.workRhythm} />}
         </div>
-      </section>
 
-      {data && <SpendComposition data={data.spendComposition} />}
+        {data && <SpendComposition data={data.spendComposition} />}
+      </section>
     </main>
   );
 }

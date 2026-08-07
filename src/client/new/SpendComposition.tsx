@@ -79,7 +79,7 @@ function ModelTable({ data }: { data: SpendCompositionData }) {
         <span>Model</span>
         <span>Spend</span>
         <span>Tokens</span>
-        <span>Effective $/1M</span>
+        <span>Cost / 1M</span>
       </div>
       <ol className="composition-models">
         {data.models.map((model) => {
@@ -222,7 +222,11 @@ function CompositionTooltip({ active, payload, data, metric }: {
 }
 
 function CompositionChart(
-  { data, metric }: { data: SpendCompositionData; metric: Metric },
+  { data, metric, showRate }: {
+    data: SpendCompositionData;
+    metric: Metric;
+    showRate: boolean;
+  },
 ) {
   const series = useMemo(() => [
     ...data.models.map((model, index) => ({
@@ -285,7 +289,11 @@ function CompositionChart(
       role="img"
       aria-label={`${
         metric === "spend" ? "Spend" : "Processed input tokens"
-      } by day, stacked by model, with whole-day effective cost per million processed input tokens.`}
+      } by day, stacked by model${
+        showRate
+          ? ", with whole-day cost per million processed input tokens"
+          : ""
+      }.`}
     >
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart
@@ -321,7 +329,13 @@ function CompositionChart(
             tickFormatter={(value) => `$${compact.format(Number(value))}`}
             axisLine={false}
             tickLine={false}
-            tick={{ fill: "#35433f", fontSize: 9, fontFamily: "var(--mono)" }}
+            tick={showRate
+              ? {
+                fill: "#35433f",
+                fontSize: 9,
+                fontFamily: "var(--mono)",
+              }
+              : false}
           />
           <Tooltip
             cursor={{ stroke: "#52615d", strokeDasharray: "3 3" }}
@@ -345,7 +359,7 @@ function CompositionChart(
               isAnimationActive={false}
             />
           ))}
-          {gapKeys.map((key) => (
+          {showRate && gapKeys.map((key) => (
             <Line
               key={key}
               yAxisId="rate"
@@ -360,22 +374,24 @@ function CompositionChart(
               isAnimationActive={false}
             />
           ))}
-          <Line
-            yAxisId="rate"
-            type="monotone"
-            dataKey="effectiveRate"
-            stroke="#7c8783"
-            strokeWidth={2}
-            dot={false}
-            activeDot={{
-              r: 3,
-              fill: "#7c8783",
-              stroke: "#fbfcfb",
-              strokeWidth: 1.5,
-            }}
-            connectNulls={false}
-            isAnimationActive={false}
-          />
+          {showRate && (
+            <Line
+              yAxisId="rate"
+              type="monotone"
+              dataKey="effectiveRate"
+              stroke="#7c8783"
+              strokeWidth={2}
+              dot={false}
+              activeDot={{
+                r: 3,
+                fill: "#7c8783",
+                stroke: "#fbfcfb",
+                strokeWidth: 1.5,
+              }}
+              connectNulls={false}
+              isAnimationActive={false}
+            />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -384,6 +400,7 @@ function CompositionChart(
 
 export function SpendComposition({ data }: { data: SpendCompositionData }) {
   const [metric, setMetric] = useState<Metric>("spend");
+  const [showRate, setShowRate] = useState(true);
   const empty = data.models.length === 0;
 
   return (
@@ -391,28 +408,27 @@ export function SpendComposition({ data }: { data: SpendCompositionData }) {
       className="spend-composition"
       aria-labelledby="spend-composition-title"
     >
-      <header className="composition-header">
-        <div>
-          <p className="dashboard-kicker">Spend composition</p>
-          <h2 id="spend-composition-title">What made up the spend?</h2>
+      <div className={`composition-body${empty ? " empty" : ""}`}>
+        <div className="composition-card composition-ranking-card">
+          <header className="composition-header">
+            <h2 id="spend-composition-title">Spend</h2>
+          </header>
+          {empty
+            ? <p className="composition-empty">No model usage in this period.</p>
+            : <ModelTable data={data} />}
         </div>
-        <div className="composition-summary">
-          <strong>{currency.format(data.spend)}</strong>
-        </div>
-      </header>
-      {empty
-        ? <p className="composition-empty">No model usage in this period.</p>
-        : (
-          <div className="composition-body">
-            <ModelTable data={data} />
-            <div className="composition-trend">
-              <div className="composition-trend-header">
-                <div className="composition-trend-label">
-                  <h3>By day</h3>
-                  <span>
-                    <i aria-hidden="true" />Effective $/1M
-                  </span>
-                </div>
+        {!empty && (
+          <div className="composition-card composition-chart-card">
+            <header className="composition-header composition-chart-header">
+              <div className="composition-header-controls">
+                <label className="composition-rate-control">
+                  <input
+                    type="checkbox"
+                    checked={showRate}
+                    onChange={(event) => setShowRate(event.target.checked)}
+                  />
+                  <span>Cost / 1M</span>
+                </label>
                 <div className="composition-toggle" aria-label="Chart metric">
                   <button
                     type="button"
@@ -431,11 +447,25 @@ export function SpendComposition({ data }: { data: SpendCompositionData }) {
                     Tokens
                   </button>
                 </div>
+                <div className="composition-summary">
+                  <strong>
+                    {metric === "spend"
+                      ? currency.format(data.spend)
+                      : compact.format(data.processedInput)}
+                  </strong>
+                </div>
               </div>
-              <CompositionChart data={data} metric={metric} />
+            </header>
+            <div className="composition-trend">
+              <CompositionChart
+                data={data}
+                metric={metric}
+                showRate={showRate}
+              />
             </div>
           </div>
         )}
+      </div>
     </section>
   );
 }

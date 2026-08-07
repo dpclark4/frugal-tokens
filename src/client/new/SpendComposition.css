@@ -1,11 +1,14 @@
 .spend-composition {
-  overflow: hidden;
-  margin-top: 24px;
-  border: 1px solid #cbd6d2;
-  border-radius: 12px;
-  background: var(--dashboard-panel);
-  box-shadow: 0 22px 60px rgba(32, 53, 48, .09);
+  margin: 0 12px 12px;
   color: var(--dashboard-ink);
+}
+
+.composition-card {
+  overflow: hidden;
+  min-width: 0;
+  border: 1px solid var(--dashboard-rule);
+  border-radius: 8px;
+  background: var(--dashboard-panel);
 }
 
 .composition-header {
@@ -18,21 +21,49 @@
   border-bottom: 1px solid var(--dashboard-rule);
 }
 
+.composition-chart-header {
+  justify-content: flex-end;
+}
+
 .composition-header h2 {
   margin: 0;
   font-size: 23px;
   letter-spacing: -.035em;
 }
 
+.composition-header-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.composition-rate-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #566560;
+  font: 9px var(--mono);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.composition-rate-control input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: var(--dashboard-ink);
+}
+
 .composition-summary {
   display: grid;
+  min-width: 96px;
   justify-items: end;
   gap: 2px;
   font-family: var(--mono);
 }
 
 .composition-summary strong {
-  color: var(--dashboard-spend);
+  color: var(--dashboard-ink);
   font-size: 21px;
   line-height: 1;
   letter-spacing: -.04em;
@@ -41,17 +72,18 @@
 .composition-body {
   display: grid;
   min-height: 380px;
-  grid-template-columns: minmax(480px, .9fr) minmax(520px, 1.1fr);
+  grid-template-columns: minmax(440px, .92fr) minmax(560px, 1.08fr);
+  gap: 12px;
+}
+
+.composition-body.empty {
+  grid-template-columns: 1fr;
 }
 
 .composition-ranking,
 .composition-trend {
   min-width: 0;
   padding: 18px 22px 20px;
-}
-
-.composition-ranking {
-  border-right: 1px solid var(--dashboard-rule);
 }
 
 .composition-table-header,
@@ -68,9 +100,14 @@
   padding: 0 6px 5px;
   border-bottom: 1px solid #e4ebe8;
   color: #73807c;
-  font: 8px var(--mono);
+  font: 10px var(--mono);
   letter-spacing: .07em;
   text-transform: uppercase;
+}
+
+.composition-table-header span:first-child,
+.composition-model-name {
+  padding-left: 4px;
 }
 
 .composition-table-header span:last-child {
@@ -106,7 +143,7 @@
 .composition-model-name strong {
   overflow: hidden;
   color: #34413d;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -133,14 +170,14 @@
   z-index: 1;
   padding-left: 6px;
   color: #2d3a36;
-  font-size: 10px;
+  font-size: 12px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .composition-rate {
   color: #34413d;
-  font: 650 10px var(--mono);
+  font: 650 12px var(--mono);
   font-variant-numeric: tabular-nums;
   text-align: right;
   white-space: nowrap;
@@ -152,43 +189,7 @@
 
 .composition-trend {
   display: grid;
-  grid-template-rows: 32px minmax(280px, 1fr);
-}
-
-.composition-trend-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 18px;
-  border-bottom: 1px solid #e4ebe8;
-}
-
-.composition-trend-label {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.composition-trend-header h3 {
-  margin: 3px 0 0;
-  color: var(--dashboard-signal);
-  font: 650 10px var(--mono);
-  letter-spacing: .09em;
-  text-transform: uppercase;
-}
-
-.composition-trend-label span {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: #566560;
-  font: 8px var(--mono);
-}
-
-.composition-trend-label span i {
-  width: 17px;
-  height: 2px;
-  background: #7c8783;
+  grid-template-rows: minmax(280px, 1fr);
 }
 
 .composition-toggle {
@@ -291,10 +292,6 @@
   .composition-body {
     grid-template-columns: 1fr;
   }
-  .composition-ranking {
-    border-right: 0;
-    border-bottom: 1px solid var(--dashboard-rule);
-  }
 }
 
 @media (max-width: 650px) {
@@ -312,6 +309,14 @@
   .composition-table-header span:last-child,
   .composition-rate {
     display: none;
+  }
+  .composition-header {
+    align-items: flex-start;
+  }
+  .composition-header-controls {
+    align-items: flex-end;
+    flex-direction: column-reverse;
+    gap: 8px;
   }
   .composition-body {
     min-height: 0;

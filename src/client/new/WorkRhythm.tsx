@@ -359,9 +359,9 @@ export function WorkRhythm({ data }: { data: WorkRhythmData }) {
         <header className="work-rhythm-header">
           <div>
             <div className="rhythm-title-line">
-              <h2 id="work-rhythm-title">Work rhythm</h2>
+              <h2 id="work-rhythm-title">Work</h2>
             </div>
-            <p>{data.methodology.minutesBeforeTurn} min preceding each user turn · overlaps counted once</p>
+            <p>{data.methodology.minutesBeforeTurn} min before each user turn · overlapping time counted once</p>
           </div>
           <strong>{formatDuration(data.estimatedActiveMinutes, true)} <small>estimated</small></strong>
         </header>
