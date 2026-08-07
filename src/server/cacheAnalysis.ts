@@ -139,21 +139,31 @@ function classifyCacheMiss(
   previous: CacheComparableCall | undefined,
   current: CacheComparableCall,
   followsCompaction: boolean,
+  initialCacheRead?: number,
 ): CacheAssessment {
   if (!isMiss(rawAssessment)) return rawAssessment;
+  // Returning exactly to the cache-read floor observed on the first request
+  // means none of the cache accumulated by this session was retained. Treat
+  // that as a full session-cache miss even if the harness/system prefix makes
+  // it look like a partial provider-cache hit against the preceding request.
+  const assessment = rawAssessment.status === "partial-hit" &&
+      initialCacheRead !== undefined &&
+      current.tokens.cacheRead === initialCacheRead
+    ? { ...rawAssessment, status: "full-miss" as const }
+    : rawAssessment;
   // Compaction remains the most specific context reset explanation. Among
   // ordinary misses, TTL wins over a thinking change because the cache would
   // have expired regardless of the requested thinking level.
   if (followsCompaction) {
-    return { ...rawAssessment, cause: "compaction" as const };
+    return { ...assessment, cause: "compaction" as const };
   }
   if (previous && ttlExpired(previous, current)) {
-    return { ...rawAssessment, cause: "ttl" as const };
+    return { ...assessment, cause: "ttl" as const };
   }
   if (previous && thinkingSettingChanged(previous, current)) {
-    return { ...rawAssessment, cause: "thinking-change" as const };
+    return { ...assessment, cause: "thinking-change" as const };
   }
-  return rawAssessment;
+  return assessment;
 }
 
 function cacheMissRecord(
@@ -210,18 +220,27 @@ export type CacheMissAnalysis = CacheMissRecord & {
   previousCallID: string;
 };
 
+function cacheBaselineKey(
+  call: Pick<ModelCall, "provider" | "model">,
+): string {
+  return JSON.stringify([call.provider, call.model]);
+}
+
 export function analyzeCacheMisses(
   calls: CacheAnalysisCall[],
 ): CacheMissAnalysis[] {
   const misses: CacheMissAnalysis[] = [];
+  const initialCacheReads = new Map<string, number>();
   let previous: CacheAnalysisCall | undefined;
   for (const current of calls) {
+    const baselineKey = cacheBaselineKey(current);
     const rawAssessment = assessCache(previous, current);
     const assessment = classifyCacheMiss(
       rawAssessment,
       previous,
       current,
       current.followsCompaction ?? false,
+      initialCacheReads.get(baselineKey),
     );
     if (previous && isMiss(assessment)) {
       misses.push({
@@ -230,7 +249,12 @@ export function analyzeCacheMisses(
         previousCallID: previous.id,
       });
     }
-    if (hasInputContext(current.tokens)) previous = current;
+    if (hasInputContext(current.tokens)) {
+      if (!initialCacheReads.has(baselineKey)) {
+        initialCacheReads.set(baselineKey, current.tokens.cacheRead);
+      }
+      previous = current;
+    }
   }
   return misses;
 }
@@ -255,8 +279,10 @@ export function categorizeUsageCallCache(
       (call) => `${call.harness}:${call.cacheChainID}`,
     ).values()
   ) {
+    const initialCacheReads = new Map<string, number>();
     let previous: UsageCall | undefined;
     for (const call of chain.toSorted((a, b) => a.startedAt - b.startedAt)) {
+      const baselineKey = cacheBaselineKey(call);
       const comparable = call.previousModelCallID === undefined
         ? previous
         : callsByID.get(call.previousModelCallID);
@@ -266,13 +292,19 @@ export function categorizeUsageCallCache(
         comparable,
         call,
         call.followsCompaction ?? false,
+        initialCacheReads.get(baselineKey),
       );
       categorized.push({
         ...call,
         cacheAssessment,
         ...(comparable ? { previousComparableCall: comparable } : {}),
       });
-      if (hasInputContext(call.tokens)) previous = call;
+      if (hasInputContext(call.tokens)) {
+        if (!initialCacheReads.has(baselineKey)) {
+          initialCacheReads.set(baselineKey, call.tokens.cacheRead);
+        }
+        previous = call;
+      }
     }
   }
   return categorized;
@@ -344,6 +376,7 @@ export function summarizeTurnCache(calls: ModelCall[]): TurnCacheSummary {
 }
 
 export function analyzeSessionCache(session: SessionDetail): SessionDetail {
+  const initialCacheReads = new Map<string, number>();
   let previous: ModelCall | undefined;
   const turns = session.turns.map((turn) => {
     const calls = turn.calls.map((call) => {
@@ -353,6 +386,7 @@ export function analyzeSessionCache(session: SessionDetail): SessionDetail {
           turn.reasoningSetting !== undefined
         ? { ...call, reasoningSetting: turn.reasoningSetting }
         : call;
+      const baselineKey = cacheBaselineKey(effectiveCall);
       const rawAssessment = assessCache(previous, effectiveCall);
       const followsCompaction = (call.contextEventsBefore ?? []).some((event) =>
         event.type === "compaction"
@@ -362,10 +396,16 @@ export function analyzeSessionCache(session: SessionDetail): SessionDetail {
         previous,
         effectiveCall,
         followsCompaction,
+        initialCacheReads.get(baselineKey),
       );
       // A contextless/opaque usage record must not break the chain between
       // the real requests on either side of it.
-      if (hasInputContext(call.tokens)) previous = effectiveCall;
+      if (hasInputContext(call.tokens)) {
+        if (!initialCacheReads.has(baselineKey)) {
+          initialCacheReads.set(baselineKey, call.tokens.cacheRead);
+        }
+        previous = effectiveCall;
+      }
       return { ...call, cacheAssessment };
     });
     const cacheAssessment = calls.reduce<CacheAssessment | undefined>(

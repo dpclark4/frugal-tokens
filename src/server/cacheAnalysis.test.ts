@@ -87,6 +87,51 @@ Deno.test("assesses cache retention from the preceding comparable call", () => {
   });
 });
 
+Deno.test("treats a return to the initial cache-read floor as a full miss", () => {
+  const first = call("first", 10_000);
+  const grown = call("grown", 15_000);
+  const reset = call("reset", 10_000);
+  first.startedAt = 1;
+  grown.startedAt = 2;
+  reset.startedAt = 3;
+
+  const actual = analyzeSessionCache(session("baseline-reset", [
+    first,
+    grown,
+    reset,
+  ]));
+
+  deepStrictEqual(
+    actual.turns[0].calls.map((item) => item.cacheAssessment?.status),
+    ["baseline", "hit", "full-miss"],
+  );
+  strictEqual(
+    actual.turns[0].calls[2].cacheAssessment?.retainedRatio,
+    10_000 / 15_000,
+  );
+
+  const misses = analyzeCacheMisses([
+    { ...first, id: "first" },
+    { ...grown, id: "grown" },
+    { ...reset, id: "reset" },
+  ]);
+  strictEqual(misses.length, 1);
+  strictEqual(misses[0].status, "full-miss");
+  strictEqual(misses[0].previousCallID, "grown");
+
+  const retained = call("retained", 11_000);
+  retained.startedAt = 3;
+  const control = analyzeSessionCache(session("above-baseline", [
+    first,
+    grown,
+    retained,
+  ]));
+  strictEqual(
+    control.turns[0].calls[2].cacheAssessment?.status,
+    "partial-hit",
+  );
+});
+
 Deno.test("classifies mid-turn and cross-turn thinking changes", () => {
   const first = call("first", 80_000, 20_000, undefined, undefined, "high");
   const midTurn = call(
