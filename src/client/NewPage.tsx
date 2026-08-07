@@ -66,16 +66,19 @@ export function NewPage() {
 
   return (
     <main className="new-page">
-      <SiteHeader active="new" />
+      <SiteHeader
+        active="new"
+        action={
+          <OverviewToolbar
+            range={search.range}
+            harness={search.harness}
+            onRangeChange={(range) => update({ range })}
+            onHarnessChange={(harness) => update({ harness })}
+          />
+        }
+      />
 
       <section className="new-overview-panel">
-        <OverviewToolbar
-          range={search.range}
-          harness={search.harness}
-          onRangeChange={(range) => update({ range })}
-          onHarnessChange={(harness) => update({ harness })}
-        />
-
         {error && <div className="new-overview-error">{error}</div>}
 
         <div className="new-overview-grid">

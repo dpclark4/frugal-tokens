@@ -1,65 +1,58 @@
-.new-overview-toolbar {
+.new-overview-controls {
   display: flex;
-  min-height: 56px;
   align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  padding: 8px 14px 8px 20px;
-  border-bottom: 1px solid var(--dashboard-rule);
-  background: var(--dashboard-panel);
+  gap: 8px;
 }
 
 .new-page .segmented {
   border-color: #bdcac6;
-  border-radius: 6px;
+  border-radius: 5px;
   overflow: hidden;
-  background: #f2f5f4;
+  background: transparent;
 }
 
 .new-page .segmented button {
-  min-width: 48px;
+  min-width: 40px;
+  padding-block: 6px;
   border-color: #d1dad7;
+  color: var(--muted);
 }
 
 .new-page .segmented button:hover,
 .new-page .segmented button.active {
   background: var(--dashboard-ink);
-}
-
-.new-toolbar-label,
-.new-harness-control span {
-  color: var(--muted);
-  font: 9px var(--mono);
-  letter-spacing: .07em;
-  text-transform: uppercase;
-}
-
-.new-overview-controls {
-  display: flex;
-  align-items: end;
-  gap: 12px;
-}
-
-.new-harness-control {
-  display: grid;
-  gap: 4px;
+  color: #fff;
 }
 
 .new-harness-control select {
-  min-width: 150px;
-  padding: 7px 30px 7px 9px;
+  min-width: 136px;
+  padding: 6px 28px 6px 8px;
   border: 1px solid #bdcac6;
-  border-radius: 6px;
-  background: #f8faf9;
-  color: var(--dashboard-ink);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--dashboard-muted);
   font: 10px var(--mono);
 }
 
-
 @media (max-width: 760px) {
-  .new-overview-toolbar { align-items: stretch; flex-direction: column; padding: 16px 18px; }
-  .new-overview-controls { flex-wrap: wrap; }
+  .new-page .site-header {
+    padding-right: 0;
+  }
+
+  .new-page .site-header-action {
+    position: static;
+    margin-top: 10px;
+  }
 }
+
 @media (max-width: 480px) {
-  .new-overview-controls, .new-harness-control, .new-harness-control select { width: 100%; }
+  .new-overview-controls {
+    width: 100%;
+  }
+
+  .new-harness-control,
+  .new-harness-control select {
+    flex: 1;
+    width: 100%;
+  }
 }

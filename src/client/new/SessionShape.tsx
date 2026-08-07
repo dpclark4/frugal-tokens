@@ -12,29 +12,14 @@ type SessionShapeProps = {
   harness: string;
 };
 
-const metricDetails: Record<MetricKey, { label: string; detail?: string }> = {
-  cost: { label: "Cost / session", detail: "priced usage only" },
-  processedInput: {
-    label: "Processed input / session",
-    detail: "cumulative across model calls",
-  },
-  userTurns: { label: "User turns / session" },
-  observedSpan: {
-    label: "Observed span / session",
-    detail: "first to last event · includes idle time",
-  },
-  startingContext: {
-    label: "Starting context",
-    detail: "input on first model call",
-  },
-  peakContext: {
-    label: "Peak context",
-    detail: "largest input on any model call",
-  },
-  tokenReuse: {
-    label: "Token reuse",
-    detail: "share of processed input served from cache",
-  },
+const metricLabels: Record<MetricKey, string> = {
+  cost: "Cost",
+  processedInput: "Processed input",
+  userTurns: "Turns",
+  observedSpan: "Duration",
+  startingContext: "Starting context",
+  peakContext: "Peak context",
+  tokenReuse: "Token reuse",
 };
 
 function formatDuration(milliseconds: number) {
@@ -75,20 +60,18 @@ function DistributionStrip({
   multiDaySessionRate?: number;
 }) {
   const { distribution } = metric;
-  const { label } = metricDetails[metric.key];
-  const detail = metric.key === "observedSpan" &&
+  const label = metricLabels[metric.key];
+  const multiDay = metric.key === "observedSpan" &&
       multiDaySessionRate !== undefined
-    ? `first to last event · ${
-      decimal.format(multiDaySessionRate * 100)
-    }% multi-day`
-    : metricDetails[metric.key].detail;
+    ? `${decimal.format(multiDaySessionRate * 100)}% multi-day`
+    : undefined;
   if (!distribution) {
     return (
       <tr>
         <th scope="row">
           <div className="shape-metric-label">
             <span>{label}</span>
-            {detail && <small>{detail}</small>}
+            {multiDay && <small>{multiDay}</small>}
           </div>
         </th>
         <td className="shape-p50">—</td>
@@ -123,7 +106,7 @@ function DistributionStrip({
       <th scope="row">
         <div className="shape-metric-label">
           <span>{label}</span>
-          {detail && <small>{detail}</small>}
+          {multiDay && <small>{multiDay}</small>}
         </div>
       </th>
       <td className="shape-p50">
@@ -177,8 +160,8 @@ function DistributionStrip({
           </span>
         </div>
         <div className="shape-range" aria-hidden="true">
-          <span>P10 {formatted(distribution.p10)}</span>
-          <span>P90 {formatted(distribution.p90)}</span>
+          <span>{formatted(distribution.p10)}</span>
+          <span>{formatted(distribution.p90)}</span>
         </div>
       </td>
     </tr>
@@ -221,16 +204,10 @@ export function SessionShape({ range, harness }: SessionShapeProps) {
           >
             <span aria-hidden="true">i</span>
             <span className="shape-info-tooltip">
-              Each row summarizes sessions in the selected period. Box =
-              P25–P75, whisker = P10–P90, vertical tick = median, diamond =
-              mean.
+              <span>Box P25–P75 · whiskers P10–P90 · line median · ◇ mean</span>
+              <span>Root sessions in the selected period</span>
             </span>
           </button>
-        </div>
-        <div className="session-shape-meta">
-          <span className="shape-sample-size">
-            {data ? `n=${integer.format(data.sampleSize)}` : "Loading…"}
-          </span>
         </div>
       </div>
       {error && <div className="new-overview-error">{error}</div>}
@@ -243,7 +220,7 @@ export function SessionShape({ range, harness }: SessionShapeProps) {
             <tr>
               <th scope="col">Metric</th>
               <th scope="col">Median</th>
-              <th scope="col">Distribution</th>
+              <th scope="col">Distribution · P10–P90</th>
             </tr>
           </thead>
           <tbody>
