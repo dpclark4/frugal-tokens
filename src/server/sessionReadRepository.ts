@@ -13,7 +13,13 @@ import {
 } from "./sessionRepository.ts";
 
 type Harness = SessionSummary["harness"];
-const harnesses: Harness[] = ["opencode", "claude-code", "pi", "codex"];
+const harnesses: Harness[] = [
+  "opencode",
+  "claude-code",
+  "pi",
+  "codex",
+  "cursor",
+];
 
 function percentile(values: number[], quantile: number) {
   const sorted = values.toSorted((a, b) => a - b);

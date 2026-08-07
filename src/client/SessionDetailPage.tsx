@@ -36,10 +36,7 @@ import {
   counterfactualModelIDs,
 } from "../shared/modelPricing.ts";
 import { getSession } from "./api.ts";
-import claudeCodeIcon from "./assets/icons/claudecode-color.svg";
-import codexIcon from "./assets/icons/codex-logo-light.svg";
-import openCodeIcon from "./assets/icons/opencode-logo-light.svg";
-import piIcon from "./assets/icons/pi-logo.svg";
+import { harnessIcon, harnessName } from "./harness.ts";
 import "./SessionDetailPage.css";
 
 const route = getRouteApi("/sessions/$harness/$sessionId");
@@ -92,22 +89,8 @@ function elapsed(startedAt?: number, completedAt?: number) {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
 
-function harnessName(harness: SessionDetail["harness"]) {
-  if (harness === "claude-code") return "Claude Code";
-  if (harness === "codex") return "Codex";
-  if (harness === "pi") return "PI";
-  return "OpenCode";
-}
-
 function HarnessMark({ harness }: { harness: SessionDetail["harness"] }) {
-  const src = harness === "claude-code"
-    ? claudeCodeIcon
-    : harness === "codex"
-    ? codexIcon
-    : harness === "pi"
-    ? piIcon
-    : openCodeIcon;
-  return <img className="sd-harness-mark" src={src} alt="" />;
+  return <img className="sd-harness-mark" src={harnessIcon(harness)} alt="" />;
 }
 
 function sessionTree(session: SessionDetail): SessionDetail[] {
@@ -229,6 +212,7 @@ function scenarioCallCost(
     scenarioTokens(call.tokens, targetModel, thinking, call.provider),
     targetModel,
     call.startedAt,
+    call.provider,
   );
 }
 

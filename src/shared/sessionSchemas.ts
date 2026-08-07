@@ -1,7 +1,13 @@
 import { z } from "zod";
 import { modelProviderValues } from "./modelMetadata.ts";
 
-export const harnessSchema = z.enum(["opencode", "claude-code", "pi", "codex"]);
+export const harnessSchema = z.enum([
+  "opencode",
+  "claude-code",
+  "pi",
+  "codex",
+  "cursor",
+]);
 
 export const sessionMissFilterValues = [
   "compaction",

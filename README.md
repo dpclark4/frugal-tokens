@@ -1,7 +1,7 @@
 # Frugal Tokens
 
 A local, read-only view of token usage and reported cost in OpenCode, Claude
-Code, PI, and Codex sessions.
+Code, PI, Codex, and Cursor sessions.
 
 Requires [Deno 2.9 or newer](https://docs.deno.com/runtime/getting_started/installation/).
 

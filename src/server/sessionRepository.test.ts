@@ -103,7 +103,7 @@ function sessionWithMiss(
     completedAt: variant === "ttl" ? 3_602_000 : 1_001,
     tokens: {
       ...firstCall.tokens,
-      cacheRead: variant === "partial-miss" ? 2 : 0,
+      cacheRead: variant === "partial-miss" ? 3 : 0,
     },
   };
   firstCall.id = `${externalID}-call-1`;
@@ -201,7 +201,7 @@ Deno.test("materializes cache misses and removes them on replacement", () => {
 
     const misses = repository.listCacheMisses(undefined, "pi");
     strictEqual(misses.length, 1);
-    strictEqual(misses[0].status, "partial-hit");
+    strictEqual(misses[0].status, "full-miss");
     strictEqual(misses[0].cause, "thinking-change");
     strictEqual(misses[0].sessionID, "cache");
     strictEqual(misses[0].rootID, "cache");

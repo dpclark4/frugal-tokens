@@ -256,12 +256,24 @@ export const counterfactualModelIDs = [
   "glm-5.2",
 ] as const;
 
+function cursorPricingModel(model: string) {
+  // Cursor sometimes decorates the underlying model with a routing/quality
+  // suffix. Keep the estimate tied to the underlying public model card.
+  return canonicalModelId(model).replace(
+    /-(?:high|medium|low|max|fast|slow)$/,
+    "",
+  );
+}
+
 export function modelRateCard(
   model: string,
   timestamp: number,
   inputTokens: number,
+  provider?: string,
 ) {
-  const normalized = canonicalModelId(model);
+  const normalized = canonicalModelId(
+    provider?.toLowerCase() === "cursor" ? cursorPricingModel(model) : model,
+  );
   const long = normalized.startsWith("gpt-5.") &&
     inputTokens >= LONG_CONTEXT_THRESHOLD;
   if (timestamp >= OPENAI_LUNA_TERRA_PRICE_CUT) {
@@ -295,12 +307,18 @@ export function computeModelCallCost(
   tokens: TokenUsage,
   model: string,
   timestamp: number,
+  provider?: string,
 ) {
   const categorizedTokens = tokens.uncachedInput + tokens.cacheRead +
     (tokens.cacheWrite ?? 0) + tokens.output + tokens.reasoning;
   if (tokens.processed > 0 && categorizedTokens === 0) return undefined;
 
-  const rates = modelRateCard(model, timestamp, contextSize(tokens));
+  const rates = modelRateCard(
+    model,
+    timestamp,
+    contextSize(tokens),
+    provider,
+  );
   if (!rates) return undefined;
 
   let cacheWriteCost = 0;

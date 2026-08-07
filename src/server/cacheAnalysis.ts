@@ -180,11 +180,13 @@ function cacheMissRecord(
     current.tokens,
     current.model,
     current.startedAt,
+    current.provider,
   );
   const modelCallCost = computeModelCallCost(
     current.tokens,
     current.model,
     current.startedAt,
+    current.provider,
   );
   return {
     gap: current.startedAt - previous.startedAt,

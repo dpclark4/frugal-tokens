@@ -31,10 +31,7 @@ import { contextRange, contextSize } from "../shared/contextMetrics.ts";
 import { displayModelName } from "../shared/modelNames.ts";
 import { rollupCosts } from "../shared/costMetrics.ts";
 import { getOverview, getSession, getSessions, syncSessions } from "./api.ts";
-import claudeCodeIcon from "./assets/icons/claudecode-color.svg";
-import codexIcon from "./assets/icons/codex-logo-light.svg";
-import openCodeIcon from "./assets/icons/opencode-logo-light.svg";
-import piIcon from "./assets/icons/pi-logo.svg";
+import { harnessIcon, harnessName } from "./harness.ts";
 import { UsageChart } from "./UsageChart.tsx";
 import { TtlMissCard } from "./TtlMissCard.tsx";
 import { SiteHeader } from "./SiteHeader.tsx";
@@ -1053,23 +1050,10 @@ function CostCell({
 }
 
 function HarnessIcon({ harness }: { harness: SessionSummary["harness"] }) {
-  const title = harness === "claude-code"
-    ? "Claude Code"
-    : harness === "codex"
-    ? "Codex"
-    : harness === "pi"
-    ? "PI"
-    : "OpenCode";
-  const src = harness === "claude-code"
-    ? claudeCodeIcon
-    : harness === "codex"
-    ? codexIcon
-    : harness === "pi"
-    ? piIcon
-    : openCodeIcon;
+  const title = harnessName(harness);
   return (
     <span className={`harness-icon harness-${harness}`} title={title}>
-      <img src={src} alt={title} />
+      <img src={harnessIcon(harness)} alt={title} />
     </span>
   );
 }
@@ -2365,6 +2349,7 @@ export function SessionsPage() {
                 <option value="opencode">OpenCode</option>
                 <option value="pi">PI</option>
                 <option value="codex">Codex</option>
+                <option value="cursor">Cursor</option>
               </select>
             </label>
           </div>
