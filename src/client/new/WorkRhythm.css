@@ -1,0 +1,452 @@
+.work-rhythm-module {
+  display: grid;
+  min-width: 0;
+  align-self: start;
+  grid-template-rows: auto auto;
+  border: 1px solid var(--dashboard-rule);
+  border-radius: 8px;
+  background: var(--dashboard-panel);
+  color: var(--dashboard-ink);
+  overflow: hidden;
+}
+
+.work-rhythm-overview,
+.day-explorer {
+  min-width: 0;
+  padding: 16px 18px;
+}
+
+.day-explorer {
+  padding-block: 14px;
+}
+
+.work-rhythm-header,
+.day-explorer-header,
+.rhythm-subheading,
+.expensive-sessions-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.work-rhythm-header {
+  align-items: flex-start;
+}
+
+.rhythm-title-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rhythm-title-line .mock-data-badge {
+  border: 1px solid #d8dfdc;
+  background: transparent;
+  color: #8c9793;
+  opacity: .72;
+}
+
+.work-rhythm-header h2 {
+  margin: 0;
+  font-size: 23px;
+  letter-spacing: -.035em;
+}
+
+.work-rhythm-header p {
+  margin: 4px 0 0;
+  color: #5f6d68;
+  font: 10px/1.4 var(--mono);
+}
+
+.work-rhythm-header > strong {
+  padding-top: 3px;
+  color: var(--dashboard-signal);
+  font: 650 21px/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.04em;
+  white-space: nowrap;
+}
+
+.work-rhythm-header > strong small {
+  color: var(--dashboard-muted);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .02em;
+}
+
+.rhythm-charts {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.rhythm-chart-section {
+  min-width: 0;
+}
+
+.rhythm-subheading {
+  min-height: 20px;
+  align-items: center;
+  padding-bottom: 5px;
+  border-bottom: 1px solid #e4ebe8;
+}
+
+.rhythm-subheading h3,
+.day-explorer-header h3,
+.expensive-sessions h4 {
+  margin: 0;
+  color: var(--dashboard-signal);
+  font: 650 10px var(--mono);
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
+.rhythm-subheading span {
+  color: #74817c;
+  font: 10px var(--mono);
+  text-align: right;
+}
+
+.weekday-chart {
+  height: 150px;
+  margin-top: 3px;
+}
+
+.hourly-chart {
+  height: 154px;
+  margin-top: 3px;
+}
+
+.weekday-chart:focus-visible,
+.hourly-chart:focus-visible {
+  outline: 2px solid #315b5f;
+  outline-offset: 2px;
+}
+
+.weekday-value-label {
+  fill: #35433f;
+  font: 600 11px var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.rhythm-tooltip {
+  display: grid;
+  gap: 3px;
+  max-width: 220px;
+  padding: 9px 11px;
+  border: 1px solid #b7c7c2;
+  border-radius: 5px;
+  background: var(--dashboard-ink);
+  box-shadow: 0 8px 20px rgba(32, 53, 48, .16);
+  color: #dce8e4;
+  font: 10px/1.4 var(--mono);
+}
+
+.rhythm-tooltip strong {
+  margin-bottom: 2px;
+  color: #fff;
+  font-size: 11px;
+}
+
+.hourly-annotations {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 3px;
+  color: #64716d;
+  font: 10px var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.hourly-annotations span:first-child {
+  color: #3d514d;
+}
+
+.hourly-annotations i {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--dashboard-signal);
+  vertical-align: 1px;
+}
+
+.day-explorer {
+  border-top: 1px solid var(--dashboard-rule);
+}
+
+.day-explorer-header {
+  min-height: 24px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid #e4ebe8;
+}
+
+.day-explorer-header time {
+  color: #35433f;
+  font: 600 11px var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.day-explorer-body {
+  display: grid;
+  grid-template-columns: minmax(225px, .95fr) minmax(250px, 1.05fr);
+  gap: 24px;
+  padding-top: 10px;
+}
+
+.rhythm-calendar {
+  min-width: 0;
+  font-family: var(--mono);
+}
+
+.rhythm-calendar-nav {
+  display: grid;
+  grid-template-columns: 24px 1fr 24px;
+  align-items: center;
+  margin-bottom: 5px;
+}
+
+.rhythm-calendar-nav strong {
+  color: #35433f;
+  font-size: 11px;
+  text-align: center;
+}
+
+.rhythm-calendar-nav button {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--dashboard-signal);
+  cursor: pointer;
+}
+
+.rhythm-calendar-nav button:hover:not(:disabled) {
+  background: #e4efec;
+}
+
+.rhythm-calendar-nav button:disabled {
+  color: #bdc6c2;
+  cursor: default;
+}
+
+.rhythm-calendar-weekdays,
+.rhythm-calendar-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.rhythm-calendar-weekdays {
+  margin-bottom: 3px;
+  color: #788580;
+  font-size: 9px;
+  text-align: center;
+}
+
+.rhythm-calendar-days > span,
+.rhythm-calendar-day {
+  min-width: 0;
+  height: 28px;
+}
+
+.rhythm-calendar-day {
+  position: relative;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: #394641;
+  cursor: pointer;
+  font: 11px var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.rhythm-calendar-day:hover:not(:disabled) {
+  border-color: var(--dashboard-signal);
+}
+
+.rhythm-calendar-day.intensity-0 { background: #f1f4f3; }
+.rhythm-calendar-day.intensity-1 { background: rgba(15, 113, 105, .17); }
+.rhythm-calendar-day.intensity-2 { background: rgba(15, 113, 105, .34); }
+.rhythm-calendar-day.intensity-3 { background: rgba(15, 113, 105, .58); color: #fff; }
+.rhythm-calendar-day.intensity-4 { background: rgba(15, 113, 105, .88); color: #fff; }
+
+.rhythm-calendar-day.today:not(.selected)::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  bottom: 2px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.rhythm-calendar-day.selected {
+  z-index: 1;
+  border-color: var(--dashboard-panel);
+  outline: 2px solid var(--dashboard-ink);
+  outline-offset: 1px;
+  font-weight: 700;
+}
+
+.rhythm-calendar-day:disabled {
+  border-color: transparent;
+  background: transparent;
+  color: #929d99;
+  cursor: default;
+  opacity: .72;
+}
+
+.rhythm-day-detail {
+  min-width: 0;
+  padding-left: 24px;
+  border-left: 1px solid #e4ebe8;
+  font-family: var(--mono);
+}
+
+.rhythm-day-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 15px;
+}
+
+.rhythm-day-metrics > div {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 2px;
+  padding: 3px 0 5px;
+  border-bottom: 1px solid #e4ebe8;
+}
+
+.rhythm-day-metrics strong {
+  color: var(--dashboard-ink);
+  font: 650 16px/1 var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rhythm-day-metrics span {
+  overflow: hidden;
+  color: #65736e;
+  font: 9px/1.1 var(--mono);
+  letter-spacing: .035em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.expensive-sessions {
+  margin-top: 9px;
+}
+
+.expensive-sessions-heading {
+  align-items: center;
+  margin-bottom: 3px;
+}
+
+.expensive-sessions-heading button {
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--dashboard-signal);
+  font: 9px var(--mono);
+  cursor: pointer;
+}
+
+.expensive-sessions ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.expensive-sessions li + li {
+  border-top: 1px solid #e8eeeb;
+}
+
+.expensive-sessions li > button {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 5px 2px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.expensive-sessions li > button:hover .session-row-copy strong,
+.expensive-sessions li > button:focus-visible .session-row-copy strong {
+  color: var(--dashboard-signal);
+}
+
+.session-row-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.session-row-copy strong {
+  overflow: hidden;
+  color: #34413d;
+  font: 600 11px var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-row-copy small {
+  overflow: hidden;
+  color: #74817c;
+  font: 10px var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-spend {
+  color: var(--dashboard-ink);
+  font: 650 11px var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.expensive-sessions > p {
+  margin: 12px 0 0;
+  color: var(--dashboard-muted);
+  font: 10px var(--mono);
+}
+
+@media (max-width: 700px) {
+  .work-rhythm-module { grid-template-rows: auto auto; }
+  .work-rhythm-overview, .day-explorer { padding: 14px; }
+  .rhythm-charts { gap: 17px; }
+  .weekday-chart { height: 180px; }
+  .hourly-chart { height: 180px; }
+  .day-explorer-body { grid-template-columns: 1fr; gap: 18px; }
+  .rhythm-day-detail { padding-left: 0; border-left: 0; }
+  .rhythm-calendar { max-width: 340px; width: 100%; }
+}
+
+@media (max-width: 430px) {
+  .work-rhythm-header { align-items: flex-start; }
+  .work-rhythm-header > strong { font-size: 15px; }
+  .work-rhythm-header > strong small { display: block; margin-top: 3px; text-align: right; }
+  .rhythm-subheading span { max-width: 145px; }
+  .day-explorer-header { align-items: flex-start; flex-direction: column; gap: 5px; }
+  .rhythm-day-metrics { grid-template-columns: 1fr; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .work-rhythm-module * { scroll-behavior: auto; }
+}

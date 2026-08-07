@@ -7,7 +7,8 @@ import "./NewPage.css";
 import { OverviewToolbar } from "./new/OverviewToolbar.tsx";
 import { UsageOverview } from "./new/UsageOverview.tsx";
 import { SessionShape } from "./new/SessionShape.tsx";
-import { ActivityCalendar } from "./new/ActivityCalendar.tsx";
+import { WorkRhythm } from "./new/WorkRhythm.tsx";
+import { workRhythmFixture } from "./new/workRhythmFixture.ts";
 import { SpendComposition } from "./new/SpendComposition.tsx";
 
 const route = getRouteApi("/new");
@@ -59,7 +60,7 @@ export function NewPage() {
             <UsageOverview data={data} />
             <SessionShape range={search.range} harness={search.harness} />
           </div>
-          <ActivityCalendar data={data} />
+          <WorkRhythm data={workRhythmFixture} />
         </div>
       </section>
 

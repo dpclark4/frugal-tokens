@@ -1,0 +1,345 @@
+import { useEffect, useMemo, useState } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+import { useNavigate } from "@tanstack/react-router";
+import {
+  Bar,
+  BarChart,
+  LabelList,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import type {
+  WorkRhythmData,
+  WorkRhythmDay,
+  WorkRhythmSession,
+} from "./workRhythmTypes.ts";
+import { compact, currency, integer } from "./formatters.ts";
+import "./WorkRhythm.css";
+
+const readableDate = new Intl.DateTimeFormat(undefined, {
+  weekday: "long",
+  month: "long",
+  day: "numeric",
+});
+const monthYear = new Intl.DateTimeFormat(undefined, {
+  month: "long",
+  year: "numeric",
+});
+const timeOnly = new Intl.DateTimeFormat(undefined, {
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+function parseDate(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function dateKey(date: Date) {
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+function formatDuration(minutes: number, decimalHours = false) {
+  if (decimalHours && minutes >= 60) return `${(minutes / 60).toFixed(1)}h`;
+  const rounded = Math.round(minutes);
+  if (rounded < 60) return `${rounded}m`;
+  const hours = Math.floor(rounded / 60);
+  const remainder = rounded % 60;
+  return `${hours}h${remainder ? ` ${remainder}m` : ""}`;
+}
+
+function formatHour(hour: number) {
+  const normalized = ((hour % 24) + 24) % 24;
+  if (normalized === 0) return "12 AM";
+  if (normalized === 12) return "12 PM";
+  return `${normalized % 12} ${normalized < 12 ? "AM" : "PM"}`;
+}
+
+function formatHourTick(hour: number) {
+  if (hour === 0) return "12a";
+  if (hour === 6) return "6a";
+  if (hour === 12) return "12p";
+  if (hour === 18) return "6p";
+  return "";
+}
+
+function hourRange(hour: number) {
+  return `${formatHour(hour)}–${formatHour(hour + 1)}`;
+}
+
+type WeekdayRow = WorkRhythmData["weekdayActivity"][number];
+type HourlyRow = WorkRhythmData["hourlyActivity"][number];
+
+function WeekdayTooltip({ active, payload }: {
+  active?: boolean;
+  payload?: Array<{ payload?: WeekdayRow }>;
+}) {
+  const row = payload?.[0]?.payload;
+  if (!active || !row) return null;
+  return (
+    <div className="rhythm-tooltip">
+      <strong>{row.label}</strong>
+      <span>{formatDuration(row.averageMinutes)} average per {row.label}</span>
+      <span>{formatDuration(row.totalMinutes)} total across {row.occurrences} {row.label}s</span>
+      <span>{row.activeOccurrences} of {row.occurrences} {row.label}s active</span>
+    </div>
+  );
+}
+
+function HourlyTooltip({ active, payload }: {
+  active?: boolean;
+  payload?: Array<{ payload?: HourlyRow }>;
+}) {
+  const row = payload?.[0]?.payload;
+  if (!active || !row) return null;
+  return (
+    <div className="rhythm-tooltip">
+      <strong>{hourRange(row.hour)}</strong>
+      <span>{formatDuration(row.estimatedMinutes)} estimated active</span>
+      <span>{(row.shareOfTotal * 100).toFixed(1)}% of observed activity</span>
+      <span>Active on {row.activeDates} days</span>
+    </div>
+  );
+}
+
+function WeekdayChart({ data }: { data: WorkRhythmData["weekdayActivity"] }) {
+  const summary = data.map((row) => `${row.label} ${formatDuration(row.averageMinutes)}`).join(", ");
+  return (
+    <div className="weekday-chart" role="img" tabIndex={0} aria-label={`Average estimated active time per weekday occurrence: ${summary}.`}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} layout="vertical" margin={{ top: 2, right: 76, bottom: 2, left: 4 }}>
+          <XAxis type="number" hide domain={[0, "dataMax"]} />
+          <YAxis type="category" dataKey="label" width={40} axisLine={false} tickLine={false} tick={{ fill: "#52615d", fontSize: 11, fontFamily: "var(--mono)" }} />
+          <Tooltip cursor={{ fill: "rgba(15, 113, 105, .045)" }} content={(props) => <WeekdayTooltip active={props.active} payload={props.payload as Array<{ payload?: WeekdayRow }>} />} />
+          <Bar dataKey="averageMinutes" fill="var(--dashboard-signal)" fillOpacity={0.76} barSize={12} radius={[0, 2, 2, 0]}>
+            <LabelList dataKey="averageMinutes" position="right" formatter={(value: unknown) => formatDuration(Number(value))} className="weekday-value-label" />
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function HourlyChart({ data }: { data: WorkRhythmData["hourlyActivity"] }) {
+  const peak = data.reduce((best, row) => row.estimatedMinutes > best.estimatedMinutes ? row : best, data[0]);
+  return (
+    <div className="hourly-chart" role="img" tabIndex={0} aria-label={`Estimated active time by hour. Peak is ${hourRange(peak.hour)} at ${formatDuration(peak.estimatedMinutes)}.`}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={data} margin={{ top: 3, right: 6, bottom: 0, left: 6 }} barCategoryGap="18%">
+          <XAxis dataKey="hour" height={20} ticks={[0, 6, 12, 18]} interval={0} tickFormatter={formatHourTick} axisLine={false} tickLine={false} tick={{ fill: "#6f7d78", fontSize: 11, fontFamily: "var(--mono)" }} />
+          <YAxis hide domain={[0, "dataMax"]} />
+          <Tooltip cursor={{ fill: "rgba(15, 113, 105, .045)" }} content={(props) => <HourlyTooltip active={props.active} payload={props.payload as Array<{ payload?: HourlyRow }>} />} />
+          <Bar dataKey="estimatedMinutes" fill="var(--dashboard-signal)" fillOpacity={0.72} radius={[1.5, 1.5, 0, 0]} />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function monthIndex(date: Date) {
+  return date.getFullYear() * 12 + date.getMonth();
+}
+
+function calendarCells(month: Date) {
+  const leading = (new Date(month.getFullYear(), month.getMonth(), 1).getDay() + 6) % 7;
+  const count = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  return [
+    ...Array.from({ length: leading }, () => undefined),
+    ...Array.from({ length: count }, (_, index) => new Date(month.getFullYear(), month.getMonth(), index + 1)),
+  ];
+}
+
+function CompactCalendar({ data, selectedDate, onSelect }: {
+  data: WorkRhythmData;
+  selectedDate: string;
+  onSelect: (date: string) => void;
+}) {
+  const rangeStart = parseDate(data.range.start);
+  const rangeEnd = parseDate(data.range.end);
+  const firstMonth = monthIndex(rangeStart);
+  const lastMonth = monthIndex(rangeEnd);
+  const [visibleMonth, setVisibleMonth] = useState(() => new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), 1));
+
+  useEffect(() => setVisibleMonth(new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), 1)), [data.range.end]);
+
+  const visibleIndex = monthIndex(visibleMonth);
+  const today = dateKey(new Date());
+  return (
+    <div className="rhythm-calendar" aria-label="Choose a day to explore">
+      <div className="rhythm-calendar-nav">
+        <button type="button" disabled={visibleIndex <= firstMonth} onClick={() => setVisibleMonth(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1))} aria-label="Previous month">
+          <ChevronLeft size={14} aria-hidden="true" />
+        </button>
+        <strong>{monthYear.format(visibleMonth)}</strong>
+        <button type="button" disabled={visibleIndex >= lastMonth} onClick={() => setVisibleMonth(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1))} aria-label="Next month">
+          <ChevronRight size={14} aria-hidden="true" />
+        </button>
+      </div>
+      <div className="rhythm-calendar-weekdays" aria-hidden="true">
+        {["M", "T", "W", "T", "F", "S", "S"].map((label, index) => <span key={`${label}-${index}`}>{label}</span>)}
+      </div>
+      <div className="rhythm-calendar-days">
+        {calendarCells(visibleMonth).map((date, index) => {
+          if (!date) return <span key={`empty-${index}`} aria-hidden="true" />;
+          const key = dateKey(date);
+          const day = data.days[key];
+          const disabled = key < data.range.start || key > data.range.end;
+          const activity = day?.estimatedActiveMinutes ?? 0;
+          const label = `${readableDate.format(date)}, ${formatDuration(activity)} estimated active${disabled ? ", outside report range" : ""}`;
+          return (
+            <button
+              key={key}
+              type="button"
+              disabled={disabled}
+              className={`rhythm-calendar-day intensity-${day?.intensity ?? 0}${selectedDate === key ? " selected" : ""}${today === key ? " today" : ""}`}
+              aria-label={label}
+              aria-pressed={selectedDate === key}
+              onClick={() => onSelect(key)}
+            >
+              {date.getDate()}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+const harnessNames: Record<WorkRhythmSession["harness"], string> = {
+  "claude-code": "Claude Code",
+  codex: "Codex",
+  pi: "Pi",
+  opencode: "OpenCode",
+};
+
+function sessionName(session: WorkRhythmSession) {
+  const title = session.title?.trim();
+  if (title) return title;
+  return `${harnessNames[session.harness]} session · ${timeOnly.format(new Date(session.startTime))}`;
+}
+
+function DayDetail({ day }: { day: WorkRhythmDay }) {
+  const navigate = useNavigate();
+
+  function openSession(session: WorkRhythmSession) {
+    navigate({
+      to: "/sessions/$harness/$sessionId",
+      params: { harness: session.harness, sessionId: session.id },
+      search: {
+        misses: undefined,
+        paths: "relative",
+        color: "time",
+        model: "recorded",
+        thinking: "recorded",
+      },
+    });
+  }
+
+  return (
+    <div className="rhythm-day-detail">
+      <div className="rhythm-day-metrics" aria-label={`Summary for ${readableDate.format(parseDate(day.date))}`}>
+        <div><span>Estimated active</span><strong>{formatDuration(day.estimatedActiveMinutes)}</strong></div>
+        <div><span>Root sessions</span><strong>{integer.format(day.rootSessions)}</strong></div>
+        <div><span>Spend</span><strong>{currency.format(day.spend)}</strong></div>
+        <div><span>Processed input</span><strong>{compact.format(day.processedInputTokens)}</strong></div>
+      </div>
+      <section className="expensive-sessions" aria-labelledby="expensive-sessions-title">
+        <div className="expensive-sessions-heading">
+          <h4 id="expensive-sessions-title">Most expensive sessions</h4>
+          <button type="button" onClick={() => navigate({ to: "/", search: { harness: "all", misses: undefined } })}>View all sessions</button>
+        </div>
+        {day.topSessions.length ? (
+          <ol>
+            {day.topSessions.slice(0, 3).map((session) => (
+              <li key={session.id}>
+                <button type="button" onClick={() => openSession(session)} aria-label={`Open ${sessionName(session)}, ${currency.format(session.spend)}`}>
+                  <span className="session-row-copy">
+                    <strong>{sessionName(session)}</strong>
+                    <small>{harnessNames[session.harness]}{session.model ? ` · ${session.model}` : ""}</small>
+                  </span>
+                  <span className="session-spend">{currency.format(session.spend)}</span>
+                </button>
+              </li>
+            ))}
+          </ol>
+        ) : <p>No sessions on this date.</p>}
+      </section>
+    </div>
+  );
+}
+
+function mostRecentActiveDate(data: WorkRhythmData) {
+  return Object.values(data.days)
+    .filter((day) => day.estimatedActiveMinutes > 0)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .at(-1)?.date ?? data.range.end;
+}
+
+export function WorkRhythm({ data }: { data: WorkRhythmData }) {
+  const defaultDate = useMemo(() => mostRecentActiveDate(data), [data]);
+  const [selectedDate, setSelectedDate] = useState(defaultDate);
+  useEffect(() => setSelectedDate(defaultDate), [defaultDate]);
+  const selectedDay = data.days[selectedDate] ?? {
+    date: selectedDate,
+    estimatedActiveMinutes: 0,
+    spend: 0,
+    processedInputTokens: 0,
+    userTurns: 0,
+    rootSessions: 0,
+    intensity: 0 as const,
+    topSessions: [],
+  };
+
+  return (
+    <section className="work-rhythm-module" aria-labelledby="work-rhythm-title">
+      <div className="work-rhythm-overview">
+        <header className="work-rhythm-header">
+          <div>
+            <div className="rhythm-title-line">
+              <h2 id="work-rhythm-title">Work rhythm</h2>
+              <span className="mock-data-badge">Mock data</span>
+            </div>
+            <p>{data.methodology.minutesBeforeTurn} min preceding each user turn · overlaps counted once</p>
+          </div>
+          <strong>{formatDuration(data.estimatedActiveMinutes, true)} <small>estimated</small></strong>
+        </header>
+        <div className="rhythm-charts">
+          <section className="rhythm-chart-section" aria-labelledby="weekday-chart-title">
+            <div className="rhythm-subheading">
+              <h3 id="weekday-chart-title">By day</h3>
+              <span>Average per calendar occurrence</span>
+            </div>
+            <WeekdayChart data={data.weekdayActivity} />
+          </section>
+          <section className="rhythm-chart-section hourly-section" aria-labelledby="hourly-chart-title">
+            <div className="rhythm-subheading">
+              <h3 id="hourly-chart-title">By hour</h3>
+              <span>Distribution of estimated active time</span>
+            </div>
+            <HourlyChart data={data.hourlyActivity} />
+            <div className="hourly-annotations">
+              <span><i aria-hidden="true" />Peak: {hourRange(data.peakHour)}</span>
+              <span>{Math.round(data.afterHoursShare * 100)}% after 8 PM</span>
+            </div>
+          </section>
+        </div>
+      </div>
+      <section className="day-explorer" aria-labelledby="day-explorer-title">
+        <header className="day-explorer-header">
+          <h3 id="day-explorer-title">Day explorer</h3>
+          <time dateTime={selectedDate}>{readableDate.format(parseDate(selectedDate))}</time>
+        </header>
+        <div className="day-explorer-body">
+          <CompactCalendar data={data} selectedDate={selectedDate} onSelect={setSelectedDate} />
+          <DayDetail day={selectedDay} />
+        </div>
+      </section>
+    </section>
+  );
+}

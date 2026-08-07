@@ -42,8 +42,7 @@
 }
 
 .signal-summary,
-.session-shape,
-.new-calendar {
+.session-shape {
   min-width: 0;
   border: 1px solid var(--dashboard-rule);
   border-radius: 8px;
@@ -53,16 +52,6 @@
 .signal-summary,
 .session-shape {
   padding: 18px;
-}
-
-.new-calendar {
-  align-self: stretch;
-  padding: 18px;
-}
-
-.new-calendar .dashboard-section-heading {
-  min-height: 0;
-  margin-bottom: 8px;
 }
 
 .dashboard-section-heading {
@@ -112,7 +101,7 @@
 
 @media (max-width: 760px) {
   .new-page .page-tabs { gap: 20px; }
-  .signal-summary, .session-shape, .new-calendar { padding: 14px; }
+  .signal-summary, .session-shape { padding: 14px; }
 }
 
 @media (max-width: 480px) {
