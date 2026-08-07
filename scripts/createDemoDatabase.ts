@@ -166,6 +166,11 @@ function redact(db: DatabaseSync) {
       FROM source_sessions
       WHERE working_directory IS NOT NULL
     `).all() as Array<{ id: number; working_directory: string }>;
+    const conversationWorkingDirectories = db.prepare(`
+      SELECT id, working_directory
+      FROM conversations
+      WHERE working_directory IS NOT NULL
+    `).all() as Array<{ id: number; working_directory: string }>;
 
     db.exec(`
       UPDATE sources
@@ -210,6 +215,103 @@ function redact(db: DatabaseSync) {
           output_preview = CASE
             WHEN output_preview IS NULL THEN NULL ELSE '${REDACTED}'
           END;
+
+      -- The conversation projection duplicates artifact identifiers and content
+      -- independently of the legacy archive tables above.
+      UPDATE artifact_import_projections
+      SET source_checksum = 'demo-checksum-' || source_session_id,
+          source_change_hint = NULL,
+          dependency_digest = 'demo-dependency-' || source_session_id,
+          last_error = NULL;
+
+      UPDATE conversations
+      SET external_id = 'demo-conversation-' || id,
+          public_id = 'demo-conversation-' || id,
+          agent = NULL;
+
+      UPDATE conversation_turns
+      SET source_turn_id = CASE
+        WHEN source_turn_id IS NULL THEN NULL ELSE 'demo-turn-' || id
+      END,
+          reasoning_setting_name = NULL,
+          reasoning_setting_value = NULL,
+          reasoning_source_field_path = NULL,
+          reasoning_source_order = NULL,
+          reasoning_observed_at = NULL,
+          reasoning_provenance = NULL;
+
+      UPDATE conversation_model_calls
+      SET source_call_id = CASE
+        WHEN source_call_id IS NULL THEN NULL ELSE 'demo-call-' || id
+      END,
+          reasoning_setting_name = NULL,
+          reasoning_setting_value = NULL,
+          reasoning_source_field_path = NULL,
+          reasoning_source_order = NULL,
+          reasoning_observed_at = NULL,
+          reasoning_provenance = NULL;
+
+      UPDATE conversation_tool_events
+      SET source_tool_id = CASE
+        WHEN source_tool_id IS NULL THEN NULL ELSE 'demo-tool-' || id
+      END,
+          input_preview = CASE
+            WHEN input_preview IS NULL THEN NULL ELSE '${REDACTED}'
+          END,
+          output_preview = CASE
+            WHEN output_preview IS NULL THEN NULL ELSE '${REDACTED}'
+          END;
+
+      UPDATE conversation_entries
+      SET stable_source_id = CASE
+        WHEN stable_source_id IS NULL THEN NULL ELSE 'demo-entry-' || id
+      END,
+          content_preview = CASE
+            WHEN content_preview IS NULL THEN NULL ELSE '${REDACTED}'
+          END,
+          content_hash = NULL,
+          -- Detail hydration parses context-event metadata, so retain only a
+          -- schema-valid sentinel rather than the source event payload.
+          native_metadata_json = CASE
+            WHEN kind = 'context-event' THEN '{"type":"redacted","sourceOrder":1}'
+            ELSE NULL
+          END;
+
+      UPDATE conversation_branches
+      SET external_id = 'demo-branch-' || id;
+
+      UPDATE artifact_entry_occurrences
+      SET source_entry_id = CASE
+        WHEN source_entry_id IS NULL THEN NULL
+        ELSE 'demo-entry-occurrence-' || source_session_id || '-' || entry_id
+      END,
+          evidence_json = NULL;
+
+      UPDATE artifact_model_call_occurrences
+      SET source_turn_id = CASE
+        WHEN source_turn_id IS NULL THEN NULL
+        ELSE 'demo-turn-occurrence-' || source_session_id || '-' || model_call_id
+      END,
+          source_call_id = CASE
+            WHEN source_call_id IS NULL THEN NULL
+            ELSE 'demo-call-occurrence-' || source_session_id || '-' || model_call_id
+          END,
+          evidence_json = NULL;
+
+      UPDATE conversation_rollups
+      SET overview_json = NULL,
+          summary_json = NULL;
+
+      UPDATE source_artifact_identities
+      SET identity_value = 'demo-identity-' || source_session_id || '-' || identity_namespace;
+
+      UPDATE source_artifact_lineage AS lineage
+      SET parent_identity_value = COALESCE((
+        SELECT identity_value
+        FROM source_artifact_identities AS identity
+        WHERE identity.source_session_id = lineage.parent_source_session_id
+          AND identity.identity_namespace = lineage.parent_identity_namespace
+      ), 'demo-unresolved-identity-' || child_source_session_id || '-' || relationship_kind);
     `);
 
     const updateSourceLocation = db.prepare(
@@ -228,16 +330,34 @@ function redact(db: DatabaseSync) {
         session.id,
       );
     }
+    const updateConversationWorkingDirectory = db.prepare(
+      "UPDATE conversations SET working_directory = ? WHERE id = ?",
+    );
+    for (const conversation of conversationWorkingDirectories) {
+      updateConversationWorkingDirectory.run(
+        redactPath(conversation.working_directory),
+        conversation.id,
+      );
+    }
 
-    const titles = db.prepare(
-      "SELECT source_session_id FROM sessions ORDER BY source_session_id",
-    ).all() as Array<{ source_session_id: number }>;
-    const updateTitle = db.prepare(
+    const sessionTitles = db.prepare(
+      "SELECT source_session_id AS id FROM sessions ORDER BY source_session_id",
+    ).all() as Array<{ id: number }>;
+    const conversationTitles = db.prepare(
+      "SELECT id FROM conversations ORDER BY id",
+    ).all() as Array<{ id: number }>;
+    const updateSessionTitle = db.prepare(
       "UPDATE sessions SET title = ? WHERE source_session_id = ?",
     );
+    const updateConversationTitle = db.prepare(
+      "UPDATE conversations SET title = ? WHERE id = ?",
+    );
     const usedTitles = new Set<string>();
-    for (const { source_session_id: id } of titles) {
-      updateTitle.run(generatedTitle(usedTitles), id);
+    for (const { id } of sessionTitles) {
+      updateSessionTitle.run(`Demo ${generatedTitle(usedTitles)}`, id);
+    }
+    for (const { id } of conversationTitles) {
+      updateConversationTitle.run(`Demo ${generatedTitle(usedTitles)}`, id);
     }
 
     db.exec("COMMIT");
@@ -305,6 +425,83 @@ function audit(db: DatabaseSync) {
       `source_tool_id IS NOT NULL
         OR (input_preview IS NOT NULL AND input_preview <> '${REDACTED}')
         OR (output_preview IS NOT NULL AND output_preview <> '${REDACTED}')`,
+    ],
+    [
+      "artifact_import_projections",
+      `source_checksum NOT GLOB 'demo-checksum-*'
+        OR source_change_hint IS NOT NULL
+        OR dependency_digest NOT GLOB 'demo-dependency-*'
+        OR last_error IS NOT NULL`,
+    ],
+    [
+      "conversations",
+      `external_id NOT GLOB 'demo-conversation-*'
+        OR public_id NOT GLOB 'demo-conversation-*'
+        OR title NOT GLOB 'Demo *'
+        OR agent IS NOT NULL
+        OR (working_directory IS NOT NULL AND working_directory NOT GLOB '~/*')`,
+    ],
+    [
+      "conversation_turns",
+      `source_turn_id IS NOT NULL AND source_turn_id NOT GLOB 'demo-turn-*'
+        OR reasoning_setting_name IS NOT NULL
+        OR reasoning_setting_value IS NOT NULL
+        OR reasoning_source_field_path IS NOT NULL
+        OR reasoning_source_order IS NOT NULL
+        OR reasoning_observed_at IS NOT NULL
+        OR reasoning_provenance IS NOT NULL`,
+    ],
+    [
+      "conversation_model_calls",
+      `source_call_id IS NOT NULL AND source_call_id NOT GLOB 'demo-call-*'
+        OR reasoning_setting_name IS NOT NULL
+        OR reasoning_setting_value IS NOT NULL
+        OR reasoning_source_field_path IS NOT NULL
+        OR reasoning_source_order IS NOT NULL
+        OR reasoning_observed_at IS NOT NULL
+        OR reasoning_provenance IS NOT NULL`,
+    ],
+    [
+      "conversation_tool_events",
+      `(source_tool_id IS NOT NULL AND source_tool_id NOT GLOB 'demo-tool-*')
+        OR (input_preview IS NOT NULL AND input_preview <> '${REDACTED}')
+        OR (output_preview IS NOT NULL AND output_preview <> '${REDACTED}')`,
+    ],
+    [
+      "conversation_entries",
+      `(stable_source_id IS NOT NULL AND stable_source_id NOT GLOB 'demo-entry-*')
+        OR (content_preview IS NOT NULL AND content_preview <> '${REDACTED}')
+        OR content_hash IS NOT NULL
+        OR (kind = 'context-event'
+          AND native_metadata_json IS NOT '{"type":"redacted","sourceOrder":1}')
+        OR (kind <> 'context-event' AND native_metadata_json IS NOT NULL)`,
+    ],
+    ["conversation_branches", "external_id NOT GLOB 'demo-branch-*'"],
+    [
+      "artifact_entry_occurrences",
+      `(source_entry_id IS NOT NULL
+          AND source_entry_id NOT GLOB 'demo-entry-occurrence-*')
+        OR evidence_json IS NOT NULL`,
+    ],
+    [
+      "artifact_model_call_occurrences",
+      `(source_turn_id IS NOT NULL
+          AND source_turn_id NOT GLOB 'demo-turn-occurrence-*')
+        OR (source_call_id IS NOT NULL
+          AND source_call_id NOT GLOB 'demo-call-occurrence-*')
+        OR evidence_json IS NOT NULL`,
+    ],
+    [
+      "conversation_rollups",
+      "overview_json IS NOT NULL OR summary_json IS NOT NULL",
+    ],
+    [
+      "source_artifact_identities",
+      "identity_value NOT GLOB 'demo-identity-*'",
+    ],
+    [
+      "source_artifact_lineage",
+      "parent_identity_value NOT GLOB 'demo-*'",
     ],
   ] as const;
 
