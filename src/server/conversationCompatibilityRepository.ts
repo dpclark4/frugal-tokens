@@ -659,7 +659,8 @@ export class ConversationCompatibilityRepository {
     harness?: Harness,
   ): StoredOverviewRollup[] {
     const rows = this.db.prepare(`
-      SELECT c.id, c.title, so.harness, cr.overview_json
+      SELECT c.id, c.title, so.harness, cr.overview_json,
+        COALESCE(c.public_id, c.external_id) AS session_public_id
       FROM conversation_rollups cr
       JOIN conversations c ON c.id = cr.conversation_id
       JOIN sources so ON so.id = c.source_id
@@ -675,9 +676,11 @@ export class ConversationCompatibilityRepository {
       title: string;
       harness: Harness;
       overview_json: string;
+      session_public_id: string;
     }>;
     return rows.map((row) => ({
       rootSessionID: row.id,
+      sessionID: row.session_public_id,
       title: row.title,
       harness: row.harness,
       overview: JSON.parse(row.overview_json),

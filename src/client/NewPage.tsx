@@ -8,7 +8,6 @@ import { OverviewToolbar } from "./new/OverviewToolbar.tsx";
 import { UsageOverview } from "./new/UsageOverview.tsx";
 import { SessionShape } from "./new/SessionShape.tsx";
 import { WorkRhythm } from "./new/WorkRhythm.tsx";
-import { workRhythmFixture } from "./new/workRhythmFixture.ts";
 import { SpendComposition } from "./new/SpendComposition.tsx";
 
 const route = getRouteApi("/new");
@@ -21,19 +20,41 @@ export function NewPage() {
 
   useEffect(() => {
     let active = true;
-    setData(undefined);
-    setError(undefined);
-    getActivityOverview(search.range, search.harness).then((result) => {
-      if (active) setData(result);
-    }).catch((reason) => {
-      if (active) {
-        setError(
-          reason instanceof Error ? reason.message : "Unable to load overview",
-        );
+    let request = 0;
+
+    function load(clearExisting = false) {
+      const currentRequest = ++request;
+      if (clearExisting) {
+        setData(undefined);
+        setError(undefined);
       }
-    });
+      getActivityOverview(search.range, search.harness).then((result) => {
+        if (active && currentRequest === request) {
+          setData(result);
+          setError(undefined);
+        }
+      }).catch((reason) => {
+        if (active && currentRequest === request) {
+          setError(
+            reason instanceof Error ? reason.message : "Unable to load overview",
+          );
+        }
+      });
+    }
+
+    function refreshVisibleOverview() {
+      if (document.visibilityState === "visible") load();
+    }
+
+    load(true);
+    const refreshInterval = window.setInterval(refreshVisibleOverview, 30_000);
+    window.addEventListener("focus", refreshVisibleOverview);
+    document.addEventListener("visibilitychange", refreshVisibleOverview);
     return () => {
       active = false;
+      window.clearInterval(refreshInterval);
+      window.removeEventListener("focus", refreshVisibleOverview);
+      document.removeEventListener("visibilitychange", refreshVisibleOverview);
     };
   }, [search.range, search.harness]);
 
@@ -60,7 +81,7 @@ export function NewPage() {
             <UsageOverview data={data} />
             <SessionShape range={search.range} harness={search.harness} />
           </div>
-          <WorkRhythm data={workRhythmFixture} />
+          {data && <WorkRhythm data={data.workRhythm} />}
         </div>
       </section>
 

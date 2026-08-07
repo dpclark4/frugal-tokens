@@ -1,0 +1,299 @@
+import type {
+  WorkRhythmData,
+  WorkRhythmDay,
+  WorkRhythmSession,
+} from "../shared/sessionSchemas.ts";
+import type { StoredOverviewRollup } from "./overviewAnalytics.ts";
+
+export const WORK_RHYTHM_MINUTES_BEFORE_TURN = 5;
+const TURN_WINDOW_MS = WORK_RHYTHM_MINUTES_BEFORE_TURN * 60_000;
+const WEEKDAYS = [
+  { weekday: 1 as const, label: "Mon" },
+  { weekday: 2 as const, label: "Tue" },
+  { weekday: 3 as const, label: "Wed" },
+  { weekday: 4 as const, label: "Thu" },
+  { weekday: 5 as const, label: "Fri" },
+  { weekday: 6 as const, label: "Sat" },
+  { weekday: 0 as const, label: "Sun" },
+];
+
+type Interval = { start: number; end: number };
+
+function zonedAt(date: Temporal.PlainDate, timeZone: string) {
+  return Temporal.ZonedDateTime.from({
+    timeZone,
+    year: date.year,
+    month: date.month,
+    day: date.day,
+    hour: 0,
+  });
+}
+
+function zonedDateKey(timestamp: number, timeZone: string) {
+  return Temporal.Instant.fromEpochMilliseconds(timestamp)
+    .toZonedDateTimeISO(timeZone).toPlainDate().toString();
+}
+
+function mergeIntervals(intervals: Interval[], start: number, end: number) {
+  const merged: Interval[] = [];
+  for (const interval of intervals.toSorted((a, b) =>
+    a.start - b.start || a.end - b.end
+  )) {
+    const clipped = {
+      start: Math.max(start, interval.start),
+      end: Math.min(end, interval.end),
+    };
+    if (clipped.end <= clipped.start) continue;
+    const previous = merged.at(-1);
+    if (previous && clipped.start <= previous.end) {
+      previous.end = Math.max(previous.end, clipped.end);
+    } else {
+      merged.push(clipped);
+    }
+  }
+  return merged;
+}
+
+function overlapMs(intervals: Interval[], span: Interval) {
+  let total = 0;
+  for (const interval of intervals) {
+    if (interval.end <= span.start) continue;
+    if (interval.start >= span.end) break;
+    total += Math.max(
+      0,
+      Math.min(interval.end, span.end) - Math.max(interval.start, span.start),
+    );
+  }
+  return total;
+}
+
+function intensity(minutes: number, nonzero: number[]): WorkRhythmDay["intensity"] {
+  if (minutes <= 0) return 0;
+  const lower = nonzero.filter((value) => value < minutes).length;
+  return Math.min(4, Math.floor(lower * 4 / nonzero.length) + 1) as
+    WorkRhythmDay["intensity"];
+}
+
+export function workRhythmRange(
+  rangeDays: 30 | 90,
+  timeZone: string,
+  now = Date.now(),
+) {
+  const endDate = Temporal.Instant.fromEpochMilliseconds(now)
+    .toZonedDateTimeISO(timeZone).toPlainDate();
+  const startDate = endDate.subtract({ days: rangeDays - 1 });
+  return {
+    start: zonedAt(startDate, timeZone).epochMilliseconds,
+    end: now,
+  };
+}
+
+export function aggregateWorkRhythm(
+  roots: StoredOverviewRollup[],
+  start: number,
+  end: number,
+  timeZone: string,
+): WorkRhythmData {
+  // Constructing a ZonedDateTime validates the IANA identifier as well as
+  // giving all calendar boundaries their correct DST-sensitive instants.
+  const startDate = Temporal.Instant.fromEpochMilliseconds(start)
+    .toZonedDateTimeISO(timeZone).toPlainDate();
+  const endDate = Temporal.Instant.fromEpochMilliseconds(end)
+    .toZonedDateTimeISO(timeZone).toPlainDate();
+  const dates: Temporal.PlainDate[] = [];
+  for (
+    let date = startDate;
+    Temporal.PlainDate.compare(date, endDate) <= 0;
+    date = date.add({ days: 1 })
+  ) dates.push(date);
+
+  const intervals = roots.flatMap((root) =>
+    root.overview.executionIntervals.map((turn) => ({
+      start: turn.startedAt - TURN_WINDOW_MS,
+      end: turn.startedAt,
+    }))
+  );
+  const merged = mergeIntervals(intervals, start, end);
+  const totalMs = merged.reduce(
+    (sum, interval) => sum + interval.end - interval.start,
+    0,
+  );
+
+  const dayValues = new Map<string, Omit<WorkRhythmDay, "intensity">>();
+  for (const date of dates) {
+    const next = date.add({ days: 1 });
+    const span = {
+      start: Math.max(start, zonedAt(date, timeZone).epochMilliseconds),
+      end: Math.min(end, zonedAt(next, timeZone).epochMilliseconds),
+    };
+    dayValues.set(date.toString(), {
+      date: date.toString(),
+      estimatedActiveMinutes: overlapMs(merged, span) / 60_000,
+      spend: 0,
+      hasUnpricedSpend: false,
+      processedInputTokens: 0,
+      userTurns: 0,
+      rootSessions: 0,
+      topSessions: [],
+    });
+  }
+
+  const dailyRoots = new Map<string, Set<string>>();
+  const dailySessions = new Map<string, Map<string, WorkRhythmSession & {
+    processedInput: number;
+    modelSpend: number;
+  }>>();
+  for (const root of roots) {
+    const rootKey = `${root.harness ?? "unknown"}:${root.sessionID ?? root.rootSessionID}`;
+    const rootDates = root.overview.days.map((day) =>
+      zonedDateKey(day.firstTurnAt, timeZone)
+    ).toSorted();
+    const activeDateRange = {
+      start: rootDates[0] ?? startDate.toString(),
+      end: rootDates.at(-1) ?? endDate.toString(),
+    };
+    const totalSpend = root.overview.days.reduce(
+      (sum, day) => sum + day.cost,
+      0,
+    );
+    const hasUnpricedTotalSpend = root.overview.days.some((day) =>
+      day.hasUnpricedCost
+    );
+    for (const rollupDay of root.overview.days) {
+      if (rollupDay.firstTurnAt < start || rollupDay.firstTurnAt > end) continue;
+      const key = zonedDateKey(rollupDay.firstTurnAt, timeZone);
+      const day = dayValues.get(key);
+      if (!day) continue;
+      day.spend += rollupDay.cost;
+      day.hasUnpricedSpend ||= rollupDay.hasUnpricedCost;
+      day.processedInputTokens += rollupDay.input;
+      day.userTurns += rollupDay.turns;
+      const rootsOnDate = dailyRoots.get(key) ?? new Set<string>();
+      rootsOnDate.add(rootKey);
+      dailyRoots.set(key, rootsOnDate);
+
+      if (root.harness && root.sessionID) {
+        const rankedModel = rollupDay.models.toSorted((a, b) =>
+          b.cost - a.cost || b.input - a.input || a.model.localeCompare(b.model)
+        )[0];
+        const sessions = dailySessions.get(key) ?? new Map();
+        const previous = sessions.get(rootKey);
+        sessions.set(rootKey, previous ? {
+          ...previous,
+          model: (rankedModel?.cost ?? -1) > previous.modelSpend
+            ? rankedModel!.model
+            : previous.model,
+          modelSpend: Math.max(previous.modelSpend, rankedModel?.cost ?? -1),
+          startTime: new Date(Math.min(
+            new Date(previous.startTime).getTime(),
+            rollupDay.firstTurnAt,
+          )).toISOString(),
+          spend: previous.spend + rollupDay.cost,
+          hasUnpricedSpend: previous.hasUnpricedSpend || rollupDay.hasUnpricedCost,
+          processedInput: previous.processedInput + rollupDay.input,
+        } : {
+          id: root.sessionID,
+          title: root.title ?? null,
+          harness: root.harness,
+          model: rankedModel?.model ?? null,
+          modelSpend: rankedModel?.cost ?? -1,
+          startTime: new Date(rollupDay.firstTurnAt).toISOString(),
+          activeDateRange,
+          spend: rollupDay.cost,
+          hasUnpricedSpend: rollupDay.hasUnpricedCost,
+          totalSpend,
+          hasUnpricedTotalSpend,
+          processedInput: rollupDay.input,
+        });
+        dailySessions.set(key, sessions);
+      }
+    }
+  }
+
+  const nonzero = [...dayValues.values()].map((day) =>
+    day.estimatedActiveMinutes
+  ).filter((minutes) => minutes > 0).toSorted((a, b) => a - b);
+  const days: Record<string, WorkRhythmDay> = {};
+  for (const day of dayValues.values()) {
+    day.rootSessions = dailyRoots.get(day.date)?.size ?? 0;
+    day.topSessions = [...(dailySessions.get(day.date)?.values() ?? [])]
+      .toSorted((a, b) =>
+        b.spend - a.spend || b.processedInput - a.processedInput ||
+        a.id.localeCompare(b.id)
+      ).slice(0, 3).map(({
+        processedInput: _processedInput,
+        modelSpend: _modelSpend,
+        ...session
+      }) => session);
+    days[day.date] = {
+      ...day,
+      intensity: intensity(day.estimatedActiveMinutes, nonzero),
+    };
+  }
+
+  const weekdayActivity = WEEKDAYS.map(({ weekday, label }) => {
+    const matching = dates.map((date) => days[date.toString()]).filter((day) =>
+      dateWeekday(day.date) === weekday
+    );
+    const totalMinutes = matching.reduce(
+      (sum, day) => sum + day.estimatedActiveMinutes,
+      0,
+    );
+    return {
+      weekday,
+      label,
+      averageMinutes: matching.length === 0 ? 0 : totalMinutes / matching.length,
+      totalMinutes,
+      occurrences: matching.length,
+      activeOccurrences: matching.filter((day) =>
+        day.estimatedActiveMinutes > 0
+      ).length,
+    };
+  });
+
+  const hourlyMs = Array.from({ length: 24 }, () => 0);
+  const hourlyDates = Array.from({ length: 24 }, () => new Set<string>());
+  for (const date of dates) {
+    const dayEnd = zonedAt(date.add({ days: 1 }), timeZone).epochMilliseconds;
+    let cursor = zonedAt(date, timeZone);
+    while (cursor.epochMilliseconds < dayEnd) {
+      const next = cursor.add({ hours: 1 });
+      const hour = cursor.hour;
+      const duration = overlapMs(merged, {
+        start: Math.max(start, cursor.epochMilliseconds),
+        end: Math.min(end, next.epochMilliseconds, dayEnd),
+      });
+      hourlyMs[hour] += duration;
+      if (duration > 0) hourlyDates[hour].add(date.toString());
+      cursor = next;
+    }
+  }
+  const hourlyActivity = hourlyMs.map((duration, hour) => ({
+    hour,
+    estimatedMinutes: duration / 60_000,
+    shareOfTotal: totalMs === 0 ? 0 : duration / totalMs,
+    activeDates: hourlyDates[hour].size,
+  }));
+  const peakHour = totalMs === 0 ? undefined : hourlyMs.reduce(
+    (best, value, hour) => value > hourlyMs[best] ? hour : best,
+    0,
+  );
+
+  return {
+    range: { start: startDate.toString(), end: endDate.toString() },
+    estimatedActiveMinutes: totalMs / 60_000,
+    methodology: { minutesBeforeTurn: 5, overlapsCountedOnce: true },
+    weekdayActivity,
+    hourlyActivity,
+    afterHoursShare: totalMs === 0
+      ? 0
+      : hourlyMs.slice(20).reduce((sum, value) => sum + value, 0) / totalMs,
+    peakHour,
+    days,
+  };
+}
+
+function dateWeekday(date: string): 0 | 1 | 2 | 3 | 4 | 5 | 6 {
+  return (Temporal.PlainDate.from(date).dayOfWeek % 7) as
+    0 | 1 | 2 | 3 | 4 | 5 | 6;
+}

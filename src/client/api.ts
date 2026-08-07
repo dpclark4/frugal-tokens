@@ -42,8 +42,13 @@ export async function getActivityOverview(
   range: 30 | 90,
   harness: string,
 ) {
+  const query = new URLSearchParams({
+    range: String(range),
+    harness,
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  });
   return activityOverviewResponseSchema.parse(
-    await getJson(`/api/activity-overview?range=${range}&harness=${harness}`),
+    await getJson(`/api/activity-overview?${query}`),
   );
 }
 

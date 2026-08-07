@@ -1,5 +1,6 @@
 import type { ActivityOverviewResponse } from "../shared/sessionSchemas.ts";
 import type { StoredOverviewRollup } from "./overviewAnalytics.ts";
+import { aggregateWorkRhythm } from "./workRhythm.ts";
 
 export const ACTIVITY_INACTIVITY_MINUTES = 10;
 
@@ -67,6 +68,7 @@ export function aggregateActivityOverview(
   start: number,
   end: number,
   rangeDays: 30 | 90,
+  timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone,
 ): ActivityOverviewResponse {
   const days = new Map<string, DayBucket>();
   const activityIntervals: Interval[] = [];
@@ -154,6 +156,7 @@ export function aggregateActivityOverview(
       spend: [...days.values()].reduce((sum, day) => sum + day.spend, 0),
       hasUnpricedCost: [...days.values()].some((day) => day.hasUnpricedCost),
     },
+    workRhythm: aggregateWorkRhythm(roots, start, end, timeZone),
     days: [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(
       ([date, day]) => ({
         date,

@@ -4,7 +4,6 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   Bar,
   BarChart,
-  LabelList,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -15,6 +14,7 @@ import type {
   WorkRhythmDay,
   WorkRhythmSession,
 } from "./workRhythmTypes.ts";
+import { displayModelName } from "../../shared/modelNames.ts";
 import { compact, currency, integer } from "./formatters.ts";
 import "./WorkRhythm.css";
 
@@ -30,6 +30,11 @@ const monthYear = new Intl.DateTimeFormat(undefined, {
 const timeOnly = new Intl.DateTimeFormat(undefined, {
   hour: "numeric",
   minute: "2-digit",
+});
+const shortMonth = new Intl.DateTimeFormat(undefined, { month: "short" });
+const fullMonthDay = new Intl.DateTimeFormat(undefined, {
+  month: "long",
+  day: "numeric",
 });
 
 function parseDate(value: string) {
@@ -117,25 +122,27 @@ function WeekdayChart({ data }: { data: WorkRhythmData["weekdayActivity"] }) {
           <XAxis type="number" hide domain={[0, "dataMax"]} />
           <YAxis type="category" dataKey="label" width={40} axisLine={false} tickLine={false} tick={{ fill: "#52615d", fontSize: 11, fontFamily: "var(--mono)" }} />
           <Tooltip cursor={{ fill: "rgba(15, 113, 105, .045)" }} content={(props) => <WeekdayTooltip active={props.active} payload={props.payload as Array<{ payload?: WeekdayRow }>} />} />
-          <Bar dataKey="averageMinutes" fill="var(--dashboard-signal)" fillOpacity={0.76} barSize={12} radius={[0, 2, 2, 0]}>
-            <LabelList dataKey="averageMinutes" position="right" formatter={(value: unknown) => formatDuration(Number(value))} className="weekday-value-label" />
-          </Bar>
+          <Bar dataKey="averageMinutes" fill="var(--dashboard-signal)" fillOpacity={0.76} barSize={12} radius={[0, 2, 2, 0]} isAnimationActive={false} />
         </BarChart>
       </ResponsiveContainer>
+      <div className="weekday-values" aria-hidden="true">
+        {data.map((row) => <span key={row.weekday}>{formatDuration(row.averageMinutes)}</span>)}
+      </div>
     </div>
   );
 }
 
 function HourlyChart({ data }: { data: WorkRhythmData["hourlyActivity"] }) {
   const peak = data.reduce((best, row) => row.estimatedMinutes > best.estimatedMinutes ? row : best, data[0]);
+  const hasActivity = peak.estimatedMinutes > 0;
   return (
-    <div className="hourly-chart" role="img" tabIndex={0} aria-label={`Estimated active time by hour. Peak is ${hourRange(peak.hour)} at ${formatDuration(peak.estimatedMinutes)}.`}>
+    <div className="hourly-chart" role="img" tabIndex={0} aria-label={hasActivity ? `Estimated active time by hour. Peak is ${hourRange(peak.hour)} at ${formatDuration(peak.estimatedMinutes)}.` : "No estimated activity by hour."}>
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 3, right: 6, bottom: 0, left: 6 }} barCategoryGap="18%">
           <XAxis dataKey="hour" height={20} ticks={[0, 6, 12, 18]} interval={0} tickFormatter={formatHourTick} axisLine={false} tickLine={false} tick={{ fill: "#6f7d78", fontSize: 11, fontFamily: "var(--mono)" }} />
           <YAxis hide domain={[0, "dataMax"]} />
           <Tooltip cursor={{ fill: "rgba(15, 113, 105, .045)" }} content={(props) => <HourlyTooltip active={props.active} payload={props.payload as Array<{ payload?: HourlyRow }>} />} />
-          <Bar dataKey="estimatedMinutes" fill="var(--dashboard-signal)" fillOpacity={0.72} radius={[1.5, 1.5, 0, 0]} />
+          <Bar dataKey="estimatedMinutes" fill="var(--dashboard-signal)" fillOpacity={0.72} radius={[1.5, 1.5, 0, 0]} isAnimationActive={false} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -224,6 +231,31 @@ function sessionName(session: WorkRhythmSession) {
   return `${harnessNames[session.harness]} session · ${timeOnly.format(new Date(session.startTime))}`;
 }
 
+function sessionDateSpan(session: WorkRhythmSession) {
+  const { start, end } = session.activeDateRange;
+  if (start === end) return undefined;
+  const startDate = parseDate(start);
+  const endDate = parseDate(end);
+  if (
+    startDate.getFullYear() === endDate.getFullYear() &&
+    startDate.getMonth() === endDate.getMonth()
+  ) {
+    return `${shortMonth.format(startDate)} ${startDate.getDate()}–${endDate.getDate()}`;
+  }
+  return `${shortMonth.format(startDate)} ${startDate.getDate()}–${shortMonth.format(endDate)} ${endDate.getDate()}`;
+}
+
+function sessionDateExplanation(session: WorkRhythmSession, selectedDate: string) {
+  const { start, end } = session.activeDateRange;
+  if (selectedDate === start) {
+    return `This session continued into ${fullMonthDay.format(parseDate(end))}.`;
+  }
+  if (selectedDate === end) {
+    return `This session began on ${fullMonthDay.format(parseDate(start))}.`;
+  }
+  return `This session ran from ${fullMonthDay.format(parseDate(start))} through ${fullMonthDay.format(parseDate(end))}.`;
+}
+
 function DayDetail({ day }: { day: WorkRhythmDay }) {
   const navigate = useNavigate();
 
@@ -246,27 +278,52 @@ function DayDetail({ day }: { day: WorkRhythmDay }) {
       <div className="rhythm-day-metrics" aria-label={`Summary for ${readableDate.format(parseDate(day.date))}`}>
         <div><span>Estimated active</span><strong>{formatDuration(day.estimatedActiveMinutes)}</strong></div>
         <div><span>Root sessions</span><strong>{integer.format(day.rootSessions)}</strong></div>
-        <div><span>Spend</span><strong>{currency.format(day.spend)}</strong></div>
+        <div title={day.hasUnpricedSpend ? "Known spend excludes usage without available pricing." : undefined}><span>{day.hasUnpricedSpend ? "Known spend" : "Spend"}</span><strong>{currency.format(day.spend)}</strong></div>
         <div><span>Processed input</span><strong>{compact.format(day.processedInputTokens)}</strong></div>
       </div>
       <section className="expensive-sessions" aria-labelledby="expensive-sessions-title">
         <div className="expensive-sessions-heading">
-          <h4 id="expensive-sessions-title">Most expensive sessions</h4>
+          <h4 id="expensive-sessions-title">Highest spend this day</h4>
           <button type="button" onClick={() => navigate({ to: "/", search: { harness: "all", misses: undefined } })}>View all sessions</button>
         </div>
         {day.topSessions.length ? (
           <ol>
-            {day.topSessions.slice(0, 3).map((session) => (
-              <li key={session.id}>
-                <button type="button" onClick={() => openSession(session)} aria-label={`Open ${sessionName(session)}, ${currency.format(session.spend)}`}>
-                  <span className="session-row-copy">
-                    <strong>{sessionName(session)}</strong>
-                    <small>{harnessNames[session.harness]}{session.model ? ` · ${session.model}` : ""}</small>
-                  </span>
-                  <span className="session-spend">{currency.format(session.spend)}</span>
-                </button>
-              </li>
-            ))}
+            {day.topSessions.slice(0, 3).map((session, index) => {
+              const span = sessionDateSpan(session);
+              const tooltipId = span
+                ? `session-spend-scope-${day.date}-${index}`
+                : undefined;
+              return (
+                <li key={session.id}>
+                  <button
+                    type="button"
+                    onClick={() => openSession(session)}
+                    aria-describedby={tooltipId}
+                    aria-label={`Open ${sessionName(session)}, ${currency.format(session.spend)} on this date${session.totalSpend !== session.spend ? `, ${currency.format(session.totalSpend)} total` : ""}`}
+                  >
+                    <span className="session-row-copy">
+                      <strong>{sessionName(session)}</strong>
+                      <small className="session-meta">
+                        <span className="session-meta-main">{harnessNames[session.harness]}{session.model ? ` · ${displayModelName(session.model)}` : ""}</span>
+                        {span && (
+                          <span className="session-date-scope">
+                            · <span className="session-date-scope-label">spans {span}</span>
+                            <span className="session-spend-tooltip" id={tooltipId} role="tooltip">
+                              <span><span>Spend on {fullMonthDay.format(parseDate(day.date))}</span><strong>{currency.format(session.spend)}{session.hasUnpricedSpend ? "*" : ""}</strong></span>
+                              <span><span>Entire session</span><strong>{currency.format(session.totalSpend)}{session.hasUnpricedTotalSpend ? "*" : ""}</strong></span>
+                              <em>{sessionDateExplanation(session, day.date)}</em>
+                            </span>
+                          </span>
+                        )}
+                      </small>
+                    </span>
+                    <span className="session-spend" title={session.hasUnpricedSpend ? "Known spend excludes usage without available pricing." : undefined}>
+                      <strong>{currency.format(session.spend)}{session.hasUnpricedSpend ? "*" : ""}</strong>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
           </ol>
         ) : <p>No sessions on this date.</p>}
       </section>
@@ -303,7 +360,6 @@ export function WorkRhythm({ data }: { data: WorkRhythmData }) {
           <div>
             <div className="rhythm-title-line">
               <h2 id="work-rhythm-title">Work rhythm</h2>
-              <span className="mock-data-badge">Mock data</span>
             </div>
             <p>{data.methodology.minutesBeforeTurn} min preceding each user turn · overlaps counted once</p>
           </div>
@@ -324,7 +380,7 @@ export function WorkRhythm({ data }: { data: WorkRhythmData }) {
             </div>
             <HourlyChart data={data.hourlyActivity} />
             <div className="hourly-annotations">
-              <span><i aria-hidden="true" />Peak: {hourRange(data.peakHour)}</span>
+              {data.peakHour !== undefined && <span><i aria-hidden="true" />Peak: {hourRange(data.peakHour)}</span>}
               <span>{Math.round(data.afterHoursShare * 100)}% after 8 PM</span>
             </div>
           </section>

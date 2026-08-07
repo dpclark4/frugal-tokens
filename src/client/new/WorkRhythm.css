@@ -110,6 +110,7 @@
 }
 
 .weekday-chart {
+  position: relative;
   height: 150px;
   margin-top: 3px;
 }
@@ -125,10 +126,25 @@
   outline-offset: 2px;
 }
 
-.weekday-value-label {
-  fill: #35433f;
+.weekday-values {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  bottom: 2px;
+  display: grid;
+  width: 68px;
+  grid-template-rows: repeat(7, 1fr);
+  color: #35433f;
   font: 600 11px var(--mono);
   font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  text-align: right;
+}
+
+.weekday-values span {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
 }
 
 .rhythm-tooltip {
@@ -193,6 +209,7 @@
 
 .day-explorer-body {
   display: grid;
+  min-height: 219px;
   grid-template-columns: minmax(225px, .95fr) minmax(250px, 1.05fr);
   gap: 24px;
   padding-top: 10px;
@@ -250,6 +267,11 @@
   color: #788580;
   font-size: 9px;
   text-align: center;
+}
+
+.rhythm-calendar-days {
+  min-height: 178px;
+  align-content: start;
 }
 
 .rhythm-calendar-days > span,
@@ -388,8 +410,8 @@
   text-align: left;
 }
 
-.expensive-sessions li > button:hover .session-row-copy strong,
-.expensive-sessions li > button:focus-visible .session-row-copy strong {
+.expensive-sessions li > button:hover .session-row-copy > strong,
+.expensive-sessions li > button:focus-visible .session-row-copy > strong {
   color: var(--dashboard-signal);
 }
 
@@ -408,17 +430,90 @@
 }
 
 .session-row-copy small {
-  overflow: hidden;
   color: #74817c;
   font: 10px var(--mono);
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+.session-meta {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+}
+
+.session-meta-main {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+}
+
+.session-date-scope {
+  position: relative;
+  flex: none;
+  margin-left: 3px;
+}
+
+.session-date-scope-label {
+  border-bottom: 1px dotted #86938e;
+}
+
+.session-spend-tooltip {
+  position: absolute;
+  z-index: 5;
+  right: 0;
+  bottom: calc(100% + 7px);
+  display: grid;
+  visibility: hidden;
+  width: 238px;
+  gap: 5px;
+  padding: 9px 11px;
+  border: 1px solid #b7c7c2;
+  border-radius: 5px;
+  background: var(--dashboard-ink);
+  box-shadow: 0 8px 20px rgba(32, 53, 48, .16);
+  color: #dce8e4;
+  font: 10px/1.35 var(--mono);
+  opacity: 0;
+  pointer-events: none;
+  white-space: normal;
+}
+
+.session-spend-tooltip > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.session-spend-tooltip strong {
+  flex: none;
+  color: #fff;
+  font: 650 10px var(--mono);
+}
+
+.session-spend-tooltip em {
+  padding-top: 4px;
+  border-top: 1px solid rgba(255, 255, 255, .16);
+  color: #c3d1cd;
+  font-style: normal;
+}
+
+.session-date-scope:hover .session-spend-tooltip,
+.expensive-sessions li > button:focus-visible .session-spend-tooltip {
+  visibility: visible;
+  opacity: 1;
+}
+
 .session-spend {
+  display: grid;
+  gap: 2px;
   color: var(--dashboard-ink);
   font: 650 11px var(--mono);
   font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.session-spend strong {
+  font: inherit;
 }
 
 .expensive-sessions > p {
@@ -433,7 +528,7 @@
   .rhythm-charts { gap: 17px; }
   .weekday-chart { height: 180px; }
   .hourly-chart { height: 180px; }
-  .day-explorer-body { grid-template-columns: 1fr; gap: 18px; }
+  .day-explorer-body { min-height: 0; grid-template-columns: 1fr; gap: 18px; }
   .rhythm-day-detail { padding-left: 0; border-left: 0; }
   .rhythm-calendar { max-width: 340px; width: 100%; }
 }

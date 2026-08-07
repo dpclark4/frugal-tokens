@@ -22,6 +22,7 @@ import {
   ROTATION_INACTIVITY_MINUTES,
 } from "./overviewAnalytics.ts";
 import { aggregateActivityOverview } from "./activityOverview.ts";
+import { workRhythmRange } from "./workRhythm.ts";
 import { aggregateSessionShape } from "./sessionShapeAnalytics.ts";
 import { expandHomePath, openArchiveDatabase, sqlitePath } from "./database.ts";
 import { SessionRepository } from "./sessionRepository.ts";
@@ -491,18 +492,32 @@ app.get("/api/activity-overview", (context) => {
     return context.json({ error: "Invalid range; expected 30 or 90" }, 400);
   }
   const range = Number(rangeParam) as 30 | 90;
-  const end = Date.now();
-  const start = new Date(
-    new Date(end).setHours(0, 0, 0, 0) - (range - 1) * 86_400_000,
-  ).getTime();
+  const timeZone = context.req.query("timeZone") ??
+    Intl.DateTimeFormat().resolvedOptions().timeZone;
+  let boundaries: { start: number; end: number };
+  try {
+    boundaries = workRhythmRange(range, timeZone);
+  } catch {
+    return context.json({ error: "Invalid IANA timezone" }, 400);
+  }
+  const { start, end } = boundaries;
   const selectedHarness = harness === "all"
     ? undefined
     : harness as SessionSummary["harness"];
   const loadStartedAt = performance.now();
-  const loaded = readRepository.listOverviewRollups(start, selectedHarness);
+  const loaded = readRepository.listOverviewRollups(
+    start - 5 * 60_000,
+    selectedHarness,
+  );
   const loadDuration = performance.now() - loadStartedAt;
   const aggregationStartedAt = performance.now();
-  const overview = aggregateActivityOverview(loaded, start, end, range);
+  const overview = aggregateActivityOverview(
+    loaded,
+    start,
+    end,
+    range,
+    timeZone,
+  );
   const aggregationDuration = performance.now() - aggregationStartedAt;
   const totalDuration = performance.now() - requestStartedAt;
   context.header(

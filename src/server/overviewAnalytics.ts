@@ -7,6 +7,8 @@ import type { SessionOverviewRollup } from "./sessionRollups.ts";
 
 export type StoredOverviewRollup = {
   rootSessionID: number;
+  /** Public/external ID accepted by /sessions/$harness/$sessionId. */
+  sessionID?: string;
   title?: string;
   harness?: SessionDetail["harness"];
   overview: SessionOverviewRollup;

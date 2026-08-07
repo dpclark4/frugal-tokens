@@ -52,7 +52,11 @@ const selectedDaySessions: WorkRhythmSession[] = [
     harness: "claude-code",
     model: "Claude Opus 4.1",
     startTime: "2026-08-06T09:18:00-07:00",
+    activeDateRange: { start: "2026-08-06", end: "2026-08-06" },
     spend: 4.82,
+    hasUnpricedSpend: false,
+    totalSpend: 4.82,
+    hasUnpricedTotalSpend: false,
   },
   {
     id: "mock-2026-08-06-pi",
@@ -60,7 +64,11 @@ const selectedDaySessions: WorkRhythmSession[] = [
     harness: "pi",
     model: "GPT-5.2 Codex",
     startTime: "2026-08-06T14:40:00-07:00",
+    activeDateRange: { start: "2026-08-06", end: "2026-08-06" },
     spend: 3.11,
+    hasUnpricedSpend: false,
+    totalSpend: 3.11,
+    hasUnpricedTotalSpend: false,
   },
   {
     id: "mock-2026-08-06-cache",
@@ -68,7 +76,11 @@ const selectedDaySessions: WorkRhythmSession[] = [
     harness: "codex",
     model: null,
     startTime: "2026-08-06T16:12:00-07:00",
+    activeDateRange: { start: "2026-08-06", end: "2026-08-06" },
     spend: 1.94,
+    hasUnpricedSpend: false,
+    totalSpend: 1.94,
+    hasUnpricedTotalSpend: false,
   },
 ];
 
@@ -102,7 +114,11 @@ function sessionsForDay(seed: DaySeed, index: number): WorkRhythmSession[] {
       harness,
       model: models[(index + sessionIndex) % models.length],
       startTime: `${date}T${String(hour).padStart(2, "0")}:${sessionIndex === 1 ? "35" : "10"}:00-07:00`,
+      activeDateRange: { start: date, end: date },
       spend: Number((spend * [0.43, 0.27, 0.16][sessionIndex]).toFixed(2)),
+      hasUnpricedSpend: false,
+      totalSpend: Number((spend * [0.43, 0.27, 0.16][sessionIndex]).toFixed(2)),
+      hasUnpricedTotalSpend: false,
     };
   });
 }
@@ -117,6 +133,7 @@ const days: Record<string, WorkRhythmDay> = Object.fromEntries(
       date,
       estimatedActiveMinutes,
       spend,
+      hasUnpricedSpend: false,
       processedInputTokens,
       userTurns,
       rootSessions,

@@ -1206,7 +1206,8 @@ export class SessionRepository {
     harness?: Harness,
   ): StoredOverviewRollup[] {
     const rows = this.#prepare(`
-      SELECT sr.root_session_id, sr.overview_json, s.title, so.harness
+      SELECT sr.root_session_id, sr.overview_json, s.title, so.harness,
+        COALESCE(ss.public_id, ss.external_id) AS session_public_id
       FROM session_rollups sr
       JOIN sessions s ON s.source_session_id = sr.root_session_id
       JOIN source_sessions ss ON ss.id = sr.root_session_id
@@ -1219,9 +1220,11 @@ export class SessionRepository {
       overview_json: string;
       title: string;
       harness: Harness;
+      session_public_id: string;
     }>;
     return rows.map((row) => ({
       rootSessionID: row.root_session_id,
+      sessionID: row.session_public_id,
       title: row.title,
       harness: row.harness,
       overview: JSON.parse(row.overview_json),

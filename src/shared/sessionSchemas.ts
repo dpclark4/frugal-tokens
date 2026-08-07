@@ -347,6 +347,66 @@ const distributionSchema = z.object({
   p90: z.number().nonnegative(),
 });
 
+export const workRhythmSessionSchema = z.object({
+  id: z.string(),
+  title: z.string().nullable(),
+  harness: harnessSchema,
+  model: z.string().nullable(),
+  startTime: z.string(),
+  activeDateRange: z.object({ start: z.string(), end: z.string() }),
+  spend: z.number().nonnegative(),
+  hasUnpricedSpend: z.boolean(),
+  totalSpend: z.number().nonnegative(),
+  hasUnpricedTotalSpend: z.boolean(),
+});
+
+export const workRhythmDaySchema = z.object({
+  date: z.string(),
+  estimatedActiveMinutes: z.number().nonnegative(),
+  spend: z.number().nonnegative(),
+  hasUnpricedSpend: z.boolean(),
+  processedInputTokens: z.number().int().nonnegative(),
+  userTurns: z.number().int().nonnegative(),
+  rootSessions: z.number().int().nonnegative(),
+  intensity: z.union([
+    z.literal(0),
+    z.literal(1),
+    z.literal(2),
+    z.literal(3),
+    z.literal(4),
+  ]),
+  topSessions: z.array(workRhythmSessionSchema),
+});
+
+export const workRhythmDataSchema = z.object({
+  range: z.object({ start: z.string(), end: z.string() }),
+  estimatedActiveMinutes: z.number().nonnegative(),
+  methodology: z.object({
+    minutesBeforeTurn: z.literal(5),
+    overlapsCountedOnce: z.literal(true),
+  }),
+  weekdayActivity: z.array(z.object({
+    weekday: z.union([
+      z.literal(0), z.literal(1), z.literal(2), z.literal(3),
+      z.literal(4), z.literal(5), z.literal(6),
+    ]),
+    label: z.string(),
+    averageMinutes: z.number().nonnegative(),
+    totalMinutes: z.number().nonnegative(),
+    occurrences: z.number().int().nonnegative(),
+    activeOccurrences: z.number().int().nonnegative(),
+  })),
+  hourlyActivity: z.array(z.object({
+    hour: z.number().int().min(0).max(23),
+    estimatedMinutes: z.number().nonnegative(),
+    shareOfTotal: z.number().min(0).max(1),
+    activeDates: z.number().int().nonnegative(),
+  })),
+  afterHoursShare: z.number().min(0).max(1),
+  peakHour: z.number().int().min(0).max(23).optional(),
+  days: z.record(z.string(), workRhythmDaySchema),
+});
+
 export const activityOverviewResponseSchema = z.object({
   rangeDays: z.union([z.literal(30), z.literal(90)]),
   startDate: z.string(),
@@ -359,6 +419,7 @@ export const activityOverviewResponseSchema = z.object({
     spend: z.number().nonnegative(),
     hasUnpricedCost: z.boolean(),
   }),
+  workRhythm: workRhythmDataSchema,
   days: z.array(z.object({
     date: z.string(),
     processedInput: z.number().int().nonnegative(),
@@ -657,6 +718,9 @@ export const sessionShapeResponseSchema = z.object({
   })),
 });
 
+export type WorkRhythmSession = z.infer<typeof workRhythmSessionSchema>;
+export type WorkRhythmDay = z.infer<typeof workRhythmDaySchema>;
+export type WorkRhythmData = z.infer<typeof workRhythmDataSchema>;
 export type ActivityOverviewResponse = z.infer<
   typeof activityOverviewResponseSchema
 >;
