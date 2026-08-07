@@ -676,7 +676,21 @@ export class ConversationCompatibilityRepository {
           JOIN conversation_rollups child
             ON child.conversation_id = descendants.id
         ), 0) AS subagent_spend,
-        COALESCE(c.public_id, c.external_id) AS session_public_id
+        COALESCE(c.public_id, c.external_id) AS session_public_id,
+        COALESCE((
+          SELECT json_group_array(root_turn.started_at)
+          FROM conversation_turns root_turn
+          WHERE root_turn.conversation_id = c.id
+            AND EXISTS (
+              SELECT 1
+              FROM conversation_model_calls root_call
+              WHERE root_call.turn_id = root_turn.id
+                AND COALESCE(root_call.source_call_id, '')
+                  NOT LIKE 'context-operation:%'
+                AND COALESCE(root_call.source_call_id, '')
+                  NOT LIKE 'unmeasured:%'
+            )
+        ), '[]') AS root_turn_starts_json
       FROM conversation_rollups cr
       JOIN conversations c ON c.id = cr.conversation_id
       JOIN sources so ON so.id = c.source_id
@@ -694,9 +708,11 @@ export class ConversationCompatibilityRepository {
       overview_json: string;
       subagent_spend: number;
       session_public_id: string;
+      root_turn_starts_json: string;
     }>;
     return rows.map((row) => ({
       rootSessionID: row.id,
+      rootTurnStartedAts: JSON.parse(row.root_turn_starts_json),
       sessionID: row.session_public_id,
       title: row.title,
       harness: row.harness,

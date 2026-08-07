@@ -151,7 +151,11 @@ Deno.test("conversation compatibility repository preserves linear read contracts
     );
     strictEqual(compatibility.listToolCalls(0, 100, "pi").length, 1);
     strictEqual(compatibility.listCacheMisses(undefined, "pi").length, 1);
-    strictEqual(compatibility.listOverviewRollups(0, "pi").length, 1);
+    const legacyOverview = legacy.listOverviewRollups(0, "pi");
+    const compatibilityOverview = compatibility.listOverviewRollups(0, "pi");
+    strictEqual(compatibilityOverview.length, 1);
+    deepStrictEqual(legacyOverview[0].rootTurnStartedAts, [10, 20]);
+    deepStrictEqual(compatibilityOverview[0].rootTurnStartedAts, [10, 20]);
     strictEqual(compatibility.listUsageRollups(undefined, "pi").length, 1);
   } finally {
     db.close();

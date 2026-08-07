@@ -17,11 +17,13 @@ function root(
     title?: string;
     unpriced?: boolean;
     model?: string;
+    rootTurns?: number[];
   } = {},
 ): StoredOverviewRollup {
   const first = Math.min(...turns);
   return {
     rootSessionID: options.numericID ?? 1,
+    rootTurnStartedAts: options.rootTurns ?? turns,
     sessionID: id,
     harness: options.harness ?? "pi",
     title: options.title,
@@ -163,14 +165,19 @@ Deno.test("work rhythm ranges contain 30 or 90 local dates across DST", () => {
   }
 });
 
-Deno.test("work rhythm combines subagent and cross-harness overlap; filtered roots stay isolated", () => {
+Deno.test("work rhythm excludes subagent turns and unions root turns across harnesses", () => {
   const start = utc("2026-07-01T00:00:00");
   const end = utc("2026-07-01T23:59:59");
   const at = utc("2026-07-01T10:00:00");
-  // Repeated execution intervals in a root represent root and descendant turns.
-  const pi = root("pi-root", [at, at + 3 * minute], { harness: "pi" });
-  const codex = root("codex-root", [at + minute], { numericID: 2, harness: "codex" });
-  strictEqual(aggregateWorkRhythm([pi, codex], start, end, "UTC").estimatedActiveMinutes, 8);
-  strictEqual(aggregateWorkRhythm([pi], start, end, "UTC").estimatedActiveMinutes, 8);
+  const pi = root("pi-root", [at, at + 3 * minute], {
+    harness: "pi",
+    rootTurns: [at],
+  });
+  const codex = root("codex-root", [at + minute], {
+    numericID: 2,
+    harness: "codex",
+  });
+  strictEqual(aggregateWorkRhythm([pi, codex], start, end, "UTC").estimatedActiveMinutes, 6);
+  strictEqual(aggregateWorkRhythm([pi], start, end, "UTC").estimatedActiveMinutes, 5);
   strictEqual(aggregateWorkRhythm([codex], start, end, "UTC").estimatedActiveMinutes, 5);
 });

@@ -1210,7 +1210,21 @@ export class SessionRepository {
       SELECT sr.root_session_id, sr.overview_json, s.title, so.harness,
         COALESCE(sr.subagent_computed_cost, sr.subagent_reported_cost, 0)
           AS subagent_spend,
-        COALESCE(ss.public_id, ss.external_id) AS session_public_id
+        COALESCE(ss.public_id, ss.external_id) AS session_public_id,
+        COALESCE((
+          SELECT json_group_array(root_turn.started_at)
+          FROM turns root_turn
+          WHERE root_turn.session_id = sr.root_session_id
+            AND EXISTS (
+              SELECT 1
+              FROM model_calls root_call
+              WHERE root_call.turn_id = root_turn.id
+                AND COALESCE(root_call.source_call_id, '')
+                  NOT LIKE 'context-operation:%'
+                AND COALESCE(root_call.source_call_id, '')
+                  NOT LIKE 'unmeasured:%'
+            )
+        ), '[]') AS root_turn_starts_json
       FROM session_rollups sr
       JOIN sessions s ON s.source_session_id = sr.root_session_id
       JOIN source_sessions ss ON ss.id = sr.root_session_id
@@ -1225,9 +1239,11 @@ export class SessionRepository {
       harness: Harness;
       subagent_spend: number;
       session_public_id: string;
+      root_turn_starts_json: string;
     }>;
     return rows.map((row) => ({
       rootSessionID: row.root_session_id,
+      rootTurnStartedAts: JSON.parse(row.root_turn_starts_json),
       sessionID: row.session_public_id,
       title: row.title,
       harness: row.harness,

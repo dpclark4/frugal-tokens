@@ -108,9 +108,9 @@ export function aggregateWorkRhythm(
   ) dates.push(date);
 
   const intervals = roots.flatMap((root) =>
-    root.overview.executionIntervals.map((turn) => ({
-      start: turn.startedAt - TURN_WINDOW_MS,
-      end: turn.startedAt,
+    (root.rootTurnStartedAts ?? []).map((startedAt) => ({
+      start: startedAt - TURN_WINDOW_MS,
+      end: startedAt,
     }))
   );
   const merged = mergeIntervals(intervals, start, end);
