@@ -1,0 +1,125 @@
+.cache-overview-section {
+  color: var(--dashboard-ink);
+}
+
+.cache-overview-section > header {
+  border-bottom: 0;
+}
+
+.cache-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0 18px;
+  border-bottom: 1px solid #e4ebe8;
+}
+
+.cache-summary-metric {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  padding: 11px 12px;
+}
+
+.cache-summary-metric + .cache-summary-metric {
+  border-left: 1px solid #e4ebe8;
+}
+
+.cache-summary-metric > span {
+  min-height: 1.2em;
+  color: var(--dashboard-signal);
+  font: 650 9px/1.2 var(--mono);
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.cache-summary-metric > strong {
+  color: var(--dashboard-ink);
+  font: 650 20px/1.05 var(--mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.045em;
+  white-space: nowrap;
+}
+
+.cache-overview-table-wrap {
+  padding: 10px 18px 18px;
+}
+
+.cache-overview-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.cache-overview-table th,
+.cache-overview-table td {
+  height: 34px;
+  padding: 5px 6px;
+  border-bottom: 1px solid #e4ebe8;
+}
+
+.cache-overview-table thead th {
+  height: 28px;
+  color: #73807c;
+  font: 11px var(--mono);
+  font-weight: 500;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+}
+
+.cache-overview-table th:first-child {
+  width: 46%;
+  text-align: left;
+}
+
+.cache-overview-table th:not(:first-child),
+.cache-overview-table td {
+  text-align: right;
+}
+
+.cache-overview-table tbody th {
+  color: #34413d;
+  font: 650 12px var(--mono);
+}
+
+.cache-overview-table tbody td {
+  color: #35433f;
+  font: 650 12px var(--mono);
+}
+
+.cache-overview-table .cache-cause-child th {
+  padding-left: 18px;
+  color: #74817c;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.cache-overview-table .cache-cause-child td {
+  color: #65736e;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.cache-overview-message {
+  margin: 0;
+  padding: 24px 22px;
+  color: var(--dashboard-muted);
+  font: 10px var(--mono);
+}
+
+.cache-overview-message.error {
+  color: var(--danger);
+}
+
+@media (max-width: 520px) {
+  .cache-summary-grid { margin-inline: 12px; }
+  .cache-summary-metric { padding-inline: 8px; }
+  .cache-summary-metric > strong { font-size: 17px; }
+  .cache-overview-table-wrap { padding-inline: 12px; }
+  .cache-overview-table th:first-child { width: 43%; }
+  .cache-overview-table th,
+  .cache-overview-table td { padding-inline: 3px; }
+  .cache-overview-table .cache-cause-child th { padding-left: 14px; }
+}

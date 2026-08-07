@@ -87,6 +87,8 @@ Deno.test("counts every root TTL miss in its elapsed-time bucket", () => {
     misses: {
       ...result.misses,
       attributedCost: 0,
+      underThirtyMinutesCost: 0,
+      thirtyMinutesToTwoHoursCost: 0,
       underTwoHoursCost: 0,
       twoToEightHoursCost: 0,
       eightHoursOrMoreCost: 0,
@@ -105,6 +107,12 @@ Deno.test("counts every root TTL miss in its elapsed-time bucket", () => {
       total: 3,
       attributedCost: 0,
       unpriced: 0,
+      underThirtyMinutes: 0,
+      underThirtyMinutesSessions: 0,
+      underThirtyMinutesCost: 0,
+      thirtyMinutesToTwoHours: 1,
+      thirtyMinutesToTwoHoursSessions: 1,
+      thirtyMinutesToTwoHoursCost: 0,
       underTwoHours: 1,
       underTwoHoursSessions: 1,
       underTwoHoursCost: 0,
@@ -229,11 +237,15 @@ Deno.test("aggregates precomputed cache misses without reclassifying them", () =
 Deno.test("counts each session once per TTL return-gap bucket", () => {
   const result = aggregateTtlMisses([
     call("affected", start),
-    call("affected", start + 30 * MINUTE),
+    call("affected", start + 20 * MINUTE),
     call("affected", start + 60 * MINUTE),
     call("affected", start + 4 * 60 * MINUTE),
   ], start, 90);
 
+  strictEqual(result.misses.underThirtyMinutes, 1);
+  strictEqual(result.misses.underThirtyMinutesSessions, 1);
+  strictEqual(result.misses.thirtyMinutesToTwoHours, 1);
+  strictEqual(result.misses.thirtyMinutesToTwoHoursSessions, 1);
   strictEqual(result.misses.underTwoHours, 2);
   strictEqual(result.misses.underTwoHoursSessions, 1);
   strictEqual(result.misses.twoToEightHours, 1);
@@ -303,6 +315,12 @@ Deno.test("separates subagent misses and keeps compactions outside TTL", () => {
       total: 0,
       attributedCost: 0,
       unpriced: 0,
+      underThirtyMinutes: 0,
+      underThirtyMinutesSessions: 0,
+      underThirtyMinutesCost: 0,
+      thirtyMinutesToTwoHours: 0,
+      thirtyMinutesToTwoHoursSessions: 0,
+      thirtyMinutesToTwoHoursCost: 0,
       underTwoHours: 0,
       underTwoHoursSessions: 0,
       underTwoHoursCost: 0,

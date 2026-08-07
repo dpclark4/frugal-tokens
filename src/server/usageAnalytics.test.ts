@@ -78,23 +78,31 @@ Deno.test("aggregates initial input by day and harness", () => {
     { harness: "claude-code", sessionStartedAt: secondDay, input: 800 },
   ]).response;
 
+  deepStrictEqual(response.initialInputSummary, {
+    median: 400,
+    average: 425,
+    sessions: 4,
+  });
   deepStrictEqual(response.initialInputDays, [
     {
       date: "2026-07-10",
       harness: "claude-code",
       median: 200,
+      average: 200,
       sessions: 2,
     },
     {
       date: "2026-07-10",
       harness: "codex",
       median: 500,
+      average: 500,
       sessions: 1,
     },
     {
       date: "2026-07-11",
       harness: "claude-code",
       median: 800,
+      average: 800,
       sessions: 1,
     },
   ]);

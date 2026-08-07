@@ -1,0 +1,55 @@
+.harness-overview-section {
+  color: var(--dashboard-ink);
+}
+
+.harness-overview-section > header {
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 0;
+}
+
+.harness-overview-section > header h2 {
+  flex: none;
+}
+
+.initial-input-summary {
+  display: flex;
+  align-items: baseline;
+  flex: none;
+  gap: 16px;
+  margin-left: auto;
+  color: #74817c;
+  font: 10px var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.initial-input-summary strong {
+  margin-left: 4px;
+  color: var(--dashboard-ink);
+  font-size: 16px;
+  letter-spacing: -.035em;
+}
+
+.harness-overview-section .bare-initial-input-chart {
+  height: 340px;
+  padding: 18px 18px 20px 8px;
+}
+
+.harness-overview-message {
+  margin: 0;
+  padding: 24px 22px;
+  color: var(--dashboard-muted);
+  font: 10px var(--mono);
+}
+
+.harness-overview-message.error {
+  color: var(--danger);
+}
+
+@media (max-width: 520px) {
+  .harness-overview-section .bare-initial-input-chart {
+    height: 300px;
+    padding-inline: 4px 10px;
+  }
+}

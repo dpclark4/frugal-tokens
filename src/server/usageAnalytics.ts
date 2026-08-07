@@ -43,6 +43,16 @@ function weekKey(date: string) {
   return day.subtract({ days: day.dayOfWeek - 1 }).toString();
 }
 
+function summarizeInitialInput(samples: InitialInputSample[]) {
+  if (samples.length === 0) return undefined;
+  const values = samples.map((sample) => sample.input).sort((a, b) => a - b);
+  return {
+    median: percentile(values, 0.5),
+    average: values.reduce((sum, value) => sum + value, 0) / values.length,
+    sessions: values.length,
+  };
+}
+
 function summarizeInitialInputs(samples: InitialInputSample[]) {
   return [
     ...Map.groupBy(
@@ -56,6 +66,7 @@ function summarizeInitialInputs(samples: InitialInputSample[]) {
       date: key.slice(0, separator),
       harness: cohort[0].harness,
       median: percentile(values, 0.5),
+      average: values.reduce((sum, value) => sum + value, 0) / values.length,
       sessions: values.length,
     };
   }).sort((a, b) =>
@@ -271,6 +282,7 @@ export function aggregateUsage(
             .toString(),
         }),
       ),
+      initialInputSummary: summarizeInitialInput(initialInputSamples),
       initialInputDays: summarizeInitialInputs(initialInputSamples),
       days: [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(
         ([date, models]) => ({
@@ -442,6 +454,7 @@ export function aggregateUsageRollups(
             .toString(),
         }),
       ),
+      initialInputSummary: summarizeInitialInput(initialInputSamples),
       initialInputDays: summarizeInitialInputs(initialInputSamples),
       days: [...modelDays.entries()].sort(([a], [b]) => a.localeCompare(b)).map(
         ([date, models]) => ({
