@@ -3,7 +3,7 @@
 A local, read-only view of token usage and reported cost in OpenCode, Claude
 Code, PI, and Codex sessions.
 
-Requires Deno 2.9 or newer.
+Requires [Deno 2.9 or newer](https://docs.deno.com/runtime/getting_started/installation/).
 
 ```sh
 cp .env.example .env
