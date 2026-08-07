@@ -3,13 +3,21 @@
 }
 
 .harness-overview-section > header {
+  justify-content: space-between;
+  gap: 24px;
   border-bottom: 0;
+}
+
+.harness-overview-section > header h2 {
+  flex: none;
 }
 
 .initial-input-summary {
   display: flex;
   align-items: baseline;
+  flex: none;
   gap: 16px;
+  margin-left: auto;
   color: #74817c;
   font: 10px var(--mono);
   font-variant-numeric: tabular-nums;

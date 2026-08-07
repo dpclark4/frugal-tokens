@@ -49,7 +49,6 @@ export function RecentSessions({
 
   useEffect(() => {
     let active = true;
-    setData(undefined);
     setError(undefined);
     setExpandedIDs(new Set());
     setDetails({});
@@ -73,9 +72,13 @@ export function RecentSessions({
     setError(undefined);
     try {
       await syncSessions();
-      window.location.reload();
+      const result = await getSessions(1, harness, missFilters);
+      setData(result);
+      setExpandedIDs(new Set());
+      setDetails({});
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Unable to refresh sessions");
+    } finally {
       setRefreshing(false);
     }
   }

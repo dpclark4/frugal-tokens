@@ -150,7 +150,6 @@ export function CacheOverview({ range, harness }: CacheOverviewProps) {
 
   useEffect(() => {
     let active = true;
-    setMetrics(undefined);
     setError(undefined);
     getCacheMissOverview(range, harness).then((result) => {
       if (active) setMetrics(result);

@@ -25,12 +25,9 @@ export function NewPage() {
     let active = true;
     let request = 0;
 
-    function load(clearExisting = false) {
+    function load() {
       const currentRequest = ++request;
-      if (clearExisting) {
-        setData(undefined);
-        setError(undefined);
-      }
+      setError(undefined);
       getActivityOverview(search.range, search.harness).then((result) => {
         if (active && currentRequest === request) {
           setData(result);
@@ -51,7 +48,7 @@ export function NewPage() {
       if (document.visibilityState === "visible") load();
     }
 
-    load(true);
+    load();
     const refreshInterval = window.setInterval(refreshVisibleOverview, 30_000);
     window.addEventListener("focus", refreshVisibleOverview);
     document.addEventListener("visibilitychange", refreshVisibleOverview);

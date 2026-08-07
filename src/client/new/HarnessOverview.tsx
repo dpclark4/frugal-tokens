@@ -16,7 +16,6 @@ export function HarnessOverview({ range, harness }: HarnessOverviewProps) {
 
   useEffect(() => {
     let active = true;
-    setUsage(undefined);
     setError(undefined);
     getUsage(range, harness).then((result) => {
       if (active) setUsage(result);
