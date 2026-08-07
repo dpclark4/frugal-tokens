@@ -1130,13 +1130,13 @@ h1 {
 }
 
 .initial-input-tooltip {
-  min-width: 340px;
+  min-width: 410px;
 }
 
 .initial-input-tooltip-header,
 .initial-input-tooltip-rows > div {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) 72px 62px;
+  grid-template-columns: minmax(120px, 1fr) 68px 68px 62px;
   align-items: center;
   gap: 12px;
 }

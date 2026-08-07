@@ -174,7 +174,6 @@ export function SessionShape({ range, harness }: SessionShapeProps) {
 
   useEffect(() => {
     let active = true;
-    setData(undefined);
     setError(undefined);
     getSessionShape(range, harness).then((result) => {
       if (active) setData(result);

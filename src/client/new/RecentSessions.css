@@ -1,0 +1,10 @@
+.new-recent-sessions {
+  margin: 0 12px 12px;
+}
+
+.new-recent-sessions .sessions-panel {
+  overflow: hidden;
+  border-color: var(--dashboard-rule);
+  border-radius: 8px;
+  box-shadow: none;
+}

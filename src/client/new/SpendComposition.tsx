@@ -301,7 +301,13 @@ function CompositionChart(
           margin={{ top: 10, right: 4, bottom: 2, left: 0 }}
           barCategoryGap="18%"
         >
-          <CartesianGrid vertical={false} stroke="#e4ebe8" />
+          <CartesianGrid
+            yAxisId="volume"
+            vertical={false}
+            syncWithTicks
+            stroke="#d7e0dd"
+            strokeDasharray="3 5"
+          />
           <XAxis
             dataKey="date"
             tickFormatter={(value) =>

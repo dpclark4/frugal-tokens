@@ -10,6 +10,7 @@ import type {
 import { computeModelCallCost, estimateModelCacheMissCost } from "./pricing.ts";
 import type { UsageCall } from "./usage.ts";
 
+const THIRTY_MINUTES_MS = 30 * 60 * 1_000;
 const TWO_HOURS_MS = 2 * 60 * 60 * 1_000;
 const EIGHT_HOURS_MS = 8 * 60 * 60 * 1_000;
 
@@ -129,6 +130,12 @@ export function aggregateTtlMisses(
       total: 0,
       attributedCost: 0,
       unpriced: 0,
+      underThirtyMinutes: 0,
+      underThirtyMinutesSessions: 0,
+      underThirtyMinutesCost: 0,
+      thirtyMinutesToTwoHours: 0,
+      thirtyMinutesToTwoHoursSessions: 0,
+      thirtyMinutesToTwoHoursCost: 0,
       underTwoHours: 0,
       underTwoHoursSessions: 0,
       underTwoHoursCost: 0,
@@ -259,6 +266,8 @@ export function aggregateTtlMisses(
       result.hasUnpricedAffectedSessionCost ||= hasUnpricedRootSessionCost;
     }
     result.misses.total += rootMisses.length;
+    let hasUnderThirtyMinutesMiss = false;
+    let hasThirtyMinutesToTwoHoursMiss = false;
     let hasUnderTwoHoursMiss = false;
     let hasTwoToEightHoursMiss = false;
     let hasEightHoursOrMoreMiss = false;
@@ -269,6 +278,16 @@ export function aggregateTtlMisses(
         hasUnderTwoHoursMiss = true;
         result.misses.underTwoHours++;
         result.misses.underTwoHoursCost += miss.actualMissedCost ?? 0;
+        if (miss.gap < THIRTY_MINUTES_MS) {
+          hasUnderThirtyMinutesMiss = true;
+          result.misses.underThirtyMinutes++;
+          result.misses.underThirtyMinutesCost += miss.actualMissedCost ?? 0;
+        } else {
+          hasThirtyMinutesToTwoHoursMiss = true;
+          result.misses.thirtyMinutesToTwoHours++;
+          result.misses.thirtyMinutesToTwoHoursCost +=
+            miss.actualMissedCost ?? 0;
+        }
       } else if (miss.gap < EIGHT_HOURS_MS) {
         hasTwoToEightHoursMiss = true;
         result.misses.twoToEightHours++;
@@ -278,6 +297,10 @@ export function aggregateTtlMisses(
         result.misses.eightHoursOrMore++;
         result.misses.eightHoursOrMoreCost += miss.actualMissedCost ?? 0;
       }
+    }
+    if (hasUnderThirtyMinutesMiss) result.misses.underThirtyMinutesSessions++;
+    if (hasThirtyMinutesToTwoHoursMiss) {
+      result.misses.thirtyMinutesToTwoHoursSessions++;
     }
     if (hasUnderTwoHoursMiss) result.misses.underTwoHoursSessions++;
     if (hasTwoToEightHoursMiss) result.misses.twoToEightHoursSessions++;

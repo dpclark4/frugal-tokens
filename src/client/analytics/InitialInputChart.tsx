@@ -77,6 +77,7 @@ function InitialInputTooltip({ active, payload }: {
       <div className="initial-input-tooltip-header" aria-hidden="true">
         <span>Harness</span>
         <span>Median</span>
+        <span>Average</span>
         <span>Sessions</span>
       </div>
       <div className="initial-input-tooltip-rows">
@@ -91,6 +92,7 @@ function InitialInputTooltip({ active, payload }: {
                 {harness.label}
               </span>
               <strong>{compact.format(cohort.median)}</strong>
+              <strong>{compact.format(cohort.average)}</strong>
               <span>
                 {cohort.sessions}
                 {cohort.sessions < 5 && (
@@ -108,7 +110,15 @@ function InitialInputTooltip({ active, payload }: {
   );
 }
 
-export function InitialInputChart({ usage }: { usage: UsageResponse }) {
+export function InitialInputChart({
+  usage,
+  bare = false,
+  showLegend = !bare,
+}: {
+  usage: UsageResponse;
+  bare?: boolean;
+  showLegend?: boolean;
+}) {
   const cohorts = usage.initialInputDays;
   const cohortsByDate = Map.groupBy(cohorts, (cohort) => cohort.date);
   const observedDates = [...cohortsByDate.keys()].sort();
@@ -149,14 +159,16 @@ export function InitialInputChart({ usage }: { usage: UsageResponse }) {
 
   return (
     <>
-      <div className="usage-chart-heading">
-        <p className="chart-total">
-          <strong>
-            {sessions} session {sessions === 1 ? "start" : "starts"}
-          </strong>
-        </p>
-      </div>
-      <div className="usage-chart-body">
+      {!bare && (
+        <div className="usage-chart-heading">
+          <p className="chart-total">
+            <strong>
+              {sessions} session {sessions === 1 ? "start" : "starts"}
+            </strong>
+          </p>
+        </div>
+      )}
+      <div className={`usage-chart-body${bare ? " bare-initial-input-chart" : ""}`}>
         {data.length === 0
           ? <div className="chart-message">No sessions in this range.</div>
           : (
@@ -229,7 +241,7 @@ export function InitialInputChart({ usage }: { usage: UsageResponse }) {
             </ResponsiveContainer>
           )}
       </div>
-      {visibleHarnesses.length > 0 && (
+      {showLegend && visibleHarnesses.length > 0 && (
         <div className="model-summary" aria-label="Harness legend">
           {visibleHarnesses.map(({ value, label, color }) => (
             <span key={value} className="model-summary-item">
