@@ -660,6 +660,22 @@ export class ConversationCompatibilityRepository {
   ): StoredOverviewRollup[] {
     const rows = this.db.prepare(`
       SELECT c.id, c.title, so.harness, cr.overview_json,
+        COALESCE((
+          WITH RECURSIVE descendants(id) AS (
+            SELECT launch.child_conversation_id
+            FROM conversation_subagent_launches launch
+            WHERE launch.parent_conversation_id = c.id
+            UNION ALL
+            SELECT launch.child_conversation_id
+            FROM conversation_subagent_launches launch
+            JOIN descendants parent
+              ON launch.parent_conversation_id = parent.id
+          )
+          SELECT SUM(COALESCE(child.computed_cost, child.reported_cost, 0))
+          FROM descendants
+          JOIN conversation_rollups child
+            ON child.conversation_id = descendants.id
+        ), 0) AS subagent_spend,
         COALESCE(c.public_id, c.external_id) AS session_public_id
       FROM conversation_rollups cr
       JOIN conversations c ON c.id = cr.conversation_id
@@ -676,6 +692,7 @@ export class ConversationCompatibilityRepository {
       title: string;
       harness: Harness;
       overview_json: string;
+      subagent_spend: number;
       session_public_id: string;
     }>;
     return rows.map((row) => ({
@@ -683,6 +700,7 @@ export class ConversationCompatibilityRepository {
       sessionID: row.session_public_id,
       title: row.title,
       harness: row.harness,
+      subagentSpend: row.subagent_spend,
       overview: JSON.parse(row.overview_json),
     }));
   }

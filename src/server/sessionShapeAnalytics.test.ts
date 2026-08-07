@@ -54,6 +54,8 @@ Deno.test("aggregates compact rollups into in-range session distributions", () =
   sessionShapeResponseSchema.parse(result);
   strictEqual(result.sampleSize, 2);
   strictEqual(result.unpricedSessions, 0);
+  strictEqual(result.multiDaySessions, 0);
+  strictEqual(result.multiDaySessionRate, 0);
   deepStrictEqual(result.metrics, [
     {
       key: "cost",

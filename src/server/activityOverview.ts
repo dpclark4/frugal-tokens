@@ -189,10 +189,13 @@ export function aggregateActivityOverview(
   end: number,
   rangeDays: 30 | 90,
   timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone,
+  spendAtMissCalls = 0,
 ): ActivityOverviewResponse {
   const days = new Map<string, DayBucket>();
   const activityIntervals: Interval[] = [];
   const inactivityBuffer = ACTIVITY_INACTIVITY_MINUTES * 60_000;
+  const rootSessionSpend: number[] = [];
+  let subagentSpend = 0;
   let sessions = 0;
 
   for (const root of roots) {
@@ -201,6 +204,12 @@ export function aggregateActivityOverview(
     );
     if (rangedDays.length === 0) continue;
     sessions++;
+    if (rangedDays.some((day) => day.hasPricedCost)) {
+      rootSessionSpend.push(
+        rangedDays.reduce((sum, day) => sum + day.cost, 0),
+      );
+    }
+    subagentSpend += root.subagentSpend ?? 0;
 
     for (const interval of root.overview.executionIntervals) {
       if (
@@ -270,6 +279,17 @@ export function aggregateActivityOverview(
     0,
   );
 
+  const pricedSessionSpend = rootSessionSpend.reduce(
+    (sum, spend) => sum + spend,
+    0,
+  );
+  // Rank one selected-period spend total per root session and consistently
+  // include ceil(10% of priced roots), so a non-empty sample always has a top.
+  const topSessionCount = Math.ceil(rootSessionSpend.length * 0.1);
+  const topDecileSpend = rootSessionSpend.toSorted((a, b) => b - a)
+    .slice(0, topSessionCount)
+    .reduce((sum, spend) => sum + spend, 0);
+
   return {
     rangeDays,
     startDate: dateKey(start),
@@ -281,6 +301,11 @@ export function aggregateActivityOverview(
       tokenReuse: processedInput === 0 ? undefined : cacheRead / processedInput,
       spend: [...days.values()].reduce((sum, day) => sum + day.spend, 0),
       hasUnpricedCost: [...days.values()].some((day) => day.hasUnpricedCost),
+      spendAtMissCalls,
+      subagentSpend,
+      topDecileSpendShare: pricedSessionSpend === 0
+        ? 0
+        : topDecileSpend / pricedSessionSpend,
     },
     workRhythm: aggregateWorkRhythm(roots, start, end, timeZone),
     spendComposition: spendComposition(days, start, end),

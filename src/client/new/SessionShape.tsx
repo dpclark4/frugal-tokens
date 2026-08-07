@@ -67,9 +67,21 @@ function position(value: number, minimum: number, maximum: number) {
     90 * Math.max(0, Math.min(1, (value - minimum) / (maximum - minimum)));
 }
 
-function DistributionStrip({ metric }: { metric: DistributionMetric }) {
+function DistributionStrip({
+  metric,
+  multiDaySessionRate,
+}: {
+  metric: DistributionMetric;
+  multiDaySessionRate?: number;
+}) {
   const { distribution } = metric;
-  const { label, detail } = metricDetails[metric.key];
+  const { label } = metricDetails[metric.key];
+  const detail = metric.key === "observedSpan" &&
+      multiDaySessionRate !== undefined
+    ? `first to last event · ${
+      decimal.format(multiDaySessionRate * 100)
+    }% multi-day`
+    : metricDetails[metric.key].detail;
   if (!distribution) {
     return (
       <tr>
@@ -236,7 +248,11 @@ export function SessionShape({ range, harness }: SessionShapeProps) {
           </thead>
           <tbody>
             {data?.metrics.map((metric) => (
-              <DistributionStrip metric={metric} key={metric.key} />
+              <DistributionStrip
+                metric={metric}
+                multiDaySessionRate={data.multiDaySessionRate}
+                key={metric.key}
+              />
             ))}
           </tbody>
         </table>

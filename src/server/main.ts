@@ -511,12 +511,17 @@ app.get("/api/activity-overview", (context) => {
   );
   const loadDuration = performance.now() - loadStartedAt;
   const aggregationStartedAt = performance.now();
+  const spendAtMissCalls = readRepository.listCacheMisses(
+    start,
+    selectedHarness,
+  ).reduce((sum, miss) => sum + (miss.modelCallCost ?? 0), 0);
   const overview = aggregateActivityOverview(
     loaded,
     start,
     end,
     range,
     timeZone,
+    spendAtMissCalls,
   );
   const aggregationDuration = performance.now() - aggregationStartedAt;
   const totalDuration = performance.now() - requestStartedAt;

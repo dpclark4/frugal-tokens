@@ -11,6 +11,7 @@ export type StoredOverviewRollup = {
   sessionID?: string;
   title?: string;
   harness?: SessionDetail["harness"];
+  subagentSpend?: number;
   overview: SessionOverviewRollup;
 };
 

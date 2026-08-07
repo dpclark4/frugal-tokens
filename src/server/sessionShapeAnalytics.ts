@@ -38,6 +38,7 @@ export function aggregateSessionShape(
   const peakContexts: number[] = [];
   const tokenReuse: number[] = [];
   let unpricedSessions = 0;
+  let multiDaySessions = 0;
 
   for (const root of roots) {
     const days = root.overview.days.filter((day) =>
@@ -61,6 +62,7 @@ export function aggregateSessionShape(
       startingContexts.push(root.initialInput);
     }
     if (input > 0) tokenReuse.push(cacheRead / input);
+    if (days.length > 1) multiDaySessions++;
     if (days.some((day) => day.hasUnpricedCost)) unpricedSessions++;
   }
 
@@ -68,6 +70,10 @@ export function aggregateSessionShape(
     rangeDays,
     sampleSize: inputs.length,
     unpricedSessions,
+    multiDaySessions,
+    multiDaySessionRate: inputs.length === 0
+      ? 0
+      : multiDaySessions / inputs.length,
     metrics: [
       { key: "cost", distribution: distribution(costs) },
       { key: "processedInput", distribution: distribution(inputs) },

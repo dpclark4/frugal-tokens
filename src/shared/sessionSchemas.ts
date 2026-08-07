@@ -476,6 +476,9 @@ export const activityOverviewResponseSchema = z.object({
     tokenReuse: z.number().min(0).max(1).optional(),
     spend: z.number().nonnegative(),
     hasUnpricedCost: z.boolean(),
+    spendAtMissCalls: z.number().nonnegative(),
+    subagentSpend: z.number().nonnegative(),
+    topDecileSpendShare: z.number().min(0).max(1),
   }),
   workRhythm: workRhythmDataSchema,
   spendComposition: spendCompositionSchema,
@@ -764,6 +767,8 @@ export const sessionShapeResponseSchema = z.object({
   rangeDays: z.union([z.literal(30), z.literal(90)]),
   sampleSize: z.number().int().nonnegative(),
   unpricedSessions: z.number().int().nonnegative(),
+  multiDaySessions: z.number().int().nonnegative(),
+  multiDaySessionRate: z.number().min(0).max(1),
   metrics: z.array(z.object({
     key: sessionShapeMetricKeySchema,
     distribution: z.object({

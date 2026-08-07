@@ -1,178 +1,123 @@
 import type { ActivityOverviewResponse } from "../../shared/sessionSchemas.ts";
-import { compact, currency, decimal, integer, oneDecimal } from "./formatters.ts";
+import {
+  compact,
+  currency,
+  decimal,
+  integer,
+  oneDecimal,
+} from "./formatters.ts";
 import "./UsageOverview.css";
 
-type SummaryMetricProps = {
+type MetricProps = {
   label: string;
   value: string;
-  detail?: string;
-  comparison?: string;
-  emphasis?: "signal";
+  secondary: string;
+  tier: "primary" | "secondary";
 };
 
-function SummaryMetric({
-  label,
-  value,
-  detail,
-  comparison,
-  emphasis,
-}: SummaryMetricProps) {
+function Metric({ label, value, secondary, tier }: MetricProps) {
   return (
-    <div className={`summary-metric${emphasis ? ` ${emphasis}` : ""}`}>
-      <span className="summary-metric-label">{label}</span>
+    <div className={`usage-metric usage-metric-${tier}`}>
+      <span className="usage-metric-label">{label}</span>
       <strong>{value}</strong>
-      {detail && <small className="summary-metric-detail">{detail}</small>}
-      {comparison && (
-        <small className="summary-metric-comparison">{comparison}</small>
-      )}
+      <small>{secondary}</small>
     </div>
   );
 }
 
-function SummarySecondary({
-  label,
-  value,
-  detail,
-  valueTitle,
-  info,
-}: {
-  label: string;
-  value: string;
-  detail: string;
-  valueTitle?: string;
-  info?: string;
-}) {
-  return (
-    <div className="summary-secondary">
-      <div className="summary-secondary-label">
-        <span>{label}</span>
-        {info && (
-          <button
-            type="button"
-            className="summary-secondary-info"
-            aria-label={`About ${label.toLowerCase()}`}
-          >
-            <span aria-hidden="true">i</span>
-            <span className="summary-secondary-tooltip">{info}</span>
-          </button>
-        )}
-      </div>
-      <strong title={valueTitle}>{value}</strong>
-      <small>{detail}</small>
-    </div>
-  );
+// TODO: Replace these temporary values with a preceding-period query.
+const mockComparisons = {
+  spend: "+18% vs prior 30d",
+  processedInput: "+21% vs prior 30d",
+  tokenReuse: "+0.4 pp vs prior 30d",
+};
+
+function share(value: number, total: number) {
+  return total === 0 ? "0.0%" : `${decimal.format(value / total * 100)}%`;
 }
-
-// TODO: Replace these temporary UI values with a true preceding-period query
-// and cache/subagent aggregates from the API.
-const mockSummaryComparisons = {
-  spend: "+18% vs previous 30d",
-  sessions: "+12% vs previous 30d",
-  processedInput: "+21% vs previous 30d",
-  tokenReuse: "+0.4 pp vs previous 30d",
-  spendCoverageComparable: true,
-};
-
-const mockSummarySecondary = {
-  cacheMissSessions: 149,
-  cacheMissShare: "61.1%",
-  missCost: 21.79,
-  subagentSpend: 24.18,
-  subagentShare: "5.6% of priced spend",
-};
 
 export function UsageOverview({ data }: { data?: ActivityOverviewResponse }) {
-  const costPerMillion = data && data.summary.processedInput > 0
-    ? data.summary.spend / (data.summary.processedInput / 1_000_000)
+  const summary = data?.summary;
+  const costPerMillion = summary && summary.processedInput > 0
+    ? summary.spend / (summary.processedInput / 1_000_000)
     : undefined;
-  const sessionsPerActiveDay = data && data.summary.activeDays > 0
-    ? data.summary.sessions / data.summary.activeDays
+  const sessionsPerActiveDay = summary && summary.activeDays > 0
+    ? summary.sessions / summary.activeDays
     : undefined;
-  const showComparisons = data?.rangeDays === 30;
-  const spendDetail = !data
-    ? "Loading…"
-    : data.summary.hasUnpricedCost
-    ? "excludes unpriced usage"
-    : "all usage priced";
-  const effectiveRate = costPerMillion === undefined
-    ? "—"
-    : `${currency.format(costPerMillion)} / 1M processed`;
-  const effectiveRateDetail = data ? "based on priced spend" : "Loading…";
-  const sessionDetail = !data
-    ? "Loading…"
-    : sessionsPerActiveDay === undefined
-    ? "no active days"
-    : `${integer.format(data.summary.activeDays)} active days · ${
-      oneDecimal.format(sessionsPerActiveDay)
-    }/day`;
+  const comparisons = data?.rangeDays === 30;
+  const loading = data ? "—" : "Loading…";
 
   return (
     <section className="signal-summary" aria-labelledby="signal-summary-title">
-      <div className="dashboard-section-heading summary-heading">
+      <header className="usage-overview-header">
         <h2 id="signal-summary-title">Usage overview</h2>
-      </div>
-      <div className="summary-metrics">
-        <SummaryMetric
+      </header>
+      <div className="usage-metric-grid">
+        <Metric
           label="Priced spend"
-          value={data ? currency.format(data.summary.spend) : "—"}
-          detail={spendDetail}
-          comparison={showComparisons &&
-              mockSummaryComparisons.spendCoverageComparable
-            ? mockSummaryComparisons.spend
-            : undefined}
+          value={summary ? currency.format(summary.spend) : "—"}
+          secondary={comparisons ? mockComparisons.spend : loading}
+          tier="primary"
         />
-        <SummaryMetric
+        <Metric
           label="Sessions"
-          value={data ? integer.format(data.summary.sessions) : "—"}
-          detail={sessionDetail}
-          comparison={showComparisons
-            ? mockSummaryComparisons.sessions
-            : undefined}
+          value={summary ? integer.format(summary.sessions) : "—"}
+          secondary={summary && sessionsPerActiveDay !== undefined
+            ? `${integer.format(summary.activeDays)} days · ${
+              oneDecimal.format(sessionsPerActiveDay)
+            }/day`
+            : loading}
+          tier="primary"
         />
-        <SummaryMetric
+        <Metric
           label="Processed input"
-          value={data ? compact.format(data.summary.processedInput) : "—"}
-          detail={data ? "across model calls" : "Loading…"}
-          comparison={showComparisons
-            ? mockSummaryComparisons.processedInput
-            : undefined}
+          value={summary ? compact.format(summary.processedInput) : "—"}
+          secondary={comparisons ? mockComparisons.processedInput : loading}
+          tier="primary"
         />
-        <SummaryMetric
+        <Metric
           label="Token reuse"
-          value={data?.summary.tokenReuse === undefined
+          value={summary?.tokenReuse === undefined
             ? "—"
-            : `${decimal.format(data.summary.tokenReuse * 100)}%`}
-          detail={data ? "token-weighted" : "Loading…"}
-          comparison={showComparisons
-            ? mockSummaryComparisons.tokenReuse
-            : undefined}
-          emphasis="signal"
+            : `${decimal.format(summary.tokenReuse * 100)}%`}
+          secondary={comparisons ? mockComparisons.tokenReuse : loading}
+          tier="primary"
         />
-      </div>
-      <div className="summary-secondary-row">
-        <SummarySecondary
-          label="Minimum effective rate"
-          value={effectiveRate}
-          detail={effectiveRateDetail}
-          info="Priced spend divided by all processed input. This is a lower bound because some usage could not be priced."
+        <Metric
+          label="Cost / 1M processed"
+          value={costPerMillion === undefined
+            ? "—"
+            : currency.format(costPerMillion)}
+          secondary={data ? "based on priced spend" : "Loading…"}
+          tier="secondary"
         />
-        <SummarySecondary
-          label="Cache misses"
-          value={`${
-            integer.format(mockSummarySecondary.cacheMissSessions)
-          } sessions · ${mockSummarySecondary.cacheMissShare}`}
-          valueTitle="149 of 244 sessions had at least one classified cache miss. $21.79 is spend observed at miss calls, not necessarily avoidable cost."
-          detail={`${
-            currency.format(mockSummarySecondary.missCost)
-          } at miss calls`}
+        <Metric
+          label="Cache-miss cost"
+          value={summary ? currency.format(summary.spendAtMissCalls) : "—"}
+          secondary={summary
+            ? `${
+              share(summary.spendAtMissCalls, summary.spend)
+            } of priced spend`
+            : "Loading…"}
+          tier="secondary"
         />
-        <SummarySecondary
-          label="Subagents"
-          value={`${currency.format(mockSummarySecondary.subagentSpend)} spend`}
-          detail={mockSummarySecondary.subagentShare}
+        <Metric
+          label="Subagent spend"
+          value={summary ? currency.format(summary.subagentSpend) : "—"}
+          secondary={summary
+            ? `${share(summary.subagentSpend, summary.spend)} of priced spend`
+            : "Loading…"}
+          tier="secondary"
+        />
+        <Metric
+          label="Top 10% of sessions"
+          value={summary
+            ? `${decimal.format(summary.topDecileSpendShare * 100)}%`
+            : "—"}
+          secondary={data ? "of priced spend" : "Loading…"}
+          tier="secondary"
         />
       </div>
     </section>
   );
 }
-
