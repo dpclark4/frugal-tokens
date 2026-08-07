@@ -152,6 +152,41 @@
   box-shadow: 0 0 0 1px #3dbb7240;
 }
 
+.sd-session-badges button {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 9px;
+  border: 1px solid #5792c7;
+  border-radius: 7px;
+  background: #3778ae24;
+  color: #a9d5ff;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.sd-session-badges button:hover:not(:disabled),
+.sd-session-badges button:focus-visible {
+  border-color: var(--sd-accent);
+  background: #3778ae3b;
+  color: var(--sd-ink);
+}
+
+.sd-session-badges button:disabled {
+  cursor: default;
+  opacity: .65;
+}
+
+.sd-launch-error {
+  flex: none;
+  padding: 9px 26px;
+  border-bottom: 1px solid #ee5c6145;
+  background: #ee5c6112;
+  color: #ff9b9e;
+  font: 11.5px/1.45 var(--mono);
+}
+
 .sd-metrics {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

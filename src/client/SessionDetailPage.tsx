@@ -35,7 +35,7 @@ import {
   computeModelCallCost,
   counterfactualModelIDs,
 } from "../shared/modelPricing.ts";
-import { getSession } from "./api.ts";
+import { getSession, openSessionInGhostty } from "./api.ts";
 import { harnessIcon, harnessName } from "./harness.ts";
 import "./SessionDetailPage.css";
 
@@ -1351,6 +1351,8 @@ export function SessionDetailPage() {
   const navigate = route.useNavigate();
   const [session, setSession] = useState<SessionDetail>();
   const [error, setError] = useState<string>();
+  const [ghosttyOpening, setGhosttyOpening] = useState(false);
+  const [ghosttyError, setGhosttyError] = useState<string>();
   const [collapsedTurnIDs, setCollapsedTurnIDs] = useState<Set<string>>(
     () => new Set(),
   );
@@ -1379,6 +1381,20 @@ export function SessionDetailPage() {
   const backQuery = new URLSearchParams({ harness });
   if (misses) backQuery.set("misses", misses);
   const backHref = `/?${backQuery}`;
+
+  async function openInGhostty() {
+    setGhosttyOpening(true);
+    setGhosttyError(undefined);
+    try {
+      await openSessionInGhostty(sessionId, harness);
+    } catch (reason) {
+      setGhosttyError(
+        reason instanceof Error ? reason.message : "Unable to open Ghostty",
+      );
+    } finally {
+      setGhosttyOpening(false);
+    }
+  }
   if (!session) {
     return (
       <main className="session-detail-page">
@@ -1466,8 +1482,26 @@ export function SessionDetailPage() {
                 <Sparkles size={12} />Thinking {session.thinking.latest}
               </span>
             )}
+            {(session.harness === "pi" || session.harness === "opencode" ||
+              session.harness === "claude-code" ||
+              session.harness === "codex") &&
+              session.workingDirectory &&
+              (session.harness !== "pi" || session.sourcePath) && (
+              <button
+                type="button"
+                disabled={ghosttyOpening}
+                onClick={openInGhostty}
+              >
+                <TerminalSquare size={13} />
+                {ghosttyOpening ? "Opening…" : "Open in Ghostty"}
+              </button>
+            )}
           </div>
         </header>
+
+        {ghosttyError && (
+          <div className="sd-launch-error" role="alert">{ghosttyError}</div>
+        )}
 
         <div className="sd-metrics">
           <DetailMetric

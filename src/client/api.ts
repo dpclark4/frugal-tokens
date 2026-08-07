@@ -134,3 +134,18 @@ export async function getSession(id: string, harness: string) {
     await getJson(`/api/sessions/${encodeURIComponent(id)}?harness=${harness}`),
   );
 }
+
+export async function openSessionInGhostty(id: string, harness: string) {
+  const query = new URLSearchParams({ harness });
+  const response = await fetch(
+    `${apiBaseUrl}/api/sessions/${
+      encodeURIComponent(id)
+    }/open-in-ghostty?${query}`,
+    { method: "POST" },
+  );
+  if (response.ok) return;
+  const body = await response.json().catch(() => undefined) as
+    | { error?: string }
+    | undefined;
+  throw new Error(body?.error ?? `Request failed (${response.status})`);
+}

@@ -1,5 +1,5 @@
 import { type Context, Hono } from "hono";
-import { join } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { cors } from "hono/cors";
 import { serveStatic } from "hono/deno";
 import { createMiddleware } from "hono/factory";
@@ -784,6 +784,128 @@ app.get("/api/sessions/:id", (context) => {
   return session
     ? context.json(analyzeSessionCache(priceSessionDetail(session)))
     : context.json({ error: "Session not found" }, 404);
+});
+
+function isLoopbackHostname(hostname: string) {
+  return hostname === "localhost" || hostname === "127.0.0.1" ||
+    hostname === "[::1]" || hostname === "::1";
+}
+
+app.post("/api/sessions/:id/open-in-ghostty", async (context) => {
+  const requestHostname = new URL(context.req.url).hostname;
+  const origin = context.req.header("origin");
+  if (
+    !isLoopbackHostname(requestHostname) ||
+    (origin !== undefined && !isLoopbackHostname(new URL(origin).hostname))
+  ) {
+    return context.json({ error: "Ghostty can only be opened locally" }, 403);
+  }
+  if (Deno.build.os !== "darwin") {
+    return context.json(
+      { error: "Opening Ghostty is only supported on macOS" },
+      501,
+    );
+  }
+  const harness = context.req.query("harness");
+  if (
+    harness !== "pi" && harness !== "opencode" &&
+    harness !== "claude-code" && harness !== "codex"
+  ) {
+    return context.json({ error: "Harness cannot be opened in Ghostty" }, 400);
+  }
+  const session = readRepository.getSession(harness, context.req.param("id"));
+  if (!session?.workingDirectory) {
+    return context.json(
+      { error: "Session working directory is unavailable" },
+      404,
+    );
+  }
+
+  try {
+    const workingDirectory = await Deno.realPath(
+      expandHomePath(session.workingDirectory),
+    );
+    if (!(await Deno.stat(workingDirectory)).isDirectory) {
+      return context.json(
+        { error: "Session working directory is unavailable" },
+        409,
+      );
+    }
+
+    let sessionCommand: string[];
+    if (harness === "opencode") {
+      sessionCommand = ["opencode", "--session", session.id];
+    } else if (harness === "claude-code") {
+      const claudeSessionID = session.sourcePath?.split("/").at(-1)?.replace(
+        /\.jsonl$/,
+        "",
+      ) ?? session.id.split("/").at(-1);
+      if (!claudeSessionID) {
+        return context.json({ error: "Claude session ID is unavailable" }, 404);
+      }
+      sessionCommand = ["claude", "--resume", claudeSessionID];
+    } else if (harness === "codex") {
+      const codexSessionID = [session.id, session.sourcePath ?? ""].flatMap(
+        (value) =>
+          value.match(
+            /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi,
+          ) ?? [],
+      ).at(-1);
+      if (!codexSessionID) {
+        return context.json({ error: "Codex session ID is unavailable" }, 404);
+      }
+      sessionCommand = ["codex", "resume", codexSessionID];
+    } else {
+      if (piDirectory === undefined || !session.sourcePath) {
+        return context.json({ error: "Pi session files are unavailable" }, 404);
+      }
+      const sessionRoot = await Deno.realPath(piDirectory);
+      const sessionPath = await Deno.realPath(
+        resolve(sessionRoot, session.sourcePath),
+      );
+      const pathFromRoot = relative(sessionRoot, sessionPath);
+      if (
+        pathFromRoot.startsWith("..") ||
+        resolve(sessionRoot, pathFromRoot) !== sessionPath
+      ) {
+        return context.json({ error: "Invalid Pi session path" }, 400);
+      }
+      if (!(await Deno.stat(sessionPath)).isFile) {
+        return context.json({ error: "Pi session file is unavailable" }, 404);
+      }
+      sessionCommand = ["pi", "--session", sessionPath];
+    }
+
+    const command = new Deno.Command("open", {
+      args: [
+        "-na",
+        "Ghostty.app",
+        "--args",
+        `--working-directory=${workingDirectory}`,
+        "--window-save-state=never",
+        "--quit-after-last-window-closed=true",
+        "-e",
+        ...sessionCommand,
+      ],
+      stdout: "null",
+      stderr: "piped",
+    });
+    const result = await command.output();
+    if (!result.success) {
+      const detail = new TextDecoder().decode(result.stderr).trim();
+      throw new Error(detail || "Ghostty could not be opened");
+    }
+    return context.json({ status: "opened" });
+  } catch (error) {
+    const message = error instanceof Deno.errors.NotFound
+      ? "Session file, working directory, or Ghostty is unavailable"
+      : error instanceof Deno.errors.PermissionDenied
+      ? "The server is not allowed to launch Ghostty"
+      : error instanceof Error
+      ? error.message
+      : "Ghostty could not be opened";
+    return context.json({ error: message }, 500);
+  }
 });
 
 app.get(
