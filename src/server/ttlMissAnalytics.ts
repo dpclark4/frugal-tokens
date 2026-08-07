@@ -30,6 +30,7 @@ function cacheMisses(calls: UsageCall[]) {
       call.tokens,
       call.model,
       call.startedAt,
+      call.provider,
     );
     misses.push({
       gap: call.startedAt - previous.startedAt,
@@ -176,6 +177,7 @@ export function aggregateTtlMisses(
         call.tokens,
         call.model,
         call.startedAt,
+        call.provider,
       );
       if (cost === undefined) result.hasUnpricedTotalCost = true;
       else result.totalCost += cost;
@@ -220,6 +222,7 @@ export function aggregateTtlMisses(
           call.tokens,
           call.model,
           call.startedAt,
+          call.provider,
         );
         if (cost === undefined) hasUnpricedRootSessionCost = true;
         else rootSessionCost += cost;

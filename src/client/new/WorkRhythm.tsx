@@ -91,8 +91,13 @@ function WeekdayTooltip({ active, payload }: {
     <div className="rhythm-tooltip">
       <strong>{row.label}</strong>
       <span>{formatDuration(row.averageMinutes)} average per {row.label}</span>
-      <span>{formatDuration(row.totalMinutes)} total across {row.occurrences} {row.label}s</span>
-      <span>{row.activeOccurrences} of {row.occurrences} {row.label}s active</span>
+      <span>
+        {formatDuration(row.totalMinutes)} total across {row.occurrences}{" "}
+        {row.label}s
+      </span>
+      <span>
+        {row.activeOccurrences} of {row.occurrences} {row.label}s active
+      </span>
     </div>
   );
 }
@@ -114,35 +119,109 @@ function HourlyTooltip({ active, payload }: {
 }
 
 function WeekdayChart({ data }: { data: WorkRhythmData["weekdayActivity"] }) {
-  const summary = data.map((row) => `${row.label} ${formatDuration(row.averageMinutes)}`).join(", ");
+  const summary = data.map((row) =>
+    `${row.label} ${formatDuration(row.averageMinutes)}`
+  ).join(", ");
   return (
-    <div className="weekday-chart" role="img" tabIndex={0} aria-label={`Average estimated active time per weekday occurrence: ${summary}.`}>
+    <div
+      className="weekday-chart"
+      role="img"
+      tabIndex={0}
+      aria-label={`Average estimated active time per weekday occurrence: ${summary}.`}
+    >
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} layout="vertical" margin={{ top: 2, right: 76, bottom: 2, left: 4 }}>
+        <BarChart
+          data={data}
+          layout="vertical"
+          margin={{ top: 2, right: 76, bottom: 2, left: 4 }}
+        >
           <XAxis type="number" hide domain={[0, "dataMax"]} />
-          <YAxis type="category" dataKey="label" width={40} axisLine={false} tickLine={false} tick={{ fill: "#52615d", fontSize: 11, fontFamily: "var(--mono)" }} />
-          <Tooltip cursor={{ fill: "rgba(15, 113, 105, .045)" }} content={(props) => <WeekdayTooltip active={props.active} payload={props.payload as Array<{ payload?: WeekdayRow }>} />} />
-          <Bar dataKey="averageMinutes" fill="var(--dashboard-signal)" fillOpacity={0.76} barSize={12} radius={[0, 2, 2, 0]} isAnimationActive={false} />
+          <YAxis
+            type="category"
+            dataKey="label"
+            width={40}
+            axisLine={false}
+            tickLine={false}
+            tick={{ fill: "#52615d", fontSize: 11, fontFamily: "var(--mono)" }}
+          />
+          <Tooltip
+            cursor={{ fill: "rgba(15, 113, 105, .045)" }}
+            content={(props) => (
+              <WeekdayTooltip
+                active={props.active}
+                payload={props.payload as Array<{ payload?: WeekdayRow }>}
+              />
+            )}
+          />
+          <Bar
+            dataKey="averageMinutes"
+            fill="var(--dashboard-signal)"
+            fillOpacity={0.76}
+            barSize={12}
+            radius={[0, 2, 2, 0]}
+            isAnimationActive={false}
+          />
         </BarChart>
       </ResponsiveContainer>
       <div className="weekday-values" aria-hidden="true">
-        {data.map((row) => <span key={row.weekday}>{formatDuration(row.averageMinutes)}</span>)}
+        {data.map((row) => (
+          <span key={row.weekday}>{formatDuration(row.averageMinutes)}</span>
+        ))}
       </div>
     </div>
   );
 }
 
 function HourlyChart({ data }: { data: WorkRhythmData["hourlyActivity"] }) {
-  const peak = data.reduce((best, row) => row.estimatedMinutes > best.estimatedMinutes ? row : best, data[0]);
+  const peak = data.reduce(
+    (best, row) => row.estimatedMinutes > best.estimatedMinutes ? row : best,
+    data[0],
+  );
   const hasActivity = peak.estimatedMinutes > 0;
   return (
-    <div className="hourly-chart" role="img" tabIndex={0} aria-label={hasActivity ? `Estimated active time by hour. Peak is ${hourRange(peak.hour)} at ${formatDuration(peak.estimatedMinutes)}.` : "No estimated activity by hour."}>
+    <div
+      className="hourly-chart"
+      role="img"
+      tabIndex={0}
+      aria-label={hasActivity
+        ? `Estimated active time by hour. Peak is ${hourRange(peak.hour)} at ${
+          formatDuration(peak.estimatedMinutes)
+        }.`
+        : "No estimated activity by hour."}
+    >
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 3, right: 6, bottom: 0, left: 6 }} barCategoryGap="18%">
-          <XAxis dataKey="hour" height={20} ticks={[0, 6, 12, 18]} interval={0} tickFormatter={formatHourTick} axisLine={false} tickLine={false} tick={{ fill: "#6f7d78", fontSize: 11, fontFamily: "var(--mono)" }} />
+        <BarChart
+          data={data}
+          margin={{ top: 3, right: 6, bottom: 0, left: 6 }}
+          barCategoryGap="18%"
+        >
+          <XAxis
+            dataKey="hour"
+            height={20}
+            ticks={[0, 6, 12, 18]}
+            interval={0}
+            tickFormatter={formatHourTick}
+            axisLine={false}
+            tickLine={false}
+            tick={{ fill: "#6f7d78", fontSize: 11, fontFamily: "var(--mono)" }}
+          />
           <YAxis hide domain={[0, "dataMax"]} />
-          <Tooltip cursor={{ fill: "rgba(15, 113, 105, .045)" }} content={(props) => <HourlyTooltip active={props.active} payload={props.payload as Array<{ payload?: HourlyRow }>} />} />
-          <Bar dataKey="estimatedMinutes" fill="var(--dashboard-signal)" fillOpacity={0.72} radius={[1.5, 1.5, 0, 0]} isAnimationActive={false} />
+          <Tooltip
+            cursor={{ fill: "rgba(15, 113, 105, .045)" }}
+            content={(props) => (
+              <HourlyTooltip
+                active={props.active}
+                payload={props.payload as Array<{ payload?: HourlyRow }>}
+              />
+            )}
+          />
+          <Bar
+            dataKey="estimatedMinutes"
+            fill="var(--dashboard-signal)"
+            fillOpacity={0.72}
+            radius={[1.5, 1.5, 0, 0]}
+            isAnimationActive={false}
+          />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -154,11 +233,16 @@ function monthIndex(date: Date) {
 }
 
 function calendarCells(month: Date) {
-  const leading = (new Date(month.getFullYear(), month.getMonth(), 1).getDay() + 6) % 7;
-  const count = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  const leading =
+    (new Date(month.getFullYear(), month.getMonth(), 1).getDay() + 6) % 7;
+  const count = new Date(month.getFullYear(), month.getMonth() + 1, 0)
+    .getDate();
   return [
     ...Array.from({ length: leading }, () => undefined),
-    ...Array.from({ length: count }, (_, index) => new Date(month.getFullYear(), month.getMonth(), index + 1)),
+    ...Array.from(
+      { length: count },
+      (_, index) => new Date(month.getFullYear(), month.getMonth(), index + 1),
+    ),
   ];
 }
 
@@ -171,25 +255,57 @@ function CompactCalendar({ data, selectedDate, onSelect }: {
   const rangeEnd = parseDate(data.range.end);
   const firstMonth = monthIndex(rangeStart);
   const lastMonth = monthIndex(rangeEnd);
-  const [visibleMonth, setVisibleMonth] = useState(() => new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), 1));
+  const [visibleMonth, setVisibleMonth] = useState(() =>
+    new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), 1)
+  );
 
-  useEffect(() => setVisibleMonth(new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), 1)), [data.range.end]);
+  useEffect(
+    () =>
+      setVisibleMonth(new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), 1)),
+    [data.range.end],
+  );
 
   const visibleIndex = monthIndex(visibleMonth);
   const today = dateKey(new Date());
   return (
     <div className="rhythm-calendar" aria-label="Choose a day to explore">
       <div className="rhythm-calendar-nav">
-        <button type="button" disabled={visibleIndex <= firstMonth} onClick={() => setVisibleMonth(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() - 1, 1))} aria-label="Previous month">
+        <button
+          type="button"
+          disabled={visibleIndex <= firstMonth}
+          onClick={() =>
+            setVisibleMonth(
+              new Date(
+                visibleMonth.getFullYear(),
+                visibleMonth.getMonth() - 1,
+                1,
+              ),
+            )}
+          aria-label="Previous month"
+        >
           <ChevronLeft size={14} aria-hidden="true" />
         </button>
         <strong>{monthYear.format(visibleMonth)}</strong>
-        <button type="button" disabled={visibleIndex >= lastMonth} onClick={() => setVisibleMonth(new Date(visibleMonth.getFullYear(), visibleMonth.getMonth() + 1, 1))} aria-label="Next month">
+        <button
+          type="button"
+          disabled={visibleIndex >= lastMonth}
+          onClick={() =>
+            setVisibleMonth(
+              new Date(
+                visibleMonth.getFullYear(),
+                visibleMonth.getMonth() + 1,
+                1,
+              ),
+            )}
+          aria-label="Next month"
+        >
           <ChevronRight size={14} aria-hidden="true" />
         </button>
       </div>
       <div className="rhythm-calendar-weekdays" aria-hidden="true">
-        {["M", "T", "W", "T", "F", "S", "S"].map((label, index) => <span key={`${label}-${index}`}>{label}</span>)}
+        {["M", "T", "W", "T", "F", "S", "S"].map((label, index) => (
+          <span key={`${label}-${index}`}>{label}</span>
+        ))}
       </div>
       <div className="rhythm-calendar-days">
         {calendarCells(visibleMonth).map((date, index) => {
@@ -198,13 +314,17 @@ function CompactCalendar({ data, selectedDate, onSelect }: {
           const day = data.days[key];
           const disabled = key < data.range.start || key > data.range.end;
           const activity = day?.estimatedActiveMinutes ?? 0;
-          const label = `${readableDate.format(date)}, ${formatDuration(activity)} estimated active${disabled ? ", outside report range" : ""}`;
+          const label = `${readableDate.format(date)}, ${
+            formatDuration(activity)
+          } estimated active${disabled ? ", outside report range" : ""}`;
           return (
             <button
               key={key}
               type="button"
               disabled={disabled}
-              className={`rhythm-calendar-day intensity-${day?.intensity ?? 0}${selectedDate === key ? " selected" : ""}${today === key ? " today" : ""}`}
+              className={`rhythm-calendar-day intensity-${day?.intensity ?? 0}${
+                selectedDate === key ? " selected" : ""
+              }${today === key ? " today" : ""}`}
               aria-label={label}
               aria-pressed={selectedDate === key}
               onClick={() => onSelect(key)}
@@ -221,6 +341,7 @@ function CompactCalendar({ data, selectedDate, onSelect }: {
 const harnessNames: Record<WorkRhythmSession["harness"], string> = {
   "claude-code": "Claude Code",
   codex: "Codex",
+  cursor: "Cursor",
   pi: "Pi",
   opencode: "OpenCode",
 };
@@ -228,7 +349,9 @@ const harnessNames: Record<WorkRhythmSession["harness"], string> = {
 function sessionName(session: WorkRhythmSession) {
   const title = session.title?.trim();
   if (title) return title;
-  return `${harnessNames[session.harness]} session · ${timeOnly.format(new Date(session.startTime))}`;
+  return `${harnessNames[session.harness]} session · ${
+    timeOnly.format(new Date(session.startTime))
+  }`;
 }
 
 function sessionDateSpan(session: WorkRhythmSession) {
@@ -240,20 +363,31 @@ function sessionDateSpan(session: WorkRhythmSession) {
     startDate.getFullYear() === endDate.getFullYear() &&
     startDate.getMonth() === endDate.getMonth()
   ) {
-    return `${shortMonth.format(startDate)} ${startDate.getDate()}–${endDate.getDate()}`;
+    return `${
+      shortMonth.format(startDate)
+    } ${startDate.getDate()}–${endDate.getDate()}`;
   }
-  return `${shortMonth.format(startDate)} ${startDate.getDate()}–${shortMonth.format(endDate)} ${endDate.getDate()}`;
+  return `${shortMonth.format(startDate)} ${startDate.getDate()}–${
+    shortMonth.format(endDate)
+  } ${endDate.getDate()}`;
 }
 
-function sessionDateExplanation(session: WorkRhythmSession, selectedDate: string) {
+function sessionDateExplanation(
+  session: WorkRhythmSession,
+  selectedDate: string,
+) {
   const { start, end } = session.activeDateRange;
   if (selectedDate === start) {
-    return `This session continued into ${fullMonthDay.format(parseDate(end))}.`;
+    return `This session continued into ${
+      fullMonthDay.format(parseDate(end))
+    }.`;
   }
   if (selectedDate === end) {
     return `This session began on ${fullMonthDay.format(parseDate(start))}.`;
   }
-  return `This session ran from ${fullMonthDay.format(parseDate(start))} through ${fullMonthDay.format(parseDate(end))}.`;
+  return `This session ran from ${
+    fullMonthDay.format(parseDate(start))
+  } through ${fullMonthDay.format(parseDate(end))}.`;
 }
 
 function DayDetail({ day }: { day: WorkRhythmDay }) {
@@ -275,57 +409,133 @@ function DayDetail({ day }: { day: WorkRhythmDay }) {
 
   return (
     <div className="rhythm-day-detail">
-      <div className="rhythm-day-metrics" aria-label={`Summary for ${readableDate.format(parseDate(day.date))}`}>
-        <div><span>Estimated active</span><strong>{formatDuration(day.estimatedActiveMinutes)}</strong></div>
-        <div><span>Root sessions</span><strong>{integer.format(day.rootSessions)}</strong></div>
-        <div title={day.hasUnpricedSpend ? "Known spend excludes usage without available pricing." : undefined}><span>{day.hasUnpricedSpend ? "Known spend" : "Spend"}</span><strong>{currency.format(day.spend)}</strong></div>
-        <div><span>Processed input</span><strong>{compact.format(day.processedInputTokens)}</strong></div>
+      <div
+        className="rhythm-day-metrics"
+        aria-label={`Summary for ${readableDate.format(parseDate(day.date))}`}
+      >
+        <div>
+          <span>Estimated active</span>
+          <strong>{formatDuration(day.estimatedActiveMinutes)}</strong>
+        </div>
+        <div>
+          <span>Root sessions</span>
+          <strong>{integer.format(day.rootSessions)}</strong>
+        </div>
+        <div
+          title={day.hasUnpricedSpend
+            ? "Known spend excludes usage without available pricing."
+            : undefined}
+        >
+          <span>{day.hasUnpricedSpend ? "Known spend" : "Spend"}</span>
+          <strong>{currency.format(day.spend)}</strong>
+        </div>
+        <div>
+          <span>Processed input</span>
+          <strong>{compact.format(day.processedInputTokens)}</strong>
+        </div>
       </div>
-      <section className="expensive-sessions" aria-labelledby="expensive-sessions-title">
+      <section
+        className="expensive-sessions"
+        aria-labelledby="expensive-sessions-title"
+      >
         <div className="expensive-sessions-heading">
           <h4 id="expensive-sessions-title">Highest spend this day</h4>
-          <button type="button" onClick={() => navigate({ to: "/", search: { harness: "all", misses: undefined } })}>View all sessions</button>
+          <button
+            type="button"
+            onClick={() =>
+              navigate({
+                to: "/",
+                search: { harness: "all", misses: undefined },
+              })}
+          >
+            View all sessions
+          </button>
         </div>
-        {day.topSessions.length ? (
-          <ol>
-            {day.topSessions.slice(0, 3).map((session, index) => {
-              const span = sessionDateSpan(session);
-              const tooltipId = span
-                ? `session-spend-scope-${day.date}-${index}`
-                : undefined;
-              return (
-                <li key={session.id}>
-                  <button
-                    type="button"
-                    onClick={() => openSession(session)}
-                    aria-describedby={tooltipId}
-                    aria-label={`Open ${sessionName(session)}, ${currency.format(session.spend)} on this date${session.totalSpend !== session.spend ? `, ${currency.format(session.totalSpend)} total` : ""}`}
-                  >
-                    <span className="session-row-copy">
-                      <strong>{sessionName(session)}</strong>
-                      <small className="session-meta">
-                        <span className="session-meta-main">{harnessNames[session.harness]}{session.model ? ` · ${displayModelName(session.model)}` : ""}</span>
-                        {span && (
-                          <span className="session-date-scope">
-                            · <span className="session-date-scope-label">spans {span}</span>
-                            <span className="session-spend-tooltip" id={tooltipId} role="tooltip">
-                              <span><span>Spend on {fullMonthDay.format(parseDate(day.date))}</span><strong>{currency.format(session.spend)}{session.hasUnpricedSpend ? "*" : ""}</strong></span>
-                              <span><span>Entire session</span><strong>{currency.format(session.totalSpend)}{session.hasUnpricedTotalSpend ? "*" : ""}</strong></span>
-                              <em>{sessionDateExplanation(session, day.date)}</em>
-                            </span>
+        {day.topSessions.length
+          ? (
+            <ol>
+              {day.topSessions.slice(0, 3).map((session, index) => {
+                const span = sessionDateSpan(session);
+                const tooltipId = span
+                  ? `session-spend-scope-${day.date}-${index}`
+                  : undefined;
+                return (
+                  <li key={session.id}>
+                    <button
+                      type="button"
+                      onClick={() => openSession(session)}
+                      aria-describedby={tooltipId}
+                      aria-label={`Open ${sessionName(session)}, ${
+                        currency.format(session.spend)
+                      } on this date${
+                        session.totalSpend !== session.spend
+                          ? `, ${currency.format(session.totalSpend)} total`
+                          : ""
+                      }`}
+                    >
+                      <span className="session-row-copy">
+                        <strong>{sessionName(session)}</strong>
+                        <small className="session-meta">
+                          <span className="session-meta-main">
+                            {harnessNames[session.harness]}
+                            {session.model
+                              ? ` · ${displayModelName(session.model)}`
+                              : ""}
                           </span>
-                        )}
-                      </small>
-                    </span>
-                    <span className="session-spend" title={session.hasUnpricedSpend ? "Known spend excludes usage without available pricing." : undefined}>
-                      <strong>{currency.format(session.spend)}{session.hasUnpricedSpend ? "*" : ""}</strong>
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ol>
-        ) : <p>No sessions on this date.</p>}
+                          {span && (
+                            <span className="session-date-scope">
+                              ·{" "}
+                              <span className="session-date-scope-label">
+                                spans {span}
+                              </span>
+                              <span
+                                className="session-spend-tooltip"
+                                id={tooltipId}
+                                role="tooltip"
+                              >
+                                <span>
+                                  <span>
+                                    Spend on{" "}
+                                    {fullMonthDay.format(parseDate(day.date))}
+                                  </span>
+                                  <strong>
+                                    {currency.format(session.spend)}
+                                    {session.hasUnpricedSpend ? "*" : ""}
+                                  </strong>
+                                </span>
+                                <span>
+                                  <span>Entire session</span>
+                                  <strong>
+                                    {currency.format(session.totalSpend)}
+                                    {session.hasUnpricedTotalSpend ? "*" : ""}
+                                  </strong>
+                                </span>
+                                <em>
+                                  {sessionDateExplanation(session, day.date)}
+                                </em>
+                              </span>
+                            </span>
+                          )}
+                        </small>
+                      </span>
+                      <span
+                        className="session-spend"
+                        title={session.hasUnpricedSpend
+                          ? "Known spend excludes usage without available pricing."
+                          : undefined}
+                      >
+                        <strong>
+                          {currency.format(session.spend)}
+                          {session.hasUnpricedSpend ? "*" : ""}
+                        </strong>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ol>
+          )
+          : <p>No sessions on this date.</p>}
       </section>
     </div>
   );
@@ -361,26 +571,42 @@ export function WorkRhythm({ data }: { data: WorkRhythmData }) {
             <div className="rhythm-title-line">
               <h2 id="work-rhythm-title">Work</h2>
             </div>
-            <p>{data.methodology.minutesBeforeTurn} min before each user turn · overlapping time counted once</p>
+            <p>
+              {data.methodology.minutesBeforeTurn}{" "}
+              min before each user turn · overlapping time counted once
+            </p>
           </div>
-          <strong>{formatDuration(data.estimatedActiveMinutes, true)} <small>estimated</small></strong>
+          <strong>
+            {formatDuration(data.estimatedActiveMinutes, true)}{" "}
+            <small>estimated</small>
+          </strong>
         </header>
         <div className="rhythm-charts">
-          <section className="rhythm-chart-section" aria-labelledby="weekday-chart-title">
+          <section
+            className="rhythm-chart-section"
+            aria-labelledby="weekday-chart-title"
+          >
             <div className="rhythm-subheading">
               <h3 id="weekday-chart-title">By day</h3>
               <span>Average per calendar occurrence</span>
             </div>
             <WeekdayChart data={data.weekdayActivity} />
           </section>
-          <section className="rhythm-chart-section hourly-section" aria-labelledby="hourly-chart-title">
+          <section
+            className="rhythm-chart-section hourly-section"
+            aria-labelledby="hourly-chart-title"
+          >
             <div className="rhythm-subheading">
               <h3 id="hourly-chart-title">By hour</h3>
               <span>Distribution of estimated active time</span>
             </div>
             <HourlyChart data={data.hourlyActivity} />
             <div className="hourly-annotations">
-              {data.peakHour !== undefined && <span><i aria-hidden="true" />Peak: {hourRange(data.peakHour)}</span>}
+              {data.peakHour !== undefined && (
+                <span>
+                  <i aria-hidden="true" />Peak: {hourRange(data.peakHour)}
+                </span>
+              )}
               <span>{Math.round(data.afterHoursShare * 100)}% after 8 PM</span>
             </div>
           </section>
@@ -389,10 +615,16 @@ export function WorkRhythm({ data }: { data: WorkRhythmData }) {
       <section className="day-explorer" aria-labelledby="day-explorer-title">
         <header className="day-explorer-header">
           <h3 id="day-explorer-title">Day explorer</h3>
-          <time dateTime={selectedDate}>{readableDate.format(parseDate(selectedDate))}</time>
+          <time dateTime={selectedDate}>
+            {readableDate.format(parseDate(selectedDate))}
+          </time>
         </header>
         <div className="day-explorer-body">
-          <CompactCalendar data={data} selectedDate={selectedDate} onSelect={setSelectedDate} />
+          <CompactCalendar
+            data={data}
+            selectedDate={selectedDate}
+            onSelect={setSelectedDate}
+          />
           <DayDetail day={selectedDay} />
         </div>
       </section>

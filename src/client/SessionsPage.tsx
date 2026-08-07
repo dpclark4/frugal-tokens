@@ -31,10 +31,7 @@ import { contextRange, contextSize } from "../shared/contextMetrics.ts";
 import { displayModelName } from "../shared/modelNames.ts";
 import { rollupCosts } from "../shared/costMetrics.ts";
 import { getOverview, getSession, getSessions, syncSessions } from "./api.ts";
-import claudeCodeIcon from "./assets/icons/claudecode-color.svg";
-import codexIcon from "./assets/icons/codex-logo-light.svg";
-import openCodeIcon from "./assets/icons/opencode-logo-light.svg";
-import piIcon from "./assets/icons/pi-logo.svg";
+import { harnessIcon, harnessName } from "./harness.ts";
 import { UsageChart } from "./UsageChart.tsx";
 import { TtlMissCard } from "./TtlMissCard.tsx";
 import { SiteHeader } from "./SiteHeader.tsx";
@@ -1053,23 +1050,10 @@ function CostCell({
 }
 
 function HarnessIcon({ harness }: { harness: SessionSummary["harness"] }) {
-  const title = harness === "claude-code"
-    ? "Claude Code"
-    : harness === "codex"
-    ? "Codex"
-    : harness === "pi"
-    ? "PI"
-    : "OpenCode";
-  const src = harness === "claude-code"
-    ? claudeCodeIcon
-    : harness === "codex"
-    ? codexIcon
-    : harness === "pi"
-    ? piIcon
-    : openCodeIcon;
+  const title = harnessName(harness);
   return (
     <span className={`harness-icon harness-${harness}`} title={title}>
-      <img src={src} alt={title} />
+      <img src={harnessIcon(harness)} alt={title} />
     </span>
   );
 }
@@ -2073,353 +2057,350 @@ export function SessionsPanel({
   onOpenSession,
 }: SessionsPanelProps) {
   return (
-      <section className="sessions-panel">
-        <div className="panel-heading">
-          <div>
-            <h2>Recent sessions</h2>
-            {data && (
-              <span className="session-count">
-                {integer.format(data.pagination.totalItems)} sessions
-                {loadingSessions && " · Updating…"}
+    <section className="sessions-panel">
+      <div className="panel-heading">
+        <div>
+          <h2>Recent sessions</h2>
+          {data && (
+            <span className="session-count">
+              {integer.format(data.pagination.totalItems)} sessions
+              {loadingSessions && " · Updating…"}
+            </span>
+          )}
+        </div>
+        <div className="session-filters">
+          <button
+            type="button"
+            className="session-refresh"
+            onClick={refreshData}
+            disabled={refreshing}
+            aria-label={refreshing ? "Refreshing sessions" : "Refresh sessions"}
+            title="Import changed sessions and reload"
+          >
+            <RefreshCw size={13} aria-hidden="true" />
+          </button>
+          <SessionMissFilterControl
+            selected={selectedMissFilters}
+            onChange={onMissFiltersChange}
+          />
+          <label className="session-control session-harness-control">
+            <span className="session-control-label">Harness</span>
+            <select
+              value={harness}
+              onChange={(event) =>
+                onHarnessChange(event.target.value as typeof harness)}
+            >
+              <option value="all">All</option>
+              <option value="claude-code">Claude Code</option>
+              <option value="opencode">OpenCode</option>
+              <option value="pi">PI</option>
+              <option value="codex">Codex</option>
+              <option value="cursor">Cursor</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      {error && <div className="error">{error}</div>}
+      {!data && !error && (
+        <div className="loading">Reading local sessions...</div>
+      )}
+      {data && (
+        <>
+          <div className="session-table-wrap">
+            <table className="data-table session-table">
+              <colgroup>
+                <col className="session-column" />
+                <col className="model-column" />
+                <col className="elapsed-column" />
+                <col className="activity-column" />
+                <col className="context-column" />
+                <col className="input-column" />
+                <col className="session-image-column" />
+                <col className="cache-column" />
+                <col className="output-column" />
+                <col className="cost-column" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>Session</th>
+                  <th>Model</th>
+                  <th>Elapsed</th>
+                  <th>Activity</th>
+                  <th>Context</th>
+                  <th>Volume</th>
+                  <th aria-label="Image input" />
+                  <th title="Full and partial cache misses">Cache</th>
+                  <th>Output</th>
+                  <th title="Computed cost; ! if reported is non-zero and differs">
+                    Cost
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.items.map((session) => {
+                  const span = sessionSpan(session);
+                  const sessionStart = span?.start ?? session.startedAt;
+                  const sessionLocation = session.workingDirectory ??
+                    session.sourcePath;
+                  const sessionLocationLabel =
+                    session.workingDirectory !== undefined
+                      ? `Working directory: ${session.workingDirectory}`
+                      : session.sourcePath === undefined
+                      ? undefined
+                      : `Source path: ${session.sourcePath}`;
+                  const sessionDebugTitle = session.internalID === undefined
+                    ? undefined
+                    : `Archive session ID: ${session.internalID}\nSource session ID: ${session.id}`;
+                  const sessionTitleTooltip = sessionDebugTitle === undefined
+                    ? session.title
+                    : `${session.title}\n\n${sessionDebugTitle}`;
+                  const sessionLocationTitle =
+                    sessionLocationLabel === undefined
+                      ? sessionDebugTitle
+                      : sessionDebugTitle === undefined
+                      ? sessionLocationLabel
+                      : `${sessionLocationLabel}\n${sessionDebugTitle}`;
+                  const tokens = session.inclusiveTokens ?? session.tokens;
+                  const imageInputs = session.inclusiveImageInputs ?? 0;
+                  const hasInclusiveMetrics =
+                    session.inclusiveTokens !== undefined;
+                  const hasSubagents = (session.subagentCount ?? 0) > 0;
+                  const subagentComputedCost = hasSubagents &&
+                      session.inclusiveComputedCost !== undefined &&
+                      session.computedCost !== undefined
+                    ? Math.max(
+                      0,
+                      session.inclusiveComputedCost - session.computedCost,
+                    )
+                    : undefined;
+                  const anthropic = session.providers.some((provider) =>
+                    provider.toLowerCase().includes("anthropic")
+                  );
+                  return (
+                    <Fragment key={session.id}>
+                      <tr
+                        className={`session-row${
+                          expandedIDs.has(session.id) ? " row-open" : ""
+                        }`}
+                        role="link"
+                        tabIndex={0}
+                        aria-label={`Open session: ${session.title}`}
+                        onClick={() => onOpenSession(session)}
+                        onKeyDown={(event) => {
+                          if (event.key !== "Enter" && event.key !== " ") {
+                            return;
+                          }
+                          event.preventDefault();
+                          onOpenSession(session);
+                        }}
+                      >
+                        <td className="session-cell">
+                          <div className="session-identity">
+                            <button
+                              type="button"
+                              className="session-expand-button"
+                              aria-label={`${
+                                expandedIDs.has(session.id)
+                                  ? "Collapse"
+                                  : "Expand"
+                              } ${session.title} inline`}
+                              aria-expanded={expandedIDs.has(session.id)}
+                              aria-controls={`session-detail-${session.id}`}
+                              title={`${
+                                expandedIDs.has(session.id)
+                                  ? "Collapse"
+                                  : "Expand"
+                              } inline`}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void toggleSession(session.id);
+                              }}
+                              onKeyDown={(event) => event.stopPropagation()}
+                            >
+                              {expandedIDs.has(session.id)
+                                ? <ChevronDown size={15} />
+                                : <ChevronRight size={15} />}
+                            </button>
+                            <div className="session-copy">
+                              <strong
+                                className="session-title"
+                                title={sessionTitleTooltip}
+                              >
+                                {session.title}
+                              </strong>
+                              {sessionLocation !== undefined && (
+                                <small
+                                  className={session.workingDirectory !==
+                                      undefined
+                                    ? "session-working-directory"
+                                    : "session-source-path"}
+                                  title={sessionLocationTitle}
+                                >
+                                  {sessionLocation}
+                                </small>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <span className="model-leading-layout">
+                            <HarnessIcon harness={session.harness} />
+                            <span className="session-model-details">
+                              <ModelSummary models={session.models} />
+                              <SessionThinkingSummary
+                                thinking={session.thinking}
+                                modelCalls={session.modelCalls}
+                              />
+                            </span>
+                          </span>
+                        </td>
+                        <td
+                          className={span?.label ? undefined : "muted"}
+                          title={span
+                            ? `${fullTimestamp.format(span.start)} → ${
+                              fullTimestamp.format(span.end)
+                            }`
+                            : undefined}
+                        >
+                          <span className="metric-stack session-elapsed">
+                            <span>{span?.label ?? "—"}</span>
+                            {sessionStart !== undefined && (
+                              <small
+                                className="session-started"
+                                title={`Started ${
+                                  fullTimestamp.format(sessionStart)
+                                }`}
+                              >
+                                {sessionStarted.format(sessionStart)}
+                              </small>
+                            )}
+                          </span>
+                        </td>
+                        <td title="Inclusive of direct and subagent turns and calls">
+                          <span className="metric-stack">
+                            <span>
+                              {session.inclusiveUserTurns ??
+                                session.userTurns} turns
+                            </span>
+                            <span>
+                              {session.inclusiveModelCalls ??
+                                session.modelCalls} calls
+                            </span>
+                            {(session.subagentCount ?? 0) > 0 && (
+                              <small>
+                                {session.subagentCount}{" "}
+                                subagent{session.subagentCount === 1 ? "" : "s"}
+                              </small>
+                            )}
+                          </span>
+                        </td>
+                        <td>
+                          <ContextMetric
+                            value={session.contextLatest}
+                            secondary={session.contextPeak}
+                            secondaryLabel="peak"
+                            title={session.contextLatest !== undefined &&
+                                session.contextPeak !== undefined
+                              ? `Latest root request: ${
+                                integer.format(session.contextLatest)
+                              } tokens · Peak root request: ${
+                                integer.format(session.contextPeak)
+                              } tokens${
+                                session.contextPeakTurn !== undefined &&
+                                  session.contextPeakCall !== undefined
+                                  ? ` (turn ${session.contextPeakTurn}, call #${session.contextPeakCall})`
+                                  : ""
+                              }`
+                              : undefined}
+                          />
+                        </td>
+                        <td>
+                          <SessionInputMetric
+                            tokens={tokens}
+                            anthropic={anthropic}
+                          />
+                        </td>
+                        <td className="image-input-cell">
+                          <ImageInputIndicator count={imageInputs} />
+                        </td>
+                        <td>
+                          <SessionCacheStatus
+                            summary={session.cacheSummary}
+                            issues={session.cacheIssues}
+                            compactionCount={session.compactionCount}
+                          />
+                        </td>
+                        <td>
+                          <OutputMetric
+                            output={tokens.output}
+                            reasoning={tokens.reasoning}
+                          />
+                        </td>
+                        <td>
+                          <CostCell
+                            reported={hasInclusiveMetrics
+                              ? session.inclusiveReportedCost
+                              : session.reportedCost}
+                            computed={hasInclusiveMetrics
+                              ? session.inclusiveComputedCost
+                              : session.computedCost}
+                            direct={hasSubagents
+                              ? session.computedCost
+                              : undefined}
+                            subagents={subagentComputedCost}
+                            session
+                          />
+                        </td>
+                      </tr>
+                      {expandedIDs.has(session.id) && (
+                        <tr
+                          id={`session-detail-${session.id}`}
+                          className="detail-row"
+                        >
+                          <td colSpan={10}>
+                            {details[session.id]
+                              ? (
+                                <SessionBreakdown
+                                  session={details[session.id]}
+                                />
+                              )
+                              : (
+                                <div className="loading inset-loading">
+                                  Grouping model calls by turn...
+                                </div>
+                              )}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div ref={loadMoreRef} className="session-load-more">
+            {loadingMore && <span>Loading more sessions...</span>}
+            {loadMoreError && (
+              <>
+                <span className="session-load-error">{loadMoreError}</span>
+                <button type="button" onClick={loadNextPage}>
+                  Try again
+                </button>
+              </>
+            )}
+            {!loadingMore && !loadMoreError &&
+              data.pagination.page < data.pagination.totalPages && (
+              <button type="button" onClick={loadNextPage}>Load more</button>
+            )}
+            {data.pagination.page >= data.pagination.totalPages && (
+              <span>
+                Showing all {integer.format(data.items.length)} sessions
               </span>
             )}
           </div>
-          <div className="session-filters">
-            <button
-              type="button"
-              className="session-refresh"
-              onClick={refreshData}
-              disabled={refreshing}
-              aria-label={refreshing
-                ? "Refreshing sessions"
-                : "Refresh sessions"}
-              title="Import changed sessions and reload"
-            >
-              <RefreshCw size={13} aria-hidden="true" />
-            </button>
-            <SessionMissFilterControl
-              selected={selectedMissFilters}
-              onChange={onMissFiltersChange}
-            />
-            <label className="session-control session-harness-control">
-              <span className="session-control-label">Harness</span>
-              <select
-                value={harness}
-                onChange={(event) =>
-                  onHarnessChange(event.target.value as typeof harness)}
-              >
-                <option value="all">All</option>
-                <option value="claude-code">Claude Code</option>
-                <option value="opencode">OpenCode</option>
-                <option value="pi">PI</option>
-                <option value="codex">Codex</option>
-              </select>
-            </label>
-          </div>
-        </div>
-        {error && <div className="error">{error}</div>}
-        {!data && !error && (
-          <div className="loading">Reading local sessions...</div>
-        )}
-        {data && (
-          <>
-            <div className="session-table-wrap">
-              <table className="data-table session-table">
-                <colgroup>
-                  <col className="session-column" />
-                  <col className="model-column" />
-                  <col className="elapsed-column" />
-                  <col className="activity-column" />
-                  <col className="context-column" />
-                  <col className="input-column" />
-                  <col className="session-image-column" />
-                  <col className="cache-column" />
-                  <col className="output-column" />
-                  <col className="cost-column" />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <th>Session</th>
-                    <th>Model</th>
-                    <th>Elapsed</th>
-                    <th>Activity</th>
-                    <th>Context</th>
-                    <th>Volume</th>
-                    <th aria-label="Image input" />
-                    <th title="Full and partial cache misses">Cache</th>
-                    <th>Output</th>
-                    <th title="Computed cost; ! if reported is non-zero and differs">
-                      Cost
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.items.map((session) => {
-                    const span = sessionSpan(session);
-                    const sessionStart = span?.start ?? session.startedAt;
-                    const sessionLocation = session.workingDirectory ??
-                      session.sourcePath;
-                    const sessionLocationLabel =
-                      session.workingDirectory !== undefined
-                        ? `Working directory: ${session.workingDirectory}`
-                        : session.sourcePath === undefined
-                        ? undefined
-                        : `Source path: ${session.sourcePath}`;
-                    const sessionDebugTitle = session.internalID === undefined
-                      ? undefined
-                      : `Archive session ID: ${session.internalID}\nSource session ID: ${session.id}`;
-                    const sessionTitleTooltip = sessionDebugTitle === undefined
-                      ? session.title
-                      : `${session.title}\n\n${sessionDebugTitle}`;
-                    const sessionLocationTitle =
-                      sessionLocationLabel === undefined
-                        ? sessionDebugTitle
-                        : sessionDebugTitle === undefined
-                        ? sessionLocationLabel
-                        : `${sessionLocationLabel}\n${sessionDebugTitle}`;
-                    const tokens = session.inclusiveTokens ?? session.tokens;
-                    const imageInputs = session.inclusiveImageInputs ?? 0;
-                    const hasInclusiveMetrics =
-                      session.inclusiveTokens !== undefined;
-                    const hasSubagents = (session.subagentCount ?? 0) > 0;
-                    const subagentComputedCost = hasSubagents &&
-                        session.inclusiveComputedCost !== undefined &&
-                        session.computedCost !== undefined
-                      ? Math.max(
-                        0,
-                        session.inclusiveComputedCost - session.computedCost,
-                      )
-                      : undefined;
-                    const anthropic = session.providers.some((provider) =>
-                      provider.toLowerCase().includes("anthropic")
-                    );
-                    return (
-                      <Fragment key={session.id}>
-                        <tr
-                          className={`session-row${
-                            expandedIDs.has(session.id) ? " row-open" : ""
-                          }`}
-                          role="link"
-                          tabIndex={0}
-                          aria-label={`Open session: ${session.title}`}
-                          onClick={() => onOpenSession(session)}
-                          onKeyDown={(event) => {
-                            if (event.key !== "Enter" && event.key !== " ") {
-                              return;
-                            }
-                            event.preventDefault();
-                            onOpenSession(session);
-                          }}
-                        >
-                          <td className="session-cell">
-                            <div className="session-identity">
-                              <button
-                                type="button"
-                                className="session-expand-button"
-                                aria-label={`${
-                                  expandedIDs.has(session.id)
-                                    ? "Collapse"
-                                    : "Expand"
-                                } ${session.title} inline`}
-                                aria-expanded={expandedIDs.has(session.id)}
-                                aria-controls={`session-detail-${session.id}`}
-                                title={`${
-                                  expandedIDs.has(session.id)
-                                    ? "Collapse"
-                                    : "Expand"
-                                } inline`}
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  void toggleSession(session.id);
-                                }}
-                                onKeyDown={(event) => event.stopPropagation()}
-                              >
-                                {expandedIDs.has(session.id)
-                                  ? <ChevronDown size={15} />
-                                  : <ChevronRight size={15} />}
-                              </button>
-                              <div className="session-copy">
-                                <strong
-                                  className="session-title"
-                                  title={sessionTitleTooltip}
-                                >
-                                  {session.title}
-                                </strong>
-                                {sessionLocation !== undefined && (
-                                  <small
-                                    className={session.workingDirectory !==
-                                        undefined
-                                      ? "session-working-directory"
-                                      : "session-source-path"}
-                                    title={sessionLocationTitle}
-                                  >
-                                    {sessionLocation}
-                                  </small>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-                          <td>
-                            <span className="model-leading-layout">
-                              <HarnessIcon harness={session.harness} />
-                              <span className="session-model-details">
-                                <ModelSummary models={session.models} />
-                                <SessionThinkingSummary
-                                  thinking={session.thinking}
-                                  modelCalls={session.modelCalls}
-                                />
-                              </span>
-                            </span>
-                          </td>
-                          <td
-                            className={span?.label ? undefined : "muted"}
-                            title={span
-                              ? `${fullTimestamp.format(span.start)} → ${
-                                fullTimestamp.format(span.end)
-                              }`
-                              : undefined}
-                          >
-                            <span className="metric-stack session-elapsed">
-                              <span>{span?.label ?? "—"}</span>
-                              {sessionStart !== undefined && (
-                                <small
-                                  className="session-started"
-                                  title={`Started ${
-                                    fullTimestamp.format(sessionStart)
-                                  }`}
-                                >
-                                  {sessionStarted.format(sessionStart)}
-                                </small>
-                              )}
-                            </span>
-                          </td>
-                          <td title="Inclusive of direct and subagent turns and calls">
-                            <span className="metric-stack">
-                              <span>
-                                {session.inclusiveUserTurns ??
-                                  session.userTurns} turns
-                              </span>
-                              <span>
-                                {session.inclusiveModelCalls ??
-                                  session.modelCalls} calls
-                              </span>
-                              {(session.subagentCount ?? 0) > 0 && (
-                                <small>
-                                  {session.subagentCount}{" "}
-                                  subagent{session.subagentCount === 1
-                                    ? ""
-                                    : "s"}
-                                </small>
-                              )}
-                            </span>
-                          </td>
-                          <td>
-                            <ContextMetric
-                              value={session.contextLatest}
-                              secondary={session.contextPeak}
-                              secondaryLabel="peak"
-                              title={session.contextLatest !== undefined &&
-                                  session.contextPeak !== undefined
-                                ? `Latest root request: ${
-                                  integer.format(session.contextLatest)
-                                } tokens · Peak root request: ${
-                                  integer.format(session.contextPeak)
-                                } tokens${
-                                  session.contextPeakTurn !== undefined &&
-                                    session.contextPeakCall !== undefined
-                                    ? ` (turn ${session.contextPeakTurn}, call #${session.contextPeakCall})`
-                                    : ""
-                                }`
-                                : undefined}
-                            />
-                          </td>
-                          <td>
-                            <SessionInputMetric
-                              tokens={tokens}
-                              anthropic={anthropic}
-                            />
-                          </td>
-                          <td className="image-input-cell">
-                            <ImageInputIndicator count={imageInputs} />
-                          </td>
-                          <td>
-                            <SessionCacheStatus
-                              summary={session.cacheSummary}
-                              issues={session.cacheIssues}
-                              compactionCount={session.compactionCount}
-                            />
-                          </td>
-                          <td>
-                            <OutputMetric
-                              output={tokens.output}
-                              reasoning={tokens.reasoning}
-                            />
-                          </td>
-                          <td>
-                            <CostCell
-                              reported={hasInclusiveMetrics
-                                ? session.inclusiveReportedCost
-                                : session.reportedCost}
-                              computed={hasInclusiveMetrics
-                                ? session.inclusiveComputedCost
-                                : session.computedCost}
-                              direct={hasSubagents
-                                ? session.computedCost
-                                : undefined}
-                              subagents={subagentComputedCost}
-                              session
-                            />
-                          </td>
-                        </tr>
-                        {expandedIDs.has(session.id) && (
-                          <tr
-                            id={`session-detail-${session.id}`}
-                            className="detail-row"
-                          >
-                            <td colSpan={10}>
-                              {details[session.id]
-                                ? (
-                                  <SessionBreakdown
-                                    session={details[session.id]}
-                                  />
-                                )
-                                : (
-                                  <div className="loading inset-loading">
-                                    Grouping model calls by turn...
-                                  </div>
-                                )}
-                            </td>
-                          </tr>
-                        )}
-                      </Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-            <div ref={loadMoreRef} className="session-load-more">
-              {loadingMore && <span>Loading more sessions...</span>}
-              {loadMoreError && (
-                <>
-                  <span className="session-load-error">{loadMoreError}</span>
-                  <button type="button" onClick={loadNextPage}>
-                    Try again
-                  </button>
-                </>
-              )}
-              {!loadingMore && !loadMoreError &&
-                data.pagination.page < data.pagination.totalPages && (
-                <button type="button" onClick={loadNextPage}>Load more</button>
-              )}
-              {data.pagination.page >= data.pagination.totalPages && (
-                <span>
-                  Showing all {integer.format(data.items.length)} sessions
-                </span>
-              )}
-            </div>
-          </>
-        )}
-      </section>
+        </>
+      )}
+    </section>
   );
 }
 

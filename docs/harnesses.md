@@ -9,7 +9,7 @@ separate from derived metrics and provider-specific inferences.
 - **Session:** A harness conversation or task container.
 - **User turn:** Begins with a user message and ends before the next user
   message.
-- **Model call:** A completed assistant invocation with non-zero token usage.
+- **Model call:** A completed or observed assistant invocation; usage may be unavailable.
 - **Tool event:** A tool invocation associated with a model call.
 - **Subagent:** A child session launched by a tool event.
 
@@ -98,6 +98,7 @@ Current source support is:
 | Claude Code | Explicit `system/compact_boundary`; affected call resolved when present |
 | Codex | Explicit `event_msg/context_compacted`; affected call resolved when present |
 | PI | Explicit JSONL `compaction` record; affected call resolved when present |
+| Cursor | Not yet normalized; summary markers are retained only as source metadata |
 
 PI compaction support follows the active `parentId` lineage when a
 `firstKeptEntryId` boundary is available, or uses a materialized `retainedTail`
@@ -207,6 +208,54 @@ commands, and tool outputs should be treated as sensitive user data.
 - Reference fixture: `ses_0b8d314b5ffeBwIBzZmNhmoVCi` (3 turns, 5 calls,
   `$0.4861795` reported)
 - Subagent fixture: `ses_0b155ab5affer9adyuA3Gg2Br8`
+
+## Cursor
+
+### Source
+
+- Format: per-agent SQLite stores plus an optional metadata-only MITM JSONL
+- Normal path: `~/.cursor/chats/<workspace>/<agent>/store.db`
+- Frugal Tokens path: `CURSOR_CHATS_PATH`
+- Capture path: `CURSOR_SSE_CAPTURE_PATH` or `CURSOR_SSE_CAPTURE_DIR/events.jsonl`
+- Access: read-only for Cursor stores; the capture sidecar is append-only
+
+Cursor does not persist historical token usage or dollar cost in its chat
+stores. The store's `meta` table contains hex-encoded JSON metadata, while the
+root blob references JSON message blobs. The importer decodes only message
+structure, text previews, models, and tool metadata; it does not copy the blob
+encryption key or raw protocol bodies.
+
+A capture `requestId` joins to the stored user message's
+`providerOptions.cursor.requestId`. A `turnEnded` capture record represents one
+aggregate Cursor run, even when the store contains multiple assistant/tool
+steps. Model identity is never inferred from the session's `lastUsedModel`; if
+neither the store nor the capture sidecar identifies a call's model, it remains
+`unknown`. When the underlying model has a public rate card, Frugal Tokens uses
+it as an estimated `computedCost`; an explicit sidecar `reportedCost` remains
+the only actual Cursor billing value.
+
+The capture log contains no prompt or response content by default and is
+created with user-only permissions. A partial final JSONL line is ignored so a
+live capture cannot block session import. The capture file's content revision is
+part of Cursor source change hints, so a later usage or cost record causes the
+associated archive session to be refreshed.
+
+### Canonical Mapping
+
+| Cursor data | Frugal Tokens concept |
+|---|---|
+| `meta.json` plus `store.db` | Session and source artifact |
+| user message with `requestId` | User-turn boundary |
+| matching `turnEnded` sidecar record | Aggregate model call |
+| assistant content-block `providerOptions.cursor.modelName` or allowlisted capture model metadata | Model identity |
+| assistant `tool-call` / tool `tool-result` blocks | Tool event |
+| `subagentInfo.parentAgentId` | Parent session |
+| `subagentInfo.toolCallId` | Parent tool-event link |
+
+Sessions without a matching capture record are archived with observed,
+unmeasured calls whose token fields remain zero and whose cost remains unknown.
+The `unmeasured:` source-call prefix keeps them out of token/cost rollups while
+preserving the conversation and tool trace in the session detail.
 
 ## Claude Code
 

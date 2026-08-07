@@ -389,7 +389,7 @@ Deno.test("session read repository delegates each harness to exactly one provide
     const allConversationReads = new SessionReadRepository(
       legacy,
       compatibility,
-      new Set(["opencode", "claude-code", "pi", "codex"]),
+      new Set(["opencode", "claude-code", "pi", "codex", "cursor"]),
     );
     deepStrictEqual(
       allConversationReads.listCacheMisses(),

@@ -13,10 +13,18 @@ export function estimateModelCacheMissCost(
   after: CacheMissTokens,
   model: string,
   timestamp: number,
+  provider?: string,
 ) {
+  // Cursor uses the underlying public model card as an estimate when a
+  // model-specific card is available; reported Cursor cost remains separate.
   // A hit changes the billing category, not the request's context size. Resolve
   // short- versus long-context rates from the call where the miss occurred.
-  const rates = modelRateCard(model, timestamp, contextSize(after));
+  const rates = modelRateCard(
+    model,
+    timestamp,
+    contextSize(after),
+    provider,
+  );
   return rates && estimateCacheMissCost(rates, before, after);
 }
 
@@ -29,6 +37,7 @@ export function priceSessionDetail(session: SessionDetail): SessionDetail {
         call.tokens,
         call.model,
         call.startedAt,
+        call.provider,
       ),
     })),
   }));

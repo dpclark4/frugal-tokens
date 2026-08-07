@@ -3,7 +3,7 @@
 ## Purpose and current decision
 
 Frugal Tokens is a local, read-only analytics view of OpenCode, Claude Code,
-Pi, and Codex sessions. The current schema is fit for that purpose: it
+Pi, Codex, and Cursor sessions. The current schema is fit for that purpose: it
 normalizes known harness data into sessions, user-facing turns, model calls,
 tool activity, content previews, context events, and token/cost aggregates.
 

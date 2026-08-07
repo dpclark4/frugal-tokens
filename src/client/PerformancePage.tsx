@@ -534,6 +534,7 @@ export function PerformancePage() {
             <option value="opencode">OpenCode</option>
             <option value="pi">PI</option>
             <option value="codex">Codex</option>
+            <option value="cursor">Cursor</option>
           </select>
         </label>
       </section>

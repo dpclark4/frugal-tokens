@@ -29,6 +29,7 @@ const harnesses: Array<{
   { value: "codex", label: "Codex", color: "#637b86" },
   { value: "opencode", label: "OpenCode", color: "#466244" },
   { value: "pi", label: "Pi", color: "#786578" },
+  { value: "cursor", label: "Cursor", color: "#7b746a" },
 ];
 const compact = new Intl.NumberFormat("en-US", {
   notation: "compact",

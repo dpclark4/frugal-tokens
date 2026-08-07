@@ -933,7 +933,8 @@ export class SessionRepository {
     const hasInput = `
       AND (
         s.uncached_input_tokens > 0 OR s.cache_read_tokens > 0 OR
-        COALESCE(s.cache_write_tokens, 0) > 0
+        COALESCE(s.cache_write_tokens, 0) > 0 OR
+        (so.harness = 'cursor' AND s.model_calls > 0)
       )
     `;
     const parameters = harness === undefined ? [] : [harness];
@@ -1346,6 +1347,10 @@ export class SessionRepository {
           so.harness = 'codex' AND
           COALESCE(mc.source_call_id, '') LIKE 'context-operation:%'
         )
+        AND NOT (
+          so.harness = 'cursor' AND
+          COALESCE(mc.source_call_id, '') LIKE 'unmeasured:%'
+        )
       GROUP BY mcr.root_session_id, mcr.session_id, date
       ORDER BY date, mcr.root_session_id, mcr.session_id
     `).all(
@@ -1398,6 +1403,10 @@ export class SessionRepository {
             COALESCE(first_mc.source_call_id, '')
               LIKE 'context-operation:%'
           )
+          AND NOT (
+            so.harness = 'cursor' AND
+            COALESCE(first_mc.source_call_id, '') LIKE 'unmeasured:%'
+          )
         ORDER BY first_t.ordinal, first_mc.ordinal
         LIMIT 1
       )
@@ -1443,6 +1452,10 @@ export class SessionRepository {
               so.harness = 'codex' AND
               COALESCE(first_mc.source_call_id, '')
                 LIKE 'context-operation:%'
+            )
+            AND NOT (
+              so.harness = 'cursor' AND
+              COALESCE(first_mc.source_call_id, '') LIKE 'unmeasured:%'
             )
           ORDER BY first_t.ordinal, first_mc.ordinal
           LIMIT 1
@@ -1575,6 +1588,10 @@ export class SessionRepository {
         AND NOT (
           so.harness = 'codex' AND
           COALESCE(mc.source_call_id, '') LIKE 'context-operation:%'
+        )
+        AND NOT (
+          so.harness = 'cursor' AND
+          COALESCE(mc.source_call_id, '') LIKE 'unmeasured:%'
         )
       ORDER BY mc.started_at, mc.id
     `).all(
@@ -1895,6 +1912,7 @@ export class SessionRepository {
           call.tokens,
           call.model,
           call.startedAt,
+          call.provider,
         );
         insertModelCallRollup.run(
           callID,

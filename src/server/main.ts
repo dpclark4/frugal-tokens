@@ -1,4 +1,5 @@
 import { type Context, Hono } from "hono";
+import { join } from "node:path";
 import { cors } from "hono/cors";
 import { serveStatic } from "hono/deno";
 import { createMiddleware } from "hono/factory";
@@ -34,6 +35,7 @@ import { syncCodexSessions } from "./codexImporter.ts";
 import { syncClaudeCodeSessions } from "./claudeCodeImporter.ts";
 import { syncOpenCodeSessions } from "./openCodeImporter.ts";
 import { enrichSessionSummary } from "./sessionSummaryEnrichment.ts";
+import { syncCursorAgentSessions } from "./cursorAgentRepository.ts";
 
 function configuredPath<T>(
   harness: string,
@@ -87,6 +89,29 @@ const codexDirectory = configuredPath(
   "directory",
   (path) => path,
 );
+const cursorDirectory = configuredPath(
+  "cursor",
+  "CURSOR_CHATS_PATH",
+  "directory",
+  (path) => path,
+);
+const cursorCapturePath = (() => {
+  const explicit = Deno.env.get("CURSOR_SSE_CAPTURE_PATH");
+  if (explicit) return expandHomePath(explicit);
+  const configuredDirectory = Deno.env.get("CURSOR_SSE_CAPTURE_DIR");
+  if (configuredDirectory) {
+    return join(expandHomePath(configuredDirectory), "events.jsonl");
+  }
+  const persistent = expandHomePath(
+    "~/.local/share/frugal-tokens/cursor-capture/events.jsonl",
+  );
+  try {
+    if (Deno.statSync(persistent).isFile) return persistent;
+  } catch {
+    // Fall back to the capture addon's historical location.
+  }
+  return "/tmp/frugal-tokens-cursor-sse/events.jsonl";
+})();
 const archiveURL = Deno.env.get("FRUGAL_TOKENS_DATABASE_URL");
 if (!archiveURL) {
   throw new Error("FRUGAL_TOKENS_DATABASE_URL is required");
@@ -128,6 +153,16 @@ const readRepository = new SessionReadRepository(
   conversationCompatibilityRepository,
   activeConversationReadHarnesses,
 );
+const harnesses = ["opencode", "claude-code", "pi", "codex", "cursor"] as const;
+
+function isHarness(value: string): value is SessionSummary["harness"] {
+  return (harnesses as readonly string[]).includes(value);
+}
+
+function isHarnessFilter(value: string) {
+  return value === "all" || isHarness(value);
+}
+
 const syncIntervalSeconds = (() => {
   const value = Deno.env.get("FRUGAL_TOKENS_SYNC_INTERVAL_SECONDS");
   if (value === undefined || value === "0") return undefined;
@@ -237,6 +272,17 @@ async function syncSources() {
         ),
     );
   }
+  if (cursorDirectory) {
+    await runSync(
+      "cursor",
+      () =>
+        syncCursorAgentSessions(
+          cursorDirectory,
+          cursorCapturePath,
+          archiveRepository,
+        ),
+    );
+  }
   console.info(
     `[sync] complete duration=${(performance.now() - startedAt).toFixed(1)}ms`,
   );
@@ -313,7 +359,7 @@ function priceSummaries(items: SessionSummary[]) {
 
 app.get("/api/tool-calls", (context) => {
   const harness = context.req.query("harness") ?? "all";
-  if (!["all", "opencode", "claude-code", "pi", "codex"].includes(harness)) {
+  if (!isHarnessFilter(harness)) {
     return context.json({ error: "Invalid harness" }, 400);
   }
   const rangeParam = context.req.query("range") ?? "30";
@@ -341,7 +387,7 @@ app.get("/api/tool-calls", (context) => {
 
 app.get("/api/performance", (context) => {
   const harness = context.req.query("harness") ?? "all";
-  if (!["all", "opencode", "claude-code", "pi", "codex"].includes(harness)) {
+  if (!isHarnessFilter(harness)) {
     return context.json({ error: "Invalid harness" }, 400);
   }
   const openaiModel = context.req.query("openai") ?? "all";
@@ -379,7 +425,7 @@ app.get("/api/performance", (context) => {
 const cacheMissOverview = (context: Context) => {
   const requestStartedAt = performance.now();
   const harness = context.req.query("harness") ?? "all";
-  if (!["all", "opencode", "claude-code", "pi", "codex"].includes(harness)) {
+  if (!isHarnessFilter(harness)) {
     return context.json({ error: "Invalid harness" }, 400);
   }
   const rangeParam = context.req.query("range") ?? "90";
@@ -440,7 +486,7 @@ app.get("/api/ttl-misses", cacheMissOverview);
 app.get("/api/session-shape", (context) => {
   const requestStartedAt = performance.now();
   const harness = context.req.query("harness") ?? "all";
-  if (!["all", "opencode", "claude-code", "pi", "codex"].includes(harness)) {
+  if (!isHarnessFilter(harness)) {
     return context.json({ error: "Invalid harness" }, 400);
   }
   const rangeParam = context.req.query("range") ?? "30";
@@ -484,7 +530,7 @@ app.get("/api/session-shape", (context) => {
 app.get("/api/activity-overview", (context) => {
   const requestStartedAt = performance.now();
   const harness = context.req.query("harness") ?? "all";
-  if (!["all", "opencode", "claude-code", "pi", "codex"].includes(harness)) {
+  if (!isHarnessFilter(harness)) {
     return context.json({ error: "Invalid harness" }, 400);
   }
   const rangeParam = context.req.query("range") ?? "30";
@@ -544,7 +590,7 @@ app.get("/api/activity-overview", (context) => {
 app.get("/api/overview", (context) => {
   const requestStartedAt = performance.now();
   const harness = context.req.query("harness") ?? "all";
-  if (!["all", "opencode", "claude-code", "pi", "codex"].includes(harness)) {
+  if (!isHarnessFilter(harness)) {
     return context.json({ error: "Invalid harness" }, 400);
   }
   const rangeParam = context.req.query("range") ?? "90";
@@ -607,7 +653,7 @@ app.get("/api/overview", (context) => {
 app.get("/api/usage", (context) => {
   const requestStartedAt = performance.now();
   const harness = context.req.query("harness") ?? "all";
-  if (!["all", "opencode", "claude-code", "pi", "codex"].includes(harness)) {
+  if (!isHarnessFilter(harness)) {
     return context.json({ error: "Invalid harness" }, 400);
   }
   const rangeParam = context.req.query("range") ?? "30";
@@ -681,7 +727,7 @@ app.get("/api/sessions", (context) => {
     Number.parseInt(context.req.query("pageSize") ?? "10", 10) || 10;
   const pageSize = Math.min(100, Math.max(1, requestedPageSize));
   const harness = context.req.query("harness") ?? "all";
-  if (!["all", "opencode", "claude-code", "pi", "codex"].includes(harness)) {
+  if (!isHarnessFilter(harness)) {
     return context.json({ error: "Invalid harness" }, 400);
   }
   const misses = context.req.query("misses");
@@ -728,7 +774,7 @@ app.get("/api/sessions", (context) => {
 
 app.get("/api/sessions/:id", (context) => {
   const harness = context.req.query("harness") ?? "opencode";
-  if (!["opencode", "claude-code", "pi", "codex"].includes(harness)) {
+  if (!isHarness(harness)) {
     return context.json({ error: "Invalid harness" }, 400);
   }
   const session = readRepository.getSession(
