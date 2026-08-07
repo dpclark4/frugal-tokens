@@ -9,6 +9,9 @@ import { UsageOverview } from "./new/UsageOverview.tsx";
 import { SessionShape } from "./new/SessionShape.tsx";
 import { WorkRhythm } from "./new/WorkRhythm.tsx";
 import { SpendComposition } from "./new/SpendComposition.tsx";
+import { CacheOverview } from "./new/CacheOverview.tsx";
+import { HarnessOverview } from "./new/HarnessOverview.tsx";
+import { RecentSessions } from "./new/RecentSessions.tsx";
 
 const route = getRouteApi("/new");
 
@@ -90,6 +93,18 @@ export function NewPage() {
         </div>
 
         {data && <SpendComposition data={data.spendComposition} />}
+
+        <div className="new-placeholder-grid">
+          <CacheOverview range={search.range} harness={search.harness} />
+          <HarnessOverview range={search.range} harness={search.harness} />
+        </div>
+
+        <RecentSessions
+          harness={search.harness}
+          misses={search.misses}
+          onHarnessChange={(harness) => update({ harness })}
+          onMissesChange={(misses) => update({ misses })}
+        />
       </section>
     </main>
   );
