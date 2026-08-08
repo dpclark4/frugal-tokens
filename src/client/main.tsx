@@ -5,20 +5,16 @@ import {
   createRoute,
   createRouter,
   Outlet,
-  RouterProvider,
   redirect,
+  RouterProvider,
 } from "@tanstack/react-router";
 import { z } from "zod";
+import { NewPage } from "./NewPage.tsx";
 import "./styles.css";
 
 const SessionsPage = lazy(() =>
   import("./SessionsPage.tsx").then(({ SessionsPage }) => ({
     default: SessionsPage,
-  }))
-);
-const NewPage = lazy(() =>
-  import("./NewPage.tsx").then(({ NewPage }) => ({
-    default: NewPage,
   }))
 );
 const PerformancePage = lazy(() =>
@@ -95,9 +91,10 @@ const oldRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/old",
   validateSearch: z.object({
-    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex", "cursor"]).catch(
-      "all",
-    ),
+    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex", "cursor"])
+      .catch(
+        "all",
+      ),
     misses: z.string().optional(),
   }),
   component: SessionsPage,
@@ -106,9 +103,10 @@ const newRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   validateSearch: z.object({
-    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex", "cursor"]).catch(
-      "all",
-    ),
+    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex", "cursor"])
+      .catch(
+        "all",
+      ),
     range: z.coerce.number().pipe(z.union([z.literal(30), z.literal(90)]))
       .catch(30),
     misses: z.string().optional(),
@@ -129,9 +127,10 @@ const performanceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/performance",
   validateSearch: z.object({
-    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex", "cursor"]).catch(
-      "all",
-    ),
+    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex", "cursor"])
+      .catch(
+        "all",
+      ),
     openai: z.string().catch("all"),
     anthropic: z.string().catch("all"),
   }),
@@ -141,9 +140,10 @@ const toolCallsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tool-calls",
   validateSearch: z.object({
-    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex", "cursor"]).catch(
-      "all",
-    ),
+    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex", "cursor"])
+      .catch(
+        "all",
+      ),
     range: z.coerce.number().pipe(
       z.union([z.literal(7), z.literal(30), z.literal(90)]),
     ).catch(30),
