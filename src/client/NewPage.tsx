@@ -23,40 +23,21 @@ export function NewPage() {
 
   useEffect(() => {
     let active = true;
-    let request = 0;
-
-    function load() {
-      const currentRequest = ++request;
-      setError(undefined);
-      getActivityOverview(search.range, search.harness).then((result) => {
-        if (active && currentRequest === request) {
-          setData(result);
-          setError(undefined);
-        }
-      }).catch((reason) => {
-        if (active && currentRequest === request) {
-          setError(
-            reason instanceof Error
-              ? reason.message
-              : "Unable to load overview",
-          );
-        }
-      });
-    }
-
-    function refreshVisibleOverview() {
-      if (document.visibilityState === "visible") load();
-    }
-
-    load();
-    const refreshInterval = window.setInterval(refreshVisibleOverview, 30_000);
-    window.addEventListener("focus", refreshVisibleOverview);
-    document.addEventListener("visibilitychange", refreshVisibleOverview);
+    setError(undefined);
+    getActivityOverview(search.range, search.harness).then((result) => {
+      if (active) {
+        setData(result);
+        setError(undefined);
+      }
+    }).catch((reason) => {
+      if (active) {
+        setError(
+          reason instanceof Error ? reason.message : "Unable to load overview",
+        );
+      }
+    });
     return () => {
       active = false;
-      window.clearInterval(refreshInterval);
-      window.removeEventListener("focus", refreshVisibleOverview);
-      document.removeEventListener("visibilitychange", refreshVisibleOverview);
     };
   }, [search.range, search.harness]);
 

@@ -152,7 +152,12 @@ const totalMinutes = hourlyMinutes.reduce((total, minutes) => total + minutes, 0
 export const workRhythmFixture: WorkRhythmData = {
   range: { start: "2026-07-08", end: "2026-08-06" },
   estimatedActiveMinutes: totalMinutes,
-  methodology: { minutesBeforeTurn: 5, overlapsCountedOnce: true },
+  methodology: {
+    initialMinutes: 5,
+    completionGapTimeoutMinutes: 10,
+    fallbackMinutes: 5,
+    overlapsCountedOnce: true,
+  },
   weekdayActivity: [
     { weekday: 1, label: "Mon", averageMinutes: 163, totalMinutes: 652, occurrences: 4, activeOccurrences: 4 },
     { weekday: 2, label: "Tue", averageMinutes: 84, totalMinutes: 336, occurrences: 4, activeOccurrences: 3 },

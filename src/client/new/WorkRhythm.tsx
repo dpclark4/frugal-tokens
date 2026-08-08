@@ -50,8 +50,11 @@ function dateKey(date: Date) {
   ].join("-");
 }
 
-function formatDuration(minutes: number, decimalHours = false) {
-  if (decimalHours && minutes >= 60) return `${(minutes / 60).toFixed(1)}h`;
+function formatDuration(minutes: number, compactTotal = false) {
+  if (compactTotal && minutes > 24 * 60) {
+    return `${(minutes / (24 * 60)).toFixed(1)}d`;
+  }
+  if (compactTotal && minutes >= 60) return `${(minutes / 60).toFixed(1)}h`;
   const rounded = Math.round(minutes);
   if (rounded < 60) return `${rounded}m`;
   const hours = Math.floor(rounded / 60);
@@ -567,18 +570,9 @@ export function WorkRhythm({ data }: { data: WorkRhythmData }) {
     <section className="work-rhythm-module" aria-labelledby="work-rhythm-title">
       <div className="work-rhythm-overview">
         <header className="work-rhythm-header">
-          <div>
-            <div className="rhythm-title-line">
-              <h2 id="work-rhythm-title">Work</h2>
-            </div>
-            <p>
-              {data.methodology.minutesBeforeTurn}{" "}
-              min before each user turn · overlapping time counted once
-            </p>
-          </div>
-          <strong>
-            {formatDuration(data.estimatedActiveMinutes, true)}{" "}
-            <small>estimated</small>
+          <h2 id="work-rhythm-title">Estimated work</h2>
+          <strong title={formatDuration(data.estimatedActiveMinutes)}>
+            {formatDuration(data.estimatedActiveMinutes, true)}
           </strong>
         </header>
         <div className="rhythm-charts">
@@ -588,7 +582,6 @@ export function WorkRhythm({ data }: { data: WorkRhythmData }) {
           >
             <div className="rhythm-subheading">
               <h3 id="weekday-chart-title">By day</h3>
-              <span>Average per calendar occurrence</span>
             </div>
             <WeekdayChart data={data.weekdayActivity} />
           </section>
@@ -598,7 +591,6 @@ export function WorkRhythm({ data }: { data: WorkRhythmData }) {
           >
             <div className="rhythm-subheading">
               <h3 id="hourly-chart-title">By hour</h3>
-              <span>Distribution of estimated active time</span>
             </div>
             <HourlyChart data={data.hourlyActivity} />
             <div className="hourly-annotations">
@@ -607,7 +599,6 @@ export function WorkRhythm({ data }: { data: WorkRhythmData }) {
                   <i aria-hidden="true" />Peak: {hourRange(data.peakHour)}
                 </span>
               )}
-              <span>{Math.round(data.afterHoursShare * 100)}% after 8 PM</span>
             </div>
           </section>
         </div>

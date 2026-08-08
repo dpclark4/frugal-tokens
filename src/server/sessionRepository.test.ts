@@ -536,6 +536,18 @@ Deno.test("atomically replaces trees with root-scoped public child IDs", () => {
       repository.listUsageRollups(undefined, "claude-code").length,
       2,
     );
+    const overviewRollups = repository.listOverviewRollups(
+      0,
+      "claude-code",
+    );
+    strictEqual(overviewRollups.length, 2);
+    for (const rollup of overviewRollups) {
+      deepStrictEqual(rollup.rootExecutionIntervals, [{
+        startedAt: 10,
+        executionEndAt: 12,
+      }]);
+      strictEqual(rollup.overview.executionIntervals.length, 2);
+    }
     deepStrictEqual(
       repository.listSubagentUsage(undefined, "claude-code").map((row) => ({
         input: row.input,
