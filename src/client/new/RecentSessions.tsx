@@ -47,7 +47,12 @@ export function RecentSessions({
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string>();
   const loadMoreRef = useRef<HTMLDivElement>(null);
+  const loadingMoreRef = useRef(false);
+  const harnessRef = useRef(harness);
+  const missFilterRef = useRef(missFilterKey);
   const restoredScrollRef = useRef(false);
+  harnessRef.current = harness;
+  missFilterRef.current = missFilterKey;
   const [returnScrollY] = useState<number | undefined>(() => {
     try {
       const saved = JSON.parse(sessionStorage.getItem(returnScrollKey) ?? "null");
@@ -62,6 +67,9 @@ export function RecentSessions({
   useEffect(() => {
     let active = true;
     setError(undefined);
+    setLoadMoreError(undefined);
+    loadingMoreRef.current = false;
+    setLoadingMore(false);
     setExpandedIDs(new Set());
     setDetails({});
     setLoadingSessions(true);
@@ -122,18 +130,85 @@ export function RecentSessions({
   }
 
   async function loadNextPage() {
-    if (!data || loadingMore || data.pagination.page >= data.pagination.totalPages) return;
+    if (
+      !data || loadingSessions || loadingMoreRef.current ||
+      data.pagination.page >= data.pagination.totalPages
+    ) return;
+    const requestedHarness = harness;
+    const requestedMissFilterKey = missFilterKey;
+    const requestedMissFilters = missFilters;
+    const nextPage = data.pagination.page + 1;
+    loadingMoreRef.current = true;
     setLoadingMore(true);
     setLoadMoreError(undefined);
     try {
-      const next = await getSessions(data.pagination.page + 1, harness, missFilters);
-      setData((current) => current && ({ ...next, items: [...current.items, ...next.items] }));
+      const next = await getSessions(
+        nextPage,
+        requestedHarness,
+        requestedMissFilters,
+      );
+      if (
+        harnessRef.current !== requestedHarness ||
+        missFilterRef.current !== requestedMissFilterKey
+      ) return;
+      setData((current) => {
+        if (!current) return next;
+        const seen = new Set(
+          current.items.map((session) => `${session.harness}:${session.id}`),
+        );
+        return {
+          ...next,
+          items: [
+            ...current.items,
+            ...next.items.filter((session) =>
+              !seen.has(`${session.harness}:${session.id}`)
+            ),
+          ],
+        };
+      });
     } catch (reason) {
-      setLoadMoreError(reason instanceof Error ? reason.message : "Unable to load more sessions");
+      if (
+        harnessRef.current === requestedHarness &&
+        missFilterRef.current === requestedMissFilterKey
+      ) {
+        setLoadMoreError(
+          reason instanceof Error
+            ? reason.message
+            : "Unable to load more sessions",
+        );
+      }
     } finally {
-      setLoadingMore(false);
+      if (
+        harnessRef.current === requestedHarness &&
+        missFilterRef.current === requestedMissFilterKey
+      ) {
+        loadingMoreRef.current = false;
+        setLoadingMore(false);
+      }
     }
   }
+
+  useEffect(() => {
+    const target = loadMoreRef.current;
+    if (
+      !target || !data || data.pagination.page >= data.pagination.totalPages ||
+      typeof IntersectionObserver === "undefined"
+    ) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) void loadNextPage();
+      },
+      { rootMargin: "400px 0px" },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [
+    data?.pagination.page,
+    data?.pagination.totalPages,
+    harness,
+    loadingSessions,
+    missFilterKey,
+  ]);
 
   function changeMissFilters(filters: SessionMissFilter[]) {
     onMissesChange(
@@ -201,6 +276,7 @@ export function RecentSessions({
       loadingMore={loadingMore}
       loadMoreError={loadMoreError}
       loadNextPage={loadNextPage}
+      showLoadMoreButton={false}
       onHarnessChange={onHarnessChange}
       onMissFiltersChange={changeMissFilters}
       onOpenSession={openSession}

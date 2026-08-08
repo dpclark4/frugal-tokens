@@ -2039,6 +2039,7 @@ type SessionsPanelProps = {
   loadingMore: boolean;
   loadMoreError?: string;
   loadNextPage: () => Promise<void>;
+  showLoadMoreButton?: boolean;
   onHarnessChange: (harness: "all" | SessionSummary["harness"]) => void;
   onMissFiltersChange: (filters: SessionMissFilter[]) => void;
   onOpenSession: (session: SessionSummary) => void;
@@ -2059,6 +2060,7 @@ export function SessionsPanel({
   loadingMore,
   loadMoreError,
   loadNextPage,
+  showLoadMoreButton = true,
   onHarnessChange,
   onMissFiltersChange,
   onOpenSession,
@@ -2510,10 +2512,10 @@ export function SessionsPanel({
                 </button>
               </>
             )}
-            {!loadingMore && !loadMoreError &&
+            {showLoadMoreButton && !loadingMore && !loadMoreError &&
               data.pagination.page < data.pagination.totalPages && (
-              <button type="button" onClick={loadNextPage}>Load more</button>
-            )}
+                <button type="button" onClick={loadNextPage}>Load more</button>
+              )}
             {data.pagination.page >= data.pagination.totalPages && (
               <span>
                 Showing all {integer.format(data.items.length)} sessions
