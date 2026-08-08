@@ -15,13 +15,13 @@ import {
 } from "./cacheAnalysis.ts";
 import { priceSessionDetail } from "./pricing.ts";
 import type {
-  SessionContextEventImport,
-  SourceSessionImport,
-} from "./sessionRepository.ts";
+  ConversationContextEventImport,
+  LinearConversationImport,
+} from "./conversationImportTypes.ts";
 
 type Harness = SessionSummary["harness"];
 
-function contextEvent(value: SessionContextEventImport): ContextEvent {
+function contextEvent(value: ConversationContextEventImport): ContextEvent {
   const { affectedCall: _affectedCall, compaction, ...event } = value;
   return {
     ...event,
@@ -38,8 +38,8 @@ function contextEvent(value: SessionContextEventImport): ContextEvent {
 }
 
 /** Hydrates the API detail shape without re-reading a freshly written tree. */
-export function sessionDetailFromSourceImports(
-  values: SourceSessionImport[],
+export function sessionDetailFromConversationImports(
+  values: LinearConversationImport[],
   rootExternalID: string,
   harness: Harness,
 ): SessionDetail {
@@ -48,7 +48,7 @@ export function sessionDetailFromSourceImports(
     values.filter((value) => value.parentExternalID !== undefined),
     (value) => value.parentExternalID!,
   );
-  const hydrate = (value: SourceSessionImport): SessionDetail => {
+  const hydrate = (value: LinearConversationImport): SessionDetail => {
     const events = value.session.contextEvents ?? [];
     const attached = Map.groupBy(
       events.filter((event) => event.affectedCall !== undefined),

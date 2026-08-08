@@ -1,5 +1,5 @@
 import type { SessionShapeResponse } from "../shared/sessionSchemas.ts";
-import type { StoredSessionShapeRollup } from "./sessionRepository.ts";
+import type { StoredSessionShapeRollup } from "./conversationRepository.ts";
 
 type Distribution = SessionShapeResponse["metrics"][number]["distribution"];
 

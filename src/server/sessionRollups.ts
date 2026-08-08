@@ -2,9 +2,9 @@ import { contextSize } from "../shared/contextMetrics.ts";
 import type { TokenUsage } from "../shared/sessionSchemas.ts";
 import { computeModelCallCost } from "./pricing.ts";
 import type {
-  SessionCallImport,
-  SourceSessionImport,
-} from "./sessionRepository.ts";
+  ConversationCallImport,
+  LinearConversationImport,
+} from "./conversationImportTypes.ts";
 
 export const SESSION_ROLLUP_VERSION = 2;
 
@@ -71,7 +71,7 @@ function dateKey(value: number) {
   ].join("-");
 }
 
-function visibleCalls(session: SourceSessionImport["session"]) {
+function visibleCalls(session: LinearConversationImport["session"]) {
   return session.turns.flatMap((turn) =>
     turn.calls.filter((call) =>
       !call.id.startsWith("context-operation:") &&
@@ -80,7 +80,7 @@ function visibleCalls(session: SourceSessionImport["session"]) {
   );
 }
 
-function completeComputedCost(calls: SessionCallImport[]) {
+function completeComputedCost(calls: ConversationCallImport[]) {
   if (calls.length === 0) return undefined;
   const costs = calls.map((call) =>
     computeModelCallCost(call.tokens, call.model, call.startedAt, call.provider)
@@ -124,7 +124,7 @@ function sumTokens(values: TokenUsage[]): TokenUsage {
 }
 
 function executionEnd(
-  turn: SourceSessionImport["session"]["turns"][number],
+  turn: LinearConversationImport["session"]["turns"][number],
 ) {
   let end = turn.startedAt;
   for (const call of turn.calls) {
@@ -142,7 +142,7 @@ function executionEnd(
 
 /** Builds the disposable, query-oriented data stored beside a root session. */
 export function buildSessionRollup(
-  sessions: SourceSessionImport[],
+  sessions: LinearConversationImport[],
 ): SessionRollup {
   if (sessions.length === 0) {
     throw new Error("Cannot roll up an empty session tree");

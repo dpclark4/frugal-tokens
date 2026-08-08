@@ -9,14 +9,14 @@ import { usageCallsFromSession } from "./usage.ts";
 import type {
   CompactionCheckpointItemImport,
   CompactionDetailImport,
-  SessionCallImport,
-  SessionContentImport,
-  SessionContextEventImport,
-  SessionToolImport,
-  SessionTurnImport,
-  SourceSessionCheckpoint,
-  SourceSessionImport,
-} from "./sessionRepository.ts";
+  ConversationCallImport,
+  ConversationContentImport,
+  ConversationContextEventImport,
+  ConversationToolImport,
+  ConversationTurnImport,
+  LinearConversationImport,
+} from "./conversationImportTypes.ts";
+import type { ProjectionCheckpoint } from "./sourceArtifactRepository.ts";
 import {
   contentText,
   messageCheckpointItem,
@@ -203,7 +203,7 @@ function readRecordsFromText(text: string, strict = false) {
   return records;
 }
 
-function preview(value: string): SessionContentImport {
+function preview(value: string): ConversationContentImport {
   return {
     kind: "text",
     preview: value.slice(0, contentPreviewLimit),
@@ -237,7 +237,7 @@ function userText(record: Record) {
 function userInputs(
   record: Record,
   sourceOrder: number,
-): SessionContentImport[] {
+): ConversationContentImport[] {
   const source = record.uuid === undefined
     ? {}
     : { sourceID: `${record.uuid}:input:1` };
@@ -277,7 +277,9 @@ function claudeCheckpointItem(
   const role = record.message?.role ??
     (record.type === "system" ? "system" : undefined);
   const content = record.message?.content ?? record.content;
-  if (role === undefined && contentText(content) === undefined) return undefined;
+  if (role === undefined && contentText(content) === undefined) {
+    return undefined;
+  }
   return messageCheckpointItem({
     sourceEntryID: record.uuid,
     role,
@@ -285,7 +287,9 @@ function claudeCheckpointItem(
     kind: role === "system" ? "system-message" : undefined,
     nativeMetadata: {
       sourceType: record.type,
-      ...(record.subtype === undefined ? {} : { sourceSubtype: record.subtype }),
+      ...(record.subtype === undefined
+        ? {}
+        : { sourceSubtype: record.subtype }),
     },
   });
 }
@@ -379,14 +383,12 @@ function claudeCompactionDetails(
     return [item];
   });
   const checkpointItems = [
-    ...(summaryText === undefined
-      ? []
-      : [textCheckpointItem({
-        sourceEntryID: summaryRecord?.uuid,
-        kind: "summary",
-        role: "user",
-        text: summaryText,
-      })]),
+    ...(summaryText === undefined ? [] : [textCheckpointItem({
+      sourceEntryID: summaryRecord?.uuid,
+      kind: "summary",
+      role: "user",
+      text: summaryText,
+    })]),
     ...preservedItems,
   ];
   const preservedSegment = objectValue(metadata?.preservedSegment);
@@ -405,12 +407,12 @@ function claudeCompactionDetails(
   return {
     sourceID: marker.uuid,
     trigger,
-    resultKind: summaryText === undefined
-      ? "unavailable"
-      : "plaintext-summary",
+    resultKind: summaryText === undefined ? "unavailable" : "plaintext-summary",
     checkpointCompleteness: preservedIDs !== undefined
       ? summaryText === undefined ? "partial" : "complete"
-      : summaryText === undefined ? "unknown" : "summary-only",
+      : summaryText === undefined
+      ? "unknown"
+      : "summary-only",
     preContextTokens: preTokens,
     postContextTokens: postTokens,
     droppedContextTokens: droppedTokens,
@@ -419,7 +421,9 @@ function claudeCompactionDetails(
       ...(summaryRecord?.uuid === undefined
         ? {}
         : { summaryEntryID: summaryRecord.uuid }),
-      ...(preservedIDs === undefined ? {} : { preservedEntryIDs: preservedIDs }),
+      ...(preservedIDs === undefined
+        ? {}
+        : { preservedEntryIDs: preservedIDs }),
       ...(segmentMetadata === undefined
         ? {}
         : { preservedSegment: segmentMetadata }),
@@ -451,16 +455,16 @@ function sessionBounds(
 }
 
 function decodeRecords(records: Record[]) {
-  const turns: Array<SessionTurnImport & { images?: number }> = [];
+  const turns: Array<ConversationTurnImport & { images?: number }> = [];
   const calls = new Map<
     string,
-    { call: SessionCallImport; blocks: ReturnType<typeof blocks> }
+    { call: ConversationCallImport; blocks: ReturnType<typeof blocks> }
   >();
   const tokens = emptyTokens();
   const providers = new Set<string>();
   const models = new Set<string>();
-  type PendingContextEvent = SessionContextEventImport & {
-    affectedCallReference?: SessionCallImport;
+  type PendingContextEvent = ConversationContextEventImport & {
+    affectedCallReference?: ConversationCallImport;
   };
   const contextEvents: PendingContextEvent[] = [];
   const pendingContextEvents: PendingContextEvent[] = [];
@@ -512,7 +516,7 @@ function decodeRecords(records: Record[]) {
                 !Array.isArray(record.toolUseResult) &&
                 record.toolUseResult.agentId
               ) {
-                (tool as SessionToolImport & { childSessionID?: string })
+                (tool as ConversationToolImport & { childSessionID?: string })
                   .childSessionID = record.toolUseResult.agentId;
               }
               tool.output = serializedPreview(
@@ -556,7 +560,7 @@ function decodeRecords(records: Record[]) {
       if (callTokens.processed === 0) continue;
       const turn = turns.at(-1)!;
       const model = record.message.model ?? "unknown";
-      const call: SessionCallImport = {
+      const call: ConversationCallImport = {
         id,
         sourceID: id,
         sourceOrderStart: recordIndex + 1,
@@ -629,7 +633,7 @@ function decodeRecords(records: Record[]) {
               : { inputPreview: input.preview }),
             // Kept internally while matching the later tool_result record.
             id: block.id,
-          } as SessionToolImport,
+          } as ConversationToolImport,
         );
       }
     }
@@ -641,22 +645,23 @@ function decodeRecords(records: Record[]) {
   const nonEmptyTurns = turns
     .filter((turn) => turn.calls.length > 0)
     .map((turn, index) => ({ ...turn, number: index + 1 }));
-  const normalizedContextEvents: SessionContextEventImport[] = contextEvents
-    .map(
-      ({ affectedCallReference, ...event }) => {
-        if (affectedCallReference === undefined) return event;
-        const turn = nonEmptyTurns.find((candidate) =>
-          candidate.calls.includes(affectedCallReference)
-        );
-        return turn === undefined ? event : {
-          ...event,
-          affectedCall: {
-            turn: turn.number,
-            call: affectedCallReference.callWithinTurn,
-          },
-        };
-      },
-    );
+  const normalizedContextEvents: ConversationContextEventImport[] =
+    contextEvents
+      .map(
+        ({ affectedCallReference, ...event }) => {
+          if (affectedCallReference === undefined) return event;
+          const turn = nonEmptyTurns.find((candidate) =>
+            candidate.calls.includes(affectedCallReference)
+          );
+          return turn === undefined ? event : {
+            ...event,
+            affectedCall: {
+              turn: turn.number,
+              call: affectedCallReference.callWithinTurn,
+            },
+          };
+        },
+      );
   return {
     turns: nonEmptyTurns,
     contextEvents: normalizedContextEvents,
@@ -806,8 +811,8 @@ export function normalizeClaudeCodeSessionTree(options: {
   snapshots: Map<string, Uint8Array>;
   sourceID: number;
   observedAt: number;
-  checkpoint: SourceSessionCheckpoint;
-}): SourceSessionImport[] {
+  checkpoint: ProjectionCheckpoint;
+}): LinearConversationImport[] {
   const decoder = new TextDecoder();
   const text = (path: string) => {
     const bytes = options.snapshots.get(path);
@@ -861,10 +866,10 @@ export function normalizeClaudeCodeSessionTree(options: {
     for (const turn of decoded.turns) {
       for (const call of turn.calls) {
         for (const tool of call.activity.tools) {
-          const rawChild = (tool as SessionToolImport & {
+          const rawChild = (tool as ConversationToolImport & {
             childSessionID?: string;
           }).childSessionID;
-          delete (tool as SessionToolImport & { childSessionID?: string })
+          delete (tool as ConversationToolImport & { childSessionID?: string })
             .childSessionID;
           if (rawChild) {
             const child = transcripts.find((item) =>

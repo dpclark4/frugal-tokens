@@ -39,9 +39,8 @@ function artifacts(name: string): FixtureArtifact[] {
     .map((entry) => {
       const records = Deno.readTextFileSync(`${fixturePath(name)}${entry.name}`)
         .trim().split("\n").map((line) => JSON.parse(line) as FixtureRecord);
-      const metadata = records.find((record) =>
-        record.type === "session_meta"
-      )?.payload;
+      const metadata = records.find((record) => record.type === "session_meta")
+        ?.payload;
       if (!metadata?.id) throw new Error(`Missing fixture ID: ${entry.name}`);
       return {
         name: entry.name,
@@ -101,9 +100,7 @@ Deno.test("sanitized Codex sibling forks encode the branching contract", () => {
   );
 
   for (const turnID of ["turn-shared-1", "turn-shared-2"]) {
-    const evidence = fixture.map((artifact) =>
-      turnEvidence(artifact, turnID)
-    );
+    const evidence = fixture.map((artifact) => turnEvidence(artifact, turnID));
     strictEqual(new Set(evidence.map((item) => item.outerTimestamp)).size, 3);
     strictEqual(new Set(evidence.map((item) => item.startedAt)).size, 1);
     strictEqual(new Set(evidence.map((item) => item.responseID)).size, 1);
@@ -129,7 +126,7 @@ Deno.test("sanitized Codex sibling forks encode the branching contract", () => {
   );
 });
 
-Deno.test("legacy Codex normalization remains linear for fork artifacts", () => {
+Deno.test("Codex artifacts normalize independently before family materialization", () => {
   const candidates = discoverCodexSessions(fixturePath("sibling-forks"));
   const sessions = candidates.map((candidate) =>
     normalizeCodexSession(

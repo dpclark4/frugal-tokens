@@ -1,8 +1,10 @@
 import { strictEqual, throws } from "node:assert/strict";
 import { openArchiveDatabase } from "./database.ts";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
-import { SessionRepository, type SourceSessionImport } from "./sessionRepository.ts";
-import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
+import { SourceArtifactRepository } from "./sourceArtifactRepository.ts";
+import type { LinearConversationImport } from "./conversationImportTypes.ts";
+import { ConversationRepository } from "./conversationRepository.ts";
+import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
 import { computeModelCallCost } from "./pricing.ts";
 
 const tokens = {
@@ -14,7 +16,7 @@ const tokens = {
   processed: 18,
 };
 
-function linearImport(sourceID: number): SourceSessionImport {
+function linearImport(sourceID: number): LinearConversationImport {
   return {
     sourceID,
     externalID: "linear",
@@ -24,7 +26,7 @@ function linearImport(sourceID: number): SourceSessionImport {
       sourceSize: 100,
       sourceModifiedAt: 1,
       checksum: "checksum",
-      parserVersion: "legacy-1",
+      parserVersion: "test-1",
     },
     session: {
       title: "Last good",
@@ -74,23 +76,29 @@ function linearImport(sourceID: number): SourceSessionImport {
 Deno.test("linear conversation replacement is idempotent and transactional", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
-  const legacy = new SessionRepository(db);
-  const conversations = new ConversationProjectionRepository(db);
+  const sources = new SourceArtifactRepository(db);
+  const conversations = new ConversationWriteRepository(db);
+  const reads = new ConversationRepository(db);
   try {
-    const sourceID = legacy.ensureSource(
+    const sourceID = sources.ensureSource(
       "codex",
       "directory",
       "Codex",
       "/sessions",
     );
     const value = linearImport(sourceID);
-    legacy.replaceSourceSession(value);
-    conversations.replaceLinearSession(value);
+    sources.recordUnchangedArtifact(
+      sourceID,
+      value.externalID,
+      value.artifactPath!,
+      value.observedAt,
+    );
+    conversations.replaceLinearConversation(value);
     const conversationID = db.prepare(
       "SELECT id FROM conversations WHERE external_id = 'linear'",
     ).get()!.id;
 
-    conversations.replaceLinearSession(value);
+    conversations.replaceLinearConversation(value);
     strictEqual(
       db.prepare("SELECT COUNT(*) AS count FROM conversations").get()!.count,
       1,
@@ -111,7 +119,9 @@ Deno.test("linear conversation replacement is idempotent and transactional", () 
       computeModelCallCost(tokens, "gpt-5.6-sol", 2),
     );
     strictEqual(
-      db.prepare("SELECT COUNT(*) AS count FROM artifact_model_call_occurrences")
+      db.prepare(
+        "SELECT COUNT(*) AS count FROM artifact_model_call_occurrences",
+      )
         .get()!.count,
       1,
     );
@@ -127,7 +137,7 @@ Deno.test("linear conversation replacement is idempotent and transactional", () 
     invalid.session.modelCalls = 2;
     invalid.session.turns.push(structuredClone(invalid.session.turns[0]));
     throws(
-      () => conversations.replaceLinearSession(invalid),
+      () => conversations.replaceLinearConversation(invalid),
       /constraint|UNIQUE/i,
     );
     strictEqual(
@@ -140,7 +150,7 @@ Deno.test("linear conversation replacement is idempotent and transactional", () 
         .get()!.count,
       1,
     );
-    strictEqual(legacy.getSession("codex", "linear")?.title, "Last good");
+    strictEqual(reads.getSession("codex", "linear")?.title, "Last good");
 
     const reusedSourceIDs = structuredClone(value);
     reusedSourceIDs.session.title = "Repeated native IDs";
@@ -162,8 +172,8 @@ Deno.test("linear conversation replacement is idempotent and transactional", () 
     secondTurn.calls[0].completedAt = 5;
     reusedSourceIDs.session.turns.push(secondTurn);
 
-    conversations.replaceLinearSession(reusedSourceIDs);
-    conversations.replaceLinearSession(reusedSourceIDs);
+    conversations.replaceLinearConversation(reusedSourceIDs);
+    conversations.replaceLinearConversation(reusedSourceIDs);
     strictEqual(
       db.prepare("SELECT COUNT(*) AS count FROM conversation_model_calls")
         .get()!.count,

@@ -8,13 +8,13 @@ import {
 import { usageCallsFromSession } from "./usage.ts";
 import type {
   CompactionDetailImport,
+  ConversationCallImport,
+  ConversationContentImport,
+  ConversationContextEventImport,
+  ConversationToolImport,
+  ConversationTurnImport,
   ReasoningSettingImport,
-  SessionCallImport,
-  SessionContentImport,
-  SessionContextEventImport,
-  SessionToolImport,
-  SessionTurnImport,
-} from "./sessionRepository.ts";
+} from "./conversationImportTypes.ts";
 import {
   booleanValue,
   messageCheckpointItem,
@@ -138,7 +138,7 @@ function readRecords(path: string) {
   return readRecordsFromText(Deno.readTextFileSync(path));
 }
 
-function preview(value: string): SessionContentImport {
+function preview(value: string): ConversationContentImport {
   return {
     kind: "text",
     preview: value.slice(0, contentPreviewLimit),
@@ -150,7 +150,7 @@ function preview(value: string): SessionContentImport {
 function contentMetadata(
   blocks: z.infer<typeof contentBlockSchema>[],
   includeReasoning = false,
-): SessionContentImport[] {
+): ConversationContentImport[] {
   return blocks.flatMap((block) => {
     if (block.type === "text" && block.text !== undefined) {
       return [preview(block.text)];
@@ -293,7 +293,9 @@ function piCompactionDetails(
     retainedValues = record.retainedTail;
     boundaryKind = "retained-tail";
   } else {
-    if (record.retainedTail !== undefined) issues.push("retained-tail-not-array");
+    if (record.retainedTail !== undefined) {
+      issues.push("retained-tail-not-array");
+    }
     const firstKeptEntryID = stringValue(record.firstKeptEntryId);
     if (
       record.firstKeptEntryId !== undefined && firstKeptEntryID === undefined
@@ -319,19 +321,18 @@ function piCompactionDetails(
     return item === undefined ? [] : [item];
   });
   if (
-    retainedValues !== undefined && retainedItems.length !== retainedValues.length
+    retainedValues !== undefined &&
+    retainedItems.length !== retainedValues.length
   ) {
     issues.push("retained-entry-unsupported");
   }
   const checkpointItems = [
-    ...(summary === undefined
-      ? []
-      : [textCheckpointItem({
-        sourceEntryID: record.id,
-        kind: "summary",
-        role: "user",
-        text: summary,
-      })]),
+    ...(summary === undefined ? [] : [textCheckpointItem({
+      sourceEntryID: record.id,
+      kind: "summary",
+      role: "user",
+      text: summary,
+    })]),
     ...retainedItems,
   ];
   const resultKind = summary === undefined
@@ -339,7 +340,9 @@ function piCompactionDetails(
     : "plaintext-summary" as const;
   const checkpointCompleteness = retainedValues !== undefined
     ? summary === undefined ? "partial" as const : "complete" as const
-    : summary === undefined ? "unknown" as const : "summary-only" as const;
+    : summary === undefined
+    ? "unknown" as const
+    : "summary-only" as const;
   const usage = objectValue(record.usage);
   const fromHook = booleanValue(record.fromHook);
   return {
@@ -386,14 +389,14 @@ function sessionBounds(
 }
 
 function decodeRecords(records: Record[]) {
-  const turns: Array<SessionTurnImport & { images?: number }> = [];
+  const turns: Array<ConversationTurnImport & { images?: number }> = [];
   const tokens = emptyTokens();
   const providers = new Set<string>();
   const models = new Set<string>();
-  const tools = new Map<string, SessionToolImport>();
+  const tools = new Map<string, ConversationToolImport>();
   let reportedCost = 0;
-  type PendingContextEvent = SessionContextEventImport & {
-    affectedCallReference?: SessionCallImport;
+  type PendingContextEvent = ConversationContextEventImport & {
+    affectedCallReference?: ConversationCallImport;
   };
   const contextEvents: PendingContextEvent[] = [];
   const pendingContextEvents: PendingContextEvent[] = [];
@@ -534,7 +537,7 @@ function decodeRecords(records: Record[]) {
       messageTimestamp,
       recordIndex + 1,
     );
-    const call: SessionCallImport = {
+    const call: ConversationCallImport = {
       id: record.id ?? `${turn.number}-${turn.calls.length + 1}`,
       callWithinTurn: turn.calls.length + 1,
       ...(content.find((item) => item.kind === "text")?.preview === undefined
@@ -601,22 +604,23 @@ function decodeRecords(records: Record[]) {
   const nonEmptyTurns = turns
     .filter((turn) => turn.calls.length > 0)
     .map((turn, index) => ({ ...turn, number: index + 1 }));
-  const normalizedContextEvents: SessionContextEventImport[] = contextEvents
-    .map(
-      ({ affectedCallReference, ...event }) => {
-        if (affectedCallReference === undefined) return event;
-        const turn = nonEmptyTurns.find((candidate) =>
-          candidate.calls.includes(affectedCallReference)
-        );
-        return turn === undefined ? event : {
-          ...event,
-          affectedCall: {
-            turn: turn.number,
-            call: affectedCallReference.callWithinTurn,
-          },
-        };
-      },
-    );
+  const normalizedContextEvents: ConversationContextEventImport[] =
+    contextEvents
+      .map(
+        ({ affectedCallReference, ...event }) => {
+          if (affectedCallReference === undefined) return event;
+          const turn = nonEmptyTurns.find((candidate) =>
+            candidate.calls.includes(affectedCallReference)
+          );
+          return turn === undefined ? event : {
+            ...event,
+            affectedCall: {
+              turn: turn.number,
+              call: affectedCallReference.callWithinTurn,
+            },
+          };
+        },
+      );
   return {
     turns: nonEmptyTurns,
     contextEvents: normalizedContextEvents,

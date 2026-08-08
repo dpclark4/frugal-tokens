@@ -27,10 +27,9 @@ import { aggregateActivityOverview } from "./activityOverview.ts";
 import { workRhythmRange } from "./workRhythm.ts";
 import { aggregateSessionShape } from "./sessionShapeAnalytics.ts";
 import { expandHomePath, openArchiveDatabase, sqlitePath } from "./database.ts";
-import { SessionRepository } from "./sessionRepository.ts";
-import { ConversationCompatibilityRepository } from "./conversationCompatibilityRepository.ts";
-import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
-import { SessionReadRepository } from "./sessionReadRepository.ts";
+import { SourceArtifactRepository } from "./sourceArtifactRepository.ts";
+import { ConversationRepository } from "./conversationRepository.ts";
+import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
 import { syncPiSessions } from "./piImporter.ts";
 import { syncCodexSessions } from "./codexImporter.ts";
 import { syncClaudeCodeSessions } from "./claudeCodeImporter.ts";
@@ -123,43 +122,11 @@ if (!archiveURL) {
   throw new Error("FRUGAL_TOKENS_DATABASE_URL is required");
 }
 const archiveDatabase = openArchiveDatabase(sqlitePath(archiveURL));
-const archiveRepository = new SessionRepository(archiveDatabase);
-const conversationProjectionRepository = new ConversationProjectionRepository(
+const sourceArtifactRepository = new SourceArtifactRepository(archiveDatabase);
+const conversationWriteRepository = new ConversationWriteRepository(
   archiveDatabase,
 );
-const conversationCompatibilityRepository =
-  new ConversationCompatibilityRepository(archiveDatabase);
-const supportedHarnesses: SessionSummary["harness"][] = [
-  "opencode",
-  "claude-code",
-  "pi",
-  "codex",
-  "cursor",
-];
-const configuredConversationHarnesses = Deno.env.get(
-  "FRUGAL_TOKENS_CONVERSATION_READ_HARNESSES",
-);
-const desiredConversationReadHarnesses = new Set<SessionSummary["harness"]>(
-  configuredConversationHarnesses === undefined
-    ? supportedHarnesses
-    : configuredConversationHarnesses.trim() === ""
-    ? []
-    : configuredConversationHarnesses.split(",").map((value) => value.trim())
-      .filter((value): value is SessionSummary["harness"] => {
-        if (!supportedHarnesses.includes(value as SessionSummary["harness"])) {
-          throw new Error(
-            `Invalid conversation read harness: ${value}`,
-          );
-        }
-        return true;
-      }),
-);
-const activeConversationReadHarnesses = new Set<SessionSummary["harness"]>();
-const readRepository = new SessionReadRepository(
-  archiveRepository,
-  conversationCompatibilityRepository,
-  activeConversationReadHarnesses,
-);
+const readRepository = new ConversationRepository(archiveDatabase);
 const harnesses = ["opencode", "claude-code", "pi", "codex", "cursor"] as const;
 
 function isHarness(value: string): value is SessionSummary["harness"] {
@@ -195,11 +162,6 @@ type SyncResult = {
   skipped: number;
   failed: number;
   timings?: Record<string, number>;
-  projectionResults?: Record<string, {
-    imported: number;
-    skipped: number;
-    failed: number;
-  }>;
 };
 
 async function runSync(
@@ -220,18 +182,6 @@ async function runSync(
       (performance.now() - startedAt).toFixed(1)
     }ms${phases}`,
   );
-  if (desiredConversationReadHarnesses.has(harness)) {
-    const projection = result.projectionResults?.["conversation-v2"];
-    if (projection !== undefined && projection.failed === 0) {
-      activeConversationReadHarnesses.add(harness);
-      console.info(`[reads] harness=${harness} provider=conversation-v2`);
-    } else {
-      activeConversationReadHarnesses.delete(harness);
-      console.warn(
-        `[reads] harness=${harness} provider=legacy reason=conversation-v2-sync-failed`,
-      );
-    }
-  }
   return result;
 }
 
@@ -243,8 +193,8 @@ async function syncSources() {
       () =>
         syncOpenCodeSessions(
           openCodePath,
-          archiveRepository,
-          conversationProjectionRepository,
+          sourceArtifactRepository,
+          conversationWriteRepository,
         ),
     );
   }
@@ -254,8 +204,8 @@ async function syncSources() {
       () =>
         syncClaudeCodeSessions(
           claudeDirectory,
-          archiveRepository,
-          conversationProjectionRepository,
+          sourceArtifactRepository,
+          conversationWriteRepository,
         ),
     );
   }
@@ -265,8 +215,8 @@ async function syncSources() {
       () =>
         syncPiSessions(
           piDirectory,
-          archiveRepository,
-          conversationProjectionRepository,
+          sourceArtifactRepository,
+          conversationWriteRepository,
         ),
     );
   }
@@ -276,8 +226,8 @@ async function syncSources() {
       () =>
         syncCodexSessions(
           codexDirectory,
-          archiveRepository,
-          conversationProjectionRepository,
+          sourceArtifactRepository,
+          conversationWriteRepository,
         ),
     );
   }
@@ -288,8 +238,8 @@ async function syncSources() {
         syncCursorAgentSessions(
           cursorDirectory,
           cursorCapturePath,
-          archiveRepository,
-          conversationProjectionRepository,
+          sourceArtifactRepository,
+          conversationWriteRepository,
         ),
     );
   }
@@ -380,9 +330,9 @@ function repositoryForHarness(harness: SessionSummary["harness"]) {
 }
 
 app.get("/api/harnesses", (context) => {
-  const seen = new Set(archiveRepository.listHarnesses());
+  const seen = new Set(readRepository.listHarnesses());
   return context.json({
-    harnesses: supportedHarnesses.filter((harness) => seen.has(harness)),
+    harnesses: harnesses.filter((harness) => seen.has(harness)),
   });
 });
 

@@ -3,13 +3,10 @@ import { DatabaseSync } from "node:sqlite";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
 import { openArchiveDatabase } from "./database.ts";
 import { syncOpenCodeSessions } from "./openCodeImporter.ts";
-import { SessionRepository } from "./sessionRepository.ts";
+import { SourceArtifactRepository } from "./sourceArtifactRepository.ts";
 import { analyzeSessionCache } from "./cacheAnalysis.ts";
-import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
-import {
-  assertConversationCompatibilityParity,
-  assertLinearConversationParity,
-} from "./conversationProjectionTestUtils.ts";
+import { ConversationRepository } from "./conversationRepository.ts";
+import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
 
 function sourceDatabase(path: string) {
   const db = new DatabaseSync(path);
@@ -259,12 +256,12 @@ Deno.test("incrementally imports OpenCode session trees", () => {
 
   const archive = openArchiveDatabase(`${directory}/archive.sqlite`);
   migrateTestDatabase(archive);
-  const repository = new SessionRepository(archive);
-  const conversations = new ConversationProjectionRepository(archive);
+  const repository = new SourceArtifactRepository(archive);
+  const conversations = new ConversationWriteRepository(archive);
+  const reads = new ConversationRepository(archive);
   try {
     const first = syncOpenCodeSessions(sourcePath, repository, conversations);
     strictEqual(first.imported, 1);
-    strictEqual(first.projectionResults["conversation-v2"]!.imported, 1);
     strictEqual(
       archive.prepare("SELECT COUNT(*) AS count FROM conversations").get()!
         .count,
@@ -276,14 +273,7 @@ Deno.test("incrementally imports OpenCode session trees", () => {
       `).get()!.count,
       1,
     );
-    assertLinearConversationParity(archive, "opencode");
-    assertConversationCompatibilityParity(
-      archive,
-      repository,
-      "opencode",
-      "root",
-    );
-    const detail = repository.getSession("opencode", "root")!;
+    const detail = reads.getSession("opencode", "root")!;
     strictEqual(detail.workingDirectory, "/Users/test/project");
     strictEqual(detail.subagents[0].id, "child");
     strictEqual(detail.turns[0].reasoningSetting?.settingValue, "high");
@@ -304,9 +294,10 @@ Deno.test("incrementally imports OpenCode session trees", () => {
       "xhigh",
     );
     strictEqual(
-      archive.prepare(
-        "SELECT COUNT(*) AS count FROM reasoning_setting_events",
-      ).get()!.count,
+      archive.prepare(`
+        SELECT COUNT(*) AS count FROM conversation_model_calls
+        WHERE reasoning_setting_value IS NOT NULL
+      `).get()!.count,
       2,
     );
     strictEqual(
@@ -314,15 +305,23 @@ Deno.test("incrementally imports OpenCode session trees", () => {
       "child",
     );
     strictEqual(
-      archive.prepare("SELECT preview FROM turn_inputs").get()!.preview,
+      archive.prepare(`
+        SELECT content_preview FROM conversation_entries
+        WHERE role = 'user' AND content_kind = 'text'
+        ORDER BY id LIMIT 1
+      `).get()!.content_preview,
       "Inspect archive",
     );
     strictEqual(
-      archive.prepare("SELECT preview FROM call_content").get()!.preview,
+      archive.prepare(`
+        SELECT content_preview FROM conversation_entries
+        WHERE producer_model_call_id IS NOT NULL AND content_kind = 'text'
+        ORDER BY id LIMIT 1
+      `).get()!.content_preview,
       "Working",
     );
     const tool = archive.prepare(`
-      SELECT input_preview, output_preview FROM tool_events
+      SELECT input_preview, output_preview FROM conversation_tool_events
     `).get()!;
     strictEqual(tool.input_preview, '{"prompt":"inspect"}');
     strictEqual(tool.output_preview, "done");
@@ -358,9 +357,10 @@ Deno.test("incrementally imports OpenCode session trees", () => {
     strictEqual(detail.contextEvents?.length, 0);
     strictEqual(
       archive.prepare(`
-        SELECT COUNT(*) AS count FROM call_content cc
-        JOIN model_calls mc ON mc.id = cc.model_call_id
-        WHERE mc.source_call_id = 'compaction-summary'
+        SELECT COUNT(*) AS count FROM conversation_entries entry
+        JOIN conversation_model_calls call
+          ON call.id = entry.producer_model_call_id
+        WHERE call.source_call_id = 'compaction-summary'
       `).get()!.count,
       0,
     );
@@ -380,11 +380,20 @@ Deno.test("incrementally imports OpenCode session trees", () => {
     source.prepare(`
       UPDATE session SET ignored_metadata = 'changed' WHERE id = 'root'
     `).run();
-    strictEqual(syncOpenCodeSessions(sourcePath, repository).skipped, 1);
+    strictEqual(
+      syncOpenCodeSessions(sourcePath, repository, conversations).skipped,
+      1,
+    );
 
-    strictEqual(syncOpenCodeSessions(sourcePath, repository).skipped, 1);
+    strictEqual(
+      syncOpenCodeSessions(sourcePath, repository, conversations).skipped,
+      1,
+    );
     source.prepare("UPDATE part SET time_updated = 20 WHERE id = 'tool'").run();
-    strictEqual(syncOpenCodeSessions(sourcePath, repository).skipped, 1);
+    strictEqual(
+      syncOpenCodeSessions(sourcePath, repository, conversations).skipped,
+      1,
+    );
 
     source.prepare(`
       UPDATE part SET time_updated = 21,
@@ -393,18 +402,25 @@ Deno.test("incrementally imports OpenCode session trees", () => {
     `).run();
     source.prepare("UPDATE session SET time_updated = 21 WHERE id = 'root'")
       .run();
-    strictEqual(syncOpenCodeSessions(sourcePath, repository).imported, 1);
     strictEqual(
-      archive.prepare("SELECT output_preview FROM tool_events").get()!
+      syncOpenCodeSessions(sourcePath, repository, conversations).imported,
+      1,
+    );
+    strictEqual(
+      archive.prepare("SELECT output_preview FROM conversation_tool_events")
+        .get()!
         .output_preview,
       "changed",
     );
 
     source.prepare("DELETE FROM message WHERE session_id = 'child'").run();
     source.prepare("DELETE FROM session WHERE id = 'child'").run();
-    strictEqual(syncOpenCodeSessions(sourcePath, repository).imported, 1);
     strictEqual(
-      repository.getSession("opencode", "root")?.subagents.length,
+      syncOpenCodeSessions(sourcePath, repository, conversations).imported,
+      1,
+    );
+    strictEqual(
+      reads.getSession("opencode", "root")?.subagents.length,
       0,
     );
   } finally {

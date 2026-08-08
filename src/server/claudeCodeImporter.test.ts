@@ -2,12 +2,9 @@ import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { syncClaudeCodeSessions } from "./claudeCodeImporter.ts";
 import { openArchiveDatabase } from "./database.ts";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
-import { SessionRepository } from "./sessionRepository.ts";
-import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
-import {
-  assertConversationCompatibilityParity,
-  assertLinearConversationParity,
-} from "./conversationProjectionTestUtils.ts";
+import { SourceArtifactRepository } from "./sourceArtifactRepository.ts";
+import { ConversationRepository } from "./conversationRepository.ts";
+import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
 
 function write(path: string, content: string) {
   Deno.mkdirSync(path.slice(0, path.lastIndexOf("/")), { recursive: true });
@@ -55,8 +52,9 @@ Deno.test("imports a Claude Code root and namespaced child tree", async () => {
 
   const db = openArchiveDatabase(`${directory}/archive.sqlite`);
   migrateTestDatabase(db);
-  const repository = new SessionRepository(db);
-  const conversations = new ConversationProjectionRepository(db);
+  const repository = new SourceArtifactRepository(db);
+  const conversations = new ConversationWriteRepository(db);
+  const reads = new ConversationRepository(db);
   try {
     const result = await syncClaudeCodeSessions(
       sessions,
@@ -64,7 +62,6 @@ Deno.test("imports a Claude Code root and namespaced child tree", async () => {
       conversations,
     );
     strictEqual(result.imported, 1);
-    strictEqual(result.projectionResults["conversation-v2"]!.imported, 1);
     strictEqual(
       db.prepare("SELECT COUNT(*) AS count FROM conversations").get()!.count,
       2,
@@ -80,14 +77,7 @@ Deno.test("imports a Claude Code root and namespaced child tree", async () => {
       `).get()!.count,
       1,
     );
-    assertLinearConversationParity(db, "claude-code");
-    assertConversationCompatibilityParity(
-      db,
-      repository,
-      "claude-code",
-      "project/root",
-    );
-    const detail = repository.getSession("claude-code", "project/root")!;
+    const detail = reads.getSession("claude-code", "project/root")!;
     strictEqual(detail.title, "Indexed root");
     strictEqual(detail.workingDirectory, "/Users/test/project");
     strictEqual(detail.subagents[0].id, "child");
@@ -99,7 +89,9 @@ Deno.test("imports a Claude Code root and namespaced child tree", async () => {
       "child",
     );
     const childIdentity = db.prepare(`
-      SELECT external_id, public_id FROM source_sessions WHERE parent_id IS NOT NULL
+      SELECT child.external_id, child.public_id
+      FROM conversation_subagent_launches launch
+      JOIN conversations child ON child.id = launch.child_conversation_id
     `).get() as { external_id: string; public_id: string };
     strictEqual(childIdentity.public_id, "child");
     strictEqual(
@@ -107,29 +99,43 @@ Deno.test("imports a Claude Code root and namespaced child tree", async () => {
       "project/root::project/root/subagents/agent-child.jsonl",
     );
     const input = db.prepare(`
-      SELECT preview, original_length FROM turn_inputs WHERE kind = 'text'
+      SELECT content_preview AS preview, original_length
+      FROM conversation_entries
+      WHERE role = 'user' AND content_kind = 'text'
+        AND original_length = 2600
     `).get()!;
     strictEqual(input.preview, longPrompt.slice(0, 2_048));
     strictEqual(input.original_length, 2_600);
     strictEqual(
       db.prepare(`
-        SELECT mime_type FROM turn_inputs WHERE kind = 'image'
+        SELECT mime_type FROM conversation_entries
+        WHERE role = 'user' AND content_kind = 'image'
       `).get()!.mime_type,
       "image/png",
     );
     strictEqual(detail.turns[0].calls[0].activity.images, 1);
     strictEqual(
-      db.prepare("SELECT preview FROM call_content WHERE kind = 'text'").get()!
-        .preview,
+      db.prepare(`
+        SELECT entry.content_preview FROM conversation_entries entry
+        JOIN conversation_model_calls call
+          ON call.id = entry.producer_model_call_id
+        WHERE call.source_call_id = 'root-call' AND entry.content_kind = 'text'
+      `).get()!.content_preview,
       "Calling child",
     );
     strictEqual(
-      db.prepare("SELECT preview FROM call_content WHERE kind = 'reasoning'")
-        .get()!.preview,
+      db.prepare(`
+        SELECT entry.content_preview FROM conversation_entries entry
+        JOIN conversation_model_calls call
+          ON call.id = entry.producer_model_call_id
+        WHERE call.source_call_id = 'root-call'
+          AND entry.content_kind = 'reasoning'
+      `).get()!.content_preview,
       null,
     );
     const tool = db.prepare(`
-      SELECT input_preview, output_preview FROM tool_events WHERE name = 'Agent'
+      SELECT input_preview, output_preview FROM conversation_tool_events
+      WHERE name = 'Agent'
     `).get()!;
     strictEqual(tool.input_preview, '{"prompt":"investigate"}');
     strictEqual(tool.output_preview, "child output");
@@ -162,8 +168,8 @@ Deno.test("imports a Claude Code root and namespaced child tree", async () => {
     );
     strictEqual(
       db.prepare(`
-        SELECT COUNT(*) AS count FROM turn_inputs
-        WHERE preview LIKE '%Sensitive generated summary%'
+        SELECT COUNT(*) AS count FROM conversation_entries
+        WHERE content_preview LIKE '%Sensitive generated summary%'
       `).get()!.count,
       0,
     );
@@ -179,8 +185,10 @@ Deno.test("projects Claude fork artifacts as one canonical conversation family",
   const project = `${sessions}/project`;
   const parent = "00000000-0000-4000-8000-000000000001";
   const child = "00000000-0000-4000-8000-000000000002";
-  const sharedUser = `{"type":"user","uuid":"user-shared","sessionId":"${parent}","timestamp":"2026-08-01T10:00:00Z","promptSource":"typed","origin":{"kind":"human"},"message":{"content":"Shared"}}`;
-  const sharedAssistant = `{"type":"assistant","uuid":"assistant-shared","sessionId":"${parent}","session_id":"${parent}","timestamp":"2026-08-01T10:00:01Z","message":{"id":"call-shared","model":"claude-sonnet","content":[{"type":"text","text":"Shared answer"}],"usage":{"input_tokens":1,"cache_read_input_tokens":2,"cache_creation_input_tokens":3,"output_tokens":4}}}`;
+  const sharedUser =
+    `{"type":"user","uuid":"user-shared","sessionId":"${parent}","timestamp":"2026-08-01T10:00:00Z","promptSource":"typed","origin":{"kind":"human"},"message":{"content":"Shared"}}`;
+  const sharedAssistant =
+    `{"type":"assistant","uuid":"assistant-shared","sessionId":"${parent}","session_id":"${parent}","timestamp":"2026-08-01T10:00:01Z","message":{"id":"call-shared","model":"claude-sonnet","content":[{"type":"text","text":"Shared answer"}],"usage":{"input_tokens":1,"cache_read_input_tokens":2,"cache_creation_input_tokens":3,"output_tokens":4}}}`;
   write(
     `${project}/${parent}.jsonl`,
     `
@@ -195,8 +203,18 @@ ${sharedAssistant}
     `${project}/${child}.jsonl`,
     `
 {"type":"ai-title","sessionId":"${child}","aiTitle":"Fork family"}
-${sharedUser.replaceAll(`"${parent}"`, `"${child}"`).replace(`"session_id":"${child}"`, `"session_id":"${parent}"`)}
-${sharedAssistant.replaceAll(`"sessionId":"${parent}"`, `"sessionId":"${child}"`)}
+${
+      sharedUser.replaceAll(`"${parent}"`, `"${child}"`).replace(
+        `"session_id":"${child}"`,
+        `"session_id":"${parent}"`,
+      )
+    }
+${
+      sharedAssistant.replaceAll(
+        `"sessionId":"${parent}"`,
+        `"sessionId":"${child}"`,
+      )
+    }
 {"type":"user","uuid":"user-child","sessionId":"${child}","timestamp":"2026-08-01T10:00:04Z","promptSource":"typed","origin":{"kind":"human"},"message":{"content":"Child"}}
 {"type":"assistant","uuid":"assistant-child","sessionId":"${child}","session_id":"${child}","timestamp":"2026-08-01T10:00:05Z","message":{"id":"call-child","model":"claude-sonnet","content":[{"type":"text","text":"Child answer"}],"usage":{"input_tokens":1,"cache_read_input_tokens":2,"cache_creation_input_tokens":3,"output_tokens":4}}}
     `,
@@ -204,16 +222,41 @@ ${sharedAssistant.replaceAll(`"sessionId":"${parent}"`, `"sessionId":"${child}"`
 
   const db = openArchiveDatabase(`${directory}/archive.sqlite`);
   migrateTestDatabase(db);
-  const repository = new SessionRepository(db);
-  const conversations = new ConversationProjectionRepository(db);
+  const repository = new SourceArtifactRepository(db);
+  const conversations = new ConversationWriteRepository(db);
+  const reads = new ConversationRepository(db);
   try {
-    const result = await syncClaudeCodeSessions(sessions, repository, conversations);
-    strictEqual(result.projectionResults["conversation-v2"]!.imported, 2);
-    strictEqual(db.prepare("SELECT COUNT(*) AS count FROM conversations").get()!.count, 1);
-    strictEqual(db.prepare("SELECT COUNT(*) AS count FROM conversation_branches").get()!.count, 2);
-    strictEqual(db.prepare("SELECT COUNT(*) AS count FROM conversation_turns").get()!.count, 3);
-    strictEqual(db.prepare("SELECT COUNT(*) AS count FROM conversation_model_calls").get()!.count, 3);
-    strictEqual(db.prepare("SELECT COUNT(*) AS count FROM artifact_model_call_occurrences").get()!.count, 4);
+    const result = await syncClaudeCodeSessions(
+      sessions,
+      repository,
+      conversations,
+    );
+    strictEqual(result.imported, 2);
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM conversations").get()!.count,
+      1,
+    );
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM conversation_branches").get()!
+        .count,
+      2,
+    );
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM conversation_turns").get()!
+        .count,
+      3,
+    );
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM conversation_model_calls")
+        .get()!.count,
+      3,
+    );
+    strictEqual(
+      db.prepare(
+        "SELECT COUNT(*) AS count FROM artifact_model_call_occurrences",
+      ).get()!.count,
+      4,
+    );
     deepStrictEqual(
       db.prepare(`
         SELECT occurrence_kind, COUNT(*) AS count
@@ -226,7 +269,8 @@ ${sharedAssistant.replaceAll(`"sessionId":"${parent}"`, `"sessionId":"${child}"`
       ],
     );
     strictEqual(
-      db.prepare("SELECT model_calls FROM conversation_rollups").get()!.model_calls,
+      db.prepare("SELECT model_calls FROM conversation_rollups").get()!
+        .model_calls,
       3,
     );
     strictEqual(
@@ -239,7 +283,7 @@ ${sharedAssistant.replaceAll(`"sessionId":"${parent}"`, `"sessionId":"${child}"`
     );
     strictEqual(
       (await syncClaudeCodeSessions(sessions, repository, conversations))
-        .projectionResults["conversation-v2"]!.skipped,
+        .skipped,
       2,
     );
   } finally {
@@ -276,14 +320,18 @@ Deno.test("skips unchanged Claude trees and reimports index and agent metadata c
 
   const db = openArchiveDatabase(`${directory}/archive.sqlite`);
   migrateTestDatabase(db);
-  const repository = new SessionRepository(db);
+  const repository = new SourceArtifactRepository(db);
+  const conversations = new ConversationWriteRepository(db);
+  const reads = new ConversationRepository(db);
   try {
     strictEqual(
-      (await syncClaudeCodeSessions(sessions, repository)).imported,
+      (await syncClaudeCodeSessions(sessions, repository, conversations))
+        .imported,
       1,
     );
     strictEqual(
-      (await syncClaudeCodeSessions(sessions, repository)).skipped,
+      (await syncClaudeCodeSessions(sessions, repository, conversations))
+        .skipped,
       1,
     );
 
@@ -292,21 +340,23 @@ Deno.test("skips unchanged Claude trees and reimports index and agent metadata c
       '{"entries":[{"sessionId":"root","summary":"Changed title"}]}',
     );
     strictEqual(
-      (await syncClaudeCodeSessions(sessions, repository)).imported,
+      (await syncClaudeCodeSessions(sessions, repository, conversations))
+        .imported,
       1,
     );
     strictEqual(
-      repository.getSession("claude-code", "project/root")?.title,
+      reads.getSession("claude-code", "project/root")?.title,
       "Changed title",
     );
 
     write(metaPath, '{"description":"Changed child description"}');
     strictEqual(
-      (await syncClaudeCodeSessions(sessions, repository)).imported,
+      (await syncClaudeCodeSessions(sessions, repository, conversations))
+        .imported,
       1,
     );
     strictEqual(
-      repository.getSession("claude-code", "project/root")?.subagents[0].title,
+      reads.getSession("claude-code", "project/root")?.subagents[0].title,
       "Changed child description",
     );
   } finally {

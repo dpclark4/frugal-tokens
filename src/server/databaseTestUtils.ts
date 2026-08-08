@@ -14,6 +14,8 @@ const migrations = [
   "../../db/migrations/20260810120000_create_conversation_projection.sql",
   "../../db/migrations/20260811120000_add_generated_session_titles.sql",
   "../../db/migrations/20260812120000_compact_conversation_summaries.sql",
+  "../../db/migrations/20260813120000_canonicalize_conversation_checkpoint.sql",
+  "../../db/migrations/20260814120000_remove_legacy_session_schema.sql",
 ].map((path) => new URL(path, import.meta.url));
 
 export function migrateTestDatabase(db: DatabaseSync) {

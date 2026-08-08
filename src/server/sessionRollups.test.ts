@@ -5,9 +5,9 @@ import {
 } from "../shared/sessionSchemas.ts";
 import { aggregateOverviewRollups } from "./overviewAnalytics.ts";
 import type {
-  SessionCallImport,
-  SourceSessionImport,
-} from "./sessionRepository.ts";
+  ConversationCallImport,
+  LinearConversationImport,
+} from "./conversationImportTypes.ts";
 import { buildSessionRollup } from "./sessionRollups.ts";
 
 const baseTokens: TokenUsage = {
@@ -30,7 +30,7 @@ function call(
     toolEnd?: number;
     tokens?: TokenUsage;
   } = {},
-): SessionCallImport {
+): ConversationCallImport {
   return {
     id,
     callWithinTurn: 1,
@@ -64,9 +64,9 @@ function sourceSession(options: {
   externalID: string;
   parentExternalID?: string;
   reportedCost?: number;
-  turns: SourceSessionImport["session"]["turns"];
+  turns: LinearConversationImport["session"]["turns"];
   tokens: TokenUsage;
-}): SourceSessionImport {
+}): LinearConversationImport {
   return {
     sourceID: options.sourceID,
     externalID: options.externalID,

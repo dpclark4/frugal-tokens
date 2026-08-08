@@ -7,14 +7,13 @@ import {
   type OpenCodeSessionRow,
 } from "./opencodeRepository.ts";
 import {
-  SessionRepository,
-  type SourceSessionCheckpoint,
-} from "./sessionRepository.ts";
-import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
+  type ProjectionCheckpoint,
+  SourceArtifactRepository,
+} from "./sourceArtifactRepository.ts";
+import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
 
-const parserVersion = "opencode-8";
-const conversationParserVersion = "opencode-conversation-v2-5";
-const conversationProjectionName = "conversation-v2";
+const parserVersion = "opencode-conversation-5";
+const projectionName = "conversation";
 
 type AggregateRow = {
   session_id: string;
@@ -141,7 +140,7 @@ function snapshot(db: DatabaseSync, rootID: string): OpenCodeSnapshot {
   const ids = placeholders(sessionIDs);
   const messages = db.prepare(`
     -- OpenCode can store enormous generated diffs in message.summary. The
-    -- archive does not use that field, so keep it out of V8 and the checksum.
+    -- archive does not use that field, so keep it out of normalization and the checksum.
     SELECT id, session_id, time_created, time_updated,
       json_remove(data, '$.summary') AS data
     FROM message WHERE session_id IN (${ids})
@@ -205,15 +204,15 @@ function checksum(value: OpenCodeSnapshot) {
 }
 
 function recordUnchangedTree(
-  repository: SessionRepository,
+  repository: SourceArtifactRepository,
   sourceID: number,
   value: OpenCodeCandidate,
   observedAt: number,
-  checkpoint?: SourceSessionCheckpoint,
-  projectionName = "legacy",
+  checkpoint?: ProjectionCheckpoint,
+  projectionName = "conversation",
 ) {
   for (const session of value.sessions) {
-    repository.recordUnchangedSourceSession(
+    repository.recordUnchangedArtifact(
       sourceID,
       session.id,
       `session:${session.id}`,
@@ -225,7 +224,7 @@ function recordUnchangedTree(
 }
 
 function currentProjection(
-  checkpoint: SourceSessionCheckpoint | undefined,
+  checkpoint: ProjectionCheckpoint | undefined,
   version: string,
   contentChecksum: string,
 ) {
@@ -236,8 +235,8 @@ function currentProjection(
 
 export function syncOpenCodeSessions(
   path: string,
-  repository: SessionRepository,
-  conversations?: ConversationProjectionRepository,
+  repository: SourceArtifactRepository,
+  conversations: ConversationWriteRepository,
 ) {
   const source = new DatabaseSync(path, { readOnly: true });
   const observedAt = Date.now();
@@ -250,7 +249,6 @@ export function syncOpenCodeSessions(
   let imported = 0;
   let skipped = 0;
   let failed = 0;
-  const v2 = { imported: 0, skipped: 0, failed: 0 };
   let candidates: OpenCodeCandidate[] = [];
   let discoveryDuration = 0;
   let checkpointDuration = 0;
@@ -264,190 +262,122 @@ export function syncOpenCodeSessions(
     discoveryDuration = performance.now() - discoveryStartedAt;
     for (const initial of candidates) {
       const checkpointStartedAt = performance.now();
-      const previous = repository.checkpoint(sourceID, initial.id);
-      const previousV2 = conversations === undefined
-        ? undefined
-        : repository.checkpoint(
-          sourceID,
-          initial.id,
-          conversationProjectionName,
-        );
+      const previous = repository.projectionCheckpoint(
+        sourceID,
+        initial.id,
+        projectionName,
+      );
       checkpointDuration += performance.now() - checkpointStartedAt;
       if (
         previous?.parserVersion === parserVersion &&
         previous.changeHint === initial.changeHint &&
-        previous.lastError === undefined &&
-        (conversations === undefined ||
-          (previousV2?.parserVersion === conversationParserVersion &&
-            previousV2.changeHint === initial.changeHint &&
-            previousV2.lastError === undefined))
+        previous.lastError === undefined
       ) {
+        recordUnchangedTree(repository, sourceID, initial, observedAt);
         skipped++;
-        if (conversations !== undefined) v2.skipped++;
         continue;
       }
 
       let transaction = false;
-      let rows: OpenCodeSnapshot;
-      let fresh: OpenCodeCandidate;
-      let contentChecksum: string;
-      let normalized: ReturnType<typeof normalizeOpenCodeSessionTree>;
       try {
         const sourceReadStartedAt = performance.now();
         source.exec("BEGIN");
         transaction = true;
-        rows = snapshot(source, initial.id);
-        fresh = snapshotCandidate(rows);
-        contentChecksum = checksum(rows);
+        const rows = snapshot(source, initial.id);
+        const fresh = snapshotCandidate(rows);
+        const contentChecksum = checksum(rows);
         sourceReadDuration += performance.now() - sourceReadStartedAt;
+        const checkpoint: ProjectionCheckpoint = {
+          changeHint: fresh.changeHint,
+          sourceSize: fresh.rowCount,
+          sourceModifiedAt: fresh.updatedAt,
+          checksum: contentChecksum,
+          parserVersion,
+        };
         const normalizeStartedAt = performance.now();
-        normalized = normalizeOpenCodeSessionTree({
+        const normalized = normalizeOpenCodeSessionTree({
           ...rows,
           sourceID,
           observedAt,
-          checkpoint: {
-            changeHint: fresh.changeHint,
-            sourceSize: fresh.rowCount,
-            sourceModifiedAt: fresh.updatedAt,
-            checksum: contentChecksum,
-            parserVersion,
-          },
+          checkpoint,
         });
         normalizeDuration += performance.now() - normalizeStartedAt;
         source.exec("COMMIT");
         transaction = false;
+
+        for (const session of fresh.sessions) {
+          repository.recordUnchangedArtifact(
+            sourceID,
+            session.id,
+            `session:${session.id}`,
+            observedAt,
+          );
+        }
+        if (currentProjection(previous, parserVersion, contentChecksum)) {
+          recordUnchangedTree(
+            repository,
+            sourceID,
+            fresh,
+            observedAt,
+            checkpoint,
+            projectionName,
+          );
+          skipped++;
+          continue;
+        }
+
+        const archiveWriteStartedAt = performance.now();
+        conversations.replaceLinearConversationTree(normalized);
+        for (const session of fresh.sessions) {
+          repository.recordUnchangedArtifact(
+            sourceID,
+            session.id,
+            `session:${session.id}`,
+            observedAt,
+            checkpoint,
+            projectionName,
+          );
+          repository.recordProjectionCheckpoint(
+            sourceID,
+            session.id,
+            projectionName,
+            checkpoint,
+          );
+        }
+        archiveWriteDuration += performance.now() - archiveWriteStartedAt;
+        imported++;
       } catch (error) {
         if (transaction) source.exec("ROLLBACK");
         console.warn(
-          `[sync] harness=opencode session=${initial.id} failed`,
+          `[sync] harness=opencode session=${initial.id} projection=${projectionName} failed`,
           error,
         );
-        repository.recordSourceSessionError(
+        repository.recordArtifactError(
           sourceID,
           initial.id,
           `session:${initial.id}`,
           observedAt,
           error,
+          projectionName,
         );
         failed++;
-        if (conversations !== undefined) {
-          repository.recordProjectionError(
-            sourceID,
-            initial.id,
-            conversationProjectionName,
-            error,
-          );
-          v2.failed++;
-        }
-        continue;
-      }
-
-      const legacyCheckpoint: SourceSessionCheckpoint = {
-        changeHint: fresh.changeHint,
-        sourceSize: fresh.rowCount,
-        sourceModifiedAt: fresh.updatedAt,
-        checksum: contentChecksum,
-        parserVersion,
-      };
-      if (currentProjection(previous, parserVersion, contentChecksum)) {
-        const archiveWriteStartedAt = performance.now();
-        recordUnchangedTree(
-          repository,
-          sourceID,
-          fresh,
-          observedAt,
-          legacyCheckpoint,
-        );
-        archiveWriteDuration += performance.now() - archiveWriteStartedAt;
-        skipped++;
-      } else {
-        try {
-          const archiveWriteStartedAt = performance.now();
-          repository.replaceSourceSessionTree(normalized);
-          archiveWriteDuration += performance.now() - archiveWriteStartedAt;
-          imported++;
-        } catch (error) {
-          console.warn(
-            `[sync] harness=opencode session=${initial.id} projection=legacy failed`,
-            error,
-          );
-          repository.recordSourceSessionError(
-            sourceID,
-            initial.id,
-            `session:${initial.id}`,
-            observedAt,
-            error,
-          );
-          failed++;
-        }
-      }
-
-      if (conversations !== undefined) {
-        if (
-          currentProjection(
-            previousV2,
-            conversationParserVersion,
-            contentChecksum,
-          )
-        ) {
-          v2.skipped++;
-        } else {
-          try {
-            const archiveWriteStartedAt = performance.now();
-            conversations.replaceLinearSessionTree(normalized);
-            recordUnchangedTree(
-              repository,
-              sourceID,
-              fresh,
-              observedAt,
-              {
-                changeHint: fresh.changeHint,
-                sourceSize: fresh.rowCount,
-                sourceModifiedAt: fresh.updatedAt,
-                checksum: contentChecksum,
-                parserVersion: conversationParserVersion,
-              },
-              conversationProjectionName,
-            );
-            archiveWriteDuration += performance.now() - archiveWriteStartedAt;
-            v2.imported++;
-          } catch (error) {
-            console.warn(
-              `[sync] harness=opencode session=${initial.id} projection=${conversationProjectionName} failed`,
-              error,
-            );
-            repository.recordProjectionError(
-              sourceID,
-              initial.id,
-              conversationProjectionName,
-              error,
-            );
-            v2.failed++;
-          }
-        }
       }
     }
     const finalizeStartedAt = performance.now();
-    repository.markSourceSessionsSeen(
+    repository.markArtifactsSeen(
       sourceID,
       candidates.flatMap((value) =>
         value.sessions.map((session) => session.id)
       ),
       observedAt,
     );
-    repository.markMissingSourceSessions(sourceID, observedAt);
+    repository.markMissingArtifacts(sourceID, observedAt);
     const finalizeDuration = performance.now() - finalizeStartedAt;
     return {
       discovered: candidates.length,
       imported,
       skipped,
       failed,
-      projectionResults: {
-        legacy: { imported, skipped, failed },
-        ...(conversations === undefined
-          ? {}
-          : { [conversationProjectionName]: v2 }),
-      },
       timings: {
         discovery: discoveryDuration,
         checkpoints: checkpointDuration,

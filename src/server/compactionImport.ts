@@ -1,11 +1,13 @@
 import type {
   CompactionCheckpointItemImport,
   CompactionDetailImport,
-} from "./sessionRepository.ts";
+} from "./conversationImportTypes.ts";
 
 export const compactionPreviewLimit = 2_048;
 
-export function objectValue(value: unknown): Record<string, unknown> | undefined {
+export function objectValue(
+  value: unknown,
+): Record<string, unknown> | undefined {
   return value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
     : undefined;
@@ -119,10 +121,12 @@ export function messageCheckpointItem(options: {
 export function numberCheckpointItems(
   compaction: CompactionDetailImport,
 ): CompactionDetailImport {
-  compaction.checkpointItems = compaction.checkpointItems.map((item, index) => ({
+  compaction.checkpointItems = compaction.checkpointItems.map((
+    item,
+    index,
+  ) => ({
     ...item,
     ordinal: index + 1,
   }));
   return compaction;
 }
-

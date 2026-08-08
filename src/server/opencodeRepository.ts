@@ -10,14 +10,14 @@ import type { UsageCall } from "./usage.ts";
 import type {
   CompactionCheckpointItemImport,
   CompactionDetailImport,
-  SessionCallImport,
-  SessionContentImport,
-  SessionContextEventImport,
-  SessionToolImport,
-  SessionTurnImport,
-  SourceSessionCheckpoint,
-  SourceSessionImport,
-} from "./sessionRepository.ts";
+  ConversationCallImport,
+  ConversationContentImport,
+  ConversationContextEventImport,
+  ConversationToolImport,
+  ConversationTurnImport,
+  LinearConversationImport,
+} from "./conversationImportTypes.ts";
+import type { ProjectionCheckpoint } from "./sourceArtifactRepository.ts";
 import {
   booleanValue,
   numberCheckpointItems,
@@ -115,8 +115,8 @@ type MessageRow = OpenCodeMessageRow;
 type PartRow = OpenCodePartRow;
 
 type DecodedParts = {
-  activity: SessionCallImport["activity"];
-  content: SessionContentImport[];
+  activity: ConversationCallImport["activity"];
+  content: ConversationContentImport[];
   compaction?: {
     sourceID: string;
     auto?: unknown;
@@ -155,7 +155,7 @@ function addTokens(total: TokenUsage, usage: TokenUsage) {
   }
 }
 
-function preview(value: string): SessionContentImport {
+function preview(value: string): ConversationContentImport {
   return {
     kind: "text",
     preview: value.slice(0, contentPreviewLimit),
@@ -202,7 +202,9 @@ function decodeParts(rows: OpenCodePartRow[], strict = false) {
     };
     if (part.type === "text" && !part.synthetic) {
       current.activity.hasText = typeof part.text === "string";
-      if (typeof part.text === "string") current.content.push(preview(part.text));
+      if (typeof part.text === "string") {
+        current.content.push(preview(part.text));
+      }
     }
     if (part.type === "reasoning") {
       current.activity.hasReasoning = true;
@@ -303,7 +305,9 @@ function openCodeCompactionDetails(
   const issues: string[] = [];
   const auto = booleanValue(marker.auto);
   const overflow = booleanValue(marker.overflow);
-  if (marker.auto !== undefined && auto === undefined) issues.push("auto-not-boolean");
+  if (marker.auto !== undefined && auto === undefined) {
+    issues.push("auto-not-boolean");
+  }
   if (marker.overflow !== undefined && overflow === undefined) {
     issues.push("overflow-not-boolean");
   }
@@ -325,7 +329,8 @@ function openCodeCompactionDetails(
     return item === undefined ? [] : [item];
   });
   if (
-    retainedValues !== undefined && retainedItems.length !== retainedValues.length
+    retainedValues !== undefined &&
+    retainedItems.length !== retainedValues.length
   ) {
     issues.push("retained-message-unsupported");
   }
@@ -339,7 +344,9 @@ function openCodeCompactionDetails(
       ? "manual"
       : "unknown",
     resultKind: "unavailable",
-    checkpointCompleteness: retainedValues === undefined ? "unknown" : "partial",
+    checkpointCompleteness: retainedValues === undefined
+      ? "unknown"
+      : "partial",
     retainedItemCount: retainedItems.length,
     droppedItemCount: retainedValues === undefined
       ? undefined
@@ -406,15 +413,15 @@ function decodeMessages(
   partsByMessage = new Map<string, DecodedParts>(),
   strict = false,
 ) {
-  const turns: SessionTurnImport[] = [];
+  const turns: ConversationTurnImport[] = [];
   const providers = new Set<string>();
   const models = new Set<string>();
   const tokens = emptyTokens();
   let reportedCost = 0;
   let pendingImages = 0;
-  type PendingContextEvent = SessionContextEventImport & {
+  type PendingContextEvent = ConversationContextEventImport & {
     operationSeen: boolean;
-    affectedCallReference?: SessionCallImport;
+    affectedCallReference?: ConversationCallImport;
   };
   const contextEvents: PendingContextEvent[] = [];
   const pendingContextEvents: PendingContextEvent[] = [];
@@ -545,7 +552,7 @@ function decodeMessages(
     const textPreview = compactionOperation
       ? undefined
       : decodedParts?.content.find((item) => item.kind === "text")?.preview;
-    const call: SessionCallImport = {
+    const call: ConversationCallImport = {
       id: row.id,
       callWithinTurn: turn.calls.length + 1,
       ...(textPreview === undefined ? {} : { preview: textPreview }),
@@ -573,22 +580,25 @@ function decodeMessages(
   const nonEmptyTurns = turns
     .filter((turn) => turn.calls.length > 0)
     .map((turn, index) => ({ ...turn, number: index + 1 }));
-  const normalizedContextEvents: SessionContextEventImport[] = contextEvents
-    .map(
-      ({ operationSeen: _operationSeen, affectedCallReference, ...event }) => {
-        if (affectedCallReference === undefined) return event;
-        const turn = nonEmptyTurns.find((candidate) =>
-          candidate.calls.includes(affectedCallReference)
-        );
-        return turn === undefined ? event : {
-          ...event,
-          affectedCall: {
-            turn: turn.number,
-            call: affectedCallReference.callWithinTurn,
-          },
-        };
-      },
-    );
+  const normalizedContextEvents: ConversationContextEventImport[] =
+    contextEvents
+      .map(
+        (
+          { operationSeen: _operationSeen, affectedCallReference, ...event },
+        ) => {
+          if (affectedCallReference === undefined) return event;
+          const turn = nonEmptyTurns.find((candidate) =>
+            candidate.calls.includes(affectedCallReference)
+          );
+          return turn === undefined ? event : {
+            ...event,
+            affectedCall: {
+              turn: turn.number,
+              call: affectedCallReference.callWithinTurn,
+            },
+          };
+        },
+      );
   return {
     turns: nonEmptyTurns,
     contextEvents: normalizedContextEvents,
@@ -729,8 +739,8 @@ export function normalizeOpenCodeSessionTree(options: {
   parts: OpenCodePartRow[];
   sourceID: number;
   observedAt: number;
-  checkpoint: SourceSessionCheckpoint;
-}): SourceSessionImport[] {
+  checkpoint: ProjectionCheckpoint;
+}): LinearConversationImport[] {
   const messagesBySession = Map.groupBy(
     options.messages,
     (message) => message.session_id,
@@ -916,7 +926,9 @@ export class OpenCodeRepository {
         const images = pendingTurnImages.get(row.session_id) ?? 0;
         calls.push({
           ...decoded.call,
-          turnID: `${row.session_id}:${activeTurnIDs.get(row.session_id) ?? "prior"}`,
+          turnID: `${row.session_id}:${
+            activeTurnIDs.get(row.session_id) ?? "prior"
+          }`,
           turnOrdinal: activeTurnOrdinals.get(row.session_id) ?? 0,
           ...(images > 0 ? { images } : {}),
         });

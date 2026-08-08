@@ -1,19 +1,16 @@
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
-import { sessionListItemSchema } from "../shared/sessionSchemas.ts";
 import { DatabaseSync } from "node:sqlite";
 import {
-  cursorConversationParserVersion,
   cursorParserVersion,
   normalizeCursorSession,
   readCursorCapture,
   syncCursorAgentSessions,
 } from "./cursorAgentRepository.ts";
-import { ConversationCompatibilityRepository } from "./conversationCompatibilityRepository.ts";
-import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
+import { ConversationRepository } from "./conversationRepository.ts";
+import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
 import { openArchiveDatabase } from "./database.ts";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
-import { SessionRepository } from "./sessionRepository.ts";
-import { enrichSessionSummary } from "./sessionSummaryEnrichment.ts";
+import { SourceArtifactRepository } from "./sourceArtifactRepository.ts";
 
 Deno.test("normalizes Cursor capture usage onto its matching request", () => {
   const directory = Deno.makeTempDirSync();
@@ -226,7 +223,7 @@ function cursorStore(options: {
   }
 }
 
-Deno.test("Cursor legacy and conversation projections sync independently with tree parity", () => {
+Deno.test("Cursor canonical synchronization preserves tree topology and last-good data", () => {
   const directory = Deno.makeTempDirSync();
   cursorStore({
     directory,
@@ -265,154 +262,84 @@ Deno.test("Cursor legacy and conversation projections sync independently with tr
   const capturePath = `${directory}/events.jsonl`;
   Deno.writeTextFileSync(
     capturePath,
-    ["root-request", "child-request"].map((requestId) => JSON.stringify({
-      kind: "usage",
-      requestId,
-      inputTokens: 10,
-      outputTokens: 2,
-    })).join("\n"),
+    ["root-request", "child-request"].map((requestId) =>
+      JSON.stringify({
+        kind: "usage",
+        requestId,
+        inputTokens: 10,
+        outputTokens: 2,
+      })
+    ).join("\n"),
   );
 
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
-  const legacy = new SessionRepository(db);
-  const projection = new ConversationProjectionRepository(db);
-  const compatibility = new ConversationCompatibilityRepository(db);
+  const sources = new SourceArtifactRepository(db);
+  const writer = new ConversationWriteRepository(db);
+  const reads = new ConversationRepository(db);
   try {
     const first = syncCursorAgentSessions(
       directory,
       capturePath,
-      legacy,
-      projection,
+      sources,
+      writer,
     );
     strictEqual(first.imported, 2);
-    strictEqual(first.projectionResults["conversation-v2"]!.imported, 2);
-
-    const legacyList = legacy.listSessions(1, 10, "cursor");
-    const v2List = compatibility.listSessions(1, 10, "cursor");
-    const legacyDetail = legacy.getSession("cursor", "root-agent")!;
-    const v2Detail = compatibility.getSession("cursor", "root-agent")!;
-    deepStrictEqual(
-      JSON.parse(JSON.stringify(v2List.items)),
-      JSON.parse(JSON.stringify([
-        sessionListItemSchema.parse(enrichSessionSummary(legacyDetail)),
-      ])),
-    );
-    deepStrictEqual(v2List.pagination, legacyList.pagination);
-    const withoutInternalIDs = (value: unknown) =>
-      JSON.parse(JSON.stringify(
-        value,
-        (key, item) => key === "internalID" ? undefined : item,
-      ));
-    deepStrictEqual(
-      withoutInternalIDs(v2Detail),
-      withoutInternalIDs(legacyDetail),
-    );
-    strictEqual(legacyDetail.subagents.length, 1);
-    strictEqual(v2Detail.subagents.length, 1);
-    strictEqual(v2Detail.subagents[0].id, "child-agent");
+    const detail = reads.getSession("cursor", "root-agent")!;
+    strictEqual(detail.subagents.length, 1);
+    strictEqual(detail.subagents[0].id, "child-agent");
 
     const unchanged = syncCursorAgentSessions(
       directory,
       capturePath,
-      legacy,
-      projection,
+      sources,
+      writer,
     );
     strictEqual(unchanged.skipped, 2);
-    strictEqual(unchanged.projectionResults["conversation-v2"]!.skipped, 2);
 
-    const sourceID = legacy.ensureSource(
+    const sourceID = sources.ensureSource(
       "cursor",
       "directory",
       "Cursor",
       directory,
     );
     db.prepare(`
-      UPDATE artifact_import_projections SET parser_version = 'old-v2'
-      WHERE projection_name = 'conversation-v2'
+      UPDATE artifact_import_projections SET parser_version = 'stale'
+      WHERE projection_name = 'conversation'
         AND source_session_id IN (
           SELECT id FROM source_sessions WHERE source_id = ?
         )
     `).run(sourceID);
-    const v2Bump = syncCursorAgentSessions(
+    const lastGood = reads.getSession("cursor", "root-agent")!;
+    const replace = writer.replaceLinearConversationTree.bind(writer);
+    writer.replaceLinearConversationTree = () => {
+      throw new Error("forced conversation failure");
+    };
+    const failed = syncCursorAgentSessions(
       directory,
       capturePath,
-      legacy,
-      projection,
+      sources,
+      writer,
     );
-    strictEqual(v2Bump.skipped, 2);
-    strictEqual(v2Bump.projectionResults["conversation-v2"]!.imported, 2);
+    writer.replaceLinearConversationTree = replace;
+    strictEqual(failed.failed, 2);
+    deepStrictEqual(reads.getSession("cursor", "root-agent"), lastGood);
     strictEqual(
-      legacy.checkpoint(sourceID, "root-agent")!.parserVersion,
+      sources.projectionCheckpoint(sourceID, "root-agent")?.lastError,
+      "forced conversation failure",
+    );
+
+    const recovered = syncCursorAgentSessions(
+      directory,
+      capturePath,
+      sources,
+      writer,
+    );
+    strictEqual(recovered.imported, 2);
+    strictEqual(
+      sources.projectionCheckpoint(sourceID, "root-agent")?.parserVersion,
       cursorParserVersion,
     );
-    strictEqual(
-      legacy.checkpoint(sourceID, "root-agent", "conversation-v2")!
-        .parserVersion,
-      cursorConversationParserVersion,
-    );
-
-    const lastGoodV2 = compatibility.getSession("cursor", "root-agent")!;
-    db.prepare(`
-      UPDATE artifact_import_projections SET parser_version = 'stale-v2'
-      WHERE projection_name = 'conversation-v2'
-        AND source_session_id IN (
-          SELECT id FROM source_sessions WHERE source_id = ?
-        )
-    `).run(sourceID);
-    const replaceV2 = projection.replaceLinearSessionTree.bind(projection);
-    projection.replaceLinearSessionTree = () => {
-      throw new Error("forced V2 failure");
-    };
-    const failedV2 = syncCursorAgentSessions(
-      directory,
-      capturePath,
-      legacy,
-      projection,
-    );
-    projection.replaceLinearSessionTree = replaceV2;
-    strictEqual(failedV2.skipped, 2);
-    strictEqual(failedV2.projectionResults["conversation-v2"]!.failed, 2);
-    deepStrictEqual(
-      compatibility.getSession("cursor", "root-agent"),
-      lastGoodV2,
-    );
-
-    const recoveredV2 = syncCursorAgentSessions(
-      directory,
-      capturePath,
-      legacy,
-      projection,
-    );
-    strictEqual(
-      recoveredV2.projectionResults["conversation-v2"]!.imported,
-      2,
-    );
-    const lastGoodLegacy = legacy.getSession("cursor", "root-agent")!;
-    db.prepare(`
-      UPDATE artifact_import_projections SET parser_version = 'stale'
-      WHERE projection_name IN ('legacy', 'conversation-v2')
-        AND source_session_id IN (
-          SELECT id FROM source_sessions WHERE source_id = ?
-        )
-    `).run(sourceID);
-    const replaceLegacy = legacy.replaceSourceSessionTree.bind(legacy);
-    legacy.replaceSourceSessionTree = () => {
-      throw new Error("forced legacy failure");
-    };
-    const failedLegacy = syncCursorAgentSessions(
-      directory,
-      capturePath,
-      legacy,
-      projection,
-    );
-    legacy.replaceSourceSessionTree = replaceLegacy;
-    strictEqual(failedLegacy.failed, 2);
-    strictEqual(
-      failedLegacy.projectionResults["conversation-v2"]!.imported,
-      2,
-    );
-    deepStrictEqual(legacy.getSession("cursor", "root-agent"), lastGoodLegacy);
   } finally {
     db.close();
     Deno.removeSync(directory, { recursive: true });

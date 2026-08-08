@@ -4,75 +4,70 @@ import {
   normalizeCodexSession,
 } from "./codexRepository.ts";
 import {
-  sourceSessionImportFromFile,
+  linearConversationImportFromFile,
   syncFileSessions,
 } from "./fileSessionImporter.ts";
-import { SessionRepository } from "./sessionRepository.ts";
-import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
+import { SourceArtifactRepository } from "./sourceArtifactRepository.ts";
+import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
 
-const legacyParserVersion = "codex-12";
-const conversationParserVersion = "codex-conversation-v2-family-7";
+const parserVersion = "codex-conversation-family-7";
 const sourceIdentityNamespace = "session";
 const forkRelationship = "fork";
 
 export async function syncCodexSessions(
   directory: string,
-  repository: SessionRepository,
-  conversations?: ConversationProjectionRepository,
+  repository: SourceArtifactRepository,
+  conversations: ConversationWriteRepository,
 ) {
   return await syncFileSessions({
     harness: "codex",
     label: "Codex",
     directory,
-    parserVersion: legacyParserVersion,
     repository,
     discover: discoverCodexSessions,
     normalize: normalizeCodexSession,
-    ...(conversations === undefined ? {} : {
-      familyShadowProjections: [{
-        name: "conversation-v2",
-        parserVersion: conversationParserVersion,
-        identityNamespace: sourceIdentityNamespace,
-        relationship: forkRelationship,
-        metadata: (observation) => {
-          const metadata = codexSourceArtifactMetadata(observation.text);
-          return {
-            identities: metadata.sourceIdentity === undefined ? [] : [{
-              namespace: sourceIdentityNamespace,
-              value: metadata.sourceIdentity,
-            }],
-            lineage: metadata.parentSourceIdentity === undefined ? [] : [{
-              relationship: forkRelationship,
-              parentIdentityNamespace: sourceIdentityNamespace,
-              parentIdentityValue: metadata.parentSourceIdentity,
-              provenance: "explicit-source-metadata",
-            }],
-          };
-        },
-        project: ({ sourceID, artifacts }) => {
-          const sourceSessionIDs = new Set(
-            artifacts.map(({ record }) => record.sourceSessionID),
-          );
-          const root = artifacts.find(({ record }) =>
-            record.parentSourceSessionID === undefined ||
-            !sourceSessionIDs.has(record.parentSourceSessionID)
-          ) ?? artifacts[0];
-          conversations.replaceArtifactFamily({
-            sourceID,
-            externalID: root.record.sourceIdentity ?? root.record.externalID,
-            artifacts: artifacts.map(({ record, observation }) => ({
-              externalID: record.externalID,
-              sourceIdentity: record.sourceIdentity,
-              parentSourceIdentity: record.parentSourceIdentity,
-              value: sourceSessionImportFromFile(
-                observation,
-                observation.normalize(),
-                conversationParserVersion,
-              ),
-            })),
-          });
-        },
-      }],
-    }),
+    familyProjection: {
+      parserVersion,
+      identityNamespace: sourceIdentityNamespace,
+      relationship: forkRelationship,
+      metadata: (observation) => {
+        const metadata = codexSourceArtifactMetadata(observation.text);
+        return {
+          identities: metadata.sourceIdentity === undefined ? [] : [{
+            namespace: sourceIdentityNamespace,
+            value: metadata.sourceIdentity,
+          }],
+          lineage: metadata.parentSourceIdentity === undefined ? [] : [{
+            relationship: forkRelationship,
+            parentIdentityNamespace: sourceIdentityNamespace,
+            parentIdentityValue: metadata.parentSourceIdentity,
+            provenance: "explicit-source-metadata",
+          }],
+        };
+      },
+      project: ({ sourceID, artifacts }) => {
+        const sourceArtifactIDs = new Set(
+          artifacts.map(({ record }) => record.sourceArtifactID),
+        );
+        const root = artifacts.find(({ record }) =>
+          record.parentSourceArtifactID === undefined ||
+          !sourceArtifactIDs.has(record.parentSourceArtifactID)
+        ) ?? artifacts[0];
+        conversations.replaceConversationFamily({
+          sourceID,
+          externalID: root.record.sourceIdentity ?? root.record.externalID,
+          artifacts: artifacts.map(({ record, observation }) => ({
+            externalID: record.externalID,
+            sourceIdentity: record.sourceIdentity,
+            parentSourceIdentity: record.parentSourceIdentity,
+            value: linearConversationImportFromFile(
+              observation,
+              observation.normalize(),
+              parserVersion,
+            ),
+          })),
+        });
+      },
+    },
   });
 }

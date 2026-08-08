@@ -1,10 +1,10 @@
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { syncCodexSessions } from "./codexImporter.ts";
-import { ConversationCompatibilityRepository } from "./conversationCompatibilityRepository.ts";
-import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
+import { ConversationRepository } from "./conversationRepository.ts";
+import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
 import { openArchiveDatabase } from "./database.ts";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
-import { SessionRepository } from "./sessionRepository.ts";
+import { SourceArtifactRepository } from "./sourceArtifactRepository.ts";
 
 function fixturePath(name: string) {
   return decodeURIComponent(
@@ -54,8 +54,8 @@ function writeJsonl(path: string, records: unknown[]) {
 Deno.test("Codex sibling artifacts project one canonical conversation family", async () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
-  const sessions = new SessionRepository(db);
-  const conversations = new ConversationProjectionRepository(db);
+  const sessions = new SourceArtifactRepository(db);
+  const conversations = new ConversationWriteRepository(db);
   try {
     const first = await syncCodexSessions(
       fixturePath("sibling-forks"),
@@ -63,7 +63,6 @@ Deno.test("Codex sibling artifacts project one canonical conversation family", a
       conversations,
     );
     strictEqual(first.imported, 3);
-    strictEqual(first.projectionResults["conversation-v2"].imported, 3);
     strictEqual(count(db, "conversations"), 1);
     strictEqual(count(db, "conversation_branches"), 3);
     strictEqual(count(db, "conversation_turns"), 7);
@@ -131,7 +130,7 @@ Deno.test("Codex sibling artifacts project one canonical conversation family", a
       sessions,
       conversations,
     );
-    strictEqual(unchanged.projectionResults["conversation-v2"].skipped, 3);
+    strictEqual(unchanged.skipped, 3);
     strictEqual(
       db.prepare("SELECT id FROM conversations").get()!.id,
       conversationID,
@@ -228,18 +227,18 @@ Deno.test("Codex rewind with a queued prompt projects as one branched conversati
 
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
-  const sessions = new SessionRepository(db);
-  const conversations = new ConversationProjectionRepository(db);
+  const sessions = new SourceArtifactRepository(db);
+  const conversations = new ConversationWriteRepository(db);
   try {
     const result = await syncCodexSessions(source, sessions, conversations);
-    strictEqual(result.projectionResults["conversation-v2"].failed, 0);
+    strictEqual(result.failed, 0);
     strictEqual(count(db, "conversations"), 1);
     strictEqual(count(db, "conversation_branches"), 2);
     strictEqual(count(db, "conversation_turns"), 4);
     strictEqual(count(db, "conversation_model_calls"), 4);
     strictEqual(count(db, "artifact_model_call_occurrences"), 6);
     strictEqual(
-      new ConversationCompatibilityRepository(db).listSessions(
+      new ConversationRepository(db).listSessions(
         1,
         10,
         "codex",
@@ -254,8 +253,8 @@ Deno.test("Codex rewind with a queued prompt projects as one branched conversati
 Deno.test("Codex nested artifacts resolve recursive branch ancestry", async () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
-  const sessions = new SessionRepository(db);
-  const conversations = new ConversationProjectionRepository(db);
+  const sessions = new SourceArtifactRepository(db);
+  const conversations = new ConversationWriteRepository(db);
   try {
     await syncCodexSessions(
       fixturePath("nested-fork"),
@@ -299,15 +298,15 @@ Deno.test("Codex family rebuilds for late, missing, and reappearing parents", as
   copyFixture("nested-fork", source, ["rollout-child.jsonl"]);
   const db = openArchiveDatabase(`${directory}/archive.sqlite`);
   migrateTestDatabase(db);
-  const sessions = new SessionRepository(db);
-  const conversations = new ConversationProjectionRepository(db);
+  const sessions = new SourceArtifactRepository(db);
+  const conversations = new ConversationWriteRepository(db);
   try {
     const provisional = await syncCodexSessions(
       source,
       sessions,
       conversations,
     );
-    strictEqual(provisional.projectionResults["conversation-v2"].imported, 1);
+    strictEqual(provisional.imported, 1);
     strictEqual(count(db, "conversations"), 1);
     strictEqual(count(db, "conversation_branches"), 1);
     strictEqual(
@@ -320,7 +319,7 @@ Deno.test("Codex family rebuilds for late, missing, and reappearing parents", as
 
     copyFixture("nested-fork", source, ["rollout-root.jsonl"]);
     const resolved = await syncCodexSessions(source, sessions, conversations);
-    strictEqual(resolved.projectionResults["conversation-v2"].imported, 2);
+    strictEqual(resolved.imported, 2);
     strictEqual(count(db, "conversations"), 1);
     strictEqual(count(db, "conversation_branches"), 2);
     strictEqual(count(db, "conversation_model_calls"), 2);
@@ -348,7 +347,7 @@ Deno.test("Codex family rebuilds for late, missing, and reappearing parents", as
     Deno.removeSync(rootPath);
     const beforeMissing = db.prepare("SELECT id FROM conversations").get()!.id;
     const missing = await syncCodexSessions(source, sessions, conversations);
-    strictEqual(missing.projectionResults["conversation-v2"].skipped, 1);
+    strictEqual(missing.skipped, 1);
     strictEqual(
       db.prepare("SELECT id FROM conversations").get()!.id,
       beforeMissing,
@@ -364,7 +363,7 @@ Deno.test("Codex family rebuilds for late, missing, and reappearing parents", as
 
     copyFixture("nested-fork", source, ["rollout-root.jsonl"]);
     const reappeared = await syncCodexSessions(source, sessions, conversations);
-    strictEqual(reappeared.projectionResults["conversation-v2"].imported, 2);
+    strictEqual(reappeared.imported, 2);
     strictEqual(count(db, "conversation_branches"), 2);
     strictEqual(count(db, "conversation_model_calls"), 2);
   } finally {
@@ -379,8 +378,8 @@ Deno.test("Codex parent append rebuilds the complete family once", async () => {
   copyFixture("sibling-forks", source);
   const db = openArchiveDatabase(`${directory}/archive.sqlite`);
   migrateTestDatabase(db);
-  const sessions = new SessionRepository(db);
-  const conversations = new ConversationProjectionRepository(db);
+  const sessions = new SourceArtifactRepository(db);
+  const conversations = new ConversationWriteRepository(db);
   try {
     await syncCodexSessions(source, sessions, conversations);
     const original = `${source}/rollout-original.jsonl`;
@@ -395,8 +394,7 @@ Deno.test("Codex parent append rebuilds the complete family once", async () => {
     const changedAt = new Date(Date.now() + 2_000);
     Deno.utimeSync(original, changedAt, changedAt);
     const result = await syncCodexSessions(source, sessions, conversations);
-    strictEqual(result.imported, 1);
-    strictEqual(result.projectionResults["conversation-v2"].imported, 3);
+    strictEqual(result.imported, 3);
     strictEqual(count(db, "conversations"), 1);
     strictEqual(count(db, "conversation_turns"), 8);
     strictEqual(count(db, "conversation_model_calls"), 8);
@@ -413,15 +411,15 @@ Deno.test("Codex new children rebuild only their connected family", async () => 
   copyFixture("sibling-forks", source, ["rollout-original.jsonl"]);
   const db = openArchiveDatabase(`${directory}/archive.sqlite`);
   migrateTestDatabase(db);
-  const sessions = new SessionRepository(db);
-  const conversations = new ConversationProjectionRepository(db);
+  const sessions = new SourceArtifactRepository(db);
+  const conversations = new ConversationWriteRepository(db);
   try {
     await syncCodexSessions(source, sessions, conversations);
     strictEqual(count(db, "conversation_model_calls"), 4);
 
     copyFixture("sibling-forks", source, ["rollout-fork-a.jsonl"]);
     const firstChild = await syncCodexSessions(source, sessions, conversations);
-    strictEqual(firstChild.projectionResults["conversation-v2"].imported, 2);
+    strictEqual(firstChild.imported, 2);
     strictEqual(count(db, "conversation_branches"), 2);
     strictEqual(count(db, "conversation_model_calls"), 6);
     strictEqual(count(db, "artifact_model_call_occurrences"), 8);
@@ -432,7 +430,7 @@ Deno.test("Codex new children rebuild only their connected family", async () => 
       sessions,
       conversations,
     );
-    strictEqual(secondChild.projectionResults["conversation-v2"].imported, 3);
+    strictEqual(secondChild.imported, 3);
     strictEqual(count(db, "conversation_branches"), 3);
     strictEqual(count(db, "conversation_model_calls"), 7);
     strictEqual(count(db, "artifact_model_call_occurrences"), 13);
@@ -451,8 +449,8 @@ Deno.test("Codex ancestry cycle failure preserves the last good family", async (
   ]);
   const db = openArchiveDatabase(`${directory}/archive.sqlite`);
   migrateTestDatabase(db);
-  const sessions = new SessionRepository(db);
-  const conversations = new ConversationProjectionRepository(db);
+  const sessions = new SourceArtifactRepository(db);
+  const conversations = new ConversationWriteRepository(db);
   const rootPath = `${source}/rollout-root.jsonl`;
   const originalRoot = Deno.readTextFileSync(rootPath);
   try {
@@ -463,7 +461,7 @@ Deno.test("Codex ancestry cycle failure preserves the last good family", async (
       payload.forked_from_id = "00000000-0000-4000-8000-000000000102";
     });
     const failed = await syncCodexSessions(source, sessions, conversations);
-    strictEqual(failed.projectionResults["conversation-v2"].failed, 2);
+    strictEqual(failed.failed, 2);
     strictEqual(
       db.prepare("SELECT id FROM conversations").get()!.id,
       conversationID,
@@ -475,7 +473,7 @@ Deno.test("Codex ancestry cycle failure preserves the last good family", async (
     const changedAt = new Date(Date.now() + 4_000);
     Deno.utimeSync(rootPath, changedAt, changedAt);
     const recovered = await syncCodexSessions(source, sessions, conversations);
-    strictEqual(recovered.projectionResults["conversation-v2"].imported, 2);
+    strictEqual(recovered.imported, 2);
     strictEqual(count(db, "conversation_branches"), 2);
   } finally {
     db.close();
@@ -492,8 +490,8 @@ Deno.test("Codex transactional replacement retains the prior canonical family", 
   ]);
   const db = openArchiveDatabase(`${directory}/archive.sqlite`);
   migrateTestDatabase(db);
-  const sessions = new SessionRepository(db);
-  const conversations = new ConversationProjectionRepository(db);
+  const sessions = new SourceArtifactRepository(db);
+  const conversations = new ConversationWriteRepository(db);
   const childPath = `${source}/rollout-child.jsonl`;
   try {
     await syncCodexSessions(source, sessions, conversations);
@@ -516,7 +514,7 @@ Deno.test("Codex transactional replacement retains the prior canonical family", 
     Deno.utimeSync(childPath, changedAt, changedAt);
 
     const failed = await syncCodexSessions(source, sessions, conversations);
-    strictEqual(failed.projectionResults["conversation-v2"].failed, 2);
+    strictEqual(failed.failed, 2);
     strictEqual(
       db.prepare("SELECT id FROM conversations").get()!.id,
       conversationID,
@@ -641,8 +639,8 @@ Deno.test("Codex copies a complete multi-call tool turn without re-executing it"
   try {
     await syncCodexSessions(
       source,
-      new SessionRepository(db),
-      new ConversationProjectionRepository(db),
+      new SourceArtifactRepository(db),
+      new ConversationWriteRepository(db),
     );
     strictEqual(count(db, "conversation_turns"), 1);
     strictEqual(count(db, "conversation_model_calls"), 2);
@@ -739,8 +737,8 @@ Deno.test("Codex does not deduplicate copied-looking calls without stable identi
   try {
     await syncCodexSessions(
       source,
-      new SessionRepository(db),
-      new ConversationProjectionRepository(db),
+      new SourceArtifactRepository(db),
+      new ConversationWriteRepository(db),
     );
     strictEqual(count(db, "conversation_turns"), 2);
     strictEqual(count(db, "conversation_model_calls"), 2);
@@ -823,8 +821,8 @@ Deno.test("Codex projects a source artifact without provider session identity", 
   try {
     await syncCodexSessions(
       source,
-      new SessionRepository(db),
-      new ConversationProjectionRepository(db),
+      new SourceArtifactRepository(db),
+      new ConversationWriteRepository(db),
     );
     strictEqual(count(db, "conversations"), 1);
     strictEqual(count(db, "conversation_model_calls"), 1);

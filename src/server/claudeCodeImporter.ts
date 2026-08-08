@@ -1,21 +1,20 @@
 import {
-  claudeCodeSourceArtifactMetadata,
   type ClaudeCodeSessionCandidate,
+  claudeCodeSourceArtifactMetadata,
   discoverClaudeCodeSessions,
   normalizeClaudeCodeSessionTree,
 } from "./claudeCodeRepository.ts";
 import {
-  SessionRepository,
+  type ProjectionCheckpoint,
   type SourceArtifactMetadata,
   type SourceArtifactProjectionRecord,
-  type SourceSessionCheckpoint,
-  type SourceSessionImport,
-} from "./sessionRepository.ts";
-import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
+  SourceArtifactRepository,
+} from "./sourceArtifactRepository.ts";
+import type { LinearConversationImport } from "./conversationImportTypes.ts";
+import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
 
-const legacyParserVersion = "claude-code-5";
-const conversationParserVersion = "claude-code-conversation-v2-family-1";
-const conversationProjectionName = "conversation-v2";
+const parserVersion = "claude-code-conversation-family-1";
+const projectionName = "conversation";
 const sourceIdentityNamespace = "session";
 const forkRelationship = "fork";
 
@@ -29,16 +28,16 @@ function externalID(
 }
 
 function recordUnchangedTree(
-  repository: SessionRepository,
+  repository: SourceArtifactRepository,
   sourceID: number,
   candidate: ClaudeCodeSessionCandidate,
   observedAt: number,
-  checkpoint?: SourceSessionCheckpoint,
-  projectionName = "legacy",
+  checkpoint?: ProjectionCheckpoint,
+  projectionName = "conversation",
 ) {
   for (const dependency of candidate.dependencies) {
     if (!dependency.artifactPath.endsWith(".jsonl")) continue;
-    repository.recordUnchangedSourceSession(
+    repository.recordUnchangedArtifact(
       sourceID,
       externalID(candidate, dependency.artifactPath),
       dependency.artifactPath,
@@ -79,31 +78,26 @@ async function fingerprint(
   ).join("");
 }
 
-function currentProjection(
-  checkpoint: SourceSessionCheckpoint | undefined,
-  parserVersion: string,
-  checksum: string,
-) {
-  return checkpoint?.parserVersion === parserVersion &&
-    checkpoint.checksum === checksum && checkpoint.lastError === undefined;
-}
-
 function connectedArtifactFamilies(records: SourceArtifactProjectionRecord[]) {
-  const byID = new Map(records.map((record) => [record.sourceSessionID, record]));
+  const byID = new Map(
+    records.map((record) => [record.sourceArtifactID, record]),
+  );
   const neighbors = new Map<number, Set<number>>(
-    records.map((record) => [record.sourceSessionID, new Set<number>()]),
+    records.map((record) => [record.sourceArtifactID, new Set<number>()]),
   );
   for (const record of records) {
-    if (record.parentSourceSessionID === undefined ||
-      !byID.has(record.parentSourceSessionID)) continue;
-    neighbors.get(record.sourceSessionID)!.add(record.parentSourceSessionID);
-    neighbors.get(record.parentSourceSessionID)!.add(record.sourceSessionID);
+    if (
+      record.parentSourceArtifactID === undefined ||
+      !byID.has(record.parentSourceArtifactID)
+    ) continue;
+    neighbors.get(record.sourceArtifactID)!.add(record.parentSourceArtifactID);
+    neighbors.get(record.parentSourceArtifactID)!.add(record.sourceArtifactID);
   }
   const visited = new Set<number>();
   return records.flatMap((record) => {
-    if (visited.has(record.sourceSessionID)) return [];
+    if (visited.has(record.sourceArtifactID)) return [];
     const family: SourceArtifactProjectionRecord[] = [];
-    const pending = [record.sourceSessionID];
+    const pending = [record.sourceArtifactID];
     while (pending.length > 0) {
       const id = pending.pop()!;
       if (visited.has(id)) continue;
@@ -115,19 +109,25 @@ function connectedArtifactFamilies(records: SourceArtifactProjectionRecord[]) {
   });
 }
 
-function assertAcyclicArtifactLineage(family: SourceArtifactProjectionRecord[]) {
-  const byID = new Map(family.map((record) => [record.sourceSessionID, record]));
+function assertAcyclicArtifactLineage(
+  family: SourceArtifactProjectionRecord[],
+) {
+  const byID = new Map(
+    family.map((record) => [record.sourceArtifactID, record]),
+  );
   for (const start of family) {
     const path = new Set<number>();
     let current: SourceArtifactProjectionRecord | undefined = start;
     while (current !== undefined) {
-      if (path.has(current.sourceSessionID)) {
-        throw new Error(`Malformed source artifact ancestry cycle: ${start.externalID}`);
+      if (path.has(current.sourceArtifactID)) {
+        throw new Error(
+          `Malformed source artifact ancestry cycle: ${start.externalID}`,
+        );
       }
-      path.add(current.sourceSessionID);
-      current = current.parentSourceSessionID === undefined
+      path.add(current.sourceArtifactID);
+      current = current.parentSourceArtifactID === undefined
         ? undefined
-        : byID.get(current.parentSourceSessionID);
+        : byID.get(current.parentSourceArtifactID);
     }
   }
 }
@@ -170,8 +170,8 @@ function readCandidateSnapshots(candidate: ClaudeCodeSessionCandidate) {
 
 export async function syncClaudeCodeSessions(
   directory: string,
-  repository: SessionRepository,
-  conversations?: ConversationProjectionRepository,
+  repository: SourceArtifactRepository,
+  conversations: ConversationWriteRepository,
 ) {
   const observedAt = Date.now();
   const sourceID = repository.ensureSource(
@@ -181,334 +181,235 @@ export async function syncClaudeCodeSessions(
     directory,
   );
   const candidates = discoverClaudeCodeSessions(directory);
+  const candidateByID = new Map(
+    candidates.map((candidate) => [candidate.id, candidate]),
+  );
+  const cached = new Map<string, {
+    values: LinearConversationImport[];
+    checksum: string;
+    checkpoint: ProjectionCheckpoint;
+    rootText: string;
+  }>();
+  const metadata: SourceArtifactMetadata[] = [];
   let imported = 0;
   let skipped = 0;
   let failed = 0;
-  const v2 = { imported: 0, skipped: 0, failed: 0 };
-  const v2Metadata: SourceArtifactMetadata[] = [];
+
+  const load = async (candidate: ClaudeCodeSessionCandidate) => {
+    const existing = cached.get(candidate.id);
+    if (existing !== undefined) return existing;
+    const snapshots = readCandidateSnapshots(candidate);
+    const afterRead = discoverClaudeCodeSessions(directory).find((item) =>
+      item.id === candidate.id
+    );
+    if (!afterRead || dependencyHint(afterRead) !== dependencyHint(candidate)) {
+      throw new Error(
+        "Claude Code dependency tree changed while it was being read",
+      );
+    }
+    const checksum = await fingerprint(candidate, snapshots);
+    const checkpoint: ProjectionCheckpoint = {
+      sourceSize: candidate.size,
+      sourceModifiedAt: candidate.changeHint,
+      checksum,
+      parserVersion,
+    };
+    const values = normalizeClaudeCodeSessionTree({
+      candidate,
+      snapshots,
+      sourceID,
+      observedAt,
+      checkpoint,
+    });
+    const value = {
+      values,
+      checksum,
+      checkpoint,
+      rootText: new TextDecoder().decode(snapshots.get(candidate.path)!),
+    };
+    cached.set(candidate.id, value);
+    return value;
+  };
 
   for (const candidate of candidates) {
-    const previous = repository.checkpoint(sourceID, candidate.id);
-    const previousV2 = conversations === undefined
-      ? undefined
-      : repository.checkpoint(
-        sourceID,
-        candidate.id,
-        conversationProjectionName,
-      );
-    const physicalUnchanged = previous?.parserVersion === legacyParserVersion &&
+    const previous = repository.projectionCheckpoint(
+      sourceID,
+      candidate.id,
+      projectionName,
+    );
+    const physicalUnchanged = previous?.parserVersion === parserVersion &&
       previous.sourceSize === candidate.size &&
       previous.sourceModifiedAt === candidate.changeHint &&
-      previous.lastError === undefined &&
-      (conversations === undefined ||
-        (previousV2?.parserVersion === conversationParserVersion &&
-          previousV2.sourceSize === candidate.size &&
-          previousV2.sourceModifiedAt === candidate.changeHint &&
-          previousV2.lastError === undefined));
+      previous.lastError === undefined;
     if (physicalUnchanged) {
       recordUnchangedTree(repository, sourceID, candidate, observedAt);
-      skipped++;
       continue;
     }
-
     try {
-      const snapshots = readCandidateSnapshots(candidate);
-      const afterRead = discoverClaudeCodeSessions(directory).find((item) =>
-        item.id === candidate.id
+      const loaded = await load(candidate);
+      for (const dependency of candidate.dependencies) {
+        if (!dependency.artifactPath.endsWith(".jsonl")) continue;
+        repository.recordUnchangedArtifact(
+          sourceID,
+          externalID(candidate, dependency.artifactPath),
+          dependency.artifactPath,
+          observedAt,
+        );
+      }
+      const sourceMetadata = claudeCodeSourceArtifactMetadata(loaded.rootText);
+      const sourceIdentity = sourceMetadata.sourceIdentity ?? candidate.id;
+      metadata.push({
+        externalID: candidate.id,
+        identities: [{
+          namespace: sourceIdentityNamespace,
+          value: sourceIdentity,
+        }],
+        lineage: sourceMetadata.parentSourceIdentity === undefined ? [] : [{
+          relationship: forkRelationship,
+          parentIdentityNamespace: sourceIdentityNamespace,
+          parentIdentityValue: sourceMetadata.parentSourceIdentity,
+          provenance: "preserved-source-session-id",
+        }],
+      });
+      recordUnchangedTree(
+        repository,
+        sourceID,
+        candidate,
+        observedAt,
+        loaded.checkpoint,
+        projectionName,
       );
-      if (
-        !afterRead || dependencyHint(afterRead) !== dependencyHint(candidate)
-      ) {
-        throw new Error(
-          "Claude Code dependency tree changed while it was being read",
-        );
-      }
-      const checksum = await fingerprint(candidate, snapshots);
-      const legacyCheckpoint: SourceSessionCheckpoint = {
-        sourceSize: candidate.size,
-        sourceModifiedAt: candidate.changeHint,
-        checksum,
-        parserVersion: legacyParserVersion,
-      };
-      let normalized: SourceSessionImport[] | undefined;
-      const normalize = (checkpoint: SourceSessionCheckpoint) =>
-        normalized ??= normalizeClaudeCodeSessionTree({
-          candidate,
-          snapshots,
-          sourceID,
-          observedAt,
-          checkpoint,
-        });
-
-      if (currentProjection(previous, legacyParserVersion, checksum)) {
-        recordUnchangedTree(
-          repository,
-          sourceID,
-          candidate,
-          observedAt,
-          legacyCheckpoint,
-        );
-        skipped++;
-      } else {
-        try {
-          repository.replaceSourceSessionTree(normalize(legacyCheckpoint));
-          imported++;
-        } catch (error) {
-          console.warn(
-            `[sync] harness=claude-code source=${candidate.path} projection=legacy failed`,
-            error,
-          );
-          repository.recordSourceSessionError(
-            sourceID,
-            candidate.id,
-            candidate.artifactPath,
-            observedAt,
-            error,
-          );
-          failed++;
-        }
-      }
-
-      if (conversations !== undefined) {
-        if (
-          currentProjection(previousV2, conversationParserVersion, checksum)
-        ) {
-          // Family checkpoints are counted after all source lineage is known.
-        } else {
-          const v2Checkpoint: SourceSessionCheckpoint = {
-            sourceSize: candidate.size,
-            sourceModifiedAt: candidate.changeHint,
-            checksum,
-            parserVersion: conversationParserVersion,
-          };
-          try {
-            conversations.replaceLinearSessionTree(normalize(v2Checkpoint));
-            recordUnchangedTree(
-              repository,
-              sourceID,
-              candidate,
-              observedAt,
-              v2Checkpoint,
-              conversationProjectionName,
-            );
-          } catch (error) {
-            console.warn(
-              `[sync] harness=claude-code source=${candidate.path} projection=${conversationProjectionName} failed`,
-              error,
-            );
-            repository.recordProjectionError(
-              sourceID,
-              candidate.id,
-              conversationProjectionName,
-              error,
-            );
-            v2.failed++;
-          }
-        }
-        try {
-          const metadata = claudeCodeSourceArtifactMetadata(
-            new TextDecoder().decode(snapshots.get(candidate.path)!),
-          );
-          const sourceIdentity = metadata.sourceIdentity ?? candidate.id;
-          v2Metadata.push({
-            externalID: candidate.id,
-            identities: [{
-              namespace: sourceIdentityNamespace,
-              value: sourceIdentity,
-            }],
-            lineage: metadata.parentSourceIdentity === undefined ? [] : [{
-              relationship: forkRelationship,
-              parentIdentityNamespace: sourceIdentityNamespace,
-              parentIdentityValue: metadata.parentSourceIdentity,
-              provenance: "preserved-source-session-id",
-            }],
-          });
-        } catch (error) {
-          repository.recordProjectionError(
-            sourceID,
-            candidate.id,
-            conversationProjectionName,
-            error,
-          );
-          v2.failed++;
-        }
-      }
     } catch (error) {
       console.warn(
         `[sync] harness=claude-code source=${candidate.path} failed`,
         error,
       );
-      repository.recordSourceSessionError(
+      repository.recordArtifactError(
         sourceID,
         candidate.id,
         candidate.artifactPath,
         observedAt,
         error,
+        projectionName,
       );
       failed++;
-      if (conversations !== undefined) {
-        repository.recordProjectionError(
-          sourceID,
-          candidate.id,
-          conversationProjectionName,
-          error,
-        );
-        v2.failed++;
-      }
     }
   }
 
-  repository.markMissingSourceSessions(sourceID, observedAt);
-  if (conversations !== undefined) {
-    try {
-      if (v2Metadata.length > 0) {
-        repository.replaceSourceArtifactMetadata(sourceID, v2Metadata);
-      }
-      const candidateByID = new Map(
-        candidates.map((candidate) => [candidate.id, candidate]),
+  repository.markMissingArtifacts(sourceID, observedAt);
+  try {
+    if (metadata.length > 0) {
+      repository.replaceSourceArtifactMetadata(sourceID, metadata);
+    }
+    const records = repository.listSourceArtifactsForProjection(
+      sourceID,
+      projectionName,
+      sourceIdentityNamespace,
+      forkRelationship,
+    ).filter((record) => record.sourceIdentity !== undefined);
+    for (const family of connectedArtifactFamilies(records)) {
+      const available = family.filter((record) =>
+        record.availability === "available" &&
+        candidateByID.has(record.externalID)
       );
-      const records = repository.listSourceArtifactsForProjection(
-        sourceID,
-        conversationProjectionName,
-        sourceIdentityNamespace,
-        forkRelationship,
-      ).filter((record) => record.sourceIdentity !== undefined);
-      for (const family of connectedArtifactFamilies(records)) {
-        const available = family.filter((record) =>
-          record.availability === "available" && candidateByID.has(record.externalID)
+      try {
+        assertAcyclicArtifactLineage(family);
+        const dependencyDigest = await familyDigest(family, parserVersion);
+        const current = family.every((record) =>
+          record.parserVersion === parserVersion &&
+          record.dependencyDigest === dependencyDigest &&
+          record.lastError === undefined
         );
-        try {
-          assertAcyclicArtifactLineage(family);
-          const dependencyDigest = await familyDigest(
-            family,
-            conversationParserVersion,
-          );
-          const current = family.every((record) =>
-            record.parserVersion === conversationParserVersion &&
-            record.dependencyDigest === dependencyDigest &&
-            record.lastError === undefined
-          );
-          if (current) {
-            v2.skipped += available.length;
-            continue;
-          }
-          if (family.some((record) => record.availability === "missing")) {
-            for (const record of family) {
-              repository.recordProjectionCheckpoint(
-                sourceID,
-                record.externalID,
-                conversationProjectionName,
-                {
-                  parserVersion: conversationParserVersion,
-                  checksum: record.checksum,
-                  dependencyDigest,
-                },
-              );
-            }
-            v2.skipped += available.length;
-            continue;
-          }
-
-          const artifacts = [];
-          const subagents: SourceSessionImport[] = [];
-          for (const record of available) {
-            const candidate = candidateByID.get(record.externalID)!;
-            const snapshots = readCandidateSnapshots(candidate);
-            const checksum = await fingerprint(candidate, snapshots);
-            const checkpoint: SourceSessionCheckpoint = {
-              sourceSize: candidate.size,
-              sourceModifiedAt: candidate.changeHint,
-              checksum,
-              parserVersion: conversationParserVersion,
-            };
-            const values = normalizeClaudeCodeSessionTree({
-              candidate,
-              snapshots,
-              sourceID,
-              observedAt,
-              checkpoint,
-            });
-            const value = values.find((item) => item.externalID === candidate.id);
-            if (value === undefined) {
-              throw new Error(`Missing Claude Code root import: ${candidate.id}`);
-            }
-            subagents.push(
-              ...values.filter((item) => item.externalID !== candidate.id),
-            );
-            artifacts.push({
-              externalID: candidate.id,
-              sourceIdentity: record.sourceIdentity,
-              parentSourceIdentity: record.parentSourceIdentity,
-              value,
-              checkpoint,
-            });
-          }
-          const root = artifacts.find((artifact) =>
-            artifact.parentSourceIdentity === undefined ||
-            !family.some((record) =>
-              record.sourceIdentity === artifact.parentSourceIdentity
-            )
-          ) ?? artifacts[0];
-          conversations.replaceArtifactFamily({
-            sourceID,
-            externalID: root.sourceIdentity ?? root.externalID,
-            artifacts,
-            subagents,
-          });
-          for (const artifact of artifacts) {
+        if (current) {
+          skipped += available.length;
+          continue;
+        }
+        if (family.some((record) => record.availability === "missing")) {
+          for (const record of family) {
             repository.recordProjectionCheckpoint(
               sourceID,
-              artifact.externalID,
-              conversationProjectionName,
-              {
-                ...artifact.checkpoint,
-                dependencyDigest,
-              },
-            );
-          }
-          v2.imported += available.length;
-        } catch (error) {
-          console.warn(
-            `[sync] harness=claude-code projection=${conversationProjectionName} family failed`,
-            error,
-          );
-          for (const record of available) {
-            repository.recordProjectionError(
-              sourceID,
               record.externalID,
-              conversationProjectionName,
-              error,
+              projectionName,
+              { parserVersion, checksum: record.checksum, dependencyDigest },
             );
           }
-          v2.failed += available.length;
+          skipped += available.length;
+          continue;
         }
-      }
-    } catch (error) {
-      console.warn(
-        `[sync] harness=claude-code projection=${conversationProjectionName} metadata failed`,
-        error,
-      );
-      for (const candidate of candidates) {
-        repository.recordProjectionError(
+
+        const artifacts = [];
+        const subagents: LinearConversationImport[] = [];
+        for (const record of available) {
+          const candidate = candidateByID.get(record.externalID)!;
+          const loaded = await load(candidate);
+          const value = loaded.values.find((item) =>
+            item.externalID === candidate.id
+          );
+          if (value === undefined) {
+            throw new Error(`Missing Claude Code root import: ${candidate.id}`);
+          }
+          subagents.push(
+            ...loaded.values.filter((item) => item.externalID !== candidate.id),
+          );
+          artifacts.push({
+            externalID: candidate.id,
+            sourceIdentity: record.sourceIdentity,
+            parentSourceIdentity: record.parentSourceIdentity,
+            value,
+            checkpoint: loaded.checkpoint,
+          });
+        }
+        const root = artifacts.find((artifact) =>
+          artifact.parentSourceIdentity === undefined ||
+          !family.some((record) =>
+            record.sourceIdentity === artifact.parentSourceIdentity
+          )
+        ) ?? artifacts[0];
+        conversations.replaceConversationFamily({
           sourceID,
-          candidate.id,
-          conversationProjectionName,
+          externalID: root.sourceIdentity ?? root.externalID,
+          artifacts,
+          subagents,
+        });
+        for (const artifact of artifacts) {
+          repository.recordProjectionCheckpoint(
+            sourceID,
+            artifact.externalID,
+            projectionName,
+            { ...artifact.checkpoint, dependencyDigest },
+          );
+        }
+        imported += available.length;
+      } catch (error) {
+        console.warn(
+          `[sync] harness=claude-code projection=${projectionName} family failed`,
           error,
         );
+        for (const record of available) {
+          repository.recordProjectionError(
+            sourceID,
+            record.externalID,
+            projectionName,
+            error,
+          );
+        }
+        failed += available.length;
       }
-      v2.failed += candidates.length;
     }
+  } catch (error) {
+    console.warn(
+      `[sync] harness=claude-code projection=${projectionName} metadata failed`,
+      error,
+    );
+    for (const candidate of candidates) {
+      repository.recordProjectionError(
+        sourceID,
+        candidate.id,
+        projectionName,
+        error,
+      );
+    }
+    failed += candidates.length;
   }
-  return {
-    discovered: candidates.length,
-    imported,
-    skipped,
-    failed,
-    projectionResults: {
-      legacy: { imported, skipped, failed },
-      ...(conversations === undefined
-        ? {}
-        : { [conversationProjectionName]: v2 }),
-    },
-  };
+  return { discovered: candidates.length, imported, skipped, failed };
 }

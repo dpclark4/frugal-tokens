@@ -3,20 +3,21 @@ import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import type { TokenUsage } from "../shared/sessionSchemas.ts";
 import type {
-  SessionCallImport,
-  SessionContentImport,
-  SessionRepository,
-  SessionToolImport,
-  SourceSessionCheckpoint,
-  SourceSessionImport,
-} from "./sessionRepository.ts";
-import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
+  ConversationCallImport,
+  ConversationContentImport,
+  ConversationToolImport,
+  LinearConversationImport,
+} from "./conversationImportTypes.ts";
+import {
+  type ProjectionCheckpoint,
+  SourceArtifactRepository,
+} from "./sourceArtifactRepository.ts";
+import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
 
 const contentPreviewLimit = 2_048;
-const conversationProjectionName = "conversation-v2";
+const projectionName = "conversation";
 
-export const cursorParserVersion = "cursor-agent-6";
-export const cursorConversationParserVersion = "cursor-conversation-v2-1";
+export const cursorParserVersion = "cursor-conversation-1";
 
 type JsonObject = Record<string, unknown>;
 
@@ -583,7 +584,7 @@ export function discoverCursorSessions(
   );
 }
 
-function preview(text: string): SessionContentImport {
+function preview(text: string): ConversationContentImport {
   return {
     kind: "text",
     preview: text.slice(0, contentPreviewLimit),
@@ -621,7 +622,7 @@ function messageText(message: CursorMessage) {
   return text.length === 0 ? undefined : text;
 }
 
-function messageInputs(message: CursorMessage): SessionContentImport[] {
+function messageInputs(message: CursorMessage): ConversationContentImport[] {
   return contentBlocks(message).flatMap((block) => {
     if (block.type === "text" && typeof block.text === "string") {
       return [preview(block.text)];
@@ -722,7 +723,7 @@ function toolEvents(
   messages: CursorMessage[],
   childByToolCallID: Map<string, string>,
 ) {
-  const tools = new Map<string, SessionToolImport>();
+  const tools = new Map<string, ConversationToolImport>();
   for (const message of messages) {
     for (const block of contentBlocks(message)) {
       const type = stringValue(block.type);
@@ -770,7 +771,7 @@ function callForRequest(options: {
   usage?: CursorUsageRecord;
   fallbackAt: number;
   childByToolCallID: Map<string, string>;
-}): SessionCallImport {
+}): ConversationCallImport {
   const assistantMessages = options.segment.filter((message) =>
     message.role === "assistant"
   );
@@ -865,9 +866,9 @@ export function normalizeCursorSession(options: {
   capture: CursorCaptureIndex;
   sourceID: number;
   observedAt: number;
-  checkpoint: SourceSessionImport["checkpoint"];
+  checkpoint: LinearConversationImport["checkpoint"];
   childByToolCallID?: Map<string, string>;
-}): SourceSessionImport {
+}): LinearConversationImport {
   const { candidate, snapshot, capture } = options;
   const requests = snapshot.messages.flatMap((message, index) => {
     const requestId = message.role === "user" ? requestID(message) : undefined;
@@ -875,9 +876,9 @@ export function normalizeCursorSession(options: {
   });
   const calls: Array<{
     request: (typeof requests)[number];
-    call: SessionCallImport;
+    call: ConversationCallImport;
   }> = [];
-  const turns: SourceSessionImport["session"]["turns"] = [];
+  const turns: LinearConversationImport["session"]["turns"] = [];
   const tokens = emptyTokens();
   let reportedCost = 0;
   let hasReportedCost = false;
@@ -921,13 +922,15 @@ export function normalizeCursorSession(options: {
   // only a session-level setting rather than evidence for an earlier turn.
   const uniqueModels = [
     ...new Set(
-      calls.map(({ call }) => call.model).filter((model) => model !== "unknown"),
+      calls.map(({ call }) => call.model).filter((model) =>
+        model !== "unknown"
+      ),
     ),
   ];
   const startedAt = snapshot.fileMeta.createdAtMs ??
     snapshot.storeMeta.createdAt;
   const updatedAt = candidate.updatedAt || options.observedAt;
-  const sourceSession: SourceSessionImport = {
+  const sourceSession: LinearConversationImport = {
     sourceID: options.sourceID,
     externalID: candidate.id,
     artifactPath: candidate.artifactPath,
@@ -992,7 +995,7 @@ function candidateGroups(candidates: CursorAgentCandidate[]) {
 }
 
 function currentProjection(
-  checkpoint: SourceSessionCheckpoint | undefined,
+  checkpoint: ProjectionCheckpoint | undefined,
   parserVersion: string,
   checksum: string,
 ) {
@@ -1001,21 +1004,21 @@ function currentProjection(
 }
 
 function recordUnchangedTree(
-  repository: SessionRepository,
+  repository: SourceArtifactRepository,
   sourceID: number,
   candidates: CursorAgentCandidate[],
   observedAt: number,
   parserVersion: string,
-  projectionName = "legacy",
+  projectionName = "conversation",
   checksums?: ReadonlyMap<string, string>,
 ) {
   for (const candidate of candidates) {
-    const previous = repository.checkpoint(
+    const previous = repository.projectionCheckpoint(
       sourceID,
       candidate.id,
       projectionName,
     );
-    repository.recordUnchangedSourceSession(
+    repository.recordUnchangedArtifact(
       sourceID,
       candidate.id,
       candidate.artifactPath,
@@ -1035,8 +1038,8 @@ function recordUnchangedTree(
 export function syncCursorAgentSessions(
   directory: string,
   capturePath: string | undefined,
-  repository: SessionRepository,
-  conversations?: ConversationProjectionRepository,
+  repository: SourceArtifactRepository,
+  conversations: ConversationWriteRepository,
 ) {
   const observedAt = Date.now();
   const capture = readCursorCapture(capturePath);
@@ -1051,53 +1054,33 @@ export function syncCursorAgentSessions(
   let imported = 0;
   let skipped = 0;
   let failed = 0;
-  const v2 = { imported: 0, skipped: 0, failed: 0 };
   const failureCategories: Record<string, number> = {};
 
   for (const group of groups.values()) {
-    const projectionCurrentByHint = (
-      parserVersion: string,
-      projectionName = "legacy",
-    ) => group.every((candidate) => {
-      const previous = repository.checkpoint(
+    const currentByHint = group.every((candidate) => {
+      const previous = repository.projectionCheckpoint(
         sourceID,
         candidate.id,
         projectionName,
       );
-      return previous?.parserVersion === parserVersion &&
+      return previous?.parserVersion === cursorParserVersion &&
         previous.changeHint === candidate.changeHint &&
         previous.lastError === undefined;
     });
-    const legacyCurrentByHint = projectionCurrentByHint(cursorParserVersion);
-    const v2CurrentByHint = conversations === undefined ||
-      projectionCurrentByHint(
-        cursorConversationParserVersion,
-        conversationProjectionName,
-      );
-    if (legacyCurrentByHint && v2CurrentByHint) {
+    if (currentByHint) {
       recordUnchangedTree(
         repository,
         sourceID,
         group,
         observedAt,
         cursorParserVersion,
+        projectionName,
       );
       skipped += group.length;
-      if (conversations !== undefined) {
-        recordUnchangedTree(
-          repository,
-          sourceID,
-          group,
-          observedAt,
-          cursorConversationParserVersion,
-          conversationProjectionName,
-        );
-        v2.skipped += group.length;
-      }
       continue;
     }
 
-    let normalized: SourceSessionImport[];
+    let normalized: LinearConversationImport[];
     let checksums: Map<string, string>;
     try {
       const groupIDs = new Set(group.map((candidate) => candidate.id));
@@ -1135,6 +1118,14 @@ export function syncCursorAgentSessions(
           childByToolCallID,
         })
       );
+      for (const candidate of group) {
+        repository.recordUnchangedArtifact(
+          sourceID,
+          candidate.id,
+          candidate.artifactPath,
+          observedAt,
+        );
+      }
     } catch (error) {
       const category = error instanceof SyntaxError
         ? "invalid-json"
@@ -1143,125 +1134,102 @@ export function syncCursorAgentSessions(
         ? "invalid-store"
         : "import-error";
       failureCategories[category] = (failureCategories[category] ?? 0) + 1;
-      const root = group[0];
       console.warn(
-        `[sync] harness=cursor session=${root.id} failed category=${category}`,
+        `[sync] harness=cursor session=${
+          group[0].id
+        } failed category=${category}`,
         error,
       );
       for (const candidate of group) {
-        repository.recordSourceSessionError(
+        repository.recordArtifactError(
           sourceID,
           candidate.id,
           candidate.artifactPath,
           observedAt,
           error,
+          projectionName,
         );
-        if (conversations !== undefined) {
-          repository.recordProjectionError(
-            sourceID,
-            candidate.id,
-            conversationProjectionName,
-            error,
-          );
-        }
       }
       failed += group.length;
-      if (conversations !== undefined) v2.failed += group.length;
       continue;
     }
 
-    const legacyCurrent = normalized.every((value) =>
+    const current = normalized.every((value) =>
       currentProjection(
-        repository.checkpoint(sourceID, value.externalID),
+        repository.projectionCheckpoint(
+          sourceID,
+          value.externalID,
+          projectionName,
+        ),
         cursorParserVersion,
         checksums.get(value.externalID)!,
       )
     );
-    if (legacyCurrent) {
+    if (current) {
       recordUnchangedTree(
         repository,
         sourceID,
         group,
         observedAt,
         cursorParserVersion,
-        "legacy",
+        projectionName,
         checksums,
       );
       skipped += group.length;
-    } else {
-      try {
-        repository.replaceSourceSessionTree(normalized);
-        imported += normalized.length;
-      } catch (error) {
-        console.warn(
-          `[sync] harness=cursor session=${group[0].id} projection=legacy failed`,
-          error,
-        );
-        for (const candidate of group) {
-          repository.recordSourceSessionError(
-            sourceID,
-            candidate.id,
-            candidate.artifactPath,
-            observedAt,
-            error,
-          );
-        }
-        failed += group.length;
-      }
+      continue;
     }
 
-    if (conversations !== undefined) {
-      const v2Current = normalized.every((value) =>
-        currentProjection(
-          repository.checkpoint(
-            sourceID,
-            value.externalID,
-            conversationProjectionName,
-          ),
-          cursorConversationParserVersion,
-          checksums.get(value.externalID)!,
-        )
+    try {
+      conversations.replaceLinearConversationTree(normalized);
+      recordUnchangedTree(
+        repository,
+        sourceID,
+        group,
+        observedAt,
+        cursorParserVersion,
+        projectionName,
+        checksums,
       );
-      if (v2Current) {
-        v2.skipped += group.length;
-      } else {
-        try {
-          conversations.replaceLinearSessionTree(normalized);
-          recordUnchangedTree(
-            repository,
-            sourceID,
-            group,
-            observedAt,
-            cursorConversationParserVersion,
-            conversationProjectionName,
-            checksums,
-          );
-          v2.imported += normalized.length;
-        } catch (error) {
-          console.warn(
-            `[sync] harness=cursor session=${group[0].id} projection=${conversationProjectionName} failed`,
-            error,
-          );
-          for (const candidate of group) {
-            repository.recordProjectionError(
-              sourceID,
-              candidate.id,
-              conversationProjectionName,
-              error,
-            );
-          }
-          v2.failed += group.length;
-        }
+      for (const candidate of group) {
+        repository.recordProjectionCheckpoint(
+          sourceID,
+          candidate.id,
+          projectionName,
+          {
+            changeHint: candidate.changeHint,
+            sourceSize: candidate.size,
+            sourceModifiedAt: candidate.sourceModifiedAt,
+            checksum: checksums.get(candidate.id),
+            parserVersion: cursorParserVersion,
+          },
+        );
       }
+      imported += normalized.length;
+    } catch (error) {
+      console.warn(
+        `[sync] harness=cursor session=${
+          group[0].id
+        } projection=${projectionName} failed`,
+        error,
+      );
+      for (const candidate of group) {
+        repository.recordProjectionError(
+          sourceID,
+          candidate.id,
+          projectionName,
+          error,
+        );
+      }
+      failed += group.length;
     }
   }
 
-  repository.markSourceSessionsSeen(
+  repository.markArtifactsSeen(
     sourceID,
     candidates.map((candidate) => candidate.id),
     observedAt,
   );
-  repository.markMissingSourceSessions(sourceID, observedAt);
+  repository.markMissingArtifacts(sourceID, observedAt);
   if (capture.malformedLines > 0) {
     console.warn(
       `[sync] harness=cursor capture=${
@@ -1276,11 +1244,5 @@ export function syncCursorAgentSessions(
     failed,
     failureCategories,
     captureRecords: capture.records.size,
-    projectionResults: {
-      legacy: { imported, skipped, failed },
-      ...(conversations === undefined
-        ? {}
-        : { [conversationProjectionName]: v2 }),
-    },
   };
 }

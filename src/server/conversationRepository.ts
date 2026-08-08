@@ -12,18 +12,48 @@ import {
   sessionSummarySchema,
   type TokenUsage,
 } from "../shared/sessionSchemas.ts";
-import type {
-  InitialInputDistribution,
-  InitialInputSample,
-  ModelCallCostSummary,
-  ReasoningSettingImport,
-  StoredCacheMiss,
-  StoredSessionShapeRollup,
-} from "./sessionRepository.ts";
-import {
-  conciseSessionPreview,
-  sessionToolTarget,
-} from "./sessionRepository.ts";
+import type { ReasoningSettingImport } from "./conversationImportTypes.ts";
+import type { CacheMissRecord } from "./cacheAnalysis.ts";
+
+export type StoredCacheMiss = CacheMissRecord & {
+  harness: Harness;
+  sessionID: string;
+  rootID: string;
+  sessionStartedAt: number;
+  modelCallID: number;
+  previousModelCallID?: number;
+  turnID: number;
+};
+
+export type InitialInputSample = {
+  harness: Harness;
+  sessionStartedAt: number;
+  input: number;
+};
+
+export type StoredSessionShapeRollup = StoredOverviewRollup & {
+  initialInput?: number;
+};
+
+export type InitialInputDistribution = {
+  average: number;
+  median: number;
+  p90: number;
+};
+
+export type ModelCallCostSummary = {
+  totalCost: number;
+  hasUnpricedTotalCost: boolean;
+  totalSessionCost: number;
+  hasUnpricedSessionCost: boolean;
+  sessions: Array<{
+    harness: Harness;
+    rootID: string;
+    sessionStartedAt: number;
+    rootCost: number;
+    hasUnpricedRootCost: boolean;
+  }>;
+};
 import type { ToolCallObservation } from "./toolCallAnalytics.ts";
 import type { StoredOverviewRollup } from "./overviewAnalytics.ts";
 import type {
@@ -138,6 +168,45 @@ function optional<T>(value: T | null): T | undefined {
   return value === null ? undefined : value;
 }
 
+export function conciseSessionPreview(value?: string) {
+  if (value === undefined) return undefined;
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length === 0) return undefined;
+  return normalized.length <= 64
+    ? normalized
+    : `${normalized.slice(0, 63).trimEnd()}…`;
+}
+
+export function sessionToolTarget(value?: string) {
+  if (value === undefined) return undefined;
+  try {
+    const parsed = JSON.parse(value);
+    if (typeof parsed === "string") return conciseSessionPreview(parsed);
+    if (parsed && typeof parsed === "object") {
+      for (
+        const key of [
+          "description",
+          "prompt",
+          "task",
+          "command",
+          "filePath",
+          "path",
+          "pattern",
+          "query",
+        ]
+      ) {
+        const candidate = (parsed as Record<string, unknown>)[key];
+        if (typeof candidate === "string") {
+          return conciseSessionPreview(candidate);
+        }
+      }
+    }
+  } catch {
+    // Non-JSON tool inputs are useful as-is.
+  }
+  return conciseSessionPreview(value);
+}
+
 function tokens(row: {
   uncached_input_tokens: number;
   cache_read_tokens: number;
@@ -213,8 +282,17 @@ function missPredicates(filters: SessionMissFilter[]) {
 }
 
 /** Existing session/analytics contracts reconstructed from conversation tables. */
-export class ConversationCompatibilityRepository {
+export class ConversationRepository {
   constructor(private db: DatabaseSync) {}
+
+  listHarnesses(): Harness[] {
+    return (this.db.prepare(`
+      SELECT DISTINCT so.harness
+      FROM sources so
+      JOIN conversations c ON c.source_id = so.id
+    `).all() as Array<{ harness: Harness }>)
+      .map(({ harness }) => harness);
+  }
 
   listSessions(
     page: number,
@@ -1350,10 +1428,12 @@ export class ConversationCompatibilityRepository {
         ELSE 2
       END, branch.external_id
     `).all(conversationID) as Array<{ id: number }>;
-    return new Map(rows.slice(1).map((branch, index) => [
-      branch.id,
-      index + 1,
-    ]));
+    return new Map(
+      rows.slice(1).map((branch, index) => [
+        branch.id,
+        index + 1,
+      ]),
+    );
   }
 
   // TODO: Expose branch topology in the public detail contract instead of
