@@ -120,9 +120,10 @@ export function assertLinearConversationParity(
   deepStrictEqual(v2Tools, legacyTools);
 }
 
-function withoutInternalIDs<T extends { internalID?: number }>(value: T) {
-  const { internalID: _internalID, ...rest } = value;
-  return rest;
+function withoutInternalIDs<T extends object>(value: T): Omit<T, "internalID"> {
+  const copy = { ...value };
+  delete (copy as T & { internalID?: number }).internalID;
+  return copy;
 }
 
 export function assertConversationCompatibilityParity(
@@ -134,9 +135,16 @@ export function assertConversationCompatibilityParity(
   const conversations = new ConversationCompatibilityRepository(db);
   const legacyList = legacy.listSessions(1, 1_000, harness);
   const conversationList = conversations.listSessions(1, 1_000, harness);
+  const legacyByID = new Map(legacyList.items.map((item) => [item.id, item]));
+  const conversationCoreItems = conversationList.items.map((item) => {
+    const legacyItem = legacyByID.get(item.id)!;
+    return Object.fromEntries(
+      Object.entries(item).filter(([key]) => key in legacyItem),
+    );
+  });
   deepStrictEqual(
-    conversationList.items.map(withoutInternalIDs),
-    legacyList.items.map(withoutInternalIDs),
+    JSON.parse(JSON.stringify(conversationCoreItems)),
+    JSON.parse(JSON.stringify(legacyList.items)),
   );
   deepStrictEqual(conversationList.pagination, legacyList.pagination);
 

@@ -134,6 +134,7 @@ const supportedHarnesses: SessionSummary["harness"][] = [
   "claude-code",
   "pi",
   "codex",
+  "cursor",
 ];
 const configuredConversationHarnesses = Deno.env.get(
   "FRUGAL_TOKENS_CONVERSATION_READ_HARNESSES",
@@ -288,6 +289,7 @@ async function syncSources() {
           cursorDirectory,
           cursorCapturePath,
           archiveRepository,
+          conversationProjectionRepository,
         ),
     );
   }

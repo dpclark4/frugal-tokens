@@ -7,12 +7,16 @@ import type {
   SessionContentImport,
   SessionRepository,
   SessionToolImport,
+  SourceSessionCheckpoint,
   SourceSessionImport,
 } from "./sessionRepository.ts";
+import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
 
 const contentPreviewLimit = 2_048;
+const conversationProjectionName = "conversation-v2";
 
 export const cursorParserVersion = "cursor-agent-6";
+export const cursorConversationParserVersion = "cursor-conversation-v2-1";
 
 type JsonObject = Record<string, unknown>;
 
@@ -987,14 +991,30 @@ function candidateGroups(candidates: CursorAgentCandidate[]) {
   return Map.groupBy(candidates, rootFor);
 }
 
+function currentProjection(
+  checkpoint: SourceSessionCheckpoint | undefined,
+  parserVersion: string,
+  checksum: string,
+) {
+  return checkpoint?.parserVersion === parserVersion &&
+    checkpoint.checksum === checksum && checkpoint.lastError === undefined;
+}
+
 function recordUnchangedTree(
   repository: SessionRepository,
   sourceID: number,
   candidates: CursorAgentCandidate[],
   observedAt: number,
+  parserVersion: string,
+  projectionName = "legacy",
+  checksums?: ReadonlyMap<string, string>,
 ) {
   for (const candidate of candidates) {
-    const previous = repository.checkpoint(sourceID, candidate.id);
+    const previous = repository.checkpoint(
+      sourceID,
+      candidate.id,
+      projectionName,
+    );
     repository.recordUnchangedSourceSession(
       sourceID,
       candidate.id,
@@ -1004,9 +1024,10 @@ function recordUnchangedTree(
         changeHint: candidate.changeHint,
         sourceSize: candidate.size,
         sourceModifiedAt: candidate.sourceModifiedAt,
-        checksum: previous?.checksum,
-        parserVersion: cursorParserVersion,
+        checksum: checksums?.get(candidate.id) ?? previous?.checksum,
+        parserVersion,
       },
+      projectionName,
     );
   }
 }
@@ -1015,6 +1036,7 @@ export function syncCursorAgentSessions(
   directory: string,
   capturePath: string | undefined,
   repository: SessionRepository,
+  conversations?: ConversationProjectionRepository,
 ) {
   const observedAt = Date.now();
   const capture = readCursorCapture(capturePath);
@@ -1029,20 +1051,54 @@ export function syncCursorAgentSessions(
   let imported = 0;
   let skipped = 0;
   let failed = 0;
+  const v2 = { imported: 0, skipped: 0, failed: 0 };
   const failureCategories: Record<string, number> = {};
 
   for (const group of groups.values()) {
-    const changed = group.some((candidate) => {
-      const previous = repository.checkpoint(sourceID, candidate.id);
-      return previous?.parserVersion !== cursorParserVersion ||
-        previous.changeHint !== candidate.changeHint;
+    const projectionCurrentByHint = (
+      parserVersion: string,
+      projectionName = "legacy",
+    ) => group.every((candidate) => {
+      const previous = repository.checkpoint(
+        sourceID,
+        candidate.id,
+        projectionName,
+      );
+      return previous?.parserVersion === parserVersion &&
+        previous.changeHint === candidate.changeHint &&
+        previous.lastError === undefined;
     });
-    if (!changed) {
-      recordUnchangedTree(repository, sourceID, group, observedAt);
+    const legacyCurrentByHint = projectionCurrentByHint(cursorParserVersion);
+    const v2CurrentByHint = conversations === undefined ||
+      projectionCurrentByHint(
+        cursorConversationParserVersion,
+        conversationProjectionName,
+      );
+    if (legacyCurrentByHint && v2CurrentByHint) {
+      recordUnchangedTree(
+        repository,
+        sourceID,
+        group,
+        observedAt,
+        cursorParserVersion,
+      );
       skipped += group.length;
+      if (conversations !== undefined) {
+        recordUnchangedTree(
+          repository,
+          sourceID,
+          group,
+          observedAt,
+          cursorConversationParserVersion,
+          conversationProjectionName,
+        );
+        v2.skipped += group.length;
+      }
       continue;
     }
 
+    let normalized: SourceSessionImport[];
+    let checksums: Map<string, string>;
     try {
       const groupIDs = new Set(group.map((candidate) => candidate.id));
       const snapshots = group.map((candidate) => ({
@@ -1052,41 +1108,33 @@ export function syncCursorAgentSessions(
           : candidate,
         snapshot: readSnapshotWithRetry(candidate),
       }));
-      const normalized = snapshots.map(({ candidate, snapshot }) => {
-        const checkpoint = {
-          changeHint: candidate.changeHint,
-          sourceSize: candidate.size,
-          sourceModifiedAt: candidate.sourceModifiedAt,
-          checksum: snapshotChecksum(snapshot, capture.records),
-          parserVersion: cursorParserVersion,
-        };
-        return normalizeCursorSession({
+      checksums = new Map(snapshots.map(({ candidate, snapshot }) => [
+        candidate.id,
+        snapshotChecksum(snapshot, capture.records),
+      ]));
+      const childByToolCallID = new Map(
+        group.flatMap((child) => {
+          const toolCallID = child.storeMeta.subagentInfo?.toolCallId;
+          return toolCallID === undefined ? [] : [[toolCallID, child.id]];
+        }),
+      );
+      normalized = snapshots.map(({ candidate, snapshot }) =>
+        normalizeCursorSession({
           candidate,
           snapshot,
           capture,
           sourceID,
           observedAt,
-          checkpoint,
-          childByToolCallID: new Map(
-            group.flatMap((child) => {
-              const toolCallID = child.storeMeta.subagentInfo?.toolCallId;
-              return toolCallID === undefined ? [] : [[toolCallID, child.id]];
-            }),
-          ),
-        });
-      });
-      const sameAsPrevious = normalized.every((value) => {
-        const previous = repository.checkpoint(sourceID, value.externalID);
-        return previous?.parserVersion === cursorParserVersion &&
-          previous.checksum === value.checkpoint.checksum;
-      });
-      if (sameAsPrevious) {
-        recordUnchangedTree(repository, sourceID, group, observedAt);
-        skipped += group.length;
-      } else {
-        repository.replaceSourceSessionTree(normalized);
-        imported += normalized.length;
-      }
+          checkpoint: {
+            changeHint: candidate.changeHint,
+            sourceSize: candidate.size,
+            sourceModifiedAt: candidate.sourceModifiedAt,
+            checksum: checksums.get(candidate.id),
+            parserVersion: cursorParserVersion,
+          },
+          childByToolCallID,
+        })
+      );
     } catch (error) {
       const category = error instanceof SyntaxError
         ? "invalid-json"
@@ -1108,8 +1156,103 @@ export function syncCursorAgentSessions(
           observedAt,
           error,
         );
+        if (conversations !== undefined) {
+          repository.recordProjectionError(
+            sourceID,
+            candidate.id,
+            conversationProjectionName,
+            error,
+          );
+        }
       }
       failed += group.length;
+      if (conversations !== undefined) v2.failed += group.length;
+      continue;
+    }
+
+    const legacyCurrent = normalized.every((value) =>
+      currentProjection(
+        repository.checkpoint(sourceID, value.externalID),
+        cursorParserVersion,
+        checksums.get(value.externalID)!,
+      )
+    );
+    if (legacyCurrent) {
+      recordUnchangedTree(
+        repository,
+        sourceID,
+        group,
+        observedAt,
+        cursorParserVersion,
+        "legacy",
+        checksums,
+      );
+      skipped += group.length;
+    } else {
+      try {
+        repository.replaceSourceSessionTree(normalized);
+        imported += normalized.length;
+      } catch (error) {
+        console.warn(
+          `[sync] harness=cursor session=${group[0].id} projection=legacy failed`,
+          error,
+        );
+        for (const candidate of group) {
+          repository.recordSourceSessionError(
+            sourceID,
+            candidate.id,
+            candidate.artifactPath,
+            observedAt,
+            error,
+          );
+        }
+        failed += group.length;
+      }
+    }
+
+    if (conversations !== undefined) {
+      const v2Current = normalized.every((value) =>
+        currentProjection(
+          repository.checkpoint(
+            sourceID,
+            value.externalID,
+            conversationProjectionName,
+          ),
+          cursorConversationParserVersion,
+          checksums.get(value.externalID)!,
+        )
+      );
+      if (v2Current) {
+        v2.skipped += group.length;
+      } else {
+        try {
+          conversations.replaceLinearSessionTree(normalized);
+          recordUnchangedTree(
+            repository,
+            sourceID,
+            group,
+            observedAt,
+            cursorConversationParserVersion,
+            conversationProjectionName,
+            checksums,
+          );
+          v2.imported += normalized.length;
+        } catch (error) {
+          console.warn(
+            `[sync] harness=cursor session=${group[0].id} projection=${conversationProjectionName} failed`,
+            error,
+          );
+          for (const candidate of group) {
+            repository.recordProjectionError(
+              sourceID,
+              candidate.id,
+              conversationProjectionName,
+              error,
+            );
+          }
+          v2.failed += group.length;
+        }
+      }
     }
   }
 
@@ -1133,5 +1276,11 @@ export function syncCursorAgentSessions(
     failed,
     failureCategories,
     captureRecords: capture.records.size,
+    projectionResults: {
+      legacy: { imported, skipped, failed },
+      ...(conversations === undefined
+        ? {}
+        : { [conversationProjectionName]: v2 }),
+    },
   };
 }

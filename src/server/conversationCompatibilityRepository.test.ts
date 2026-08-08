@@ -439,6 +439,10 @@ Deno.test("session read repository delegates each harness to exactly one provide
       new Set(["opencode", "claude-code", "pi", "codex", "cursor"]),
     );
     deepStrictEqual(
+      allConversationReads.listSessions(1, 10),
+      compatibility.listSessions(1, 10),
+    );
+    deepStrictEqual(
       allConversationReads.listCacheMisses(),
       compatibility.listCacheMisses(),
     );
