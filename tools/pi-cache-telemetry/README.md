@@ -444,6 +444,56 @@ Run B proves an image is not necessary. Phase-boundary compliance differed:
 Run A continued beyond the requested work, while Run B stopped at `DONE`.
 Preserve that procedural confound.
 
+### Unclassified candidates — missing wiretap
+
+**Date:** 2026-08-07  
+**Model:** `gpt-5.6-luna`  
+**Pi session:** `019fde71-8527-7347-bdfd-8e7d6fc19fb6`
+
+```text
+Telemetry:
+~/.pi/agent/diagnostics/cache-telemetry/2026-08-07T22-56-49-447Z_019fde71-8527-7347-bdfd-8e7d6fc19fb6.jsonl
+```
+
+Calls 2–5 reported normalized reads of `1536 -> 3584 -> 0 -> 19328`.
+The zero call retained an exact nine-item prefix and unchanged envelope,
+instructions, tools, and prompt-cache-key fingerprints. It remained on a
+reused WebSocket delta continuation with `previous_response_id`; no failure,
+full-context retry, or SSE fallback was recorded. The call added six function
+calls and six function outputs (about 51 KB). Its prefix included an image,
+a roughly 145 KB output, and a roughly 12 KB output.
+
+After a 36-minute idle gap, calls 50–52 reported `65408 -> 0 -> 66432`.
+Unlike the earlier candidate, the zero call created a new WebSocket and sent
+full context without `previous_response_id`; this is a connection/reset-
+associated candidate, not evidence of a healthy-continuation bust. No
+transport error was recorded, so the telemetry cannot identify why Pi started
+a new connection or omitted the continuation ID. A controlled post-warm
+WebSocket close/reconnect could reproduce this client transport shape, but
+would not guarantee a raw provider cache miss.
+
+**Date:** 2026-08-08  
+**Model:** `gpt-5.6-luna`  
+**Pi session:** `019fdebc-fae3-758b-a1d5-76badf93dc9e`
+
+```text
+Telemetry:
+~/.pi/agent/diagnostics/cache-telemetry/2026-08-08T00-19-14-787Z_019fdebc-fae3-758b-a1d5-76badf93dc9e.jsonl
+```
+
+Normalized reads on calls 3–5 were `2560 -> 0 -> 12928`. Call 4 retained
+an exact 13-item logical prefix and unchanged instructions, tools, envelope,
+and prompt-cache-key fingerprints. It used `previous_response_id` on a reused
+WebSocket connection as a delta request, with no recorded WebSocket failure,
+full-context retry, or SSE fallback. The call added six function calls and six
+function outputs (about 16 KB); its prefix already contained an image and
+large tool outputs.
+
+No matching wiretap artifact was retained, so the raw provider
+`cached_tokens` field presence is unknown. The normalized zero cannot
+establish an explicit provider zero; classify this as a candidate rather than
+a full bust. The archive had no imported model-call rows for this session.
+
 ## 7. Extension and wiretap operation
 
 ### What the extension records
