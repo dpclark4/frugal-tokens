@@ -18,6 +18,7 @@ import {
   FileText,
   Image,
   Sparkles,
+  Split,
   TerminalSquare,
   User,
   Wrench,
@@ -947,6 +948,16 @@ function TurnBlock({
           <header>
             <strong>You</strong>
             <span>Turn {turn.number}</span>
+            {turn.branchNumber !== undefined && (
+              <span
+                className="sd-branch-indicator"
+                aria-label={`Branch ${turn.branchNumber}`}
+                title={`Branch ${turn.branchNumber}`}
+              >
+                <Split size={11} aria-hidden="true" />
+                {turn.branchNumber}
+              </span>
+            )}
             <time title={fullTimestamp.format(turn.startedAt)}>
               {timestamp.format(turn.startedAt)}
             </time>

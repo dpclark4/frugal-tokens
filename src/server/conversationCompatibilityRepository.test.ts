@@ -213,6 +213,7 @@ Deno.test("conversation compatibility repository linearizes Codex branches witho
     strictEqual(list.items[0].id, "00000000-0000-4000-8000-000000000001");
     strictEqual(list.items[0].userTurns, 7);
     strictEqual(list.items[0].modelCalls, 7);
+    strictEqual(list.items[0].forkCount, 2);
 
     const detail = compatibility.getSession("codex", list.items[0].id)!;
     strictEqual(detail.turns.length, 7);
@@ -227,6 +228,10 @@ Deno.test("conversation compatibility repository linearizes Codex branches witho
         "response-fork-a-4",
         "response-fork-b-5",
       ],
+    );
+    deepStrictEqual(
+      detail.turns.map((turn) => turn.branchNumber),
+      [undefined, undefined, undefined, undefined, 1, 1, 2],
     );
     strictEqual(detail.subagents.length, 0);
     strictEqual(compatibility.listUsageCalls(undefined, "codex").length, 7);

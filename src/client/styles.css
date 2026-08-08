@@ -1699,9 +1699,27 @@ table.data-table {
 }
 
 .session-title {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.session-activity-layout {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.session-branch-indicator,
+.turn-branch-indicator {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  color: var(--muted);
+  font: 600 10px/1 var(--mono);
 }
 
 .session-cell small {
@@ -2203,6 +2221,11 @@ table.data-table {
 
 .turn-identity .turn-label-line {
   gap: 10px;
+}
+
+.turn-branch-indicator {
+  margin-left: -3px;
+  color: var(--muted-2);
 }
 
 .turn-identity .turn-expand {

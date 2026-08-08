@@ -463,6 +463,14 @@
   font: 10.5px var(--mono);
 }
 
+.sd-user-message header .sd-branch-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--sd-ink-2);
+  font-weight: 600;
+}
+
 .sd-user-message header time {
   margin-left: auto;
 }

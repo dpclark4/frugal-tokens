@@ -139,6 +139,7 @@ export const sessionSummarySchema = z.object({
   models: z.array(z.string()),
   userTurns: z.number().int().nonnegative(),
   modelCalls: z.number().int().nonnegative(),
+  forkCount: z.number().int().positive().optional(),
   thinking: thinkingSummarySchema.optional(),
   subagentCount: z.number().int().nonnegative().optional(),
   subagentModelCalls: z.number().int().nonnegative().optional(),
@@ -261,6 +262,7 @@ export const turnInputSchema = z.object({
 
 export const userTurnSchema = z.object({
   number: z.number().int().positive(),
+  branchNumber: z.number().int().positive().optional(),
   startedAt: z.number(),
   inputs: z.array(turnInputSchema).optional(),
   reasoningSetting: reasoningSettingSchema.optional(),

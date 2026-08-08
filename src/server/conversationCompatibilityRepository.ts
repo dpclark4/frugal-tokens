@@ -51,6 +51,7 @@ type ConversationRow = {
   models_json: string;
   user_turns: number;
   model_calls: number;
+  fork_count: number;
   reported_cost: number | null;
   computed_cost: number | null;
   uncached_input_tokens: number;
@@ -125,6 +126,8 @@ const conversationColumns = `
   ${effectiveConversationTitle} AS title,
   c.agent, c.working_directory, c.updated_at, c.started_at, c.ended_at,
   c.providers_json, c.models_json, cr.user_turns, cr.model_calls,
+  MAX(0, (SELECT COUNT(*) FROM conversation_branches branch_count
+    WHERE branch_count.conversation_id = c.id) - 1) AS fork_count,
   cr.reported_cost, cr.computed_cost, cr.uncached_input_tokens,
   cr.cache_read_tokens, cr.cache_write_tokens, cr.cache_write_5m_tokens,
   cr.cache_write_1h_tokens, cr.fresh_prompt_tokens, cr.output_tokens,
@@ -1071,6 +1074,7 @@ export class ConversationCompatibilityRepository {
       models: JSON.parse(row.models_json),
       userTurns: row.user_turns,
       modelCalls: row.model_calls,
+      ...(row.fork_count > 0 ? { forkCount: row.fork_count } : {}),
       thinking: thinking ?? {
         latest: undefined,
         values: [],
@@ -1170,6 +1174,7 @@ export class ConversationCompatibilityRepository {
     }>;
 
     const groupedCalls = Map.groupBy(calls, (call) => call.turn_id);
+    const branchNumbers = this.#branchNumbers(row.id);
     const hydratedByCallID = new Map<number, ModelCall>();
     const turnOrder = [...groupedCalls.entries()].sort(([, a], [, b]) =>
       a[0].turn_started_at - b[0].turn_started_at ||
@@ -1240,6 +1245,9 @@ export class ConversationCompatibilityRepository {
       });
       return {
         number: turnIndex + 1,
+        ...(branchNumbers.has(first.branch_id)
+          ? { branchNumber: branchNumbers.get(first.branch_id)! }
+          : {}),
         startedAt: first.turn_started_at,
         inputs: inputs.filter((input) => input.turn_id === turnID).map((
           input,
@@ -1328,6 +1336,24 @@ export class ConversationCompatibilityRepository {
       contextEvents: sessionContextEvents,
       subagents: children.map((child) => this.#detail(child, nextVisited)),
     };
+  }
+
+  #branchNumbers(conversationID: number) {
+    const rows = this.db.prepare(`
+      SELECT branch.id
+      FROM conversation_branches branch
+      JOIN conversations conversation ON conversation.id = branch.conversation_id
+      WHERE branch.conversation_id = ?
+      ORDER BY CASE
+        WHEN branch.external_id = conversation.external_id THEN 0
+        WHEN branch.forked_from_branch_id IS NULL THEN 1
+        ELSE 2
+      END, branch.external_id
+    `).all(conversationID) as Array<{ id: number }>;
+    return new Map(rows.slice(1).map((branch, index) => [
+      branch.id,
+      index + 1,
+    ]));
   }
 
   // TODO: Expose branch topology in the public detail contract instead of

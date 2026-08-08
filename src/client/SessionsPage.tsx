@@ -7,6 +7,7 @@ import {
   Image,
   RefreshCw,
   Share,
+  Split,
 } from "lucide-react";
 import type {
   CacheAssessment,
@@ -1873,6 +1874,16 @@ function SessionBreakdown({
                           <strong>
                             {nested ? "Subagent Turn" : "Turn"} {turn.number}
                           </strong>
+                          {turn.branchNumber !== undefined && (
+                            <span
+                              className="turn-branch-indicator"
+                              aria-label={`Branch ${turn.branchNumber}`}
+                              title={`Branch ${turn.branchNumber}`}
+                            >
+                              <Split size={11} aria-hidden="true" />
+                              {turn.branchNumber}
+                            </span>
+                          )}
                         </span>
                         <small>{sessionStarted.format(turn.startedAt)}</small>
                       </span>
@@ -2385,20 +2396,36 @@ export function SessionsPanel({
                           </span>
                         </td>
                         <td title="Inclusive of direct and subagent turns and calls">
-                          <span className="metric-stack">
-                            <span>
-                              {session.inclusiveUserTurns ??
-                                session.userTurns} turns
+                          <span className="session-activity-layout">
+                            <span className="metric-stack">
+                              <span>
+                                {session.inclusiveUserTurns ??
+                                  session.userTurns} turns
+                              </span>
+                              <span>
+                                {session.inclusiveModelCalls ??
+                                  session.modelCalls} calls
+                              </span>
+                              {(session.subagentCount ?? 0) > 0 && (
+                                <small>
+                                  {session.subagentCount}{" "}
+                                  subagent{session.subagentCount === 1 ? "" : "s"}
+                                </small>
+                              )}
                             </span>
-                            <span>
-                              {session.inclusiveModelCalls ??
-                                session.modelCalls} calls
-                            </span>
-                            {(session.subagentCount ?? 0) > 0 && (
-                              <small>
-                                {session.subagentCount}{" "}
-                                subagent{session.subagentCount === 1 ? "" : "s"}
-                              </small>
+                            {session.forkCount !== undefined && (
+                              <span
+                                className="session-branch-indicator"
+                                aria-label={`${session.forkCount} ${
+                                  session.forkCount === 1 ? "fork" : "forks"
+                                }`}
+                                title={`${session.forkCount} ${
+                                  session.forkCount === 1 ? "fork" : "forks"
+                                }`}
+                              >
+                                <Split size={13} aria-hidden="true" />
+                                {session.forkCount}
+                              </span>
                             )}
                           </span>
                         </td>
