@@ -3,6 +3,7 @@ import { join, relative, resolve } from "node:path";
 import { cors } from "hono/cors";
 import { serveStatic } from "hono/deno";
 import { createMiddleware } from "hono/factory";
+import { createResponseCache } from "./responseCache.ts";
 import { priceSessionDetail } from "./pricing.ts";
 import { analyzeSessionCache, CACHE_TTL_1H_MS } from "./cacheAnalysis.ts";
 import type { SessionSummary } from "../shared/sessionSchemas.ts";
@@ -185,6 +186,8 @@ const syncIntervalSeconds = (() => {
   return seconds;
 })();
 
+const apiResponseCache = createResponseCache();
+
 type SyncResult = {
   discovered: number;
   imported: number;
@@ -297,7 +300,9 @@ async function syncSources() {
 let activeSourceSync: Promise<void> | undefined;
 function syncSourcesOnce() {
   if (activeSourceSync !== undefined) return activeSourceSync;
-  const running = syncSources().finally(() => {
+  const running = syncSources().then(() => {
+    apiResponseCache.clear();
+  }).finally(() => {
     if (activeSourceSync === running) activeSourceSync = undefined;
   });
   activeSourceSync = running;
@@ -359,6 +364,10 @@ app.put("/api/settings/title-generation", async (context) => {
   setTitleGenerationEnabled(archiveDatabase, body.enabled);
   return context.json({ enabled: body.enabled });
 });
+
+// Settings and sync routes stay uncached; data reads below are invalidated by
+// every successful manual, periodic, or startup sync.
+app.use("/api/*", apiResponseCache.middleware);
 
 function repositoryForHarness(harness: SessionSummary["harness"]) {
   return {
