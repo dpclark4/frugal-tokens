@@ -17,13 +17,16 @@ function root(
     title?: string;
     unpriced?: boolean;
     model?: string;
-    rootTurns?: number[];
+    rootIntervals?: Array<{ startedAt: number; executionEndAt: number }>;
   } = {},
 ): StoredOverviewRollup {
   const first = Math.min(...turns);
   return {
     rootSessionID: options.numericID ?? 1,
-    rootTurnStartedAts: options.rootTurns ?? turns,
+    rootExecutionIntervals: options.rootIntervals ?? turns.map((startedAt) => ({
+      startedAt,
+      executionEndAt: startedAt,
+    })),
     sessionID: id,
     harness: options.harness ?? "pi",
     title: options.title,
@@ -81,6 +84,90 @@ Deno.test("work rhythm unions isolated, overlapping, duplicate, and touching tur
     33,
   );
   workRhythmDataSchema.parse(result);
+});
+
+Deno.test("work rhythm counts completion-to-follow-up gaps within the timeout", () => {
+  const start = utc("2026-07-01T00:00:00");
+  const end = utc("2026-07-01T23:59:59");
+  const first = utc("2026-07-01T10:00:00");
+
+  const shortReview = aggregateWorkRhythm([
+    root("short-review", [first, first + 15 * minute], {
+      rootIntervals: [{
+        startedAt: first,
+        executionEndAt: first + 12 * minute,
+      }, {
+        startedAt: first + 15 * minute,
+        executionEndAt: first + 15 * minute,
+      }],
+    }),
+  ], start, end, "UTC");
+  strictEqual(shortReview.estimatedActiveMinutes, 8);
+
+  const longerReview = aggregateWorkRhythm([
+    root("longer-review", [first, first + 21 * minute], {
+      rootIntervals: [{
+        startedAt: first,
+        executionEndAt: first + 12 * minute,
+      }, {
+        startedAt: first + 21 * minute,
+        executionEndAt: first + 21 * minute,
+      }],
+    }),
+  ], start, end, "UTC");
+  strictEqual(longerReview.estimatedActiveMinutes, 14);
+});
+
+Deno.test("work rhythm falls back to five minutes after the gap timeout", () => {
+  const start = utc("2026-07-01T00:00:00");
+  const end = utc("2026-07-01T23:59:59");
+  const first = utc("2026-07-01T10:00:00");
+  const followUp = first + 42 * minute;
+  const result = aggregateWorkRhythm([
+    root("returned-later", [first, followUp], {
+      rootIntervals: [{
+        startedAt: first,
+        executionEndAt: first + 12 * minute,
+      }, {
+        startedAt: followUp,
+        executionEndAt: followUp,
+      }],
+    }),
+  ], start, end, "UTC");
+
+  strictEqual(result.estimatedActiveMinutes, 10);
+});
+
+Deno.test("work rhythm gives mid-run turns a clamped fallback window", () => {
+  const start = utc("2026-07-01T00:00:00");
+  const end = utc("2026-07-01T23:59:59");
+  const first = utc("2026-07-01T10:00:00");
+
+  const midRun = aggregateWorkRhythm([
+    root("mid-run", [first, first + 8 * minute], {
+      rootIntervals: [{
+        startedAt: first,
+        executionEndAt: first + 12 * minute,
+      }, {
+        startedAt: first + 8 * minute,
+        executionEndAt: first + 8 * minute,
+      }],
+    }),
+  ], start, end, "UTC");
+  strictEqual(midRun.estimatedActiveMinutes, 10);
+
+  const immediate = aggregateWorkRhythm([
+    root("immediate-mid-run", [first, first + minute], {
+      rootIntervals: [{
+        startedAt: first,
+        executionEndAt: first + 12 * minute,
+      }, {
+        startedAt: first + minute,
+        executionEndAt: first + minute,
+      }],
+    }),
+  ], start, end, "UTC");
+  strictEqual(immediate.estimatedActiveMinutes, 6);
 });
 
 Deno.test("work rhythm clips boundaries and splits merged activity across midnight and hours", () => {
@@ -171,7 +258,7 @@ Deno.test("work rhythm excludes subagent turns and unions root turns across harn
   const at = utc("2026-07-01T10:00:00");
   const pi = root("pi-root", [at, at + 3 * minute], {
     harness: "pi",
-    rootTurns: [at],
+    rootIntervals: [{ startedAt: at, executionEndAt: at }],
   });
   const codex = root("codex-root", [at + minute], {
     numericID: 2,

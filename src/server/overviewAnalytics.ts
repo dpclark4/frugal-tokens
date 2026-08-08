@@ -7,8 +7,11 @@ import type { SessionOverviewRollup } from "./sessionRollups.ts";
 
 export type StoredOverviewRollup = {
   rootSessionID: number;
-  /** Starts of measured turns on the root session, excluding descendants. */
-  rootTurnStartedAts?: number[];
+  /** Measured turns on the root session, excluding descendants. */
+  rootExecutionIntervals?: Array<{
+    startedAt: number;
+    executionEndAt: number;
+  }>;
   /** Public/external ID accepted by /sessions/$harness/$sessionId. */
   sessionID?: string;
   title?: string;

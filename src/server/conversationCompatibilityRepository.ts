@@ -678,19 +678,35 @@ export class ConversationCompatibilityRepository {
         ), 0) AS subagent_spend,
         COALESCE(c.public_id, c.external_id) AS session_public_id,
         COALESCE((
-          SELECT json_group_array(root_turn.started_at)
-          FROM conversation_turns root_turn
-          WHERE root_turn.conversation_id = c.id
-            AND EXISTS (
-              SELECT 1
-              FROM conversation_model_calls root_call
-              WHERE root_call.turn_id = root_turn.id
-                AND COALESCE(root_call.source_call_id, '')
-                  NOT LIKE 'context-operation:%'
-                AND COALESCE(root_call.source_call_id, '')
-                  NOT LIKE 'unmeasured:%'
-            )
-        ), '[]') AS root_turn_starts_json
+          SELECT json_group_array(json_object(
+            'startedAt', measured_turn.started_at,
+            'executionEndAt', measured_turn.execution_end_at
+          ))
+          FROM (
+            SELECT root_turn.started_at,
+              MAX(
+                root_turn.started_at,
+                MAX(COALESCE(
+                  root_tool.completed_at,
+                  root_tool.started_at,
+                  root_call.completed_at,
+                  root_call.started_at
+                ))
+              ) AS execution_end_at
+            FROM conversation_turns root_turn
+            JOIN conversation_model_calls root_call
+              ON root_call.turn_id = root_turn.id
+            LEFT JOIN conversation_tool_events root_tool
+              ON root_tool.model_call_id = root_call.id
+            WHERE root_turn.conversation_id = c.id
+              AND COALESCE(root_call.source_call_id, '')
+                NOT LIKE 'context-operation:%'
+              AND COALESCE(root_call.source_call_id, '')
+                NOT LIKE 'unmeasured:%'
+            GROUP BY root_turn.id
+            ORDER BY root_turn.started_at, root_turn.ordinal
+          ) measured_turn
+        ), '[]') AS root_execution_intervals_json
       FROM conversation_rollups cr
       JOIN conversations c ON c.id = cr.conversation_id
       JOIN sources so ON so.id = c.source_id
@@ -708,11 +724,11 @@ export class ConversationCompatibilityRepository {
       overview_json: string;
       subagent_spend: number;
       session_public_id: string;
-      root_turn_starts_json: string;
+      root_execution_intervals_json: string;
     }>;
     return rows.map((row) => ({
       rootSessionID: row.id,
-      rootTurnStartedAts: JSON.parse(row.root_turn_starts_json),
+      rootExecutionIntervals: JSON.parse(row.root_execution_intervals_json),
       sessionID: row.session_public_id,
       title: row.title,
       harness: row.harness,

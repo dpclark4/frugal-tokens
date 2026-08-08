@@ -572,8 +572,9 @@ export function WorkRhythm({ data }: { data: WorkRhythmData }) {
               <h2 id="work-rhythm-title">Work</h2>
             </div>
             <p>
-              {data.methodology.minutesBeforeTurn}{" "}
-              min before each user turn · overlapping time counted once
+              {data.methodology.initialMinutes} min initial/fallback · completion
+              gaps up to {data.methodology.completionGapTimeoutMinutes} min ·
+              overlaps counted once
             </p>
           </div>
           <strong>

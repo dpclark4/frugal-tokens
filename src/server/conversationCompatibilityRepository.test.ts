@@ -154,8 +154,21 @@ Deno.test("conversation compatibility repository preserves linear read contracts
     const legacyOverview = legacy.listOverviewRollups(0, "pi");
     const compatibilityOverview = compatibility.listOverviewRollups(0, "pi");
     strictEqual(compatibilityOverview.length, 1);
-    deepStrictEqual(legacyOverview[0].rootTurnStartedAts, [10, 20]);
-    deepStrictEqual(compatibilityOverview[0].rootTurnStartedAts, [10, 20]);
+    const expectedRootIntervals = [{
+      startedAt: 10,
+      executionEndAt: 12,
+    }, {
+      startedAt: 20,
+      executionEndAt: 22,
+    }];
+    deepStrictEqual(
+      legacyOverview[0].rootExecutionIntervals,
+      expectedRootIntervals,
+    );
+    deepStrictEqual(
+      compatibilityOverview[0].rootExecutionIntervals,
+      expectedRootIntervals,
+    );
     strictEqual(compatibility.listUsageRollups(undefined, "pi").length, 1);
   } finally {
     db.close();

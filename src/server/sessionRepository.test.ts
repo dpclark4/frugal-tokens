@@ -542,7 +542,10 @@ Deno.test("atomically replaces trees with root-scoped public child IDs", () => {
     );
     strictEqual(overviewRollups.length, 2);
     for (const rollup of overviewRollups) {
-      deepStrictEqual(rollup.rootTurnStartedAts, [10]);
+      deepStrictEqual(rollup.rootExecutionIntervals, [{
+        startedAt: 10,
+        executionEndAt: 12,
+      }]);
       strictEqual(rollup.overview.executionIntervals.length, 2);
     }
     deepStrictEqual(

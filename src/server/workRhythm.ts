@@ -5,8 +5,12 @@ import type {
 } from "../shared/sessionSchemas.ts";
 import type { StoredOverviewRollup } from "./overviewAnalytics.ts";
 
-export const WORK_RHYTHM_MINUTES_BEFORE_TURN = 5;
-const TURN_WINDOW_MS = WORK_RHYTHM_MINUTES_BEFORE_TURN * 60_000;
+export const WORK_RHYTHM_INITIAL_MINUTES = 5;
+export const WORK_RHYTHM_GAP_TIMEOUT_MINUTES = 10;
+export const WORK_RHYTHM_FALLBACK_MINUTES = 5;
+const INITIAL_WINDOW_MS = WORK_RHYTHM_INITIAL_MINUTES * 60_000;
+const GAP_TIMEOUT_MS = WORK_RHYTHM_GAP_TIMEOUT_MINUTES * 60_000;
+const FALLBACK_WINDOW_MS = WORK_RHYTHM_FALLBACK_MINUTES * 60_000;
 const WEEKDAYS = [
   { weekday: 1 as const, label: "Mon" },
   { weekday: 2 as const, label: "Tue" },
@@ -52,6 +56,42 @@ function mergeIntervals(intervals: Interval[], start: number, end: number) {
     }
   }
   return merged;
+}
+
+function estimatedWorkIntervals(root: StoredOverviewRollup): Interval[] {
+  const turns = (root.rootExecutionIntervals ?? []).toSorted((a, b) =>
+    a.startedAt - b.startedAt || a.executionEndAt - b.executionEndAt
+  );
+  return turns.map((turn, index) => {
+    if (index === 0) {
+      return {
+        start: turn.startedAt - INITIAL_WINDOW_MS,
+        end: turn.startedAt,
+      };
+    }
+
+    const previous = turns[index - 1];
+    const previousEnd = Math.max(
+      previous.startedAt,
+      previous.executionEndAt,
+    );
+    if (turn.startedAt < previousEnd) {
+      return {
+        start: Math.max(
+          previous.startedAt,
+          turn.startedAt - FALLBACK_WINDOW_MS,
+        ),
+        end: turn.startedAt,
+      };
+    }
+    if (turn.startedAt - previousEnd <= GAP_TIMEOUT_MS) {
+      return { start: previousEnd, end: turn.startedAt };
+    }
+    return {
+      start: turn.startedAt - FALLBACK_WINDOW_MS,
+      end: turn.startedAt,
+    };
+  });
 }
 
 function overlapMs(intervals: Interval[], span: Interval) {
@@ -107,12 +147,7 @@ export function aggregateWorkRhythm(
     date = date.add({ days: 1 })
   ) dates.push(date);
 
-  const intervals = roots.flatMap((root) =>
-    (root.rootTurnStartedAts ?? []).map((startedAt) => ({
-      start: startedAt - TURN_WINDOW_MS,
-      end: startedAt,
-    }))
-  );
+  const intervals = roots.flatMap(estimatedWorkIntervals);
   const merged = mergeIntervals(intervals, start, end);
   const totalMs = merged.reduce(
     (sum, interval) => sum + interval.end - interval.start,
@@ -282,7 +317,12 @@ export function aggregateWorkRhythm(
   return {
     range: { start: startDate.toString(), end: endDate.toString() },
     estimatedActiveMinutes: totalMs / 60_000,
-    methodology: { minutesBeforeTurn: 5, overlapsCountedOnce: true },
+    methodology: {
+      initialMinutes: WORK_RHYTHM_INITIAL_MINUTES,
+      completionGapTimeoutMinutes: WORK_RHYTHM_GAP_TIMEOUT_MINUTES,
+      fallbackMinutes: WORK_RHYTHM_FALLBACK_MINUTES,
+      overlapsCountedOnce: true,
+    },
     weekdayActivity,
     hourlyActivity,
     afterHoursShare: totalMs === 0
