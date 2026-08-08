@@ -183,6 +183,7 @@ const router = createRouter({
     toolCallsRoute,
     sessionDetailRoute,
   ]),
+  scrollRestoration: true,
 });
 
 declare module "@tanstack/react-router" {

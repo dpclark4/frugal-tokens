@@ -1338,7 +1338,21 @@ function LoadingSession() {
 function DetailNavigation({ backHref }: { backHref: string }) {
   return (
     <nav className="sd-detail-nav" aria-label="Session navigation">
-      <a className="sd-back" href={backHref}>
+      <a
+        className="sd-back"
+        href={backHref}
+        onClick={(event) => {
+          if (
+            event.button !== 0 || event.metaKey || event.ctrlKey ||
+            event.shiftKey || event.altKey
+          ) {
+            return;
+          }
+          if (window.history.length <= 1) return;
+          event.preventDefault();
+          window.history.back();
+        }}
+      >
         <ArrowLeft size={14} />Sessions
       </a>
     </nav>

@@ -15,6 +15,7 @@ import type { OverviewHarness } from "./OverviewToolbar.tsx";
 import "./RecentSessions.css";
 
 const route = getRouteApi("/");
+const returnScrollKey = "frugal-tokens:overview-return-scroll";
 
 type RecentSessionsProps = {
   harness: OverviewHarness;
@@ -46,6 +47,17 @@ export function RecentSessions({
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string>();
   const loadMoreRef = useRef<HTMLDivElement>(null);
+  const restoredScrollRef = useRef(false);
+  const [returnScrollY] = useState<number | undefined>(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(returnScrollKey) ?? "null");
+      return saved?.href === window.location.href && Number.isFinite(saved.scrollY)
+        ? saved.scrollY
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  });
 
   useEffect(() => {
     let active = true;
@@ -133,6 +145,45 @@ export function RecentSessions({
     );
   }
 
+  function openSession(session: SessionListResponse["items"][number]) {
+    try {
+      sessionStorage.setItem(returnScrollKey, JSON.stringify({
+        href: window.location.href,
+        scrollY: window.scrollY,
+      }));
+    } catch {
+      // Router scroll restoration remains the fallback when storage is unavailable.
+    }
+    navigate({
+      to: "/sessions/$harness/$sessionId",
+      params: { harness: session.harness, sessionId: session.id },
+      search: {
+        misses: misses || undefined,
+        paths: "relative",
+        color: "time",
+        model: "recorded",
+        thinking: "recorded",
+      },
+    });
+  }
+
+  useEffect(() => {
+    if (!data || returnScrollY === undefined || restoredScrollRef.current) return;
+    restoredScrollRef.current = true;
+    try {
+      sessionStorage.removeItem(returnScrollKey);
+    } catch {
+      // The saved position is only a progressive enhancement.
+    }
+    const restore = () => window.scrollTo(0, returnScrollY);
+    const frame = requestAnimationFrame(restore);
+    const timer = window.setTimeout(restore, 500);
+    return () => {
+      cancelAnimationFrame(frame);
+      window.clearTimeout(timer);
+    };
+  }, [data, returnScrollY]);
+
   return (
     <div className="new-recent-sessions">
       <SessionsPanel
@@ -152,18 +203,7 @@ export function RecentSessions({
       loadNextPage={loadNextPage}
       onHarnessChange={onHarnessChange}
       onMissFiltersChange={changeMissFilters}
-      onOpenSession={(session) =>
-        navigate({
-          to: "/sessions/$harness/$sessionId",
-          params: { harness: session.harness, sessionId: session.id },
-          search: {
-            misses: misses || undefined,
-            paths: "relative",
-            color: "time",
-            model: "recorded",
-            thinking: "recorded",
-          },
-        })}
+      onOpenSession={openSession}
       />
     </div>
   );
