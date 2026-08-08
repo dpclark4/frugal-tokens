@@ -36,6 +36,11 @@ import { syncClaudeCodeSessions } from "./claudeCodeImporter.ts";
 import { syncOpenCodeSessions } from "./openCodeImporter.ts";
 import { enrichSessionSummary } from "./sessionSummaryEnrichment.ts";
 import { syncCursorAgentSessions } from "./cursorAgentRepository.ts";
+import {
+  generateMissingSessionTitles,
+  setTitleGenerationEnabled,
+  titleGenerationEnabled,
+} from "./titleGeneration.ts";
 
 function configuredPath<T>(
   harness: string,
@@ -283,6 +288,7 @@ async function syncSources() {
         ),
     );
   }
+  await generateMissingSessionTitles(archiveDatabase);
   console.info(
     `[sync] complete duration=${(performance.now() - startedAt).toFixed(1)}ms`,
   );
@@ -335,6 +341,23 @@ app.get("/health", (context) => context.json({ status: "ok" }));
 app.post("/api/sync", async (context) => {
   await syncSourcesOnce();
   return context.json({ status: "ok" });
+});
+
+app.get(
+  "/api/settings/title-generation",
+  (context) =>
+    context.json({ enabled: titleGenerationEnabled(archiveDatabase) }),
+);
+
+app.put("/api/settings/title-generation", async (context) => {
+  const body = await context.req.json().catch(() => undefined) as
+    | { enabled?: unknown }
+    | undefined;
+  if (typeof body?.enabled !== "boolean") {
+    return context.json({ error: "enabled must be a boolean" }, 400);
+  }
+  setTitleGenerationEnabled(archiveDatabase, body.enabled);
+  return context.json({ enabled: body.enabled });
 });
 
 function repositoryForHarness(harness: SessionSummary["harness"]) {

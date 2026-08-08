@@ -106,9 +106,22 @@ type CallRow = {
   branch_id: number;
 };
 
+const effectiveConversationTitle = `
+  CASE WHEN so.harness = 'opencode' THEN c.title ELSE COALESCE((
+    SELECT ss.generated_title
+    FROM conversation_branches title_branch
+    JOIN source_sessions ss ON ss.id = title_branch.source_session_id
+    WHERE title_branch.conversation_id = c.id
+      AND ss.generated_title IS NOT NULL
+    ORDER BY title_branch.updated_at DESC, title_branch.id DESC
+    LIMIT 1
+  ), c.title) END
+`;
+
 const conversationColumns = `
-  c.id, c.source_id, c.external_id, c.public_id, so.harness, c.title, c.agent,
-  c.working_directory, c.updated_at, c.started_at, c.ended_at,
+  c.id, c.source_id, c.external_id, c.public_id, so.harness,
+  ${effectiveConversationTitle} AS title,
+  c.agent, c.working_directory, c.updated_at, c.started_at, c.ended_at,
   c.providers_json, c.models_json, cr.user_turns, cr.model_calls,
   cr.reported_cost, cr.computed_cost, cr.uncached_input_tokens,
   cr.cache_read_tokens, cr.cache_write_tokens, cr.cache_write_5m_tokens,
@@ -659,8 +672,8 @@ export class ConversationCompatibilityRepository {
     harness?: Harness,
   ): StoredOverviewRollup[] {
     const rows = this.db.prepare(`
-      SELECT c.id, c.title, so.harness, cr.overview_json,
-        COALESCE((
+      SELECT c.id, ${effectiveConversationTitle} AS title, so.harness,
+        cr.overview_json, COALESCE((
           WITH RECURSIVE descendants(id) AS (
             SELECT launch.child_conversation_id
             FROM conversation_subagent_launches launch
@@ -742,7 +755,8 @@ export class ConversationCompatibilityRepository {
     harness?: Harness,
   ): StoredSessionShapeRollup[] {
     const rows = this.db.prepare(`
-      SELECT c.id, c.title, so.harness, cr.overview_json,
+      SELECT c.id, ${effectiveConversationTitle} AS title, so.harness,
+        cr.overview_json,
         (
           SELECT first_call.uncached_input_tokens +
             first_call.cache_read_tokens +

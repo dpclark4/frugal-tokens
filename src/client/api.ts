@@ -32,6 +32,25 @@ export async function syncSessions() {
   if (!response.ok) throw new Error(`Request failed (${response.status})`);
 }
 
+export async function getTitleGenerationSetting() {
+  const value = await getJson("/api/settings/title-generation") as {
+    enabled?: unknown;
+  };
+  if (typeof value.enabled !== "boolean") {
+    throw new Error("Invalid title generation setting response");
+  }
+  return value.enabled;
+}
+
+export async function setTitleGenerationSetting(enabled: boolean) {
+  const response = await fetch(`${apiBaseUrl}/api/settings/title-generation`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!response.ok) throw new Error(`Request failed (${response.status})`);
+}
+
 export async function getUsage(range: number | "all", harness: string) {
   return usageResponseSchema.parse(
     await getJson(`/api/usage?range=${range}&harness=${harness}`),

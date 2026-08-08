@@ -1300,10 +1300,93 @@ h1 {
 
 .session-filters {
   display: grid;
-  grid-template-columns: auto auto auto;
-  grid-template-areas: "refresh filter harness";
+  grid-template-columns: auto auto auto auto;
+  grid-template-areas: "titles refresh filter harness";
   align-items: flex-end;
   gap: 8px;
+}
+
+.session-title-generation-control {
+  grid-area: titles;
+  display: inline-flex;
+  align-items: center;
+  min-height: 29px;
+  gap: 7px;
+  color: #263126;
+  font: 11px var(--mono);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.session-title-generation-control input {
+  margin: 0;
+  accent-color: var(--green);
+}
+
+.session-title-generation-control:has(input:disabled) {
+  opacity: .6;
+  cursor: wait;
+}
+
+.title-confirmation-backdrop {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(38, 49, 38, .28);
+}
+
+.title-confirmation-dialog {
+  width: min(440px, 100%);
+  padding: 28px;
+  border: 1px solid var(--panel-border);
+  background: var(--surface-0);
+  box-shadow: 0 24px 70px rgba(57, 51, 40, .2);
+}
+
+.title-confirmation-dialog h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.title-confirmation-dialog > p:not(.eyebrow) {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.title-confirmation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.title-confirmation-actions button {
+  padding: 7px 12px;
+  border: 1px solid #aab9a7;
+  border-radius: 0;
+  background: var(--surface-0);
+  color: #263126;
+  font: 11px var(--mono);
+  cursor: pointer;
+}
+
+.title-confirmation-actions button:hover {
+  background: var(--surface-2);
+}
+
+.title-confirmation-actions .primary {
+  border-color: var(--green);
+  background: var(--green);
+  color: var(--surface-0);
+}
+
+.title-confirmation-actions .primary:hover {
+  filter: brightness(.94);
 }
 
 .session-control,

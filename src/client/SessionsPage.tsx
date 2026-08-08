@@ -30,7 +30,14 @@ import {
 import { contextRange, contextSize } from "../shared/contextMetrics.ts";
 import { displayModelName } from "../shared/modelNames.ts";
 import { rollupCosts } from "../shared/costMetrics.ts";
-import { getOverview, getSession, getSessions, syncSessions } from "./api.ts";
+import {
+  getOverview,
+  getSession,
+  getSessions,
+  getTitleGenerationSetting,
+  setTitleGenerationSetting,
+  syncSessions,
+} from "./api.ts";
 import { harnessIcon, harnessName } from "./harness.ts";
 import { UsageChart } from "./UsageChart.tsx";
 import { TtlMissCard } from "./TtlMissCard.tsx";
@@ -2056,6 +2063,61 @@ export function SessionsPanel({
   onMissFiltersChange,
   onOpenSession,
 }: SessionsPanelProps) {
+  const [generateTitles, setGenerateTitles] = useState(false);
+  const [titleSettingLoading, setTitleSettingLoading] = useState(true);
+  const [titleSettingError, setTitleSettingError] = useState<string>();
+  const [titleConfirmationOpen, setTitleConfirmationOpen] = useState(false);
+  const titleConfirmationButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    let active = true;
+    getTitleGenerationSetting().then((enabled) => {
+      if (active) setGenerateTitles(enabled);
+    }).catch((reason) => {
+      if (active) {
+        setTitleSettingError(
+          reason instanceof Error
+            ? reason.message
+            : "Unable to load title setting",
+        );
+      }
+    }).finally(() => {
+      if (active) setTitleSettingLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!titleConfirmationOpen) return;
+    titleConfirmationButtonRef.current?.focus();
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setTitleConfirmationOpen(false);
+    }
+    document.addEventListener("keydown", closeOnEscape);
+    return () => document.removeEventListener("keydown", closeOnEscape);
+  }, [titleConfirmationOpen]);
+
+  async function changeTitleGeneration(enabled: boolean) {
+    const previous = generateTitles;
+    setGenerateTitles(enabled);
+    setTitleSettingLoading(true);
+    setTitleSettingError(undefined);
+    try {
+      await setTitleGenerationSetting(enabled);
+    } catch (reason) {
+      setGenerateTitles(previous);
+      setTitleSettingError(
+        reason instanceof Error
+          ? reason.message
+          : "Unable to save title setting",
+      );
+    } finally {
+      setTitleSettingLoading(false);
+    }
+  }
+
   return (
     <section className="sessions-panel">
       <div className="panel-heading">
@@ -2069,6 +2131,21 @@ export function SessionsPanel({
           )}
         </div>
         <div className="session-filters">
+          <label className="session-title-generation-control">
+            <input
+              type="checkbox"
+              checked={generateTitles}
+              disabled={titleSettingLoading}
+              onChange={(event) => {
+                if (event.target.checked) {
+                  setTitleConfirmationOpen(true);
+                } else {
+                  void changeTitleGeneration(false);
+                }
+              }}
+            />
+            <span>Generate titles</span>
+          </label>
           <button
             type="button"
             className="session-refresh"
@@ -2100,7 +2177,52 @@ export function SessionsPanel({
           </label>
         </div>
       </div>
-      {error && <div className="error">{error}</div>}
+      {titleConfirmationOpen && (
+        <div
+          className="title-confirmation-backdrop"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setTitleConfirmationOpen(false);
+            }
+          }}
+        >
+          <section
+            className="title-confirmation-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="title-confirmation-heading"
+          >
+            <h2 id="title-confirmation-heading">Enable title generation?</h2>
+            <p>
+              Uses Codex with GPT-5.6 Luna (low reasoning) to title up to 25
+              recent sessions, then new sessions going forward. Minimal usage
+              costs may apply.
+            </p>
+            <div className="title-confirmation-actions">
+              <button
+                type="button"
+                onClick={() => setTitleConfirmationOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary"
+                ref={titleConfirmationButtonRef}
+                onClick={() => {
+                  setTitleConfirmationOpen(false);
+                  void changeTitleGeneration(true);
+                }}
+              >
+                Enable
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {(error || titleSettingError) && (
+        <div className="error">{error ?? titleSettingError}</div>
+      )}
       {!data && !error && (
         <div className="loading">Reading local sessions...</div>
       )}

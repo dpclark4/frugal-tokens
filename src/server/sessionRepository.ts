@@ -367,7 +367,9 @@ const summaryColumns = `
   ss.id AS source_session_id, ss.external_id,
   COALESCE(ss.public_id, ss.external_id) AS public_id, so.harness,
   ss.artifact_path, ss.working_directory,
-  s.title, s.agent, s.updated_at, s.started_at, s.ended_at,
+  CASE WHEN so.harness = 'opencode' THEN s.title
+    ELSE COALESCE(ss.generated_title, s.title) END AS title,
+  s.agent, s.updated_at, s.started_at, s.ended_at,
   s.providers_json, s.models_json, s.user_turns, s.model_calls,
   s.reported_cost, s.uncached_input_tokens, s.cache_read_tokens,
   s.cache_write_tokens, s.cache_write_5m_tokens,
@@ -1207,7 +1209,10 @@ export class SessionRepository {
     harness?: Harness,
   ): StoredOverviewRollup[] {
     const rows = this.#prepare(`
-      SELECT sr.root_session_id, sr.overview_json, s.title, so.harness,
+      SELECT sr.root_session_id, sr.overview_json,
+        CASE WHEN so.harness = 'opencode' THEN s.title
+          ELSE COALESCE(ss.generated_title, s.title) END AS title,
+        so.harness,
         COALESCE(sr.subagent_computed_cost, sr.subagent_reported_cost, 0)
           AS subagent_spend,
         COALESCE(ss.public_id, ss.external_id) AS session_public_id,
@@ -1272,7 +1277,10 @@ export class SessionRepository {
     harness?: Harness,
   ): StoredSessionShapeRollup[] {
     const rows = this.#prepare(`
-      SELECT sr.root_session_id, sr.overview_json, s.title, so.harness,
+      SELECT sr.root_session_id, sr.overview_json,
+        CASE WHEN so.harness = 'opencode' THEN s.title
+          ELSE COALESCE(ss.generated_title, s.title) END AS title,
+        so.harness,
         (
           SELECT first_mc.uncached_input_tokens + first_mc.cache_read_tokens +
             COALESCE(first_mc.cache_write_tokens, 0)
