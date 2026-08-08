@@ -937,7 +937,7 @@ app.get(
 );
 
 if (serveStaticAssets) {
-  app.use("/assets/*", serveStatic({ root: "./dist" }));
+  app.use("*", serveStatic({ root: "./dist" }));
   app.get("*", serveStatic({ root: "./dist", path: "index.html" }));
 }
 
