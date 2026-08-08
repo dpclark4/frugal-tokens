@@ -37,7 +37,7 @@ import { TtlMissCard } from "./TtlMissCard.tsx";
 import { SiteHeader } from "./SiteHeader.tsx";
 import { buildHomepageReport, type ReportRange } from "./shareReport.ts";
 
-const route = getRouteApi("/");
+const route = getRouteApi("/old");
 
 async function copyToClipboard(value: string) {
   if (navigator.clipboard && window.isSecureContext) {
@@ -2638,7 +2638,7 @@ export function SessionsPage() {
   return (
     <main>
       <SiteHeader
-        active="overview"
+        active="old"
         action={
           <button
             type="button"

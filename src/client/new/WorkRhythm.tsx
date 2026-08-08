@@ -448,7 +448,7 @@ function DayDetail({ day }: { day: WorkRhythmDay }) {
             onClick={() =>
               navigate({
                 to: "/",
-                search: { harness: "all", misses: undefined },
+                search: { harness: "all", range: 30, misses: undefined },
               })}
           >
             View all sessions

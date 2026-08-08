@@ -32,6 +32,11 @@ export function OverviewToolbar({
             className={range === option ? "active" : undefined}
             aria-pressed={range === option}
             onClick={() => onRangeChange(option)}
+            onDoubleClick={option === 30
+              ? () => window.dispatchEvent(
+                new Event("frugal-tokens:toggle-secondary-pages"),
+              )
+              : undefined}
           >
             {option}D
           </button>

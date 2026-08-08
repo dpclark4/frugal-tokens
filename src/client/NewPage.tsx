@@ -13,7 +13,7 @@ import { CacheOverview } from "./new/CacheOverview.tsx";
 import { HarnessOverview } from "./new/HarnessOverview.tsx";
 import { RecentSessions } from "./new/RecentSessions.tsx";
 
-const route = getRouteApi("/new");
+const route = getRouteApi("/");
 
 export function NewPage() {
   const search = route.useSearch();
@@ -48,7 +48,7 @@ export function NewPage() {
   return (
     <main className="new-page">
       <SiteHeader
-        active="new"
+        active="overview"
         action={
           <OverviewToolbar
             range={search.range}

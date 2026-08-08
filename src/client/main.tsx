@@ -6,6 +6,7 @@ import {
   createRouter,
   Outlet,
   RouterProvider,
+  redirect,
 } from "@tanstack/react-router";
 import { z } from "zod";
 import "./styles.css";
@@ -90,9 +91,9 @@ const rootRoute = createRootRoute({
   ),
   errorComponent: AppError,
 });
-const indexRoute = createRoute({
+const oldRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/",
+  path: "/old",
   validateSearch: z.object({
     harness: z.enum(["all", "opencode", "claude-code", "pi", "codex", "cursor"]).catch(
       "all",
@@ -103,7 +104,7 @@ const indexRoute = createRoute({
 });
 const newRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/new",
+  path: "/",
   validateSearch: z.object({
     harness: z.enum(["all", "opencode", "claude-code", "pi", "codex", "cursor"]).catch(
       "all",
@@ -113,6 +114,16 @@ const newRoute = createRoute({
     misses: z.string().optional(),
   }),
   component: NewPage,
+});
+const newRedirectRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/new",
+  beforeLoad: () => {
+    throw redirect({
+      to: "/",
+      search: { harness: "all", range: 30 },
+    });
+  },
 });
 const performanceRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -165,8 +176,9 @@ const sessionDetailRoute = createRoute({
 });
 const router = createRouter({
   routeTree: rootRoute.addChildren([
-    indexRoute,
+    oldRoute,
     newRoute,
+    newRedirectRoute,
     performanceRoute,
     toolCallsRoute,
     sessionDetailRoute,

@@ -14,7 +14,7 @@ import { SessionsPanel } from "../SessionsPage.tsx";
 import type { OverviewHarness } from "./OverviewToolbar.tsx";
 import "./RecentSessions.css";
 
-const route = getRouteApi("/new");
+const route = getRouteApi("/");
 
 type RecentSessionsProps = {
   harness: OverviewHarness;
