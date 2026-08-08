@@ -113,9 +113,19 @@ main {
 
 .page-header {
   display: flex;
-  align-items: baseline;
-  gap: 14px;
+  align-items: center;
+  gap: 10px;
   margin-bottom: 16px;
+}
+
+.site-header-mark {
+  width: 62px;
+  height: 62px;
+  flex: 0 0 62px;
+  object-fit: cover;
+  border-radius: 12px;
+  margin-right: -10px;
+  transform: translateY(0);
 }
 
 .eyebrow {

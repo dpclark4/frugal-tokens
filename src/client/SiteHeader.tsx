@@ -28,8 +28,8 @@ export function SiteHeader({ active, action }: {
 
   return (
     <header className="page-header site-header">
+      <img className="site-header-mark" src="/brand-mark.png" alt="" />
       <div>
-        <p className="eyebrow">Local agent economics</p>
         <h1>Frugal Tokens</h1>
       </div>
       <nav className="page-tabs" aria-label="Primary navigation">
