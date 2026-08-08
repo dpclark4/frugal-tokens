@@ -160,6 +160,12 @@ export const sessionSummarySchema = z.object({
   tokens: tokenUsageSchema,
 });
 
+export const sessionListItemSchema = sessionSummarySchema.omit({
+  internalID: true,
+  sourcePath: true,
+  subagentModelCalls: true,
+});
+
 export const compactionTriggerSchema = z.enum([
   "manual",
   "automatic",
@@ -280,7 +286,7 @@ export const sessionDetailSchema: z.ZodType<SessionDetail> =
   });
 
 export const sessionListResponseSchema = z.object({
-  items: z.array(sessionSummarySchema),
+  items: z.array(sessionListItemSchema),
   pagination: z.object({
     page: z.number().int().positive(),
     pageSize: z.number().int().positive(),
@@ -769,6 +775,7 @@ export type CacheAssessment = z.infer<typeof cacheAssessmentSchema>;
 export type CacheSummary = z.infer<typeof cacheSummarySchema>;
 export type CacheIssue = z.infer<typeof cacheIssueSchema>;
 export type TurnCacheSummary = z.infer<typeof turnCacheSummarySchema>;
+export type SessionListItem = z.infer<typeof sessionListItemSchema>;
 export type SessionListResponse = z.infer<typeof sessionListResponseSchema>;
 export type SessionSummary = z.infer<typeof sessionSummarySchema>;
 export type TokenUsage = z.infer<typeof tokenUsageSchema>;

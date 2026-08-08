@@ -5,7 +5,11 @@ import type {
   SourceSessionImport,
 } from "./sessionRepository.ts";
 import { computeModelCallCost } from "./pricing.ts";
-import type { SessionSummary, TokenUsage } from "../shared/sessionSchemas.ts";
+import {
+  sessionListItemSchema,
+  type SessionSummary,
+  type TokenUsage,
+} from "../shared/sessionSchemas.ts";
 import { buildSessionRollup, type SessionRollup } from "./sessionRollups.ts";
 import { analyzeCacheMisses, type CacheAnalysisCall } from "./cacheAnalysis.ts";
 import {
@@ -291,13 +295,12 @@ export class ConversationProjectionRepository {
         const [rootID, tree] of Map.groupBy(values, rootExternalID).entries()
       ) {
         const conversationID = conversationIDs.get(rootID)!;
-        this.#updateAnalyticsRollup(
-          conversationID,
-          buildSessionRollup(tree),
-        );
+        const rollup = buildSessionRollup(tree);
+        this.#updateAnalyticsRollup(conversationID, rollup);
         this.#materializeSummary(
           conversationID,
           sessionDetailFromSourceImports(tree, rootID, harness),
+          rollup,
         );
       }
       this.db.exec("COMMIT");
@@ -1096,6 +1099,7 @@ export class ConversationProjectionRepository {
           canonicalSession.externalID,
           this.#sourceHarness(family.sourceID),
         ),
+        analyticsRollup,
       );
       this.db.exec("COMMIT");
     } catch (error) {
@@ -1507,11 +1511,22 @@ export class ConversationProjectionRepository {
   #materializeSummary(
     conversationID: number,
     detail: Parameters<typeof enrichSessionSummary>[0],
+    rollup: SessionRollup,
   ) {
+    const summary = sessionListItemSchema.parse({
+      ...enrichSessionSummary(detail),
+      ...(rollup.thinkingClassifiedCalls === 0 ? {} : {
+        thinking: {
+          latest: rollup.thinkingLatest,
+          values: rollup.thinkingValues,
+          classifiedCalls: rollup.thinkingClassifiedCalls,
+        },
+      }),
+    });
     this.#prepare(`
       UPDATE conversation_rollups SET summary_json = ?
       WHERE conversation_id = ?
-    `).run(JSON.stringify(enrichSessionSummary(detail)), conversationID);
+    `).run(JSON.stringify(summary), conversationID);
   }
 
   #sourceHarness(sourceID: number) {

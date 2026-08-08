@@ -85,23 +85,23 @@ export class SessionReadRepository {
         missFilters,
       );
     }
-    const items = harnesses.flatMap((harness) =>
+    const candidateCount = page * pageSize;
+    const responses = harnesses.map((harness) =>
       this.#provider(harness).listSessions(
         1,
-        1_000_000,
+        candidateCount,
         harness,
         missFilters,
-      ).items.map((item) => ({
-        ...item,
-        ...(item.internalID === undefined ? {} : {
-          internalID: this.#scopedID("session", harness, item.internalID),
-        }),
-      }))
-    ).sort((a, b) =>
+      )
+    );
+    const items = responses.flatMap((response) => response.items).sort((a, b) =>
       b.updatedAt - a.updatedAt || b.id.localeCompare(a.id) ||
       b.harness.localeCompare(a.harness)
     );
-    const totalItems = items.length;
+    const totalItems = responses.reduce(
+      (total, response) => total + response.pagination.totalItems,
+      0,
+    );
     return sessionListResponseSchema.parse({
       items: items.slice((page - 1) * pageSize, page * pageSize),
       pagination: {

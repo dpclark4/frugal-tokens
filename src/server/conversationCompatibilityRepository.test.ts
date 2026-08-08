@@ -1,4 +1,5 @@
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
+import { sessionListItemSchema } from "../shared/sessionSchemas.ts";
 import { ConversationCompatibilityRepository } from "./conversationCompatibilityRepository.ts";
 import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
 import { syncCodexSessions } from "./codexImporter.ts";
@@ -9,6 +10,7 @@ import {
 import { openArchiveDatabase } from "./database.ts";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
 import { SessionReadRepository } from "./sessionReadRepository.ts";
+import { enrichSessionSummary } from "./sessionSummaryEnrichment.ts";
 import {
   SessionRepository,
   type SourceSessionImport,
@@ -120,10 +122,15 @@ Deno.test("conversation compatibility repository preserves linear read contracts
     projection.replaceLinearSession(value);
 
     const legacyList = legacy.listSessions(1, 10, "pi");
+    const legacyDetail = legacy.getSession("pi", "linear")!;
     const compatibilityList = compatibility.listSessions(1, 10, "pi");
     deepStrictEqual(
-      compatibilityList.items.map(({ internalID: _id, ...item }) => item),
-      legacyList.items.map(({ internalID: _id, ...item }) => item),
+      JSON.parse(JSON.stringify(compatibilityList.items)),
+      [
+        JSON.parse(JSON.stringify(
+          sessionListItemSchema.parse(enrichSessionSummary(legacyDetail)),
+        )),
+      ],
     );
     deepStrictEqual(compatibilityList.pagination, legacyList.pagination);
     const enriched = compatibility.enrichSessionSummaries(
@@ -133,7 +140,6 @@ Deno.test("conversation compatibility repository preserves linear read contracts
     strictEqual(enriched.cacheSummary?.compactionRelatedMisses, 1);
     strictEqual(enriched.inclusiveModelCalls, 2);
 
-    const legacyDetail = legacy.getSession("pi", "linear")!;
     const compatibilityDetail = compatibility.getSession("pi", "linear")!;
     deepStrictEqual(
       { ...compatibilityDetail, internalID: undefined },
@@ -151,6 +157,19 @@ Deno.test("conversation compatibility repository preserves linear read contracts
     );
     strictEqual(compatibility.listToolCalls(0, 100, "pi").length, 1);
     strictEqual(compatibility.listCacheMisses(undefined, "pi").length, 1);
+    strictEqual(
+      compatibility.listSessions(1, 10, "pi", ["compaction"]).pagination
+        .totalItems,
+      1,
+    );
+    strictEqual(
+      compatibility.listSessions(1, 10, "pi", ["ttl"]).pagination.totalItems,
+      0,
+    );
+    strictEqual(
+      compatibility.listSessions(1, 10, "pi", []).pagination.totalItems,
+      0,
+    );
     const legacyOverview = legacy.listOverviewRollups(0, "pi");
     const compatibilityOverview = compatibility.listOverviewRollups(0, "pi");
     strictEqual(compatibilityOverview.length, 1);
@@ -398,6 +417,12 @@ Deno.test("session read repository delegates each harness to exactly one provide
       global.items.map((item) => item.title).toSorted(),
       ["OpenCode legacy", "PI conversation"],
     );
+    const firstPage = reads.listSessions(1, 1);
+    const secondPage = reads.listSessions(2, 1);
+    strictEqual(firstPage.pagination.totalItems, 2);
+    strictEqual(firstPage.items[0].title, "OpenCode legacy");
+    strictEqual(secondPage.pagination.totalItems, 2);
+    strictEqual(secondPage.items[0].title, "PI conversation");
     strictEqual(
       reads.listUsageCalls().length,
       reads.listUsageCalls(undefined, "pi").length +

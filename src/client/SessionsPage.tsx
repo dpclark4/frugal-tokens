@@ -2264,26 +2264,10 @@ export function SessionsPanel({
                 {data.items.map((session) => {
                   const span = sessionSpan(session);
                   const sessionStart = span?.start ?? session.startedAt;
-                  const sessionLocation = session.workingDirectory ??
-                    session.sourcePath;
-                  const sessionLocationLabel =
-                    session.workingDirectory !== undefined
-                      ? `Working directory: ${session.workingDirectory}`
-                      : session.sourcePath === undefined
-                      ? undefined
-                      : `Source path: ${session.sourcePath}`;
-                  const sessionDebugTitle = session.internalID === undefined
+                  const sessionLocation = session.workingDirectory;
+                  const sessionLocationTitle = sessionLocation === undefined
                     ? undefined
-                    : `Archive session ID: ${session.internalID}\nSource session ID: ${session.id}`;
-                  const sessionTitleTooltip = sessionDebugTitle === undefined
-                    ? session.title
-                    : `${session.title}\n\n${sessionDebugTitle}`;
-                  const sessionLocationTitle =
-                    sessionLocationLabel === undefined
-                      ? sessionDebugTitle
-                      : sessionDebugTitle === undefined
-                      ? sessionLocationLabel
-                      : `${sessionLocationLabel}\n${sessionDebugTitle}`;
+                    : `Working directory: ${sessionLocation}`;
                   const tokens = session.inclusiveTokens ?? session.tokens;
                   const imageInputs = session.inclusiveImageInputs ?? 0;
                   const hasInclusiveMetrics =
@@ -2348,7 +2332,7 @@ export function SessionsPanel({
                             <div className="session-copy">
                               <strong
                                 className="session-title"
-                                title={sessionTitleTooltip}
+                                title={session.title}
                               >
                                 {session.title}
                               </strong>
@@ -2514,8 +2498,8 @@ export function SessionsPanel({
             )}
             {showLoadMoreButton && !loadingMore && !loadMoreError &&
               data.pagination.page < data.pagination.totalPages && (
-                <button type="button" onClick={loadNextPage}>Load more</button>
-              )}
+              <button type="button" onClick={loadNextPage}>Load more</button>
+            )}
             {data.pagination.page >= data.pagination.totalPages && (
               <span>
                 Showing all {integer.format(data.items.length)} sessions

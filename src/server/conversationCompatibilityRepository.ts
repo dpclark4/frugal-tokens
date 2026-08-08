@@ -4,6 +4,7 @@ import {
   type ModelCall,
   type SessionDetail,
   sessionDetailSchema,
+  sessionListItemSchema,
   type SessionListResponse,
   sessionListResponseSchema,
   type SessionMissFilter,
@@ -61,6 +62,7 @@ type ConversationRow = {
   output_tokens: number;
   reasoning_tokens: number;
   processed_tokens: number;
+  summary_json: string | null;
 };
 
 type CallRow = {
@@ -126,7 +128,7 @@ const conversationColumns = `
   cr.reported_cost, cr.computed_cost, cr.uncached_input_tokens,
   cr.cache_read_tokens, cr.cache_write_tokens, cr.cache_write_5m_tokens,
   cr.cache_write_1h_tokens, cr.fresh_prompt_tokens, cr.output_tokens,
-  cr.reasoning_tokens, cr.processed_tokens
+  cr.reasoning_tokens, cr.processed_tokens, cr.summary_json
 `;
 
 function optional<T>(value: T | null): T | undefined {
@@ -189,6 +191,24 @@ function percentile(values: number[], quantile: number) {
     sorted[lower];
 }
 
+function missPredicates(filters: SessionMissFilter[]) {
+  const predicates: string[] = [];
+  if (filters.includes("compaction")) {
+    predicates.push("miss.cause = 'compaction'");
+  }
+  if (filters.includes("ttl")) predicates.push("miss.cause = 'ttl'");
+  if (filters.includes("thinking-change")) {
+    predicates.push("miss.cause = 'thinking-change'");
+  }
+  if (filters.includes("full-miss")) {
+    predicates.push("miss.status = 'full-miss' AND miss.cause IS NULL");
+  }
+  if (filters.includes("partial-miss")) {
+    predicates.push("miss.status = 'partial-hit' AND miss.cause IS NULL");
+  }
+  return predicates;
+}
+
 /** Existing session/analytics contracts reconstructed from conversation tables. */
 export class ConversationCompatibilityRepository {
   constructor(private db: DatabaseSync) {}
@@ -205,34 +225,13 @@ export class ConversationCompatibilityRepository {
     ) {
       throw new RangeError("page and pageSize must be positive integers");
     }
-    let rows = this.#rootRows(harness).filter((row) =>
-      row.uncached_input_tokens > 0 || row.cache_read_tokens > 0 ||
-      (row.cache_write_tokens ?? 0) > 0
-    );
-    if (missFilters !== undefined) {
-      const matchingRoots = new Set(
-        this.listCacheMisses(undefined, harness).filter((miss) =>
-          (missFilters.includes("compaction") &&
-            miss.cause === "compaction") ||
-          (missFilters.includes("ttl") && miss.cause === "ttl") ||
-          (missFilters.includes("thinking-change") &&
-            miss.cause === "thinking-change") ||
-          (missFilters.includes("full-miss") && miss.cause === undefined &&
-            miss.status === "full-miss") ||
-          (missFilters.includes("partial-miss") &&
-            miss.cause === undefined && miss.status === "partial-hit")
-        ).map((miss) => `${miss.harness}:${miss.rootID}`),
-      );
-      rows = rows.filter((row) =>
-        matchingRoots.has(
-          `${row.harness}:${row.public_id ?? row.external_id}`,
-        )
-      );
-    }
-    const totalItems = rows.length;
-    const items = rows.slice((page - 1) * pageSize, page * pageSize).map((
-      row,
-    ) => this.#summary(row));
+    const totalItems = this.#rootCount(harness, missFilters);
+    const items = this.#rootRows(
+      harness,
+      missFilters,
+      pageSize,
+      (page - 1) * pageSize,
+    ).map((row) => this.#summary(row));
     return sessionListResponseSchema.parse({
       items,
       pagination: {
@@ -245,8 +244,12 @@ export class ConversationCompatibilityRepository {
   }
 
   enrichSessionSummaries(items: SessionSummary[]): SessionSummary[] {
-    if (items.length === 0) return [];
-    const predicates = items.map(() =>
+    const candidates = items.filter((item) =>
+      item.cacheSummary === undefined || item.inclusiveTokens === undefined ||
+      item.compactionCount === undefined
+    );
+    if (candidates.length === 0) return items;
+    const predicates = candidates.map(() =>
       "(so.harness = ? AND COALESCE(c.public_id, c.external_id) = ?)"
     ).join(" OR ");
     const rows = this.db.prepare(`
@@ -257,14 +260,14 @@ export class ConversationCompatibilityRepository {
       JOIN sources so ON so.id = c.source_id
       JOIN conversation_rollups cr ON cr.conversation_id = c.id
       WHERE cr.summary_json IS NOT NULL AND (${predicates})
-    `).all(...items.flatMap((item) => [item.harness, item.id])) as Array<{
+    `).all(...candidates.flatMap((item) => [item.harness, item.id])) as Array<{
       harness: Harness;
       public_id: string;
       summary_json: string;
     }>;
     const stored = new Map(rows.map((row) => [
       `${row.harness}:${row.public_id}`,
-      sessionSummarySchema.parse(JSON.parse(row.summary_json)),
+      sessionListItemSchema.parse(JSON.parse(row.summary_json)),
     ]));
     return items.map((item) => {
       const enrichment = stored.get(`${item.harness}:${item.id}`);
@@ -957,42 +960,105 @@ export class ConversationCompatibilityRepository {
     };
   }
 
-  #rootRows(harness?: Harness): ConversationRow[] {
-    return this.db.prepare(`
-      SELECT ${conversationColumns}
+  #rootFilter(missFilters?: SessionMissFilter[]) {
+    const predicates = missFilters === undefined
+      ? []
+      : missPredicates(missFilters);
+    return {
+      cte: predicates.length === 0 ? "" : `
+        WITH RECURSIVE tree(conversation_id, root_id) AS (
+          SELECT root.id, root.id FROM conversations root
+          WHERE NOT EXISTS (
+            SELECT 1 FROM conversation_subagent_launches root_launch
+            WHERE root_launch.child_conversation_id = root.id
+          )
+          UNION ALL
+          SELECT launch.child_conversation_id, tree.root_id
+          FROM conversation_subagent_launches launch
+          JOIN tree ON tree.conversation_id = launch.parent_conversation_id
+        ), matching_roots AS (
+          SELECT DISTINCT tree.root_id
+          FROM tree
+          JOIN conversation_cache_misses miss
+            ON miss.conversation_id = tree.conversation_id
+          WHERE ${predicates.map((predicate) => `(${predicate})`).join(" OR ")}
+        )
+      `,
+      clause: missFilters === undefined
+        ? ""
+        : predicates.length === 0
+        ? " AND 0"
+        : " AND c.id IN (SELECT root_id FROM matching_roots)",
+    };
+  }
+
+  #rootCount(harness?: Harness, missFilters?: SessionMissFilter[]) {
+    const filter = this.#rootFilter(missFilters);
+    const row = this.db.prepare(`
+      ${filter.cte}
+      SELECT COUNT(*) AS count
       FROM conversations c
       JOIN sources so ON so.id = c.source_id
       JOIN conversation_rollups cr ON cr.conversation_id = c.id
-      WHERE (? IS NULL OR so.harness = ?)
+      WHERE (? IS NULL OR so.harness = ?)${filter.clause}
         AND NOT EXISTS (
           SELECT 1 FROM conversation_subagent_launches launch
           WHERE launch.child_conversation_id = c.id
         )
-      ORDER BY c.updated_at DESC, COALESCE(c.public_id, c.external_id) DESC,
-        so.harness DESC
-    `).all(harness ?? null, harness ?? null) as ConversationRow[];
+        AND (
+          cr.uncached_input_tokens > 0 OR cr.cache_read_tokens > 0 OR
+          COALESCE(cr.cache_write_tokens, 0) > 0
+        )
+    `).get(harness ?? null, harness ?? null) as { count: number };
+    return Number(row.count);
   }
 
-  #summary(row: ConversationRow): SessionSummary {
-    const thinkingRows = this.db.prepare(`
-      SELECT reasoning_setting_value AS value
-      FROM conversation_model_calls
-      WHERE conversation_id = ? AND reasoning_setting_value IS NOT NULL
-        AND COALESCE(source_call_id, '') NOT LIKE 'context-operation:%'
-      ORDER BY started_at, ordinal
-    `).all(row.id) as Array<{ value: string }>;
-    const values = [...new Set(thinkingRows.map((item) => item.value))];
-    const branch = this.#selectedBranch(row.id);
-    const source = branch === undefined ? undefined : this.db.prepare(`
-      SELECT artifact_path FROM source_sessions WHERE id = ?
-    `).get(branch.source_session_id) as
-      | { artifact_path: string | null }
-      | undefined;
+  #rootRows(
+    harness: Harness | undefined,
+    missFilters: SessionMissFilter[] | undefined,
+    limit: number,
+    offset: number,
+  ): ConversationRow[] {
+    const filter = this.#rootFilter(missFilters);
+    return this.db.prepare(`
+      ${filter.cte}
+      SELECT ${conversationColumns}
+      FROM conversations c
+      JOIN sources so ON so.id = c.source_id
+      JOIN conversation_rollups cr ON cr.conversation_id = c.id
+      WHERE (? IS NULL OR so.harness = ?)${filter.clause}
+        AND NOT EXISTS (
+          SELECT 1 FROM conversation_subagent_launches launch
+          WHERE launch.child_conversation_id = c.id
+        )
+        AND (
+          cr.uncached_input_tokens > 0 OR cr.cache_read_tokens > 0 OR
+          COALESCE(cr.cache_write_tokens, 0) > 0
+        )
+      ORDER BY c.updated_at DESC, COALESCE(c.public_id, c.external_id) DESC,
+        so.harness DESC
+      LIMIT ? OFFSET ?
+    `).all(
+      harness ?? null,
+      harness ?? null,
+      limit,
+      offset,
+    ) as ConversationRow[];
+  }
+
+  #storedThinking(row: ConversationRow) {
+    return row.summary_json === null
+      ? undefined
+      : sessionListItemSchema.parse(JSON.parse(row.summary_json)).thinking;
+  }
+
+  #baseSummary(
+    row: ConversationRow,
+    thinking: SessionSummary["thinking"],
+  ): SessionSummary {
     const workingDirectory = optional(row.working_directory);
     return {
       id: row.public_id ?? row.external_id,
-      internalID: row.id,
-      sourcePath: optional(source?.artifact_path ?? null),
       workingDirectory: workingDirectory === undefined
         ? undefined
         : compactHomePath(workingDirectory),
@@ -1005,25 +1071,34 @@ export class ConversationCompatibilityRepository {
       models: JSON.parse(row.models_json),
       userTurns: row.user_turns,
       modelCalls: row.model_calls,
-      thinking: {
-        latest: thinkingRows.at(-1)?.value,
-        values,
-        classifiedCalls: thinkingRows.length,
+      thinking: thinking ?? {
+        latest: undefined,
+        values: [],
+        classifiedCalls: 0,
       },
       reportedCost: optional(row.reported_cost),
       tokens: tokens(row),
     };
   }
 
-  #selectedBranch(conversationID: number) {
-    return this.db.prepare(`
-      SELECT id, source_session_id FROM conversation_branches
-      WHERE conversation_id = ?
-      ORDER BY updated_at DESC, id DESC LIMIT 1
-    `).get(conversationID) as {
-      id: number;
-      source_session_id: number;
-    } | undefined;
+  #summary(row: ConversationRow): SessionSummary {
+    if (row.summary_json === null) {
+      return this.#baseSummary(row, undefined);
+    }
+    const stored = sessionListItemSchema.parse(JSON.parse(row.summary_json));
+    const base = this.#baseSummary(row, stored.thinking);
+    return sessionSummarySchema.parse({ ...stored, ...base });
+  }
+
+  #sourcePath(conversationID: number) {
+    const row = this.db.prepare(`
+      SELECT ss.artifact_path
+      FROM conversation_branches branch
+      JOIN source_sessions ss ON ss.id = branch.source_session_id
+      WHERE branch.conversation_id = ?
+      ORDER BY branch.updated_at DESC, branch.id DESC LIMIT 1
+    `).get(conversationID) as { artifact_path: string | null } | undefined;
+    return optional(row?.artifact_path ?? null);
   }
 
   #detail(row: ConversationRow, visited: Set<number>): SessionDetail {
@@ -1241,9 +1316,10 @@ export class ConversationCompatibilityRepository {
       WHERE launch.parent_conversation_id = ?
       ORDER BY c.updated_at, c.id
     `).all(row.id) as ConversationRow[];
-    const summary = this.#summary(row);
+    const summary = this.#baseSummary(row, this.#storedThinking(row));
     return {
       ...summary,
+      sourcePath: this.#sourcePath(row.id),
       agent: optional(row.agent),
       parentID: this.#parentPublicID(row.id),
       userTurns: turns.length,
