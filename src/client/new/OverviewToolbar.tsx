@@ -1,3 +1,5 @@
+import type { SessionSummary } from "../../shared/sessionSchemas.ts";
+import { HarnessOptions } from "../HarnessOptions.tsx";
 import "./OverviewToolbar.css";
 
 export type OverviewRange = 30 | 90;
@@ -12,6 +14,7 @@ export type OverviewHarness =
 type OverviewToolbarProps = {
   range: OverviewRange;
   harness: OverviewHarness;
+  harnesses: SessionSummary["harness"][];
   onRangeChange: (range: OverviewRange) => void;
   onHarnessChange: (harness: OverviewHarness) => void;
 };
@@ -19,6 +22,7 @@ type OverviewToolbarProps = {
 export function OverviewToolbar({
   range,
   harness,
+  harnesses,
   onRangeChange,
   onHarnessChange,
 }: OverviewToolbarProps) {
@@ -49,12 +53,7 @@ export function OverviewToolbar({
           onChange={(event) =>
             onHarnessChange(event.target.value as OverviewHarness)}
         >
-          <option value="all">All harnesses</option>
-          <option value="claude-code">Claude Code</option>
-          <option value="opencode">OpenCode</option>
-          <option value="pi">PI</option>
-          <option value="codex">Codex</option>
-          <option value="cursor">Cursor</option>
+          <HarnessOptions harnesses={harnesses} />
         </select>
       </label>
     </div>

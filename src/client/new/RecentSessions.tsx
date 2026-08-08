@@ -4,6 +4,7 @@ import type {
   SessionDetail,
   SessionListResponse,
   SessionMissFilter,
+  SessionSummary,
 } from "../../shared/sessionSchemas.ts";
 import {
   parseSessionMissFilters,
@@ -19,6 +20,7 @@ const returnScrollKey = "frugal-tokens:overview-return-scroll";
 
 type RecentSessionsProps = {
   harness: OverviewHarness;
+  harnesses: SessionSummary["harness"][];
   misses?: string;
   onHarnessChange: (harness: OverviewHarness) => void;
   onMissesChange: (misses?: string) => void;
@@ -26,12 +28,16 @@ type RecentSessionsProps = {
 
 export function RecentSessions({
   harness,
+  harnesses,
   misses,
   onHarnessChange,
   onMissesChange,
 }: RecentSessionsProps) {
   const navigate = route.useNavigate();
-  const missFilters = parseSessionMissFilters(misses);
+  const parsedMissFilters = parseSessionMissFilters(misses);
+  const missFilters = parsedMissFilters?.length === 0
+    ? undefined
+    : parsedMissFilters;
   const selectedMissFilters = missFilters ?? [...sessionMissFilterValues];
   const missFilterKey = missFilters === undefined
     ? "all"
@@ -212,10 +218,8 @@ export function RecentSessions({
 
   function changeMissFilters(filters: SessionMissFilter[]) {
     onMissesChange(
-      filters.length === sessionMissFilterValues.length
+      filters.length === sessionMissFilterValues.length || filters.length === 0
         ? undefined
-        : filters.length === 0
-        ? "none"
         : filters.join(","),
     );
   }
@@ -268,6 +272,7 @@ export function RecentSessions({
       refreshData={refreshData}
       selectedMissFilters={selectedMissFilters}
       harness={harness}
+      harnesses={harnesses}
       error={error}
       expandedIDs={expandedIDs}
       toggleSession={toggleSession}

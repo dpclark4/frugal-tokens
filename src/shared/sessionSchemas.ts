@@ -9,6 +9,10 @@ export const harnessSchema = z.enum([
   "cursor",
 ]);
 
+export const harnessesResponseSchema = z.object({
+  harnesses: z.array(harnessSchema),
+});
+
 export const sessionMissFilterValues = [
   "compaction",
   "ttl",

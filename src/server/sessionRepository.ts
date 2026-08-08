@@ -590,6 +590,16 @@ export class SessionRepository {
     return statement;
   }
 
+  listHarnesses(): Harness[] {
+    return (this.#prepare(`
+      SELECT DISTINCT so.harness
+      FROM sources so
+      JOIN source_sessions ss ON ss.source_id = so.id
+      JOIN sessions s ON s.source_session_id = ss.id
+    `).all() as Array<{ harness: Harness }>)
+      .map(({ harness }) => harness);
+  }
+
   ensureSource(
     harness: Harness,
     kind: string,

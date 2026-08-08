@@ -217,6 +217,7 @@ export function InitialInputChart({
                     dot={{ r: 2, strokeWidth: 0, fill: color }}
                     activeDot={{ r: 4 }}
                     connectNulls={false}
+                    isAnimationActive={false}
                   />
                 ))}
                 {gaps.map(({ dataKey }) => {
@@ -234,6 +235,7 @@ export function InitialInputChart({
                       dot={false}
                       activeDot={false}
                       connectNulls
+                      isAnimationActive={false}
                     />
                   );
                 })}

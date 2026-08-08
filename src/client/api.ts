@@ -1,5 +1,6 @@
 import {
   activityOverviewResponseSchema,
+  harnessesResponseSchema,
   overviewResponseSchema,
   performanceResponseSchema,
   sessionDetailSchema,
@@ -30,6 +31,10 @@ async function getJson(path: string) {
 export async function syncSessions() {
   const response = await fetch(`${apiBaseUrl}/api/sync`, { method: "POST" });
   if (!response.ok) throw new Error(`Request failed (${response.status})`);
+}
+
+export async function getHarnesses() {
+  return harnessesResponseSchema.parse(await getJson("/api/harnesses")).harnesses;
 }
 
 export async function getTitleGenerationSetting() {

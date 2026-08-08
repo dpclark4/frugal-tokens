@@ -379,6 +379,13 @@ function repositoryForHarness(harness: SessionSummary["harness"]) {
   };
 }
 
+app.get("/api/harnesses", (context) => {
+  const seen = new Set(archiveRepository.listHarnesses());
+  return context.json({
+    harnesses: supportedHarnesses.filter((harness) => seen.has(harness)),
+  });
+});
+
 function priceSummaries(items: SessionSummary[]) {
   return items.map((item) => {
     if (

@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import { getRouteApi } from "@tanstack/react-router";
-import type { ToolCallsResponse } from "../shared/sessionSchemas.ts";
-import { getToolCalls } from "./api.ts";
+import type {
+  SessionSummary,
+  ToolCallsResponse,
+} from "../shared/sessionSchemas.ts";
+import { getHarnesses, getToolCalls } from "./api.ts";
+import { HarnessOptions } from "./HarnessOptions.tsx";
 import { SiteHeader } from "./SiteHeader.tsx";
 
 const route = getRouteApi("/tool-calls");
@@ -18,7 +22,12 @@ export function ToolCallsPage() {
   const search = route.useSearch();
   const navigate = route.useNavigate();
   const [data, setData] = useState<ToolCallsResponse>();
+  const [harnesses, setHarnesses] = useState<SessionSummary["harness"][]>([]);
   const [error, setError] = useState<string>();
+
+  useEffect(() => {
+    getHarnesses().then(setHarnesses).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -78,12 +87,7 @@ export function ToolCallsPage() {
               onChange={(event) =>
                 update({ harness: event.target.value as typeof search.harness })}
             >
-              <option value="all">All harnesses</option>
-              <option value="claude-code">Claude Code</option>
-              <option value="opencode">OpenCode</option>
-              <option value="pi">PI</option>
-              <option value="codex">Codex</option>
-              <option value="cursor">Cursor</option>
+              <HarnessOptions harnesses={harnesses} />
             </select>
           </label>
         </div>

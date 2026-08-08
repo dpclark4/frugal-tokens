@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { getRouteApi } from "@tanstack/react-router";
-import type { ActivityOverviewResponse } from "../shared/sessionSchemas.ts";
-import { getActivityOverview } from "./api.ts";
+import type {
+  ActivityOverviewResponse,
+  SessionSummary,
+} from "../shared/sessionSchemas.ts";
+import { getActivityOverview, getHarnesses } from "./api.ts";
 import { SiteHeader } from "./SiteHeader.tsx";
 import "./NewPage.css";
 import { OverviewToolbar } from "./new/OverviewToolbar.tsx";
@@ -24,10 +27,20 @@ export function NewPage() {
     data: ActivityOverviewResponse;
   }>();
   const [error, setError] = useState<string>();
-  const data = loadedOverview?.range === search.range &&
-      loadedOverview.harness === search.harness
-    ? loadedOverview.data
-    : undefined;
+  const [harnesses, setHarnesses] = useState<SessionSummary["harness"][]>([]);
+  const data = loadedOverview?.data;
+
+  useEffect(() => {
+    let active = true;
+    getHarnesses().then((result) => {
+      if (active) setHarnesses(result);
+    }).catch(() => {
+      // The all-harness view remains usable if filter discovery fails.
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -65,6 +78,7 @@ export function NewPage() {
           <OverviewToolbar
             range={search.range}
             harness={search.harness}
+            harnesses={harnesses}
             onRangeChange={(range) => update({ range })}
             onHarnessChange={(harness) => update({ harness })}
           />
@@ -93,6 +107,7 @@ export function NewPage() {
 
             <RecentSessions
               harness={search.harness}
+              harnesses={harnesses}
               misses={search.misses}
               onHarnessChange={(harness) => update({ harness })}
               onMissesChange={(misses) => update({ misses })}

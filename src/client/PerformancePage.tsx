@@ -12,8 +12,12 @@ import {
   YAxis,
 } from "recharts";
 import { displayModelName } from "../shared/modelNames.ts";
-import type { PerformanceResponse } from "../shared/sessionSchemas.ts";
-import { getPerformance } from "./api.ts";
+import type {
+  PerformanceResponse,
+  SessionSummary,
+} from "../shared/sessionSchemas.ts";
+import { getHarnesses, getPerformance } from "./api.ts";
+import { HarnessOptions } from "./HarnessOptions.tsx";
 import { SiteHeader } from "./SiteHeader.tsx";
 
 const route = getRouteApi("/performance");
@@ -498,7 +502,12 @@ export function PerformancePage() {
   const search = route.useSearch();
   const navigate = route.useNavigate();
   const [data, setData] = useState<PerformanceResponse>();
+  const [harnesses, setHarnesses] = useState<SessionSummary["harness"][]>([]);
   const [error, setError] = useState<string>();
+
+  useEffect(() => {
+    getHarnesses().then(setHarnesses).catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -529,12 +538,7 @@ export function PerformancePage() {
             value={search.harness}
             onChange={(event) => update({ harness: event.target.value as typeof search.harness })}
           >
-            <option value="all">All harnesses</option>
-            <option value="claude-code">Claude Code</option>
-            <option value="opencode">OpenCode</option>
-            <option value="pi">PI</option>
-            <option value="codex">Codex</option>
-            <option value="cursor">Cursor</option>
+            <HarnessOptions harnesses={harnesses} />
           </select>
         </label>
       </section>

@@ -3,8 +3,102 @@
 }
 
 .new-recent-sessions .sessions-panel {
-  overflow: hidden;
+  overflow: visible;
   border-color: var(--dashboard-rule);
   border-radius: 8px;
   box-shadow: none;
+}
+
+.new-recent-sessions .session-control-label {
+  color: var(--dashboard-muted);
+  font-size: 9px;
+  letter-spacing: .09em;
+}
+
+.new-recent-sessions .session-filter-trigger,
+.new-recent-sessions .session-filters select,
+.new-recent-sessions .session-refresh {
+  min-height: 31px;
+  border-color: #bdcac6;
+  border-radius: 5px;
+  background-color: var(--dashboard-panel);
+  color: var(--dashboard-ink);
+  transition: border-color 120ms ease, background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.new-recent-sessions .session-filter-trigger {
+  min-width: 112px;
+  padding-inline: 10px 8px;
+}
+
+.new-recent-sessions .session-harness-control select {
+  min-width: 132px;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23697572' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 9px center;
+}
+
+.new-recent-sessions .session-filter-trigger:hover,
+.new-recent-sessions .session-filters select:hover,
+.new-recent-sessions .session-refresh:hover:not(:disabled) {
+  border-color: #91aaa4;
+  background-color: #f4f7f6;
+}
+
+.new-recent-sessions .session-filter-trigger[aria-expanded="true"],
+.new-recent-sessions .session-filter-trigger:focus-visible,
+.new-recent-sessions .session-filters select:focus-visible,
+.new-recent-sessions .session-refresh:focus-visible {
+  border-color: var(--dashboard-signal);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(15, 113, 105, .12);
+}
+
+.new-recent-sessions .session-filter-menu {
+  top: calc(100% + 7px);
+  width: 190px;
+  padding: 6px;
+  border-color: #c8d3d0;
+  border-radius: 7px;
+  background: var(--dashboard-panel);
+  box-shadow: 0 12px 32px rgba(32, 53, 48, .12),
+    0 2px 8px rgba(32, 53, 48, .06);
+}
+
+.new-recent-sessions .session-filter-option {
+  gap: 9px;
+  padding: 8px;
+  border-radius: 4px;
+  color: var(--dashboard-ink);
+  transition: background-color 100ms ease;
+}
+
+.new-recent-sessions .session-filter-option:hover {
+  background: #eef3f1;
+}
+
+.new-recent-sessions .session-filter-option input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  appearance: none;
+  border: 1px solid #91a29e;
+  border-radius: 3px;
+  background-color: #fff;
+  cursor: pointer;
+}
+
+.new-recent-sessions .session-filter-option input:checked {
+  border-color: var(--dashboard-signal);
+  background-color: var(--dashboard-signal);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m5 12 4 4L19 6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+}
+
+.new-recent-sessions .session-filter-option input:focus-visible {
+  outline: 2px solid rgba(15, 113, 105, .3);
+  outline-offset: 2px;
 }

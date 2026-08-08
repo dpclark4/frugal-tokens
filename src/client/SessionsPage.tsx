@@ -32,6 +32,7 @@ import { contextRange, contextSize } from "../shared/contextMetrics.ts";
 import { displayModelName } from "../shared/modelNames.ts";
 import { rollupCosts } from "../shared/costMetrics.ts";
 import {
+  getHarnesses,
   getOverview,
   getSession,
   getSessions,
@@ -40,6 +41,7 @@ import {
   syncSessions,
 } from "./api.ts";
 import { harnessIcon, harnessName } from "./harness.ts";
+import { HarnessOptions } from "./HarnessOptions.tsx";
 import { UsageChart } from "./UsageChart.tsx";
 import { TtlMissCard } from "./TtlMissCard.tsx";
 import { SiteHeader } from "./SiteHeader.tsx";
@@ -1143,20 +1145,6 @@ function SessionMissFilterControl({
           role="dialog"
           aria-label="Session miss filters"
         >
-          <label className="session-filter-option session-filter-all">
-            <input
-              type="checkbox"
-              checked={allSelected}
-              onChange={() =>
-                onChange(
-                  allSelected
-                    ? []
-                    : sessionMissFilterOptions.map(({ value }) => value),
-                )}
-            />
-            <span>All categories</span>
-          </label>
-          <div className="session-filter-divider" />
           {sessionMissFilterOptions.map(({ value, label: optionLabel }) => (
             <label className="session-filter-option" key={value}>
               <input
@@ -2042,6 +2030,7 @@ type SessionsPanelProps = {
   refreshData: () => Promise<void>;
   selectedMissFilters: SessionMissFilter[];
   harness: "all" | SessionSummary["harness"];
+  harnesses: SessionSummary["harness"][];
   error?: string;
   expandedIDs: Set<string>;
   toggleSession: (id: string) => Promise<void>;
@@ -2063,6 +2052,7 @@ export function SessionsPanel({
   refreshData,
   selectedMissFilters,
   harness,
+  harnesses,
   error,
   expandedIDs,
   toggleSession,
@@ -2180,12 +2170,7 @@ export function SessionsPanel({
               onChange={(event) =>
                 onHarnessChange(event.target.value as typeof harness)}
             >
-              <option value="all">All</option>
-              <option value="claude-code">Claude Code</option>
-              <option value="opencode">OpenCode</option>
-              <option value="pi">PI</option>
-              <option value="codex">Codex</option>
-              <option value="cursor">Cursor</option>
+              <HarnessOptions harnesses={harnesses} allLabel="All" />
             </select>
           </label>
         </div>
@@ -2542,7 +2527,10 @@ export function SessionsPanel({
 export function SessionsPage() {
   const { harness, misses } = route.useSearch();
   const navigate = route.useNavigate();
-  const missFilters = parseSessionMissFilters(misses);
+  const parsedMissFilters = parseSessionMissFilters(misses);
+  const missFilters = parsedMissFilters?.length === 0
+    ? undefined
+    : parsedMissFilters;
   const selectedMissFilters = missFilters ?? [...sessionMissFilterValues];
   const missFilterKey = missFilters === undefined
     ? "all"
@@ -2550,6 +2538,7 @@ export function SessionsPage() {
     ? "none"
     : missFilters.join(",");
   const [data, setData] = useState<SessionListResponse>();
+  const [harnesses, setHarnesses] = useState<SessionSummary["harness"][]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
   const [overview, setOverview] = useState<OverviewResponse>();
   const [overviewError, setOverviewError] = useState<string>();
@@ -2574,6 +2563,18 @@ export function SessionsPage() {
   const missFilterRef = useRef(missFilterKey);
   harnessRef.current = harness;
   missFilterRef.current = missFilterKey;
+
+  useEffect(() => {
+    let active = true;
+    getHarnesses().then((result) => {
+      if (active) setHarnesses(result);
+    }).catch(() => {
+      // The all-harness view remains usable if filter discovery fails.
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -2821,6 +2822,7 @@ export function SessionsPage() {
         refreshData={refreshData}
         selectedMissFilters={selectedMissFilters}
         harness={harness}
+        harnesses={harnesses}
         error={error}
         expandedIDs={expandedIDs}
         toggleSession={toggleSession}
@@ -2833,10 +2835,9 @@ export function SessionsPage() {
           navigate({
             search: {
               harness,
-              misses: filters.length === sessionMissFilterValues.length
+              misses: filters.length === sessionMissFilterValues.length ||
+                  filters.length === 0
                 ? undefined
-                : filters.length === 0
-                ? "none"
                 : filters.join(","),
             },
             resetScroll: false,
