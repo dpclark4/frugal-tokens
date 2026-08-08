@@ -40,22 +40,22 @@ Deno.test("opens an archive database with the required SQLite settings", () => {
         AND name IN (
           'sources',
           'source_sessions',
-          'sessions',
-          'turns',
-          'turn_inputs',
-          'models',
-          'model_calls',
-          'call_content',
-          'tool_events',
-          'context_events',
-          'compaction_details',
-          'compaction_checkpoint_items',
-          'reasoning_setting_events',
-          'turn_reasoning_settings',
-          'model_call_reasoning_settings',
-          'cache_misses',
-          'model_call_rollups',
-          'session_rollups'
+          'artifact_import_projections',
+          'conversations',
+          'conversation_turns',
+          'conversation_model_calls',
+          'conversation_tool_events',
+          'conversation_entries',
+          'conversation_branches',
+          'artifact_entry_occurrences',
+          'artifact_model_call_occurrences',
+          'conversation_subagent_launches',
+          'conversation_rollups',
+          'conversation_cache_misses',
+          'source_artifact_identities',
+          'source_artifact_lineage',
+          'app_settings',
+          'title_generation_runs'
         )
     `).get() as { count: number };
     strictEqual(tables.count, 18);

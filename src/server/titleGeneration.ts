@@ -54,31 +54,40 @@ function candidateRows(
   const enabledAt = Number(setting(db, enabledAtKey) ?? Date.now());
   const comparison = period === "backfill" ? "<" : ">=";
   return db.prepare(`
-    SELECT ss.id, so.harness, s.title AS imported_title,
+    SELECT ss.id, so.harness, c.title AS imported_title,
       (
-        SELECT ti.preview
-        FROM turns t
-        JOIN turn_inputs ti ON ti.turn_id = t.id
-        WHERE t.session_id = s.source_session_id
-          AND ti.kind = 'text' AND ti.preview IS NOT NULL
-        ORDER BY t.ordinal, ti.ordinal
+        SELECT entry.content_preview
+        FROM conversation_entries entry
+        WHERE entry.conversation_id = c.id
+          AND entry.role = 'user' AND entry.content_kind = 'text'
+          AND TRIM(COALESCE(entry.content_preview, '')) <> ''
+        ORDER BY entry.id
         LIMIT 1
       ) AS input
-    FROM source_sessions ss
-    JOIN sources so ON so.id = ss.source_id
-    JOIN sessions s ON s.source_session_id = ss.id
-    WHERE ss.parent_id IS NULL
-      AND ss.generated_title IS NULL
+    FROM conversations c
+    JOIN sources so ON so.id = c.source_id
+    JOIN conversation_branches branch ON branch.id = (
+      SELECT candidate.id
+      FROM conversation_branches candidate
+      WHERE candidate.conversation_id = c.id
+      ORDER BY candidate.updated_at DESC, candidate.id DESC
+      LIMIT 1
+    )
+    JOIN source_sessions ss ON ss.id = branch.source_session_id
+    WHERE ss.generated_title IS NULL
       AND so.harness IN ('pi', 'claude-code', 'codex')
       AND ss.first_seen_at ${comparison} ?
-      AND EXISTS (
-        SELECT 1
-        FROM turns t
-        JOIN turn_inputs ti ON ti.turn_id = t.id
-        WHERE t.session_id = s.source_session_id
-          AND ti.kind = 'text' AND TRIM(COALESCE(ti.preview, '')) <> ''
+      AND NOT EXISTS (
+        SELECT 1 FROM conversation_subagent_launches launch
+        WHERE launch.child_conversation_id = c.id
       )
-    ORDER BY s.updated_at DESC, ss.id DESC
+      AND EXISTS (
+        SELECT 1 FROM conversation_entries entry
+        WHERE entry.conversation_id = c.id
+          AND entry.role = 'user' AND entry.content_kind = 'text'
+          AND TRIM(COALESCE(entry.content_preview, '')) <> ''
+      )
+    ORDER BY c.updated_at DESC, ss.id DESC
   `).all(enabledAt) as Candidate[];
 }
 
@@ -88,10 +97,13 @@ function completedBackfillCount(db: DatabaseSync) {
     SELECT COUNT(*) AS count
     FROM source_sessions ss
     JOIN sources so ON so.id = ss.source_id
-    WHERE ss.parent_id IS NULL
-      AND ss.generated_title IS NOT NULL
+    WHERE ss.generated_title IS NOT NULL
       AND ss.first_seen_at < ?
       AND so.harness IN ('pi', 'claude-code', 'codex')
+      AND EXISTS (
+        SELECT 1 FROM conversation_branches branch
+        WHERE branch.source_session_id = ss.id
+      )
   `).get(enabledAt) as { count: number };
   return row.count;
 }

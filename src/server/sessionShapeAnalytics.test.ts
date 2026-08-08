@@ -1,6 +1,6 @@
 import { deepStrictEqual, strictEqual } from "node:assert";
 import { sessionShapeResponseSchema } from "../shared/sessionSchemas.ts";
-import type { StoredSessionShapeRollup } from "./sessionRepository.ts";
+import type { StoredSessionShapeRollup } from "./conversationRepository.ts";
 import { aggregateSessionShape } from "./sessionShapeAnalytics.ts";
 
 function day(

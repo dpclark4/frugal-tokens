@@ -1,6 +1,6 @@
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { aggregateTtlMisses } from "./ttlMissAnalytics.ts";
-import type { StoredCacheMiss } from "./sessionRepository.ts";
+import type { StoredCacheMiss } from "./conversationRepository.ts";
 import type { UsageCall } from "./usage.ts";
 
 const MINUTE = 60 * 1_000;
@@ -30,15 +30,13 @@ function call(
     model: options.model ?? "claude-sonnet-4-5",
     startedAt,
     followsCompaction: options.followsCompaction,
-    ...(options.thinking === undefined
-      ? {}
-      : {
-        reasoningSetting: {
-          settingName: "thinkingLevel",
-          settingValue: options.thinking,
-          provenance: "inherited" as const,
-        },
-      }),
+    ...(options.thinking === undefined ? {} : {
+      reasoningSetting: {
+        settingName: "thinkingLevel",
+        settingValue: options.thinking,
+        provenance: "inherited" as const,
+      },
+    }),
     tokens: {
       uncachedInput: 0,
       cacheRead: 0,
@@ -235,12 +233,16 @@ Deno.test("aggregates precomputed cache misses without reclassifying them", () =
 });
 
 Deno.test("counts each session once per TTL return-gap bucket", () => {
-  const result = aggregateTtlMisses([
-    call("affected", start),
-    call("affected", start + 20 * MINUTE),
-    call("affected", start + 60 * MINUTE),
-    call("affected", start + 4 * 60 * MINUTE),
-  ], start, 90);
+  const result = aggregateTtlMisses(
+    [
+      call("affected", start),
+      call("affected", start + 20 * MINUTE),
+      call("affected", start + 60 * MINUTE),
+      call("affected", start + 4 * 60 * MINUTE),
+    ],
+    start,
+    90,
+  );
 
   strictEqual(result.misses.underThirtyMinutes, 1);
   strictEqual(result.misses.underThirtyMinutesSessions, 1);
@@ -254,11 +256,15 @@ Deno.test("counts each session once per TTL return-gap bucket", () => {
 });
 
 Deno.test("counts a session once across other miss causes", () => {
-  const result = aggregateTtlMisses([
-    call("affected", start),
-    call("affected", start + MINUTE, { followsCompaction: true }),
-    call("affected", start + 2 * MINUTE),
-  ], start, 90);
+  const result = aggregateTtlMisses(
+    [
+      call("affected", start),
+      call("affected", start + MINUTE, { followsCompaction: true }),
+      call("affected", start + 2 * MINUTE),
+    ],
+    start,
+    90,
+  );
 
   strictEqual(result.cacheMisses.compaction.misses, 1);
   strictEqual(result.cacheMisses.unexpected.full.misses, 1);
@@ -266,10 +272,14 @@ Deno.test("counts a session once across other miss causes", () => {
 });
 
 Deno.test("separates thinking-change misses from unexpected metrics", () => {
-  const result = aggregateTtlMisses([
-    call("thinking", start, { thinking: "high" }),
-    call("thinking", start + MINUTE, { thinking: "off" }),
-  ], start, 90);
+  const result = aggregateTtlMisses(
+    [
+      call("thinking", start, { thinking: "high" }),
+      call("thinking", start + MINUTE, { thinking: "off" }),
+    ],
+    start,
+    90,
+  );
 
   strictEqual(result.cacheMisses.thinkingChange.misses, 1);
   strictEqual(result.cacheMisses.unexpected.full.misses, 0);
@@ -277,10 +287,14 @@ Deno.test("separates thinking-change misses from unexpected metrics", () => {
 });
 
 Deno.test("keeps a recent model-switch full miss out of unexpected metrics", () => {
-  const result = aggregateTtlMisses([
-    call("switched", start, { model: "gpt-5.6-terra" }),
-    call("switched", start + 2 * MINUTE, { model: "gpt-5.6-luna" }),
-  ], start, 90);
+  const result = aggregateTtlMisses(
+    [
+      call("switched", start, { model: "gpt-5.6-terra" }),
+      call("switched", start + 2 * MINUTE, { model: "gpt-5.6-luna" }),
+    ],
+    start,
+    90,
+  );
 
   strictEqual(result.cacheMisses.full.misses, 1);
   strictEqual(result.cacheMisses.unexpected.full.misses, 0);

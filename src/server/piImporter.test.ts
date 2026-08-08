@@ -1,13 +1,10 @@
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { openArchiveDatabase } from "./database.ts";
 import { syncPiSessions } from "./piImporter.ts";
-import { SessionRepository } from "./sessionRepository.ts";
+import { SourceArtifactRepository } from "./sourceArtifactRepository.ts";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
-import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
-import {
-  assertConversationCompatibilityParity,
-  assertLinearConversationParity,
-} from "./conversationProjectionTestUtils.ts";
+import { ConversationRepository } from "./conversationRepository.ts";
+import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
 
 function transcript(prompt: string) {
   return `
@@ -31,13 +28,13 @@ Deno.test("imports PI sessions directly from the configured directory", async ()
 
   const db = openArchiveDatabase(`${directory}/archive.sqlite`);
   migrateTestDatabase(db);
-  const repository = new SessionRepository(db);
-  const conversations = new ConversationProjectionRepository(db);
+  const repository = new SourceArtifactRepository(db);
+  const conversations = new ConversationWriteRepository(db);
+  const reads = new ConversationRepository(db);
   try {
     const result = await syncPiSessions(sessions, repository, conversations);
     strictEqual(result.discovered, 1);
     strictEqual(result.imported, 1);
-    strictEqual(result.projectionResults["conversation-v2"].imported, 1);
     strictEqual(
       db.prepare("SELECT COUNT(*) AS count FROM conversations").get()!.count,
       1,
@@ -52,14 +49,8 @@ Deno.test("imports PI sessions directly from the configured directory", async ()
         .get()!.count,
       2,
     );
-    assertLinearConversationParity(db, "pi");
-    assertConversationCompatibilityParity(db, repository, "pi", "root-session");
     strictEqual(
-      repository.getSession("pi", "root-session")?.title,
-      "Root session",
-    );
-    strictEqual(
-      repository.getSession("pi", "root-session")?.workingDirectory,
+      reads.getSession("pi", "root-session")?.workingDirectory,
       "/Users/test/project",
     );
   } finally {
@@ -88,11 +79,13 @@ Deno.test("imports PI thinking levels for turns and model calls", async () => {
 
   const db = openArchiveDatabase(`${directory}/archive.sqlite`);
   migrateTestDatabase(db);
-  const repository = new SessionRepository(db);
+  const repository = new SourceArtifactRepository(db);
+  const conversations = new ConversationWriteRepository(db);
+  const reads = new ConversationRepository(db);
   try {
-    const result = await syncPiSessions(sessions, repository);
+    const result = await syncPiSessions(sessions, repository, conversations);
     strictEqual(result.imported, 1);
-    const detail = repository.getSession("pi", "thinking")!;
+    const detail = reads.getSession("pi", "thinking")!;
     strictEqual(detail.turns[0].reasoningSetting?.settingValue, "low");
     strictEqual(
       detail.turns[0].calls[0].reasoningSetting?.settingValue,
@@ -104,75 +97,36 @@ Deno.test("imports PI thinking levels for turns and model calls", async () => {
     );
     strictEqual(detail.turns[1].reasoningSetting?.settingValue, "high");
     deepStrictEqual(
-      repository.listSessions(1, 10, "pi").items[0].thinking,
+      reads.listSessions(1, 10, "pi").items[0].thinking,
       {
         latest: "high",
         values: ["low", "high"],
         classifiedCalls: 3,
       },
     );
-    strictEqual(
-      db.prepare("SELECT COUNT(*) AS count FROM reasoning_setting_events")
-        .get()!.count,
-      2,
+    deepStrictEqual(
+      db.prepare(`
+        SELECT ordinal, reasoning_setting_value AS value,
+          reasoning_provenance AS provenance
+        FROM conversation_turns ORDER BY ordinal
+      `).all().map((row) => ({ ...row })),
+      [
+        { ordinal: 1, value: "low", provenance: "inherited" },
+        { ordinal: 2, value: "high", provenance: "inherited" },
+      ],
     );
-
-    const turnSettings = db.prepare(`
-      SELECT t.ordinal, rse.setting_name, rse.setting_value,
-             rse.source_field_path, rse.source_order, trs.provenance
-      FROM turn_reasoning_settings trs
-      JOIN turns t ON t.id = trs.turn_id
-      JOIN reasoning_setting_events rse ON rse.id = trs.setting_event_id
-      ORDER BY t.ordinal
-    `).all().map((row) => ({ ...row }));
-    deepStrictEqual(turnSettings, [
-      {
-        ordinal: 1,
-        setting_name: "thinkingLevel",
-        setting_value: "low",
-        source_field_path: "thinkingLevel",
-        source_order: 2,
-        provenance: "inherited",
-      },
-      {
-        ordinal: 2,
-        setting_name: "thinkingLevel",
-        setting_value: "high",
-        source_field_path: "thinkingLevel",
-        source_order: 5,
-        provenance: "inherited",
-      },
-    ]);
-
-    const callSettings = db.prepare(`
-      SELECT t.ordinal AS turn_ordinal, mc.ordinal AS call_ordinal,
-             rse.setting_value, mcrs.provenance
-      FROM model_call_reasoning_settings mcrs
-      JOIN model_calls mc ON mc.id = mcrs.model_call_id
-      JOIN turns t ON t.id = mc.turn_id
-      JOIN reasoning_setting_events rse ON rse.id = mcrs.setting_event_id
-      ORDER BY t.ordinal, mc.ordinal
-    `).all().map((row) => ({ ...row }));
-    deepStrictEqual(callSettings, [
-      {
-        turn_ordinal: 1,
-        call_ordinal: 1,
-        setting_value: "low",
-        provenance: "inherited",
-      },
-      {
-        turn_ordinal: 1,
-        call_ordinal: 2,
-        setting_value: "high",
-        provenance: "inherited",
-      },
-      {
-        turn_ordinal: 2,
-        call_ordinal: 1,
-        setting_value: "high",
-        provenance: "inherited",
-      },
-    ]);
+    deepStrictEqual(
+      db.prepare(`
+        SELECT reasoning_setting_value AS value,
+          reasoning_provenance AS provenance
+        FROM conversation_model_calls ORDER BY ordinal
+      `).all().map((row) => ({ ...row })),
+      [
+        { value: "low", provenance: "inherited" },
+        { value: "high", provenance: "inherited" },
+        { value: "high", provenance: "inherited" },
+      ],
+    );
   } finally {
     db.close();
     Deno.removeSync(directory, { recursive: true });
@@ -200,16 +154,16 @@ Deno.test("applies a mid-call PI thinking change to the next model call", async 
 
   const db = openArchiveDatabase(`${directory}/archive.sqlite`);
   migrateTestDatabase(db);
-  const repository = new SessionRepository(db);
+  const repository = new SourceArtifactRepository(db);
+  const conversations = new ConversationWriteRepository(db);
+  const reads = new ConversationRepository(db);
   try {
-    const result = await syncPiSessions(sessions, repository);
+    const result = await syncPiSessions(sessions, repository, conversations);
     strictEqual(result.imported, 1);
-    const detail = repository.getSession("pi", "mid-call")!;
+    const detail = reads.getSession("pi", "mid-call")!;
     strictEqual(detail.turns[0].reasoningSetting?.settingValue, "medium");
     deepStrictEqual(
-      detail.turns[0].calls.map((call) =>
-        call.reasoningSetting?.settingValue
-      ),
+      detail.turns[0].calls.map((call) => call.reasoningSetting?.settingValue),
       ["medium", "medium", "high"],
     );
   } finally {
@@ -228,27 +182,31 @@ Deno.test("incrementally imports PI sessions and preserves the last good archive
 
   const db = openArchiveDatabase(`${directory}/archive.sqlite`);
   migrateTestDatabase(db);
-  const repository = new SessionRepository(db);
+  const repository = new SourceArtifactRepository(db);
+  const conversations = new ConversationWriteRepository(db);
+  const reads = new ConversationRepository(db);
   try {
-    const initial = await syncPiSessions(sessions, repository);
+    const initial = await syncPiSessions(sessions, repository, conversations);
     strictEqual(initial.imported, 1);
     strictEqual(
-      repository.getSession("pi", "project/session")?.title,
+      reads.getSession("pi", "project/session")?.title,
       "Initial prompt",
     );
     strictEqual(
-      (db.prepare("SELECT COUNT(*) AS count FROM turn_inputs").get() as {
-        count: number;
-      }).count,
+      db.prepare(`
+        SELECT COUNT(*) AS count FROM conversation_entries
+        WHERE role = 'user'
+      `).get()!.count,
       2,
     );
     strictEqual(
-      (db.prepare("SELECT COUNT(*) AS count FROM call_content").get() as {
-        count: number;
-      }).count,
+      db.prepare(`
+        SELECT COUNT(*) AS count FROM conversation_entries
+        WHERE producer_model_call_id IS NOT NULL
+      `).get()!.count,
       2,
     );
-    const compaction = repository.getSession("pi", "project/session")!
+    const compaction = reads.getSession("pi", "project/session")!
       .turns[1].calls[0].contextEventsBefore![0];
     strictEqual(compaction.type, "compaction");
     strictEqual(compaction.sourceOrder, 4);
@@ -275,41 +233,30 @@ Deno.test("incrementally imports PI sessions and preserves the last good archive
       ["retained-tail-not-array"],
     );
     strictEqual(
-      db.prepare("SELECT COUNT(*) AS count FROM compaction_details").get()!
-        .count,
-      1,
-    );
-    strictEqual(
-      db.prepare(
-        "SELECT COUNT(*) AS count FROM compaction_checkpoint_items",
-      ).get()!.count,
-      2,
-    );
-    strictEqual(
       db.prepare(`
-        SELECT COUNT(*) AS count FROM call_content
-        WHERE preview LIKE '%Sensitive generated summary%'
+        SELECT COUNT(*) AS count FROM conversation_entries
+        WHERE content_preview LIKE '%Sensitive generated summary%'
       `).get()!.count,
       0,
     );
 
-    const unchanged = await syncPiSessions(sessions, repository);
+    const unchanged = await syncPiSessions(sessions, repository, conversations);
     strictEqual(unchanged.skipped, 1);
 
     Deno.writeTextFileSync(
       transcriptPath,
       `${transcript("Broken replacement")}\n{`,
     );
-    const failed = await syncPiSessions(sessions, repository);
+    const failed = await syncPiSessions(sessions, repository, conversations);
     strictEqual(failed.failed, 1);
     strictEqual(
-      repository.getSession("pi", "project/session")?.title,
+      reads.getSession("pi", "project/session")?.title,
       "Initial prompt",
     );
 
     Deno.removeSync(transcriptPath);
-    await syncPiSessions(sessions, repository);
-    strictEqual(repository.listSessions(1, 10, "pi").pagination.totalItems, 1);
+    await syncPiSessions(sessions, repository, conversations);
+    strictEqual(reads.listSessions(1, 10, "pi").pagination.totalItems, 1);
     strictEqual(
       db.prepare(`
         SELECT availability FROM source_sessions WHERE external_id = 'project/session'

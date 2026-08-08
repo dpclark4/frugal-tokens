@@ -908,7 +908,7 @@ Exit criteria:
 
 ### Milestone 8: Remaining harness topology and cleanup
 
-Status: in progress.
+Status: cleanup complete; native topology work remains separately scoped.
 
 Implementation record:
 
@@ -953,21 +953,22 @@ Observed topology work before legacy cleanup:
   corrections can trigger targeted repricing rather than unrelated parser
   version bumps.
 
-Compatibility-code cleanup after topology and branch UI validation:
+Cleanup implementation record:
 
-- Stop legacy projection writes only after a deliberate V2-only burn-in.
-- Remove `SessionReadRepository`, mixed-provider ID namespacing, rollback
-  configuration, and legacy read/write paths.
-- Extract durable source-artifact and projection-checkpoint responsibilities
-  from `SessionRepository` before removing the legacy session repository.
-- Rename `ConversationCompatibilityRepository` to the durable conversation read
-  boundary and consider separating analytics queries; split
-  `ConversationProjectionRepository` only where topology and materialization
-  responsibilities have stable boundaries.
-- Rename source-session terminology to source-artifact terminology where useful.
-- Remove old canonical tables in a later, separate migration.
-- Update demo database create, merge, deployment, redaction, harness, and schema
-  documentation.
+- All API reads now use `ConversationRepository` directly and synchronization
+  failures leave last-good conversation data readable.
+- Every harness writes only through `ConversationWriteRepository`; durable
+  discovery, identity, lineage, availability, and checkpoint state lives in
+  `SourceArtifactRepository`.
+- Mixed-provider delegation, rollback configuration, dual writes, parity audit
+  tooling, and the session repository were removed.
+- The canonical checkpoint is named `conversation`; a defensive forward
+  migration renames prior checkpoint rows and removes obsolete rows.
+- A separate destructive forward migration removes the old session, turn,
+  model, content, context, reasoning, cache, and rollup tables and legacy-only
+  source-artifact columns.
+- Demo generation, schema notes, performance notes, and canonical repository
+  tests were updated for the surviving schema.
 
 Do not remove legacy storage until every harness has passed its intended native
 topology, repository, analytics, and branch-UI contract tests.

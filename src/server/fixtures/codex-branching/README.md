@@ -13,7 +13,7 @@ turn-shared-1
        `-> turn-original-3 -> turn-original-4 -> turn-fork-b-5
 ```
 
-Expected V2 contract:
+Expected canonical contract:
 
 - conversations: 1
 - branches/source artifacts: 3
@@ -21,8 +21,6 @@ Expected V2 contract:
 - turn occurrences across artifact paths: 13
 
 The copied prefixes preserve turn, message, response, tool, task timing, compaction, and usage identity. Their outer JSONL timestamps are deliberately rewritten to demonstrate that outer timestamp equality is not required for identity.
-
-The legacy projection intentionally reads these as three independent sessions with thirteen turns and calls. That baseline remains protected until the Codex V2 read cutover.
 
 ## `nested-fork`
 

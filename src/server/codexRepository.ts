@@ -9,13 +9,13 @@ import { usageCallsFromSession } from "./usage.ts";
 import type {
   CompactionCheckpointItemImport,
   CompactionDetailImport,
+  ConversationCallImport,
+  ConversationContentImport,
+  ConversationContextEventImport,
+  ConversationToolImport,
+  ConversationTurnImport,
   ReasoningSettingImport,
-  SessionCallImport,
-  SessionContentImport,
-  SessionContextEventImport,
-  SessionToolImport,
-  SessionTurnImport,
-} from "./sessionRepository.ts";
+} from "./conversationImportTypes.ts";
 import {
   contentText,
   messageCheckpointItem,
@@ -166,7 +166,7 @@ function readRecords(path: string) {
   return readRecordsFromText(Deno.readTextFileSync(path));
 }
 
-function preview(value: string): SessionContentImport {
+function preview(value: string): ConversationContentImport {
   return {
     kind: "text",
     preview: value.slice(0, contentPreviewLimit),
@@ -190,7 +190,7 @@ function serializedPreview(value: unknown) {
 function messageContent(
   record: Record,
   sourceOrder?: number,
-): SessionContentImport[] {
+): ConversationContentImport[] {
   return (record.payload?.content ?? []).flatMap((block, index) => {
     const identity = record.payload?.id === undefined
       ? {}
@@ -660,24 +660,24 @@ function codexCompactionDetails(record: Record): CompactionDetailImport {
 }
 
 function decodeRecords(records: Record[]) {
-  const turns: SessionTurnImport[] = [];
+  const turns: ConversationTurnImport[] = [];
   const tokens = emptyTokens();
   const providers = new Set<string>();
   const models = new Set<string>();
-  const tools = new Map<string, SessionToolImport>();
+  const tools = new Map<string, ConversationToolImport>();
   let currentModel = "unknown";
   let pendingHasText = false;
-  let pendingTools: SessionToolImport[] = [];
-  let pendingContent: SessionContentImport[] = [];
+  let pendingTools: ConversationToolImport[] = [];
+  let pendingContent: ConversationContentImport[] = [];
   let pendingCallSourceIDs: string[] = [];
   const callTimings = inferCodexCallTimings(records);
-  type PendingContextEvent = SessionContextEventImport & {
-    affectedCallReference?: SessionCallImport;
+  type PendingContextEvent = ConversationContextEventImport & {
+    affectedCallReference?: ConversationCallImport;
   };
   const contextEvents: PendingContextEvent[] = [];
   const pendingContextEvents: PendingContextEvent[] = [];
   let pendingCompaction: CompactionDetailImport | undefined;
-  let lastCall: SessionCallImport | undefined;
+  let lastCall: ConversationCallImport | undefined;
   let activeReasoningSetting:
     | Omit<ReasoningSettingImport, "provenance">
     | undefined;
@@ -921,7 +921,7 @@ function decodeRecords(records: Record[]) {
     const images = turn.calls.length === 0
       ? turn.inputs?.filter((input) => input.kind === "image").length
       : 0;
-    const call: SessionCallImport = {
+    const call: ConversationCallImport = {
       id: `${turn.number}-${turn.calls.length + 1}`,
       ...(pendingCallSourceIDs[0] === undefined
         ? turn.sourceID === undefined
@@ -987,22 +987,23 @@ function decodeRecords(records: Record[]) {
   const nonEmptyTurns = turns
     .filter((turn) => turn.calls.length > 0)
     .map((turn, index) => ({ ...turn, number: index + 1 }));
-  const normalizedContextEvents: SessionContextEventImport[] = contextEvents
-    .map(
-      ({ affectedCallReference, ...event }) => {
-        if (affectedCallReference === undefined) return event;
-        const turn = nonEmptyTurns.find((candidate) =>
-          candidate.calls.includes(affectedCallReference)
-        );
-        return turn === undefined ? event : {
-          ...event,
-          affectedCall: {
-            turn: turn.number,
-            call: affectedCallReference.callWithinTurn,
-          },
-        };
-      },
-    );
+  const normalizedContextEvents: ConversationContextEventImport[] =
+    contextEvents
+      .map(
+        ({ affectedCallReference, ...event }) => {
+          if (affectedCallReference === undefined) return event;
+          const turn = nonEmptyTurns.find((candidate) =>
+            candidate.calls.includes(affectedCallReference)
+          );
+          return turn === undefined ? event : {
+            ...event,
+            affectedCall: {
+              turn: turn.number,
+              call: affectedCallReference.callWithinTurn,
+            },
+          };
+        },
+      );
   return {
     turns: nonEmptyTurns,
     contextEvents: normalizedContextEvents,

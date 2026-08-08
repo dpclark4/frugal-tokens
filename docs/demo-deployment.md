@@ -33,16 +33,9 @@ Create a sanitized contributor database with:
 deno task demo:db:create -- --output contributor.sqlite
 ```
 
-The generator replaces source locations and working directories with per-run
-random aliases such as `~/amber-finch`. The same original path receives the
-same alias everywhere in that generated database, while the original path is
-not retained.
-
-To add it to an existing sanitized demo database, run:
-
-```sh
-deno task demo:db:merge -- --target demo.sqlite --source contributor.sqlite
-```
-
-The merge modifies the target in place, requires matching schemas and sanitized
-inputs, and skips sessions whose retained source checksum is already present.
+The generator replaces source locations and conversation working directories
+with per-run random aliases such as `~/amber-finch`. The same original path
+receives the same alias everywhere in that generated database, while the
+original path is not retained. Generate a fresh snapshot rather than merging
+archives; canonical branch, occurrence, and lineage identifiers are scoped to
+the source database.

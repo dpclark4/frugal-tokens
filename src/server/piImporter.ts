@@ -1,40 +1,35 @@
 import { discoverPiSessions, normalizePiSession } from "./piRepository.ts";
-import { SessionRepository } from "./sessionRepository.ts";
+import { SourceArtifactRepository } from "./sourceArtifactRepository.ts";
 import {
-  sourceSessionImportFromFile,
+  linearConversationImportFromFile,
   syncFileSessions,
 } from "./fileSessionImporter.ts";
-import { ConversationProjectionRepository } from "./conversationProjectionRepository.ts";
+import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
 
-const legacyParserVersion = "pi-6";
-const conversationParserVersion = "pi-conversation-v2-5";
+const parserVersion = "pi-conversation-5";
 
 export async function syncPiSessions(
   directory: string,
-  repository: SessionRepository,
-  conversations?: ConversationProjectionRepository,
+  repository: SourceArtifactRepository,
+  conversations: ConversationWriteRepository,
 ) {
   return await syncFileSessions({
     harness: "pi",
     label: "PI",
     directory,
-    parserVersion: legacyParserVersion,
     repository,
     discover: discoverPiSessions,
     normalize: normalizePiSession,
-    ...(conversations === undefined ? {} : {
-      shadowProjections: [{
-        name: "conversation-v2",
-        parserVersion: conversationParserVersion,
-        project: (observation) =>
-          conversations.replaceLinearSession(
-            sourceSessionImportFromFile(
-              observation,
-              observation.normalize(),
-              conversationParserVersion,
-            ),
+    projection: {
+      parserVersion,
+      project: (observation) =>
+        conversations.replaceLinearConversation(
+          linearConversationImportFromFile(
+            observation,
+            observation.normalize(),
+            parserVersion,
           ),
-      }],
-    }),
+        ),
+    },
   });
 }

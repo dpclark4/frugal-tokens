@@ -1,9 +1,9 @@
 import type { DatabaseSync } from "node:sqlite";
 import type {
+  ConversationContentImport,
+  LinearConversationImport,
   ReasoningSettingImport,
-  SessionContentImport,
-  SourceSessionImport,
-} from "./sessionRepository.ts";
+} from "./conversationImportTypes.ts";
 import { computeModelCallCost } from "./pricing.ts";
 import {
   sessionListItemSchema,
@@ -14,7 +14,7 @@ import { buildSessionRollup, type SessionRollup } from "./sessionRollups.ts";
 import { analyzeCacheMisses, type CacheAnalysisCall } from "./cacheAnalysis.ts";
 import {
   enrichSessionSummary,
-  sessionDetailFromSourceImports,
+  sessionDetailFromConversationImports,
 } from "./sessionSummaryEnrichment.ts";
 
 function tokenValues(tokens: TokenUsage) {
@@ -42,7 +42,7 @@ function reasoningValues(setting?: ReasoningSettingImport) {
   ];
 }
 
-function computedConversationCost(value: SourceSessionImport) {
+function computedConversationCost(value: LinearConversationImport) {
   const calls = value.session.turns.flatMap((turn) => turn.calls);
   if (calls.length === 0) return undefined;
   const costs = calls.map((call) =>
@@ -56,7 +56,7 @@ export type SourceArtifactFamilyMemberImport = {
   externalID: string;
   sourceIdentity?: string;
   parentSourceIdentity?: string;
-  value: SourceSessionImport;
+  value: LinearConversationImport;
 };
 
 export type SourceArtifactFamilyImport = {
@@ -65,7 +65,7 @@ export type SourceArtifactFamilyImport = {
   artifacts: SourceArtifactFamilyMemberImport[];
   // Child conversations retain their own linear projections. They are supplied
   // here only to rebuild the merged root's inclusive rollup and summary.
-  subagents?: SourceSessionImport[];
+  subagents?: LinearConversationImport[];
 };
 
 type IdentityBasis = "stable-id" | "explicit-lineage" | "unresolved";
@@ -108,8 +108,8 @@ function analyticsRollupValues(rollup: SessionRollup) {
   ];
 }
 
-/** Transactional writer for the additive conversation-v2 shadow projection. */
-export class ConversationProjectionRepository {
+/** Transactional writer for canonical conversation materialization. */
+export class ConversationWriteRepository {
   #statements = new Map<
     string,
     ReturnType<DatabaseSync["prepare"]>
@@ -125,11 +125,11 @@ export class ConversationProjectionRepository {
     return statement;
   }
 
-  replaceLinearSession(value: SourceSessionImport) {
-    this.replaceLinearSessionTree([value]);
+  replaceLinearConversation(value: LinearConversationImport) {
+    this.replaceLinearConversationTree([value]);
   }
 
-  replaceLinearSessionTree(values: SourceSessionImport[]) {
+  replaceLinearConversationTree(values: LinearConversationImport[]) {
     if (values.length === 0) {
       throw new Error("A linear conversation projection must not be empty");
     }
@@ -156,9 +156,8 @@ export class ConversationProjectionRepository {
 
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      // Legacy tree replacement removes source-session identities that no
-      // longer exist. Their linear V2 branches are left with a null source
-      // reference and can be removed without touching merely-missing sources.
+      // Tree replacement removes conversations whose source-artifact identity
+      // no longer exists without touching artifacts merely marked missing.
       this.#prepare(`
         DELETE FROM conversations
         WHERE source_id = ? AND id IN (
@@ -167,7 +166,7 @@ export class ConversationProjectionRepository {
         )
       `).run(sourceID);
       const conversationIDs = new Map<string, number>();
-      const sourceSessionIDs = new Map<string, number>();
+      const sourceArtifactIDs = new Map<string, number>();
       for (const value of values) {
         const sourceSession = this.#prepare(`
           SELECT id FROM source_sessions
@@ -176,7 +175,7 @@ export class ConversationProjectionRepository {
         if (!sourceSession) {
           throw new Error(`Unknown source artifact: ${value.externalID}`);
         }
-        sourceSessionIDs.set(value.externalID, Number(sourceSession.id));
+        sourceArtifactIDs.set(value.externalID, Number(sourceSession.id));
         const conversationID = Number(
           (this.#prepare(`
           INSERT INTO conversations (
@@ -244,7 +243,7 @@ export class ConversationProjectionRepository {
         this.#insertLinearConversation(
           value,
           conversationIDs.get(value.externalID)!,
-          sourceSessionIDs.get(value.externalID)!,
+          sourceArtifactIDs.get(value.externalID)!,
           launchTools,
         );
       }
@@ -279,7 +278,7 @@ export class ConversationProjectionRepository {
         values.map((value) => [value.externalID, value]),
       );
       const harness = this.#sourceHarness(sourceID);
-      const rootExternalID = (value: SourceSessionImport) => {
+      const rootExternalID = (value: LinearConversationImport) => {
         let current = value;
         const visited = new Set<string>();
         while (current.parentExternalID !== undefined) {
@@ -299,7 +298,7 @@ export class ConversationProjectionRepository {
         this.#updateAnalyticsRollup(conversationID, rollup);
         this.#materializeSummary(
           conversationID,
-          sessionDetailFromSourceImports(tree, rootID, harness),
+          sessionDetailFromConversationImports(tree, rootID, harness),
           rollup,
         );
       }
@@ -310,7 +309,7 @@ export class ConversationProjectionRepository {
     }
   }
 
-  replaceArtifactFamily(family: SourceArtifactFamilyImport) {
+  replaceConversationFamily(family: SourceArtifactFamilyImport) {
     if (family.artifacts.length === 0) {
       throw new Error("A source artifact family must not be empty");
     }
@@ -397,7 +396,7 @@ export class ConversationProjectionRepository {
 
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      const sourceSessionIDs = new Map<string, number>();
+      const sourceArtifactIDs = new Map<string, number>();
       for (const artifact of ordered) {
         const row = this.#prepare(`
           SELECT id FROM source_sessions
@@ -408,17 +407,17 @@ export class ConversationProjectionRepository {
         if (row === undefined) {
           throw new Error(`Unknown source artifact: ${artifact.externalID}`);
         }
-        sourceSessionIDs.set(artifact.externalID, Number(row.id));
+        sourceArtifactIDs.set(artifact.externalID, Number(row.id));
       }
 
-      const sourceSessionIDValues = [...sourceSessionIDs.values()];
-      const sourcePlaceholders = sourceSessionIDValues.map(() => "?").join(
+      const sourceArtifactIDValues = [...sourceArtifactIDs.values()];
+      const sourcePlaceholders = sourceArtifactIDValues.map(() => "?").join(
         ", ",
       );
       const oldConversationIDs = (this.#prepare(`
         SELECT DISTINCT conversation_id AS id FROM conversation_branches
         WHERE source_session_id IN (${sourcePlaceholders})
-      `).all(...sourceSessionIDValues) as Array<{ id: number }>).map((row) =>
+      `).all(...sourceArtifactIDValues) as Array<{ id: number }>).map((row) =>
         Number(row.id)
       );
       const target = this.#prepare(`
@@ -428,6 +427,117 @@ export class ConversationProjectionRepository {
       for (const conversationID of new Set(oldConversationIDs)) {
         this.#prepare("DELETE FROM conversations WHERE id = ?").run(
           conversationID,
+        );
+      }
+
+      const subagentConversationIDs = new Map<string, number>();
+      const subagentSourceArtifactIDs = new Map<string, number>();
+      const subagentLaunchTools = new Map<
+        string,
+        Array<{ modelCallID: number; toolEventID: number }>
+      >();
+      for (const subagent of family.subagents ?? []) {
+        const sourceArtifact = this.#prepare(`
+          SELECT id FROM source_sessions
+          WHERE source_id = ? AND external_id = ?
+        `).get(family.sourceID, subagent.externalID) as
+          | { id: number }
+          | undefined;
+        if (sourceArtifact === undefined) {
+          throw new Error(`Unknown source artifact: ${subagent.externalID}`);
+        }
+        subagentSourceArtifactIDs.set(
+          subagent.externalID,
+          Number(sourceArtifact.id),
+        );
+        const subagentConversationID = Number(
+          (this.#prepare(`
+          INSERT INTO conversations (
+            source_id, external_id, title, working_directory, updated_at,
+            started_at, ended_at, providers_json, models_json, agent, public_id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT (source_id, external_id) DO UPDATE SET
+            title = excluded.title,
+            working_directory = excluded.working_directory,
+            updated_at = excluded.updated_at,
+            started_at = excluded.started_at,
+            ended_at = excluded.ended_at,
+            providers_json = excluded.providers_json,
+            models_json = excluded.models_json,
+            agent = excluded.agent,
+            public_id = excluded.public_id
+          RETURNING id
+        `).get(
+              family.sourceID,
+              subagent.externalID,
+              subagent.session.title,
+              subagent.workingDirectory ?? null,
+              subagent.session.updatedAt,
+              subagent.session.startedAt ?? null,
+              subagent.session.endedAt ?? null,
+              JSON.stringify(subagent.session.providers),
+              JSON.stringify(subagent.session.models),
+              subagent.session.agent ?? null,
+              subagent.publicID ?? subagent.externalID,
+            ) as { id: number }).id,
+        );
+        subagentConversationIDs.set(
+          subagent.externalID,
+          subagentConversationID,
+        );
+        this.#prepare(
+          "DELETE FROM conversation_branches WHERE conversation_id = ?",
+        ).run(subagentConversationID);
+        this.#prepare(
+          "DELETE FROM conversation_entries WHERE conversation_id = ?",
+        ).run(subagentConversationID);
+        this.#prepare(
+          "DELETE FROM conversation_model_calls WHERE conversation_id = ?",
+        ).run(subagentConversationID);
+        this.#prepare(
+          "DELETE FROM conversation_turns WHERE conversation_id = ?",
+        ).run(subagentConversationID);
+        this.#prepare(
+          "DELETE FROM conversation_rollups WHERE conversation_id = ?",
+        ).run(subagentConversationID);
+      }
+      for (const subagent of family.subagents ?? []) {
+        this.#insertLinearConversation(
+          subagent,
+          subagentConversationIDs.get(subagent.externalID)!,
+          subagentSourceArtifactIDs.get(subagent.externalID)!,
+          subagentLaunchTools,
+        );
+      }
+      for (const subagent of family.subagents ?? []) {
+        if (
+          subagent.parentExternalID === undefined ||
+          !subagentConversationIDs.has(subagent.parentExternalID)
+        ) continue;
+        const launches = subagentLaunchTools.get(
+          `${subagent.parentExternalID}\0${subagent.externalID}`,
+        ) ?? [];
+        for (const launch of launches) {
+          this.#prepare(`
+            UPDATE conversation_tool_events SET child_conversation_id = ?
+            WHERE id = ?
+          `).run(
+            subagentConversationIDs.get(subagent.externalID)!,
+            launch.toolEventID,
+          );
+        }
+        const launch = launches[0];
+        this.#prepare(`
+          INSERT INTO conversation_subagent_launches (
+            parent_conversation_id, child_conversation_id, model_call_id,
+            tool_event_id, provenance
+          ) VALUES (?, ?, ?, ?, ?)
+        `).run(
+          subagentConversationIDs.get(subagent.parentExternalID)!,
+          subagentConversationIDs.get(subagent.externalID)!,
+          launch?.modelCallID ?? null,
+          launch?.toolEventID ?? null,
+          launch === undefined ? "source-ancestry" : "explicit-tool-link",
         );
       }
 
@@ -466,7 +576,7 @@ export class ConversationProjectionRepository {
           RETURNING id
         `).get(
               conversationID,
-              sourceSessionIDs.get(artifact.externalID)!,
+              sourceArtifactIDs.get(artifact.externalID)!,
               artifact.sourceIdentity ?? artifact.externalID,
               artifact.value.session.updatedAt,
             ) as { id: number }).id,
@@ -484,7 +594,8 @@ export class ConversationProjectionRepository {
         lastEntryID: number | null;
       }>();
       const canonicalCalls = new Map<string, number>();
-      const canonicalTurnValues: SourceSessionImport["session"]["turns"] = [];
+      const canonicalTurnValues: LinearConversationImport["session"]["turns"] =
+        [];
       const canonicalContexts = new Map<string, number>();
       const canonicalCallValues = new Map<number, (typeof allCalls)[number]>();
       const launchTools = new Map<
@@ -525,7 +636,7 @@ export class ConversationProjectionRepository {
         kind: string;
         role?: string;
         occurredAt?: number;
-        content?: SessionContentImport;
+        content?: ConversationContentImport;
         producerModelCallID?: number;
         producerToolEventID?: number;
         outputOrdinal?: number;
@@ -580,7 +691,7 @@ export class ConversationProjectionRepository {
           identity_basis, evidence_json
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-            sourceSessionIDs.get(options.artifact.externalID)!,
+            sourceArtifactIDs.get(options.artifact.externalID)!,
             options.branchID,
             options.entryID,
             options.sourceEntryID ?? null,
@@ -920,7 +1031,7 @@ export class ConversationProjectionRepository {
                 occurrence_kind, identity_basis, evidence_json
               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `).run(
-              sourceSessionIDs.get(artifact.externalID)!,
+              sourceArtifactIDs.get(artifact.externalID)!,
               branchID,
               callID,
               turn.sourceID ?? null,
@@ -1004,6 +1115,23 @@ export class ConversationProjectionRepository {
         );
       }
 
+      const familyArtifactExternalIDs = new Set(
+        family.artifacts.map((artifact) => artifact.externalID),
+      );
+      for (const subagent of family.subagents ?? []) {
+        if (!familyArtifactExternalIDs.has(subagent.parentExternalID ?? "")) {
+          continue;
+        }
+        this.#prepare(`
+          INSERT OR IGNORE INTO conversation_subagent_launches (
+            parent_conversation_id, child_conversation_id, provenance
+          ) VALUES (?, ?, 'source-ancestry')
+        `).run(
+          conversationID,
+          subagentConversationIDs.get(subagent.externalID)!,
+        );
+      }
+
       const uniqueCalls = [...canonicalCallValues.values()];
       const totalTokens: TokenUsage = {
         uncachedInput: 0,
@@ -1033,7 +1161,7 @@ export class ConversationProjectionRepository {
           ).map((event) => [JSON.stringify(event), event]),
         ).values(),
       ].toSorted((a, b) => a.sourceOrder - b.sourceOrder);
-      const canonicalSession: SourceSessionImport = {
+      const canonicalSession: LinearConversationImport = {
         sourceID: family.sourceID,
         externalID: family.externalID,
         observedAt: Math.max(...ordered.map((item) => item.value.observedAt)),
@@ -1058,13 +1186,10 @@ export class ConversationProjectionRepository {
           contextEvents: canonicalContextEvents,
         },
       };
-      const familyRootExternalIDs = new Set(
-        family.artifacts.map((artifact) => artifact.externalID),
-      );
       const familyTree = [
         canonicalSession,
         ...(family.subagents ?? []).map((subagent) =>
-          familyRootExternalIDs.has(subagent.parentExternalID ?? "")
+          familyArtifactExternalIDs.has(subagent.parentExternalID ?? "")
             ? { ...subagent, parentExternalID: canonicalSession.externalID }
             : subagent
         ),
@@ -1094,7 +1219,7 @@ export class ConversationProjectionRepository {
       this.#insertCacheMisses(conversationID, canonicalSession.session);
       this.#materializeSummary(
         conversationID,
-        sessionDetailFromSourceImports(
+        sessionDetailFromConversationImports(
           familyTree,
           canonicalSession.externalID,
           this.#sourceHarness(family.sourceID),
@@ -1109,9 +1234,9 @@ export class ConversationProjectionRepository {
   }
 
   #insertLinearConversation(
-    value: SourceSessionImport,
+    value: LinearConversationImport,
     conversationID: number,
-    sourceSessionID: number,
+    sourceArtifactID: number,
     launchTools: Map<
       string,
       Array<{ modelCallID: number; toolEventID: number }>
@@ -1130,7 +1255,7 @@ export class ConversationProjectionRepository {
       RETURNING id
     `).get(
           conversationID,
-          sourceSessionID,
+          sourceArtifactID,
           value.externalID,
           value.session.updatedAt,
         ) as { id: number }).id,
@@ -1148,7 +1273,7 @@ export class ConversationProjectionRepository {
       kind: string;
       role?: string;
       occurredAt?: number;
-      content?: SessionContentImport;
+      content?: ConversationContentImport;
       producerModelCallID?: number;
       producerToolEventID?: number;
       outputOrdinal?: number;
@@ -1193,7 +1318,7 @@ export class ConversationProjectionRepository {
           source_order_start, source_order_end, occurrence_kind, identity_basis
         ) VALUES (?, ?, ?, ?, ?, ?, 'executed', 'unresolved')
       `).run(
-        sourceSessionID,
+        sourceArtifactID,
         branchID,
         entryID,
         options.stableSourceID ?? null,
@@ -1284,7 +1409,7 @@ export class ConversationProjectionRepository {
             source_call_id, occurrence_kind, identity_basis
           ) VALUES (?, ?, ?, ?, ?, 'executed', 'unresolved')
         `).run(
-          sourceSessionID,
+          sourceArtifactID,
           branchID,
           callID,
           `turn:${turn.number}`,
@@ -1414,7 +1539,10 @@ export class ConversationProjectionRepository {
 
   #insertCacheMisses(
     conversationID: number,
-    session: Pick<SourceSessionImport["session"], "turns" | "contextEvents">,
+    session: Pick<
+      LinearConversationImport["session"],
+      "turns" | "contextEvents"
+    >,
     knownCallIDs?: Map<string, number>,
     knownTurnIDs?: Map<number, number>,
   ) {

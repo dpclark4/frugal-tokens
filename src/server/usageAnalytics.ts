@@ -1,6 +1,6 @@
 import type { UsageResponse } from "../shared/sessionSchemas.ts";
 import type { SessionOverviewRollup } from "./sessionRollups.ts";
-import type { InitialInputSample } from "./sessionRepository.ts";
+import type { InitialInputSample } from "./conversationRepository.ts";
 import type { UsageCall } from "./usage.ts";
 
 export type StoredUsageRollup = {

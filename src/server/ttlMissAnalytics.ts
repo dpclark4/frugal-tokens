@@ -1,12 +1,12 @@
 import type { TtlMissMetrics } from "../shared/sessionSchemas.ts";
 import {
-  categorizeUsageCallCache,
   type CacheMissRecord,
+  categorizeUsageCallCache,
 } from "./cacheAnalysis.ts";
 import type {
   ModelCallCostSummary,
   StoredCacheMiss,
-} from "./sessionRepository.ts";
+} from "./conversationRepository.ts";
 import { computeModelCallCost, estimateModelCacheMissCost } from "./pricing.ts";
 import type { UsageCall } from "./usage.ts";
 
@@ -107,10 +107,12 @@ export function aggregateTtlMisses(
       rootCost: session.rootCost,
       hasUnpricedRootCost: session.hasUnpricedRootCost,
     }))
-    : [...Map.groupBy(
-      rangedCalls.filter((call) => call.sessionStartedAt >= start),
-      (call) => `${call.harness}:${call.session.rootID}`,
-    ).values()].map((calls) => ({
+    : [
+      ...Map.groupBy(
+        rangedCalls.filter((call) => call.sessionStartedAt >= start),
+        (call) => `${call.harness}:${call.session.rootID}`,
+      ).values(),
+    ].map((calls) => ({
       harness: calls[0].harness,
       rootID: calls[0].session.rootID,
       sessionStartedAt: calls[0].sessionStartedAt,
@@ -285,8 +287,8 @@ export function aggregateTtlMisses(
         } else {
           hasThirtyMinutesToTwoHoursMiss = true;
           result.misses.thirtyMinutesToTwoHours++;
-          result.misses.thirtyMinutesToTwoHoursCost +=
-            miss.actualMissedCost ?? 0;
+          result.misses.thirtyMinutesToTwoHoursCost += miss.actualMissedCost ??
+            0;
         }
       } else if (miss.gap < EIGHT_HOURS_MS) {
         hasTwoToEightHoursMiss = true;
