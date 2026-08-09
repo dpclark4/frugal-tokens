@@ -16,6 +16,7 @@
   --sd-green: #3dbb72;
   --sd-red: #ee5c61;
   --sd-orange: #f68f3c;
+  --sd-page-grid: none;
   isolation: isolate;
   display: flex;
   height: 100dvh;
@@ -29,12 +30,44 @@
   letter-spacing: -.01em;
 }
 
+.session-detail-page.is-light {
+  --sd-page: #f4f0e8;
+  --sd-canvas: #e9efed;
+  --sd-surface: #fbfcfb;
+  --sd-inset: #f4f7f5;
+  --sd-field: #f1f5f3;
+  --sd-hover: #edf3f1;
+  --sd-hover-2: #e4ece9;
+  --sd-ink: #14201e;
+  --sd-ink-2: #52615e;
+  --sd-ink-3: #75817e;
+  --sd-line: #d4ddda;
+  --sd-line-strong: #bdcbc7;
+  --sd-accent: #0f7169;
+  --sd-accent-tint: #0f71691c;
+  --sd-green: #2e7959;
+  --sd-red: #b84b3c;
+  --sd-orange: #b85a37;
+  --sd-page-grid: linear-gradient(
+      rgba(49, 61, 47, .04) 1px,
+      transparent 1px
+    ), linear-gradient(
+      90deg,
+      rgba(49, 61, 47, .04) 1px,
+      transparent 1px
+    );
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+  letter-spacing: normal;
+}
+
 .session-detail-page::before {
   content: "";
   position: fixed;
   z-index: -1;
   inset: 0;
-  background: var(--sd-page);
+  background-color: var(--sd-page);
+  background-image: var(--sd-page-grid);
+  background-size: 24px 24px;
 }
 
 .sd-detail-nav {
@@ -61,6 +94,35 @@
 .sd-back:hover {
   background: var(--sd-hover);
   color: var(--sd-ink);
+}
+
+.sd-theme-toggle {
+  display: inline-flex;
+  min-height: 27px;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  padding: 0 9px;
+  border: 1px solid var(--sd-line-strong);
+  border-radius: 7px;
+  background: var(--sd-field);
+  color: var(--sd-ink-2);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease,
+    border-color 120ms ease;
+}
+
+.sd-theme-toggle:hover,
+.sd-theme-toggle:focus-visible {
+  border-color: var(--sd-accent);
+  background: var(--sd-hover-2);
+  color: var(--sd-ink);
+}
+
+.sd-theme-toggle:focus-visible {
+  outline: 2px solid var(--sd-accent);
+  outline-offset: 2px;
 }
 
 .sd-shell {
@@ -548,7 +610,7 @@
 }
 
 .sd-expandable-text.is-mono > div {
-  color: #c9ccd1;
+  color: var(--sd-ink-2);
   font: 11.5px/1.65 var(--mono);
 }
 
@@ -1124,6 +1186,86 @@
 
 .sd-error {
   color: #f37b80;
+}
+
+.session-detail-page.is-light .sd-shell {
+  border-radius: 12px;
+  box-shadow: 0 0 0 1px var(--sd-line), 0 18px 60px rgba(32, 53, 48, .09);
+}
+
+.session-detail-page.is-light .sd-session-header h1,
+.session-detail-page.is-light .sd-call-heading strong {
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+}
+
+.session-detail-page.is-light .sd-metrics {
+  background: var(--sd-surface);
+}
+
+.session-detail-page.is-light .sd-user-message {
+  background: linear-gradient(
+    100deg,
+    color-mix(in srgb, var(--sd-turn-color, var(--sd-accent)) 13%, transparent),
+    transparent 58%
+  ), var(--sd-surface);
+}
+
+.session-detail-page.is-light .sd-session-badges span,
+.session-detail-page.is-light .sd-session-badges button {
+  min-height: 28px;
+  border-radius: 5px;
+  background: var(--sd-surface);
+  box-shadow: none;
+  font: 10px var(--mono);
+}
+
+.session-detail-page.is-light .sd-session-badges span {
+  border: 1px solid #bdcac6;
+}
+
+.session-detail-page.is-light .sd-session-badges span:first-child {
+  border-color: #b7d1c6;
+  background: #edf6f1;
+  color: #2e7959;
+  box-shadow: none;
+}
+
+.session-detail-page.is-light .sd-session-badges button {
+  border-color: #91aaa4;
+  background: var(--sd-surface);
+  color: #0f7169;
+}
+
+.session-detail-page.is-light .sd-session-badges button:hover:not(:disabled),
+.session-detail-page.is-light .sd-session-badges button:focus-visible {
+  background: #0f71691c;
+}
+
+.session-detail-page.is-light .sd-call-heading b,
+.session-detail-page.is-light .sd-context-events > span,
+.session-detail-page.is-light .sd-cost-scenario-result small.is-higher {
+  color: #a34e30;
+}
+
+.session-detail-page.is-light .sd-call-heading b,
+.session-detail-page.is-light .sd-context-events > span {
+  background: #b85a3714;
+}
+
+.session-detail-page.is-light .sd-cost-scenario-result small.is-lower {
+  color: #2e7959;
+}
+
+.session-detail-page.is-light .sd-error {
+  color: var(--sd-red);
+}
+
+.session-detail-page.is-light .sd-theme-toggle {
+  min-height: 28px;
+  border-color: #bdcac6;
+  border-radius: 5px;
+  background: transparent;
+  font: 10px var(--mono);
 }
 
 .sd-pixel-loader {

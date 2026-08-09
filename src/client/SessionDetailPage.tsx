@@ -17,8 +17,10 @@ import {
   CircleAlert,
   FileText,
   Image,
+  Moon,
   Sparkles,
   Split,
+  Sun,
   TerminalSquare,
   User,
   Wrench,
@@ -45,6 +47,9 @@ const route = getRouteApi("/sessions/$harness/$sessionId");
 type PathMode = "absolute" | "relative";
 type ColorMetric = "none" | "time" | "cost" | "input" | "output";
 type CostScenario = "recorded" | string;
+type SessionTheme = "dark" | "light";
+
+const SESSION_THEME_KEY = "frugal-tokens:session-theme";
 
 const TurnCollapseContext = createContext<{
   collapsedTurnIDs: Set<string>;
@@ -1346,7 +1351,16 @@ function LoadingSession() {
   );
 }
 
-function DetailNavigation({ backHref }: { backHref: string }) {
+function DetailNavigation({
+  backHref,
+  theme,
+  onThemeChange,
+}: {
+  backHref: string;
+  theme: SessionTheme;
+  onThemeChange: (theme: SessionTheme) => void;
+}) {
+  const nextTheme = theme === "dark" ? "light" : "dark";
   return (
     <nav className="sd-detail-nav" aria-label="Session navigation">
       <a
@@ -1359,13 +1373,23 @@ function DetailNavigation({ backHref }: { backHref: string }) {
           ) {
             return;
           }
-          if (window.history.length <= 1) return;
+          if (globalThis.history.length <= 1) return;
           event.preventDefault();
-          window.history.back();
+          globalThis.history.back();
         }}
       >
         <ArrowLeft size={14} />Sessions
       </a>
+      <button
+        className="sd-theme-toggle"
+        type="button"
+        aria-label={`Use ${nextTheme} theme`}
+        aria-pressed={theme === "light"}
+        onClick={() => onThemeChange(nextTheme)}
+      >
+        {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
+        {theme === "dark" ? "Light mode" : "Dark mode"}
+      </button>
     </nav>
   );
 }
@@ -1378,6 +1402,9 @@ export function SessionDetailPage() {
   const [error, setError] = useState<string>();
   const [ghosttyOpening, setGhosttyOpening] = useState(false);
   const [ghosttyError, setGhosttyError] = useState<string>();
+  const [theme, setTheme] = useState<SessionTheme>(() =>
+    localStorage.getItem(SESSION_THEME_KEY) === "light" ? "light" : "dark"
+  );
   const [collapsedTurnIDs, setCollapsedTurnIDs] = useState<Set<string>>(
     () => new Set(),
   );
@@ -1407,6 +1434,11 @@ export function SessionDetailPage() {
   if (misses) backQuery.set("misses", misses);
   const backHref = `/?${backQuery}`;
 
+  function changeTheme(nextTheme: SessionTheme) {
+    setTheme(nextTheme);
+    localStorage.setItem(SESSION_THEME_KEY, nextTheme);
+  }
+
   async function openInGhostty() {
     setGhosttyOpening(true);
     setGhosttyError(undefined);
@@ -1422,8 +1454,12 @@ export function SessionDetailPage() {
   }
   if (!session) {
     return (
-      <main className="session-detail-page">
-        <DetailNavigation backHref={backHref} />
+      <main className={`session-detail-page is-${theme}`}>
+        <DetailNavigation
+          backHref={backHref}
+          theme={theme}
+          onThemeChange={changeTheme}
+        />
         <div className="sd-shell">
           {error ? <div className="sd-error">{error}</div> : <LoadingSession />}
         </div>
@@ -1483,8 +1519,12 @@ export function SessionDetailPage() {
     ]),
   );
   return (
-    <main className="session-detail-page">
-      <DetailNavigation backHref={backHref} />
+    <main className={`session-detail-page is-${theme}`}>
+      <DetailNavigation
+        backHref={backHref}
+        theme={theme}
+        onThemeChange={changeTheme}
+      />
       <div className="sd-shell">
         <header className="sd-session-header">
           <div className="sd-session-title-row">
