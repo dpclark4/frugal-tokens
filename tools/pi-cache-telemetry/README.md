@@ -6,14 +6,19 @@ raw WebSocket wiretap path.
 
 ## 1. What counts as a bust
 
-In this investigation, **bust** means an unexpected cache-read dip affecting
-one completed model call:
+In this investigation, **bust** has a strict operational definition: a
+healthy cache read, followed by one miss or lower read, followed by a healthy
+recovery on comparable completed calls.
 
 ```text
 comparable warm call
 -> zero or lower cached_tokens on one call
 -> warm recovery on the following call
 ```
+
+A healthy continuation alone is not enough: without both the warm predecessor
+and recovery, classify the observation as a baseline/cold sequence or a
+candidate, not a bust.
 
 - **Full bust:** raw provider `cached_tokens` is present and equals `0`.
 - **Partial bust:** raw `cached_tokens` remains positive but is unexpectedly
@@ -493,6 +498,41 @@ No matching wiretap artifact was retained, so the raw provider
 `cached_tokens` field presence is unknown. The normalized zero cannot
 establish an explicit provider zero; classify this as a candidate rather than
 a full bust. The archive had no imported model-call rows for this session.
+
+### Non-bust cold sequence after image-bearing output
+
+**Date:** 2026-08-09  
+**Model:** `gpt-5.6-sol`  
+**Pi session:** `019fe6a5-b8d3-7545-a30f-513d0e3e5ea5`
+
+```text
+Session:
+~/.pi/agent/sessions/--Users-danclark-programming--/2026-08-09T13-10-48-275Z_019fe6a5-b8d3-7545-a30f-513d0e3e5ea5.jsonl
+Telemetry:
+~/.pi/agent/diagnostics/cache-telemetry/2026-08-09T13-10-48-275Z_019fe6a5-b8d3-7545-a30f-513d0e3e5ea5.jsonl
+Wiretap: unavailable
+Archive model-call rows: unavailable at investigation time
+```
+
+The first three completed calls reported normalized reads of `0 -> 0 -> 0`.
+Call 1 is the cold baseline. Call 2 retained its exact one-item prefix and
+unchanged envelope while adding reasoning, two function calls, and two
+function outputs: one image-bearing output of about 957 KB and one text output
+of about 2 KB. Call 3 retained the exact six-item prefix and unchanged envelope
+while adding reasoning, one function call, and a 29 KB function output.
+
+Calls 2 and 3 used `previous_response_id` as WebSocket deltas on a reused
+connection. No WebSocket failure, full-context retry, or SSE fallback was
+recorded. The next attempt was aborted without usage; the subsequent completed
+call used a new full-context WebSocket connection without `previous_response_id`
+and read 14,336 cached tokens.
+
+Classify this as a **non-bust consecutive cold sequence**, not two misses or a
+candidate bust: it has no warm predecessor and no immediately comparable warm
+recovery. No wiretap was retained, so raw provider `cached_tokens` field
+presence and explicit zero values are unknown. The shape is consistent with,
+but does not establish, delayed provider cache eligibility after a large
+image-bearing output.
 
 ## 7. Extension and wiretap operation
 
