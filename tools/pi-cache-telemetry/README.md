@@ -357,14 +357,15 @@ provider zero when the field is present, but it is not a comparable bust.
 | 002 | `3584 -> 2560 -> 8704` | Healthy same-socket continuation | Large tool output followed by small user input | Raw partial one-call bust |
 | 003A | `1536 -> 0 -> 4608` | Healthy same-socket continuation | Image tool output, then text tool output | Raw full one-call bust |
 | 003B | `8704 -> 0 -> 26112` | Healthy continuation | Large text-only multi-output phase | Raw full one-call bust; image not required |
+| 004 | `2560 -> 0 -> 12800`; three partial dips | Healthy WebSocket continuations | Function-output growth | One raw full and three raw partial one-call busts |
 
 ### Case 001 — WebSocket failure and SSE retry
 
-**Date:** 2026-08-03  
-**Model:** `gpt-5.6-sol`  
-**Pi session:** `019fc515-9dc2-78ed-ae36-95342bb646ae`  
-**Archive session/call:** `1110` / `83288`  
-**Archive source call:** `b69dc57f`  
+**Date:** 2026-08-03
+**Model:** `gpt-5.6-sol`
+**Pi session:** `019fc515-9dc2-78ed-ae36-95342bb646ae`
+**Archive session/call:** `1110` / `83288`
+**Archive source call:** `b69dc57f`
 **Pi turn/call:** turn 4, archive call 11
 
 ```text
@@ -390,8 +391,8 @@ caused the disconnect.
 
 ### Case 002 — Healthy partial bust
 
-**Date:** 2026-08-03  
-**Model:** `gpt-5.6-sol`  
+**Date:** 2026-08-03
+**Model:** `gpt-5.6-sol`
 **Pi session:** `019fc7d7-2beb-7a17-8d89-c8f06c32e663`
 
 ```text
@@ -411,7 +412,7 @@ all requests used `previous_response_id` on one healthy socket with no fallback.
 
 ### Case 003 — Healthy full busts
 
-**Date:** 2026-08-05  
+**Date:** 2026-08-05
 **Model:** `gpt-5.6-sol`
 
 **Run A:**
@@ -449,10 +450,49 @@ Run B proves an image is not necessary. Phase-boundary compliance differed:
 Run A continued beyond the requested work, while Run B stopped at `DONE`.
 Preserve that procedural confound.
 
+### Case 004 — Multiple healthy-continuation busts
+
+**Date:** 2026-08-09; **Model:** `gpt-5.6-sol`, medium reasoning
+**Pi session:** `019fe7b4-3198-7cf3-a16c-8edf47574dbc`
+
+```text
+Session:
+~/.pi/agent/sessions/--Users-danclark-programming-frugal-tokens--/2026-08-09T18-06-13-912Z_019fe7b4-3198-7cf3-a16c-8edf47574dbc.jsonl
+Telemetry:
+~/.pi/agent/diagnostics/cache-telemetry/2026-08-09T18-06-13-912Z_019fe7b4-3198-7cf3-a16c-8edf47574dbc.jsonl
+Wiretap:
+~/.pi/agent/diagnostics/cache-telemetry/wiretap/codex-websocket-2026-08-09T18-06-13Z-530.jsonl
+Archive model-call rows: unavailable at investigation time
+```
+
+The raw provider usage field explicitly included `cached_tokens` on all
+completed WebSocket calls. Four one-call dips had a warm predecessor and an
+immediate recovery:
+
+| Telemetry call | Raw cache sequence | Classification | Added function-output bytes |
+| --- | --- | --- | --- |
+| 4 | `2560 -> 0 -> 12800` | Full bust | 4 outputs, about 16 KB |
+| 9 | `14848 -> 9728 -> 28160` | Partial bust | 6 outputs, about 48 KB |
+| 25 | `32256 -> 16896 -> 37376` | Partial bust | 3 outputs, about 18 KB |
+| 31 | `42496 -> 32256 -> 44544` | Partial bust | 1 output, about 3 KB |
+
+For every affected request, telemetry recorded an exact prior logical-input
+prefix and unchanged envelope, instructions, tools, settings, and
+prompt-cache-key fingerprints. The requests used a WebSocket delta with
+`previous_response_id` on a reused, healthy connection; no error, retry,
+reconnection at the affected call, or SSE fallback was recorded. The first
+three dips followed multi-output growth; the fourth shows that this shape is
+not required in this capture.
+
+This is evidence of transient provider-reported cache-read regressions on
+otherwise healthy Pi continuations, not evidence of a Pi transport or
+request-construction failure. It does not establish the provider's internal
+cause or prove cache invalidation.
+
 ### Unclassified candidates — missing wiretap
 
-**Date:** 2026-08-07  
-**Model:** `gpt-5.6-luna`  
+**Date:** 2026-08-07
+**Model:** `gpt-5.6-luna`
 **Pi session:** `019fde71-8527-7347-bdfd-8e7d6fc19fb6`
 
 ```text
@@ -477,8 +517,8 @@ a new connection or omitted the continuation ID. A controlled post-warm
 WebSocket close/reconnect could reproduce this client transport shape, but
 would not guarantee a raw provider cache miss.
 
-**Date:** 2026-08-08  
-**Model:** `gpt-5.6-luna`  
+**Date:** 2026-08-08
+**Model:** `gpt-5.6-luna`
 **Pi session:** `019fdebc-fae3-758b-a1d5-76badf93dc9e`
 
 ```text
@@ -501,8 +541,8 @@ a full bust. The archive had no imported model-call rows for this session.
 
 ### Non-bust cold sequence after image-bearing output
 
-**Date:** 2026-08-09  
-**Model:** `gpt-5.6-sol`  
+**Date:** 2026-08-09
+**Model:** `gpt-5.6-sol`
 **Pi session:** `019fe6a5-b8d3-7545-a30f-513d0e3e5ea5`
 
 ```text
