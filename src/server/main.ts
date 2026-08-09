@@ -4,6 +4,7 @@ import { cors } from "hono/cors";
 import { serveStatic } from "hono/deno";
 import { createMiddleware } from "hono/factory";
 import { createResponseCache } from "./responseCache.ts";
+import { formatTiming } from "./timing.ts";
 import { priceSessionDetail } from "./pricing.ts";
 import { analyzeSessionCache, CACHE_TTL_1H_MS } from "./cacheAnalysis.ts";
 import type { SessionSummary } from "../shared/sessionSchemas.ts";
@@ -173,14 +174,14 @@ async function runSync(
   const phases = result.timings
     ? ` ${
       Object.entries(result.timings).map(([name, duration]) =>
-        `${name}=${duration.toFixed(1)}ms`
+        `${name}=${formatTiming(duration)}`
       ).join(" ")
     }`
     : "";
   console.info(
     `[sync] harness=${harness} discovered=${result.discovered} imported=${result.imported} skipped=${result.skipped} failed=${result.failed} duration=${
-      (performance.now() - startedAt).toFixed(1)
-    }ms${phases}`,
+      formatTiming(performance.now() - startedAt)
+    }${phases}`,
   );
   return result;
 }
@@ -245,7 +246,7 @@ async function syncSources() {
   }
   await generateMissingSessionTitles(archiveDatabase);
   console.info(
-    `[sync] complete duration=${(performance.now() - startedAt).toFixed(1)}ms`,
+    `[sync] complete duration=${formatTiming(performance.now() - startedAt)}`,
   );
 }
 
@@ -262,7 +263,11 @@ function syncSourcesOnce() {
 }
 
 async function syncSourcesPeriodically(intervalSeconds: number) {
-  console.info(`[sync] periodic sync enabled interval=${intervalSeconds}s`);
+  console.info(
+    `[sync] periodic sync enabled interval=${
+      formatTiming(intervalSeconds * 1_000)
+    }`,
+  );
   while (true) {
     await new Promise((resolve) =>
       setTimeout(resolve, intervalSeconds * 1_000)
@@ -287,8 +292,8 @@ const logApiRequest = createMiddleware(async (context, next) => {
   const url = new URL(context.req.url);
   console.info(
     `[request] method=${context.req.method} endpoint=${url.pathname}${url.search} status=${context.res.status} duration=${
-      (performance.now() - startedAt).toFixed(1)
-    }ms`,
+      formatTiming(performance.now() - startedAt)
+    }`,
   );
 });
 app.use("/api/*", logApiRequest);
@@ -452,7 +457,7 @@ const cacheMissOverview = (context: Context) => {
   const aggregationDuration = performance.now() - aggregationStartedAt;
   const totalDuration = performance.now() - requestStartedAt;
   const sourceTimings = [...sourceDurations.entries()].map(
-    ([name, duration]) => `${name}=${duration.toFixed(1)}ms`,
+    ([name, duration]) => `${name}=${formatTiming(duration)}`,
   ).join(" ");
   context.header(
     "Server-Timing",
@@ -462,10 +467,10 @@ const cacheMissOverview = (context: Context) => {
   );
   console.info(
     `[cache-miss-overview] harness=${harness} range=${rangeParam} calls=0 storedMisses=${storedMisses.length} sources=${
-      sourceDuration.toFixed(1)
-    }ms ${sourceTimings} aggregate=${aggregationDuration.toFixed(1)}ms total=${
-      totalDuration.toFixed(1)
-    }ms`,
+      formatTiming(sourceDuration)
+    } ${sourceTimings} aggregate=${formatTiming(aggregationDuration)} total=${
+      formatTiming(totalDuration)
+    }`,
   );
   return context.json(metrics);
 };
@@ -510,10 +515,10 @@ app.get("/api/session-shape", (context) => {
   );
   console.info(
     `[session-shape] harness=${harness} range=${range} roots=${loaded.length} samples=${shape.sampleSize} database=${
-      loadDuration.toFixed(1)
-    }ms aggregate=${aggregationDuration.toFixed(1)}ms total=${
-      totalDuration.toFixed(1)
-    }ms`,
+      formatTiming(loadDuration)
+    } aggregate=${formatTiming(aggregationDuration)} total=${
+      formatTiming(totalDuration)
+    }`,
   );
   return context.json(shape);
 });
@@ -570,10 +575,10 @@ app.get("/api/activity-overview", (context) => {
   );
   console.info(
     `[activity-overview] harness=${harness} range=${range} roots=${loaded.length} days=${overview.days.length} load=${
-      loadDuration.toFixed(1)
-    }ms aggregate=${aggregationDuration.toFixed(1)}ms total=${
-      totalDuration.toFixed(1)
-    }ms`,
+      formatTiming(loadDuration)
+    } aggregate=${formatTiming(aggregationDuration)} total=${
+      formatTiming(totalDuration)
+    }`,
   );
   return context.json(overview);
 });
@@ -633,10 +638,10 @@ app.get("/api/overview", (context) => {
   );
   console.info(
     `[overview] harness=${harness} range=${rangeParam} roots=${loaded.length} load=${
-      loadDuration.toFixed(1)
-    }ms initial-input=${initialInputDuration.toFixed(1)}ms aggregate=${
-      aggregationDuration.toFixed(1)
-    }ms total=${totalDuration.toFixed(1)}ms`,
+      formatTiming(loadDuration)
+    } initial-input=${formatTiming(initialInputDuration)} aggregate=${
+      formatTiming(aggregationDuration)
+    } total=${formatTiming(totalDuration)}`,
   );
   return context.json(overview);
 });
@@ -690,7 +695,7 @@ app.get("/api/usage", (context) => {
     0,
   );
   const sourceTimings = [...sourceDurations.entries()].map(
-    ([name, duration]) => `${name}=${duration.toFixed(1)}ms`,
+    ([name, duration]) => `${name}=${formatTiming(duration)}`,
   ).join(" ");
   context.header(
     "Server-Timing",
@@ -700,10 +705,10 @@ app.get("/api/usage", (context) => {
   );
   console.info(
     `[usage] harness=${harness} range=${rangeParam} roots=${aggregated.rootCount} subagentGroups=${subagentUsage.length} days=${aggregated.dayCount} sources=${
-      sourceDuration.toFixed(1)
-    }ms ${sourceTimings} aggregate=${aggregationDuration.toFixed(1)}ms total=${
-      totalDuration.toFixed(1)
-    }ms`,
+      formatTiming(sourceDuration)
+    } ${sourceTimings} aggregate=${formatTiming(aggregationDuration)} total=${
+      formatTiming(totalDuration)
+    }`,
   );
   return context.json(aggregated.response);
 });
@@ -755,10 +760,10 @@ app.get("/api/sessions", (context) => {
   );
   console.info(
     `[sessions] harness=${harness} page=${page} items=${items.length} database=${
-      queryDuration.toFixed(1)
-    }ms enrichment=${enrichmentDuration.toFixed(1)}ms total=${
-      totalDuration.toFixed(1)
-    }ms`,
+      formatTiming(queryDuration)
+    } enrichment=${formatTiming(enrichmentDuration)} total=${
+      formatTiming(totalDuration)
+    }`,
   );
   return context.json({ ...result, items });
 });

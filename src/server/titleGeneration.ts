@@ -1,10 +1,12 @@
 import type { DatabaseSync } from "node:sqlite";
+import { formatTiming } from "./timing.ts";
 
 const enabledKey = "generate_session_titles";
 const enabledAtKey = "generate_session_titles_enabled_at";
 const model = "gpt-5.6-luna";
 const reasoningEffort = "low";
 const backfillTarget = 25;
+const generationBatchSize = 10;
 
 type Candidate = {
   id: number;
@@ -195,6 +197,82 @@ async function generateTitle(input: string) {
   };
 }
 
+async function generateCandidateTitle(db: DatabaseSync, candidate: Candidate) {
+  if (!titleGenerationEnabled(db)) return;
+
+  const startedAt = Date.now();
+  const runID = Number(
+    (db.prepare(`
+      INSERT INTO title_generation_runs (
+        source_session_id, started_at, status, model, reasoning_effort,
+        input_characters
+      ) VALUES (?, ?, 'running', ?, ?, ?)
+      RETURNING id
+    `).get(
+      candidate.id,
+      startedAt,
+      model,
+      reasoningEffort,
+      candidate.input.length,
+    ) as { id: number }).id,
+  );
+
+  try {
+    const result = await generateTitle(candidate.input);
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      db.prepare(`
+        UPDATE source_sessions SET generated_title = ? WHERE id = ?
+      `).run(result.title, candidate.id);
+      db.prepare(`
+        UPDATE title_generation_runs
+        SET completed_at = ?, status = 'succeeded', output_title = ?,
+          input_tokens = ?, cached_input_tokens = ?, output_tokens = ?,
+          exit_code = ?
+        WHERE id = ?
+      `).run(
+        Date.now(),
+        result.title,
+        result.usage.inputTokens ?? null,
+        result.usage.cachedInputTokens ?? null,
+        result.usage.outputTokens ?? null,
+        result.exitCode,
+        runID,
+      );
+      db.exec("COMMIT");
+    } catch (error) {
+      db.exec("ROLLBACK");
+      throw error;
+    }
+    console.info(
+      `[generate titles] harness=${candidate.harness} sourceSession=${candidate.id} status=succeeded title=${
+        JSON.stringify(result.title)
+      } runtime=${formatTiming(Date.now() - startedAt)}`,
+    );
+  } catch (error) {
+    const detail = error as Error & { exitCode?: number; usage?: Usage };
+    db.prepare(`
+      UPDATE title_generation_runs
+      SET completed_at = ?, status = 'failed', input_tokens = ?,
+        cached_input_tokens = ?, output_tokens = ?, exit_code = ?, error = ?
+      WHERE id = ?
+    `).run(
+      Date.now(),
+      detail.usage?.inputTokens ?? null,
+      detail.usage?.cachedInputTokens ?? null,
+      detail.usage?.outputTokens ?? null,
+      detail.exitCode ?? null,
+      detail.message,
+      runID,
+    );
+    console.error(
+      `[generate titles] harness=${candidate.harness} sourceSession=${candidate.id} status=failed runtime=${
+        formatTiming(Date.now() - startedAt)
+      } error=${detail.message}`,
+    );
+  }
+}
+
 export async function generateMissingSessionTitles(db: DatabaseSync) {
   if (!titleGenerationEnabled(db)) return;
   const remainingBackfill = Math.max(
@@ -209,73 +287,13 @@ export async function generateMissingSessionTitles(db: DatabaseSync) {
     ...backfill,
     ...candidateRows(db, "new").filter(eligible),
   ];
-  for (const candidate of candidates) {
+
+  for (let index = 0; index < candidates.length; index += generationBatchSize) {
     if (!titleGenerationEnabled(db)) break;
-    const startedAt = Date.now();
-    const runID = Number(
-      (db.prepare(`
-      INSERT INTO title_generation_runs (
-        source_session_id, started_at, status, model, reasoning_effort,
-        input_characters
-      ) VALUES (?, ?, 'running', ?, ?, ?)
-      RETURNING id
-    `).get(
-          candidate.id,
-          startedAt,
-          model,
-          reasoningEffort,
-          candidate.input.length,
-        ) as { id: number }).id,
+    await Promise.all(
+      candidates.slice(index, index + generationBatchSize).map((candidate) =>
+        generateCandidateTitle(db, candidate)
+      ),
     );
-    try {
-      const result = await generateTitle(candidate.input);
-      db.exec("BEGIN IMMEDIATE");
-      try {
-        db.prepare(`
-          UPDATE source_sessions SET generated_title = ? WHERE id = ?
-        `).run(result.title, candidate.id);
-        db.prepare(`
-          UPDATE title_generation_runs
-          SET completed_at = ?, status = 'succeeded', output_title = ?,
-            input_tokens = ?, cached_input_tokens = ?, output_tokens = ?,
-            exit_code = ?
-          WHERE id = ?
-        `).run(
-          Date.now(),
-          result.title,
-          result.usage.inputTokens ?? null,
-          result.usage.cachedInputTokens ?? null,
-          result.usage.outputTokens ?? null,
-          result.exitCode,
-          runID,
-        );
-        db.exec("COMMIT");
-      } catch (error) {
-        db.exec("ROLLBACK");
-        throw error;
-      }
-      console.info(
-        `[titles] harness=${candidate.harness} sourceSession=${candidate.id} status=succeeded`,
-      );
-    } catch (error) {
-      const detail = error as Error & { exitCode?: number; usage?: Usage };
-      db.prepare(`
-        UPDATE title_generation_runs
-        SET completed_at = ?, status = 'failed', input_tokens = ?,
-          cached_input_tokens = ?, output_tokens = ?, exit_code = ?, error = ?
-        WHERE id = ?
-      `).run(
-        Date.now(),
-        detail.usage?.inputTokens ?? null,
-        detail.usage?.cachedInputTokens ?? null,
-        detail.usage?.outputTokens ?? null,
-        detail.exitCode ?? null,
-        detail.message,
-        runID,
-      );
-      console.error(
-        `[titles] harness=${candidate.harness} sourceSession=${candidate.id} status=failed error=${detail.message}`,
-      );
-    }
   }
 }

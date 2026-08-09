@@ -8,6 +8,7 @@
     "hono/cors": "npm:hono@4.12.29/cors",
     "hono/deno": "npm:hono@4.12.29/deno",
     "lucide-react": "npm:lucide-react@1.25.0",
+    "pretty-ms": "npm:pretty-ms@9.3.0",
     "react": "npm:react@19.2.7",
     "react/jsx-runtime": "npm:react@19.2.7/jsx-runtime",
     "react/jsx-dev-runtime": "npm:react@19.2.7/jsx-dev-runtime",

@@ -9,6 +9,7 @@
     "npm:dbmate@^2.28.0": "2.33.0",
     "npm:hono@4.12.29": "4.12.29",
     "npm:lucide-react@1.25.0": "1.25.0_react@19.2.7",
+    "npm:pretty-ms@9.3.0": "9.3.0",
     "npm:react-dom@19.2.7": "19.2.7_react@19.2.7",
     "npm:react@19.2.7": "19.2.7",
     "npm:recharts@3.3.0": "3.3.0_react@19.2.7_react-dom@19.2.7__react@19.2.7_react-is@19.2.7_@types+react@19.2.17_redux@5.0.1",
@@ -951,6 +952,9 @@
       "integrity": "sha512-y7Wygv/7mEOvxTuEQDB8StXdMRBWf1kR/tlhAzBRUFkB2jfcLOAxO/SHmOO2zgz1pVgK29/kyupn059/bCHdjA==",
       "bin": true
     },
+    "parse-ms@4.0.0": {
+      "integrity": "sha512-TXfryirbmq34y8QBwgqCVLi+8oA3oWx2eAnSn62ITyEhEYaWRlVZ2DvMM9eZbMs/RfxPu/PK/aBLyGj4IrqMHw=="
+    },
     "path-to-regexp@6.3.0": {
       "integrity": "sha512-Yhpw4T9C6hPpgPeA28us07OJeqZ5EzQTkbfwuhsUg0c237RomFoETJgmp2sa3F/41gfLE6G5cqcYwznmeEeOlQ=="
     },
@@ -969,6 +973,12 @@
         "nanoid",
         "picocolors",
         "source-map-js"
+      ]
+    },
+    "pretty-ms@9.3.0": {
+      "integrity": "sha512-gjVS5hOP+M3wMm5nmNOucbIrqudzs9v/57bWRHQWLYklXqoXKrVfYW2W9+glfGsqtPgpiz5WwyEEB+ksXIx3gQ==",
+      "dependencies": [
+        "parse-ms"
       ]
     },
     "react-dom@19.2.7_react@19.2.7": {
@@ -1285,6 +1295,7 @@
       "npm:@vitejs/plugin-react@6.0.3",
       "npm:hono@4.12.29",
       "npm:lucide-react@1.25.0",
+      "npm:pretty-ms@9.3.0",
       "npm:react-dom@19.2.7",
       "npm:react@19.2.7",
       "npm:recharts@3.3.0",
