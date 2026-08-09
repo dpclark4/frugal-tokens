@@ -194,19 +194,26 @@ export function SessionShape({ range, harness }: SessionShapeProps) {
   return (
     <section className="session-shape" aria-labelledby="session-shape-title">
       <div className="dashboard-section-heading">
-        <div className="session-shape-title">
-          <h2 id="session-shape-title">Session shape</h2>
-          <button
-            type="button"
-            className="shape-info"
-            aria-label="About session shape distributions"
-          >
-            <span aria-hidden="true">i</span>
-            <span className="shape-info-tooltip">
-              <span>Box P25–P75 · whiskers P10–P90 · line median · ◇ mean</span>
-              <span>Root sessions in the selected period</span>
-            </span>
-          </button>
+        <h2 id="session-shape-title">Session shape</h2>
+        <div
+          className="shape-key"
+          role="img"
+          aria-label="Distribution key: whiskers show P10 to P90, the box shows P25 to P75, the line is the median, and the diamond is the mean"
+        >
+          <div className="shape-key-diagram" aria-hidden="true">
+            <span className="shape-key-whisker" />
+            <span className="shape-key-end shape-key-end-start" />
+            <span className="shape-key-end shape-key-end-end" />
+            <span className="shape-key-box" />
+            <span className="shape-key-median" />
+            <span className="shape-key-mean" />
+            <span className="shape-key-label shape-key-label-p10">P10</span>
+            <span className="shape-key-label shape-key-label-p25">P25</span>
+            <span className="shape-key-label shape-key-label-p75">P75</span>
+            <span className="shape-key-label shape-key-label-median">Median</span>
+            <span className="shape-key-label shape-key-label-mean">Mean</span>
+            <span className="shape-key-label shape-key-label-p90">P90</span>
+          </div>
         </div>
       </div>
       {error && <div className="new-overview-error">{error}</div>}
@@ -219,7 +226,7 @@ export function SessionShape({ range, harness }: SessionShapeProps) {
             <tr>
               <th scope="col">Metric</th>
               <th scope="col">Median</th>
-              <th scope="col">Distribution · P10–P90</th>
+              <th scope="col">Distribution</th>
             </tr>
           </thead>
           <tbody>

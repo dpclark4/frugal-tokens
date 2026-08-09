@@ -492,11 +492,9 @@ export const spendCompositionSchema = z.object({
 });
 
 export const activityOverviewResponseSchema = z.object({
-  rangeDays: z.union([z.literal(30), z.literal(90)]),
   startDate: z.string(),
   endDate: z.string(),
   summary: z.object({
-    activeDays: z.number().int().nonnegative(),
     sessions: z.number().int().nonnegative(),
     processedInput: z.number().int().nonnegative(),
     tokenReuse: z.number().min(0).max(1).optional(),

@@ -55,13 +55,11 @@ Deno.test("activity overview returns period totals and daily drill-down data", (
     roots,
     new Date(2026, 6, 1).getTime(),
     new Date(2026, 6, 2, 23, 59).getTime(),
-    30,
     undefined,
     1.5,
   );
 
   activityOverviewResponseSchema.parse(result);
-  strictEqual(result.summary.activeDays, 2);
   strictEqual(result.summary.sessions, 2);
   strictEqual(result.summary.processedInput, 6_000_000);
   strictEqual(result.summary.tokenReuse, 4_300_000 / 6_000_000);
@@ -159,7 +157,6 @@ Deno.test("spend composition selects the union of top spend and token models", (
     roots,
     new Date(2026, 6, 1).getTime(),
     new Date(2026, 6, 1, 23, 59).getTime(),
-    30,
   ).spendComposition;
 
   deepStrictEqual(

@@ -561,7 +561,6 @@ app.get("/api/activity-overview", (context) => {
     loaded,
     start,
     end,
-    range,
     timeZone,
     spendAtMissCalls,
   );

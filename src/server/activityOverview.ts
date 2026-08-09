@@ -187,7 +187,6 @@ export function aggregateActivityOverview(
   roots: StoredOverviewRollup[],
   start: number,
   end: number,
-  rangeDays: 30 | 90,
   timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone,
   spendAtMissCalls = 0,
 ): ActivityOverviewResponse {
@@ -291,11 +290,9 @@ export function aggregateActivityOverview(
     .reduce((sum, spend) => sum + spend, 0);
 
   return {
-    rangeDays,
     startDate: dateKey(start),
     endDate: dateKey(end),
     summary: {
-      activeDays: days.size,
       sessions,
       processedInput,
       tokenReuse: processedInput === 0 ? undefined : cacheRead / processedInput,
