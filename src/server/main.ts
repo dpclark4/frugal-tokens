@@ -5,6 +5,7 @@ import { serveStatic } from "hono/deno";
 import { createMiddleware } from "hono/factory";
 import { createResponseCache } from "./responseCache.ts";
 import { formatTiming } from "./timing.ts";
+import { getRequestIp } from "./requestIp.ts";
 import { priceSessionDetail } from "./pricing.ts";
 import { analyzeSessionCache, CACHE_TTL_1H_MS } from "./cacheAnalysis.ts";
 import type { SessionSummary } from "../shared/sessionSchemas.ts";
@@ -284,16 +285,25 @@ async function syncSourcesPeriodically(intervalSeconds: number) {
   }
 }
 const serveStaticAssets = Deno.env.get("SERVE_STATIC") === "true";
-const app = new Hono();
+type AppEnv = {
+  Bindings: {
+    remoteAddress?: string;
+  };
+};
+const app = new Hono<AppEnv>();
 app.use("/api/*", cors());
 const logApiRequest = createMiddleware(async (context, next) => {
   const startedAt = performance.now();
   await next();
   const url = new URL(context.req.url);
+  const ip = getRequestIp(
+    context.req.raw.headers,
+    context.env.remoteAddress,
+  ) ?? "unknown";
   console.info(
     `[request] method=${context.req.method} endpoint=${url.pathname}${url.search} status=${context.res.status} duration=${
       formatTiming(performance.now() - startedAt)
-    }`,
+    } ip=${ip}`,
   );
 });
 app.use("/api/*", logApiRequest);
@@ -914,11 +924,15 @@ if (serveStaticAssets) {
 }
 
 const port = Number.parseInt(Deno.env.get("PORT") ?? "9000", 10);
-Deno.serve({
-  port,
-  onListen: ({ port }) =>
-    console.log(`Frugal Tokens API listening on http://localhost:${port}`),
-}, app.fetch);
+Deno.serve(
+  {
+    port,
+    onListen: ({ port }) =>
+      console.log(`Frugal Tokens API listening on http://localhost:${port}`),
+  },
+  (request, info) =>
+    app.fetch(request, { remoteAddress: info.remoteAddr.hostname }),
+);
 await syncSourcesOnce();
 if (syncIntervalSeconds !== undefined) {
   void syncSourcesPeriodically(syncIntervalSeconds);
