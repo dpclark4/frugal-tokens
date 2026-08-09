@@ -414,9 +414,11 @@ function redact(db: DatabaseSync) {
           END,
           evidence_json = NULL;
 
+      -- Summary payloads contain bounded source previews, but overview rollups
+      -- contain only numeric, model, and timestamp aggregates. Keep overviews so
+      -- the source-less demo snapshot can still power range-based analytics.
       UPDATE conversation_rollups
-      SET overview_json = NULL,
-          summary_json = NULL;
+      SET summary_json = NULL;
 
       UPDATE source_artifact_identities
       SET identity_value = 'demo-identity-' || source_session_id || '-' || identity_namespace;
@@ -554,10 +556,7 @@ function audit(db: DatabaseSync) {
           AND source_call_id NOT GLOB 'demo-call-occurrence-*')
         OR evidence_json IS NOT NULL`,
     ],
-    [
-      "conversation_rollups",
-      "overview_json IS NOT NULL OR summary_json IS NOT NULL",
-    ],
+    ["conversation_rollups", "summary_json IS NOT NULL"],
     [
       "source_artifact_identities",
       "identity_value NOT GLOB 'demo-identity-*'",
