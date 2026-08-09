@@ -41,6 +41,7 @@
     ]
   },
   "tasks": {
+    "setup": "deno install -g -A npm:@j178/prek && prek install",
     "check": "deno check src/server/main.ts src/client/main.tsx vite.config.ts",
     "test": "deno test --allow-env --allow-read --allow-write",
     "db:new": "deno run -A scripts/runDbmate.ts new",

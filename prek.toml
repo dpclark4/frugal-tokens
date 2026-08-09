@@ -1,0 +1,33 @@
+[[repos]]
+repo = "builtin"
+hooks = [
+  { id = "trailing-whitespace" },
+  { id = "end-of-file-fixer" },
+]
+
+[[repos]]
+repo = "local"
+hooks = [
+  {
+    id = "deno-fmt",
+    name = "deno fmt",
+    language = "system",
+    entry = "deno fmt --check",
+    files = "\\.(ts|tsx|json)$",
+  },
+  {
+    id = "deno-lint",
+    name = "deno lint",
+    language = "system",
+    entry = "deno lint",
+    files = "\\.(ts|tsx)$",
+  },
+  {
+    id = "deno-check",
+    name = "deno check",
+    language = "system",
+    entry = "deno task check",
+    pass_filenames = false,
+    files = "\\.(ts|tsx)$",
+  },
+]
