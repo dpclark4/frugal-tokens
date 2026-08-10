@@ -507,7 +507,7 @@
   display: flex;
   align-items: baseline;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 0;
 }
 
 .sd-user-message header strong {
@@ -515,7 +515,7 @@
   font-size: 13px;
 }
 
-.sd-user-message header span:first-of-type {
+.sd-user-message header > span:first-of-type {
   color: var(--sd-turn-color, var(--sd-accent));
 }
 
@@ -523,6 +523,59 @@
 .sd-user-message header time {
   color: var(--sd-ink-3);
   font: 10.5px var(--mono);
+}
+
+.sd-turn-summary {
+  display: flex;
+  max-width: 100%;
+  margin: 3px 0 14px;
+  flex-wrap: wrap;
+  color: var(--sd-ink-3);
+  font: 10.5px var(--mono);
+}
+
+.sd-turn-summary > span {
+  box-sizing: border-box;
+  padding-right: 18px;
+  white-space: nowrap;
+}
+
+.sd-turn-summary > span:nth-child(1) {
+  width: 100px;
+}
+
+.sd-turn-summary > span:nth-child(2) {
+  width: 140px;
+}
+
+.sd-turn-summary > span:nth-child(3) {
+  width: 140px;
+}
+
+.sd-turn-summary > span:nth-child(4) {
+  width: 220px;
+}
+
+.sd-turn-summary > span:nth-child(5) {
+  width: 120px;
+}
+
+.sd-turn-summary > span:nth-child(6) {
+  width: 80px;
+  padding-right: 0;
+}
+
+.sd-turn-summary strong {
+  color: var(--sd-ink-2);
+  font: inherit;
+  font-weight: 600;
+}
+
+.sd-turn-summary small {
+  display: block;
+  margin-top: 3px;
+  color: var(--sd-ink-3);
+  font: inherit;
 }
 
 .sd-user-message header .sd-branch-indicator {
@@ -1406,6 +1459,25 @@
 
   .sd-call-heading {
     flex-wrap: wrap;
+  }
+
+  .sd-user-message header {
+    flex-wrap: wrap;
+  }
+
+  .sd-turn-summary {
+    display: grid;
+    grid-template-columns: 2fr 3fr;
+    gap: 4px 16px;
+  }
+
+  .sd-turn-summary > span:nth-child(n) {
+    width: auto;
+    padding-right: 0;
+  }
+
+  .sd-user-message header time {
+    margin-left: auto;
   }
 
   .sd-tool-event > button {
