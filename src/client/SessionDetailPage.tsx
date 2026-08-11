@@ -14,6 +14,7 @@ import {
   Brain,
   Check,
   ChevronDown,
+  ChevronRight,
   CircleAlert,
   FileText,
   Image,
@@ -244,6 +245,26 @@ function callAnchor(sessionID: string, turn: number, callID: string) {
   return `${turnAnchor(sessionID, turn)}-call-${encodeURIComponent(callID)}`;
 }
 
+function sessionTurnIDs(session: SessionDetail) {
+  return sessionTree(session).flatMap((item) =>
+    item.turns.map((turn) => turnAnchor(item.id, turn.number))
+  );
+}
+
+function defaultCollapsedTurnIDs(session: SessionDetail) {
+  const turns = sessionTurnIDs(session);
+  const collapsed = new Set(turns);
+  const hashTarget = globalThis.location.hash.slice(1);
+  const targetedTurn = turns.find((id) =>
+    hashTarget === id || hashTarget.startsWith(`${id}-call-`)
+  );
+  const latestTurn = session.turns.at(-1);
+  const initiallyExpanded = targetedTurn ??
+    (latestTurn ? turnAnchor(session.id, latestTurn.number) : undefined);
+  if (initiallyExpanded) collapsed.delete(initiallyExpanded);
+  return collapsed;
+}
+
 function DetailMetric({ label, value, detail }: {
   label: string;
   value: string;
@@ -313,7 +334,7 @@ function Disclosure({
         {icon}
         <span className="sd-disclosure-label">{label}</span>
         {meta && <span className="sd-disclosure-meta">{meta}</span>}
-        <ChevronDown className="sd-disclosure-chevron" size={14} />
+        <ChevronRight className="sd-disclosure-chevron" size={14} />
       </button>
       <div className="sd-disclosure-grid">
         <div>
@@ -770,7 +791,7 @@ function ToolEvent({
         <small>
           {elapsed(tool.startedAt, tool.completedAt) ?? tool.status}
         </small>
-        {hasDetails && <ChevronDown size={13} />}
+        {hasDetails && <ChevronRight size={13} />}
       </button>
       {hasDetails && (
         <div className="sd-tool-detail-grid">
@@ -1307,6 +1328,8 @@ function Metadata({
   estimatedCost,
   estimateIncomplete,
   actualCost,
+  turnsExpanded,
+  onToggleAllTurns,
   onPathModeChange,
   onColorMetricChange,
   onModelChange,
@@ -1320,6 +1343,8 @@ function Metadata({
   estimatedCost?: number;
   estimateIncomplete: boolean;
   actualCost?: number;
+  turnsExpanded: boolean;
+  onToggleAllTurns: () => void;
   onPathModeChange: (value: PathMode) => void;
   onColorMetricChange: (value: ColorMetric) => void;
   onModelChange: (value: CostScenario) => void;
@@ -1400,6 +1425,16 @@ function Metadata({
       </section>
       <section>
         <h2>View</h2>
+        <div className="sd-setting">
+          <span>Turns</span>
+          <button
+            type="button"
+            className="sd-setting-action"
+            onClick={onToggleAllTurns}
+          >
+            {turnsExpanded ? "Collapse all" : "Expand all"}
+          </button>
+        </div>
         <label className="sd-setting">
           <span>Paths</span>
           <span className="sd-setting-segmented">
@@ -1583,7 +1618,7 @@ export function SessionDetailPage() {
     getSession(sessionId, harness).then((result) => {
       if (active) {
         setSession(result);
-        setCollapsedTurnIDs(new Set());
+        setCollapsedTurnIDs(defaultCollapsedTurnIDs(result));
       }
     }).catch((reason) => {
       if (active) {
@@ -1635,6 +1670,8 @@ export function SessionDetailPage() {
   }
 
   const tree = sessionTree(session);
+  const turnIDs = sessionTurnIDs(session);
+  const turnsExpanded = turnIDs.every((id) => !collapsedTurnIDs.has(id));
   const calls = callsInTree(session);
   const tokens = inclusiveTokens(session);
   const bounds = sessionBounds(session);
@@ -1815,6 +1852,11 @@ export function SessionDetailPage() {
               estimatedCost={estimatedCost}
               estimateIncomplete={scenarioChanged && estimate.hasUnpricedCost}
               actualCost={cost}
+              turnsExpanded={turnsExpanded}
+              onToggleAllTurns={() =>
+                setCollapsedTurnIDs(
+                  turnsExpanded ? new Set(turnIDs) : new Set(),
+                )}
               onPathModeChange={(value) =>
                 navigate({
                   search: (current) => ({ ...current, paths: value }),

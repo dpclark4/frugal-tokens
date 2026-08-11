@@ -836,7 +836,7 @@
 }
 
 .sd-disclosure.is-open > button .sd-disclosure-chevron {
-  transform: rotate(180deg);
+  transform: rotate(90deg);
 }
 
 .sd-disclosure-grid,
@@ -976,7 +976,7 @@
 }
 
 .sd-tool-event.is-open > button > svg:last-child {
-  transform: rotate(180deg);
+  transform: rotate(90deg);
 }
 
 .sd-tool-detail {
@@ -1151,6 +1151,25 @@
   font: 11px var(--mono);
 }
 
+.sd-setting-action {
+  width: 82px;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--sd-field);
+  color: var(--sd-ink-2);
+  box-shadow: 0 0 0 1px var(--sd-line-strong), 0 1px 2px #0000004d;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.sd-setting-action:hover {
+  background: var(--sd-hover-2);
+  color: var(--sd-ink);
+}
+
 .sd-setting-segmented {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1168,6 +1187,7 @@
   background: transparent;
   color: var(--sd-ink-3);
   cursor: pointer;
+  font-family: inherit;
   font-size: 11px;
 }
 
