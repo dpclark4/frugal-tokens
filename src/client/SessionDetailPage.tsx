@@ -51,7 +51,7 @@ import "./SessionDetailPage.css";
 const route = getRouteApi("/sessions/$harness/$sessionId");
 
 type PathMode = "absolute" | "relative";
-type ColorMetric = "none" | "time" | "cost" | "input" | "output";
+type ColorMetric = "none" | "time" | "cost";
 type CostScenario = "recorded" | string;
 type SessionTheme = "dark" | "light";
 
@@ -389,10 +389,7 @@ function breadcrumbDescription(value: string | undefined, fallback: string) {
 }
 
 function breadcrumbMetricLabel(metric: ColorMetric) {
-  if (metric === "cost") return "Cost";
-  if (metric === "input") return "Cumulative input";
-  if (metric === "output") return "Output";
-  return "Time spent";
+  return metric === "cost" ? "Cost" : "Time";
 }
 
 function breadcrumbMetric(
@@ -403,25 +400,9 @@ function breadcrumbMetric(
   thinking: string,
 ) {
   const cost = scenarioCost(calls, model, thinking).cost ?? 0;
-  const input = calls.reduce(
-    (sum, call) => sum + contextSize(call.tokens),
-    0,
-  );
-  const output = calls.reduce(
-    (sum, call) => sum + call.tokens.output + call.tokens.reasoning,
-    0,
-  );
-  const value = metric === "cost"
-    ? cost
-    : metric === "input"
-    ? input
-    : metric === "output"
-    ? output
-    : duration;
+  const value = metric === "cost" ? cost : duration;
   const formattedValue = metric === "cost"
     ? money.format(cost)
-    : metric === "input" || metric === "output"
-    ? `${compact.format(value)} tokens`
     : elapsed(0, duration) ?? "Unavailable";
   return { value, formattedValue };
 }
@@ -1101,21 +1082,37 @@ function ContextEvents({ call }: { call: ModelCall }) {
   if (events.length === 0) return null;
   return (
     <div className="sd-context-events">
-      {events.map((event) => (
-        <span key={`${event.sourceOrder}-${event.type}`}>
-          <Minimize2 size={12} />
-          {event.type === "compaction" ? "Context compacted" : event.type}
-          {event.compaction?.preContextTokens !== undefined &&
-            event.compaction.postContextTokens !== undefined && (
-            <small>
-              {compact.format(event.compaction.preContextTokens)} →{" "}
-              {compact.format(
-                event.compaction.postContextTokens,
+      {events.map((event) => {
+        const summary = event.compaction?.checkpointItems.find((item) =>
+          item.kind === "summary" && item.contentAvailability === "plaintext" &&
+          item.contentPreview !== undefined
+        );
+        return (
+          <div
+            className="sd-context-event"
+            key={`${event.sourceOrder}-${event.type}`}
+          >
+            <span>
+              <Minimize2 size={12} />
+              {event.type === "compaction" ? "Context compacted" : event.type}
+              {event.compaction?.preContextTokens !== undefined &&
+                event.compaction.postContextTokens !== undefined && (
+                <small>
+                  {compact.format(event.compaction.preContextTokens)} →{" "}
+                  {compact.format(
+                    event.compaction.postContextTokens,
+                  )}
+                </small>
               )}
-            </small>
-          )}
-        </span>
-      ))}
+            </span>
+            {summary && (
+              <pre className="sd-compaction-summary">
+                {summary.contentPreview}{summary.truncated ? "…" : ""}
+              </pre>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1789,20 +1786,26 @@ function Metadata({
             ))}
           </span>
         </label>
-        <label className="sd-setting">
+        <div className="sd-setting">
           <span>Turn color</span>
-          <select
-            value={colorMetric}
-            onChange={(event) =>
-              onColorMetricChange(event.target.value as ColorMetric)}
-          >
-            <option value="none">None</option>
-            <option value="time">Time spent</option>
-            <option value="cost">Cost</option>
-            <option value="input">Cumulative input</option>
-            <option value="output">Output</option>
-          </select>
-        </label>
+          <span className="sd-setting-segmented is-three">
+            {([
+              ["none", "None"],
+              ["time", "Time"],
+              ["cost", "Cost"],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={colorMetric === value ? "is-active" : undefined}
+                aria-pressed={colorMetric === value}
+                onClick={() => onColorMetricChange(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </span>
+        </div>
       </section>
       <section>
         <h2>Cost scenario</h2>

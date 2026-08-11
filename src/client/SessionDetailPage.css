@@ -793,7 +793,12 @@
   margin: 8px 0;
 }
 
-.sd-context-events > span {
+.sd-context-event {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.sd-context-event > span {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -807,6 +812,21 @@
 .sd-context-events small {
   color: var(--sd-ink-3);
   font: 10px var(--mono);
+}
+
+.sd-compaction-summary {
+  max-width: min(900px, 100%);
+  max-height: 15em;
+  margin: 5px 0 0;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--sd-line-strong);
+  border-radius: 6px;
+  background: var(--sd-inset);
+  color: var(--sd-ink-2);
+  font: 11px/1.45 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .sd-disclosure > button {
@@ -1360,6 +1380,10 @@
   box-shadow: 0 0 0 1px var(--sd-line-strong);
 }
 
+.sd-setting-segmented.is-three {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 .sd-setting-segmented button {
   height: 26px;
   padding: 0 7px;
@@ -1464,13 +1488,13 @@
 }
 
 .session-detail-page.is-light .sd-cache-issue,
-.session-detail-page.is-light .sd-context-events > span,
+.session-detail-page.is-light .sd-context-event > span,
 .session-detail-page.is-light .sd-cost-scenario-result small.is-higher {
   color: #a34e30;
 }
 
 .session-detail-page.is-light .sd-cache-issue,
-.session-detail-page.is-light .sd-context-events > span {
+.session-detail-page.is-light .sd-context-event > span {
   background: #b85a3714;
 }
 

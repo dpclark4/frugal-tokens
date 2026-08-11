@@ -41,7 +41,7 @@ function AppError({ error, reset }: { error: unknown; reset: () => void }) {
       capturedAt: new Date().toISOString(),
       message,
       stack,
-      url: window.location.href,
+      url: globalThis.location.href,
       userAgent: navigator.userAgent,
       reactVersion,
       scripts: Array.from(document.scripts, (script) => script.src).filter(
@@ -59,7 +59,7 @@ function AppError({ error, reset }: { error: unknown; reset: () => void }) {
       <p className="app-error-message">{message}</p>
       <div className="app-error-actions">
         <button type="button" onClick={reset}>Try again</button>
-        <button type="button" onClick={() => window.location.reload()}>
+        <button type="button" onClick={() => globalThis.location.reload()}>
           Reload page
         </button>
         {navigator.clipboard && (
@@ -160,9 +160,7 @@ const sessionDetailRoute = createRoute({
   validateSearch: z.object({
     misses: z.string().optional(),
     paths: z.enum(["absolute", "relative"]).catch("relative"),
-    color: z.enum(["none", "time", "cost", "input", "output"]).catch(
-      "time",
-    ),
+    color: z.enum(["none", "time", "cost"]).catch("time"),
     model: z.string().catch("recorded"),
     thinking: z.string().catch("recorded"),
   }),
