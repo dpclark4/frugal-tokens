@@ -11,17 +11,20 @@ import { getRouteApi } from "@tanstack/react-router";
 import {
   ArrowLeft,
   Bot,
+  Brain,
   Check,
   ChevronDown,
   ChevronRight,
-  CircleAlert,
+  Clock3,
   FileText,
   Gauge,
   Image,
+  Minimize2,
   Moon,
   Sparkles,
   Split,
   Sun,
+  TriangleAlert,
   User,
   Wrench,
   X,
@@ -58,12 +61,14 @@ const TurnCollapseContext = createContext<{
   turnColors: Map<string, string>;
   model: CostScenario;
   thinking: string;
+  focusedCallAnchor?: string;
   toggleTurn: (id: string) => void;
 }>({
   collapsedTurnIDs: new Set(),
   turnColors: new Map(),
   model: "recorded",
   thinking: "recorded",
+  focusedCallAnchor: undefined,
   toggleTurn: () => {},
 });
 
@@ -731,16 +736,186 @@ function SessionNavigator({
   );
 }
 
-function cacheLabel(call: ModelCall) {
+type CacheMissKind =
+  | "compaction"
+  | "ttl"
+  | "thinking-change"
+  | "full-miss"
+  | "partial-miss";
+
+type CacheMissOccurrence = {
+  kind: CacheMissKind;
+  session: SessionDetail;
+  turn: SessionDetail["turns"][number];
+  call: ModelCall;
+};
+
+function cacheMissKind(call: ModelCall): CacheMissKind | undefined {
   const assessment = call.cacheAssessment;
   if (!assessment) return undefined;
-  if (assessment.cause === "ttl") return "TTL miss";
-  if (assessment.cause === "thinking-change") return "Thinking change";
-  if (assessment.cause === "compaction") return "Compaction miss";
-  if (assessment.status === "full-miss") return "Full miss";
-  if (assessment.status === "partial-hit") return "Partial hit";
-  if (assessment.status === "hit") return "Cache hit";
+  if (assessment.cause === "compaction") return "compaction";
+  if (assessment.cause === "ttl") return "ttl";
+  if (assessment.cause === "thinking-change") return "thinking-change";
+  if (assessment.status === "full-miss") return "full-miss";
+  if (assessment.status === "partial-hit") return "partial-miss";
   return undefined;
+}
+
+function CacheMissIcon(
+  { kind, size = 13 }: { kind: CacheMissKind; size?: number },
+) {
+  if (kind === "compaction") {
+    return <Minimize2 size={size} aria-hidden="true" />;
+  }
+  if (kind === "ttl") return <Clock3 size={size} aria-hidden="true" />;
+  if (kind === "thinking-change") {
+    return <Brain size={size} aria-hidden="true" />;
+  }
+  return <TriangleAlert size={size} aria-hidden="true" />;
+}
+
+function cacheMissLabel(kind: CacheMissKind) {
+  if (kind === "compaction") return "Compaction";
+  if (kind === "ttl") return "TTL miss";
+  if (kind === "thinking-change") return "Thinking change";
+  if (kind === "full-miss") return "Full miss";
+  return "Partial miss";
+}
+
+function CacheIssue({ call }: { call: ModelCall }) {
+  const kind = cacheMissKind(call);
+  if (!kind) return null;
+  return (
+    <span
+      className="sd-cache-issue"
+      title={cacheMissLabel(kind)}
+    >
+      <CacheMissIcon kind={kind} />
+      {cacheMissLabel(kind)}
+    </span>
+  );
+}
+
+function CacheMissBadges({
+  session,
+  onJumpToCall,
+}: {
+  session: SessionDetail;
+  onJumpToCall: (occurrence: CacheMissOccurrence) => void;
+}) {
+  const [openKind, setOpenKind] = useState<CacheMissKind>();
+  const containerRef = useRef<HTMLDivElement>(null);
+  const occurrences = sessionTree(session).flatMap((item) =>
+    item.turns.flatMap((turn) =>
+      turn.calls.flatMap((call) => {
+        const kind = cacheMissKind(call);
+        return kind ? [{ kind, session: item, turn, call }] : [];
+      })
+    )
+  );
+  const kinds: CacheMissKind[] = [
+    "compaction",
+    "ttl",
+    "thinking-change",
+    "full-miss",
+    "partial-miss",
+  ];
+  const groups = kinds.map((kind) => ({
+    kind,
+    occurrences: occurrences.filter((occurrence) => occurrence.kind === kind),
+  })).filter((group) => group.occurrences.length > 0);
+  const openGroup = groups.find((group) => group.kind === openKind);
+
+  useEffect(() => {
+    if (!openKind) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setOpenKind(undefined);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenKind(undefined);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [openKind]);
+
+  if (groups.length === 0) return null;
+  return (
+    <div className="sd-cache-misses" ref={containerRef}>
+      <div className="sd-cache-miss-list">
+        {groups.map((group) => (
+          <button
+            key={group.kind}
+            type="button"
+            className="sd-cache-miss-row"
+            aria-expanded={openKind === group.kind}
+            aria-controls={`cache-miss-${group.kind}`}
+            onClick={() =>
+              setOpenKind((current) =>
+                current === group.kind ? undefined : group.kind
+              )}
+          >
+            <CacheMissIcon kind={group.kind} size={12} />
+            <span>{cacheMissLabel(group.kind)}</span>
+            <strong>{group.occurrences.length}</strong>
+          </button>
+        ))}
+      </div>
+      {openGroup && (
+        <div
+          className="sd-cache-miss-popover"
+          id={`cache-miss-${openGroup.kind}`}
+          role="dialog"
+          aria-label={`${cacheMissLabel(openGroup.kind)} calls`}
+        >
+          <header>
+            <span>
+              <CacheMissIcon kind={openGroup.kind} />{" "}
+              {cacheMissLabel(openGroup.kind)}
+            </span>
+            <strong>{openGroup.occurrences.length}</strong>
+          </header>
+          <div>
+            {openGroup.occurrences.map((occurrence) => {
+              const input = contextSize(occurrence.call.tokens);
+              const reuse = input === 0
+                ? undefined
+                : occurrence.call.tokens.cacheRead / input;
+              return (
+                <button
+                  key={`${occurrence.session.id}-${occurrence.call.id}`}
+                  type="button"
+                  onClick={() => {
+                    setOpenKind(undefined);
+                    onJumpToCall(occurrence);
+                  }}
+                >
+                  <span>
+                    {occurrence.session.id === session.id
+                      ? "Turn"
+                      : "Subagent turn"} {occurrence.turn.number} · Call{" "}
+                    {occurrence.call.callWithinTurn}
+                  </span>
+                  <small>
+                    {displayModelName(occurrence.call.model)}
+                    {reuse === undefined
+                      ? ""
+                      : ` · ${(reuse * 100).toFixed(1)}% reused`}
+                  </small>
+                  <ChevronRight size={14} aria-hidden="true" />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function toolTarget(value?: string) {
@@ -785,8 +960,21 @@ function ToolEvent({
   pathMode: PathMode;
   rootDirectory?: string;
 }) {
+  const { focusedCallAnchor } = useContext(TurnCollapseContext);
   const [open, setOpen] = useState(false);
   const hasDetails = Boolean(tool.inputPreview || tool.outputPreview || child);
+  useEffect(() => {
+    if (
+      child && focusedCallAnchor &&
+      sessionTree(child).some((item) =>
+        item.turns.some((turn) =>
+          turn.calls.some((call) =>
+            callAnchor(item.id, turn.number, call.id) === focusedCallAnchor
+          )
+        )
+      )
+    ) setOpen(true);
+  }, [child, focusedCallAnchor]);
   const failed = ["error", "failed", "cancelled"].includes(
     tool.status.toLowerCase(),
   );
@@ -914,7 +1102,7 @@ function ContextEvents({ call }: { call: ModelCall }) {
     <div className="sd-context-events">
       {events.map((event) => (
         <span key={`${event.sourceOrder}-${event.type}`}>
-          <CircleAlert size={12} />
+          <Minimize2 size={12} />
           {event.type === "compaction" ? "Context compacted" : event.type}
           {event.compaction?.preContextTokens !== undefined &&
             event.compaction.postContextTokens !== undefined && (
@@ -948,13 +1136,15 @@ function CallBlock({
   pathMode: PathMode;
   rootDirectory?: string;
 }) {
+  const { focusedCallAnchor } = useContext(TurnCollapseContext);
   const input = contextSize(call.tokens);
   const reuse = input === 0 ? undefined : call.tokens.cacheRead / input;
-  const assessment = cacheLabel(call);
+  const id = callAnchor(session.id, turnNumber, call.id);
   return (
     <section
-      className="sd-call"
-      id={callAnchor(session.id, turnNumber, call.id)}
+      className={`sd-call${focusedCallAnchor === id ? " is-targeted" : ""}`}
+      id={id}
+      tabIndex={-1}
     >
       <div className="sd-call-heading">
         <span className="sd-agent-avatar">
@@ -971,7 +1161,7 @@ function CallBlock({
             {effort}
           </em>
         )}
-        {assessment && <b>{assessment}</b>}
+        <CacheIssue call={call} />
       </div>
       <div className="sd-call-body">
         <ContextEvents call={call} />
@@ -1248,8 +1438,21 @@ function SubagentDisclosure({
   pathMode: PathMode;
   rootDirectory?: string;
 }) {
+  const { focusedCallAnchor } = useContext(TurnCollapseContext);
   const [open, setOpen] = useState(false);
   const calls = callsInTree(session).length;
+  useEffect(() => {
+    if (
+      focusedCallAnchor &&
+      sessionTree(session).some((item) =>
+        item.turns.some((turn) =>
+          turn.calls.some((call) =>
+            callAnchor(item.id, turn.number, call.id) === focusedCallAnchor
+          )
+        )
+      )
+    ) setOpen(true);
+  }, [focusedCallAnchor, session]);
   return (
     <Disclosure
       open={open}
@@ -1349,6 +1552,7 @@ function Metadata({
   onColorMetricChange,
   onModelChange,
   onThinkingChange,
+  onJumpToCall,
   canOpenInGhostty,
   ghosttyOpening,
   ghosttyError,
@@ -1368,6 +1572,7 @@ function Metadata({
   onColorMetricChange: (value: ColorMetric) => void;
   onModelChange: (value: CostScenario) => void;
   onThinkingChange: (value: string) => void;
+  onJumpToCall: (occurrence: CacheMissOccurrence) => void;
   canOpenInGhostty: boolean;
   ghosttyOpening: boolean;
   ghosttyError?: string;
@@ -1499,6 +1704,7 @@ function Metadata({
         <MetadataRow label="Cache misses">
           {integer.format(cacheMisses)}
         </MetadataRow>
+        <CacheMissBadges session={session} onJumpToCall={onJumpToCall} />
       </section>
       <section>
         <h2>View</h2>
@@ -1687,6 +1893,16 @@ export function SessionDetailPage() {
   const [collapsedTurnIDs, setCollapsedTurnIDs] = useState<Set<string>>(
     () => new Set(),
   );
+  const [focusedCallAnchor, setFocusedCallAnchor] = useState<string>();
+
+  useEffect(() => {
+    if (!focusedCallAnchor) return;
+    const timeout = globalThis.setTimeout(
+      () => setFocusedCallAnchor(undefined),
+      1600,
+    );
+    return () => globalThis.clearTimeout(timeout);
+  }, [focusedCallAnchor]);
 
   useEffect(() => {
     let active = true;
@@ -1791,6 +2007,30 @@ export function SessionDetailPage() {
       session.workingDirectory &&
       (session.harness !== "pi" || session.sourcePath),
   );
+  function jumpToCall(occurrence: CacheMissOccurrence) {
+    const anchor = callAnchor(
+      occurrence.session.id,
+      occurrence.turn.number,
+      occurrence.call.id,
+    );
+    setFocusedCallAnchor(anchor);
+    setCollapsedTurnIDs(new Set());
+    let attempts = 0;
+    const focusTarget = () => {
+      const target = document.getElementById(anchor);
+      const transcript = target?.closest<HTMLElement>(".sd-transcript");
+      if (target && transcript) {
+        const top = transcript.scrollTop + target.getBoundingClientRect().top -
+          transcript.getBoundingClientRect().top - 16;
+        transcript.scrollTo({ behavior: "smooth", top });
+        target.focus({ preventScroll: true });
+      } else if (attempts++ < 6) {
+        globalThis.setTimeout(focusTarget, 50);
+      }
+    };
+    requestAnimationFrame(focusTarget);
+  }
+
   const rootBreadcrumbs = breadcrumbEntries(
     session,
     color,
@@ -1872,6 +2112,7 @@ export function SessionDetailPage() {
             turnColors,
             model: selectedModel,
             thinking,
+            focusedCallAnchor,
             toggleTurn: (id) =>
               setCollapsedTurnIDs((current) => {
                 const next = new Set(current);
@@ -1931,6 +2172,7 @@ export function SessionDetailPage() {
                   replace: true,
                   resetScroll: false,
                 })}
+              onJumpToCall={jumpToCall}
               canOpenInGhostty={canOpenInGhostty}
               ghosttyOpening={ghosttyOpening}
               ghosttyError={ghosttyError}
