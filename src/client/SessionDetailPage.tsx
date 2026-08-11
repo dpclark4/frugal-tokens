@@ -1041,6 +1041,15 @@ function TurnBlock({
                 {turn.branchNumber}
               </span>
             )}
+            {summary.elapsed !== undefined && (
+              <span
+                className="sd-turn-duration"
+                aria-label={`Turn duration: ${summary.elapsed}`}
+                title="Turn duration"
+              >
+                · {summary.elapsed}
+              </span>
+            )}
             <time title={fullTimestamp.format(turn.startedAt)}>
               {timestamp.format(turn.startedAt)}
             </time>
@@ -1057,10 +1066,10 @@ function TurnBlock({
             </button>
           </header>
           <div className="sd-turn-summary" aria-label="Turn summary">
-            <span title="Elapsed time">
-              <strong>{summary.elapsed ?? "—"}</strong> elapsed
-            </span>
-            <span className="sd-turn-activity" title="Direct activity">
+            <span
+              className="sd-turn-metric sd-turn-activity"
+              title="Direct activity"
+            >
               <strong>
                 {summary.calls} call{summary.calls === 1 ? "" : "s"}
               </strong>
@@ -1079,7 +1088,10 @@ function TurnBlock({
                 </small>
               )}
             </span>
-            <span title="Context in the latest direct model request">
+            <span
+              className="sd-turn-metric sd-turn-context"
+              title="Context in the latest direct model request"
+            >
               <strong>
                 {summary.context.latest === undefined
                   ? "—"
@@ -1092,27 +1104,34 @@ function TurnBlock({
                 </small>
               )}
             </span>
-            <span title="Cumulative input, including linked subagents">
+            <span
+              className="sd-turn-metric sd-turn-input"
+              title="Cumulative input, including linked subagents"
+            >
               <strong>{compact.format(summary.input)}</strong> input
               <small>
                 {[
+                  `${compact.format(summary.uncachedInput)} uncached`,
                   summary.reuse === undefined
                     ? "Reuse unavailable"
                     : `${(summary.reuse * 100).toFixed(1)}% reused`,
-                  `${compact.format(summary.uncachedInput)} uncached`,
                   summary.cacheWrite > 0
                     ? `${compact.format(summary.cacheWrite)} written`
                     : undefined,
                 ].filter(Boolean).join(" · ")}
               </small>
             </span>
-            <span title="Output tokens, including linked subagents">
+            <span
+              className="sd-turn-metric sd-turn-output"
+              title="Output tokens, including linked subagents"
+            >
               <strong>{compact.format(summary.output)}</strong> output
               {summary.reasoning > 0 && (
                 <small>{compact.format(summary.reasoning)} reasoning</small>
               )}
             </span>
             <span
+              className="sd-turn-metric sd-turn-cost"
               title={summary.cost.hasUnpricedCost
                 ? "Known cost; some calls could not be priced"
                 : "Computed cost, including linked subagents"}
