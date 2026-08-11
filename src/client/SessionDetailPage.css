@@ -507,7 +507,7 @@
   display: flex;
   align-items: baseline;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 0;
 }
 
 .sd-user-message header strong {
@@ -515,7 +515,7 @@
   font-size: 13px;
 }
 
-.sd-user-message header span:first-of-type {
+.sd-user-message header > span:first-of-type {
   color: var(--sd-turn-color, var(--sd-accent));
 }
 
@@ -525,12 +525,55 @@
   font: 10.5px var(--mono);
 }
 
+.sd-turn-summary {
+  display: grid;
+  max-width: 100%;
+  margin: 3px 0 14px;
+  grid-template-columns:
+    minmax(112px, 1fr)
+    minmax(108px, 1fr)
+    minmax(200px, 1.7fr)
+    minmax(108px, .9fr)
+    minmax(72px, auto);
+  column-gap: clamp(12px, 1.8vw, 28px);
+  color: var(--sd-ink-3);
+  font: 10.5px var(--mono);
+}
+
+.sd-turn-metric {
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.sd-turn-cost {
+  justify-self: end;
+  text-align: right;
+}
+
+.sd-turn-summary strong {
+  color: var(--sd-ink-2);
+  font: inherit;
+  font-weight: 600;
+}
+
+.sd-turn-summary small {
+  display: block;
+  margin-top: 3px;
+  color: var(--sd-ink-3);
+  font: inherit;
+}
+
 .sd-user-message header .sd-branch-indicator {
   display: inline-flex;
   align-items: center;
   gap: 2px;
   color: var(--sd-ink-2);
   font-weight: 600;
+}
+
+.sd-user-message header .sd-turn-duration {
+  margin-left: -3px;
+  color: var(--sd-ink-3);
 }
 
 .sd-user-message header time {
@@ -1300,6 +1343,18 @@
   }
 }
 
+@media (max-width: 1100px) {
+  .sd-turn-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px 20px;
+  }
+
+  .sd-turn-cost {
+    grid-column: 3;
+    justify-self: end;
+  }
+}
+
 @media (max-width: 900px) {
   .session-detail-page {
     height: auto;
@@ -1406,6 +1461,25 @@
 
   .sd-call-heading {
     flex-wrap: wrap;
+  }
+
+  .sd-user-message header {
+    flex-wrap: wrap;
+  }
+
+  .sd-turn-summary {
+    grid-template-columns: 2fr 3fr;
+    gap: 8px 16px;
+  }
+
+  .sd-turn-cost {
+    grid-column: auto;
+    justify-self: start;
+    text-align: left;
+  }
+
+  .sd-user-message header time {
+    margin-left: auto;
   }
 
   .sd-tool-event > button {

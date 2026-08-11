@@ -31,7 +31,7 @@ import type {
   SessionDetail,
   TokenUsage,
 } from "../shared/sessionSchemas.ts";
-import { contextSize } from "../shared/contextMetrics.ts";
+import { contextRange, contextSize } from "../shared/contextMetrics.ts";
 import { canonicalModelId, displayModelName } from "../shared/modelNames.ts";
 import { rollupCosts } from "../shared/costMetrics.ts";
 import {
@@ -54,10 +54,14 @@ const SESSION_THEME_KEY = "frugal-tokens:session-theme";
 const TurnCollapseContext = createContext<{
   collapsedTurnIDs: Set<string>;
   turnColors: Map<string, string>;
+  model: CostScenario;
+  thinking: string;
   toggleTurn: (id: string) => void;
 }>({
   collapsedTurnIDs: new Set(),
   turnColors: new Map(),
+  model: "recorded",
+  thinking: "recorded",
   toggleTurn: () => {},
 });
 
@@ -70,7 +74,7 @@ const money = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
   minimumFractionDigits: 2,
-  maximumFractionDigits: 4,
+  maximumFractionDigits: 2,
 });
 const timestamp = new Intl.DateTimeFormat(undefined, {
   month: "short",
@@ -337,7 +341,7 @@ function breadcrumbDescription(value: string | undefined, fallback: string) {
 
 function breadcrumbMetricLabel(metric: ColorMetric) {
   if (metric === "cost") return "Cost";
-  if (metric === "input") return "Input processed";
+  if (metric === "input") return "Cumulative input";
   if (metric === "output") return "Output";
   return "Time spent";
 }
@@ -350,7 +354,10 @@ function breadcrumbMetric(
   thinking: string,
 ) {
   const cost = scenarioCost(calls, model, thinking).cost ?? 0;
-  const input = calls.reduce((sum, call) => sum + call.tokens.processed, 0);
+  const input = calls.reduce(
+    (sum, call) => sum + contextSize(call.tokens),
+    0,
+  );
   const output = calls.reduce(
     (sum, call) => sum + call.tokens.output + call.tokens.reasoning,
     0,
@@ -370,6 +377,82 @@ function breadcrumbMetric(
   return { value, formattedValue };
 }
 
+function linkedSubagentsForTurn(
+  turn: SessionDetail["turns"][number],
+  session: SessionDetail,
+) {
+  const childIDs = new Set(
+    turn.calls.flatMap((call) =>
+      call.activity.tools.flatMap((tool) =>
+        tool.childSessionID ? [tool.childSessionID] : []
+      )
+    ),
+  );
+  return session.subagents.filter((child) => childIDs.has(child.id));
+}
+
+function callsForTurn(
+  turn: SessionDetail["turns"][number],
+  session: SessionDetail,
+) {
+  const subagents = linkedSubagentsForTurn(turn, session);
+  return {
+    subagents,
+    calls: [...turn.calls, ...subagents.flatMap(callsInTree)],
+  };
+}
+
+function turnSummary(
+  turn: SessionDetail["turns"][number],
+  session: SessionDetail,
+  model: CostScenario,
+  thinking: string,
+) {
+  const { calls, subagents } = callsForTurn(turn, session);
+  const end = calls.reduce(
+    (latest, call) => Math.max(latest, call.completedAt ?? call.startedAt),
+    turn.startedAt,
+  );
+  const cost = model === "recorded" && thinking === "recorded"
+    ? rollupCosts(calls.map((call) => call.computedCost))
+    : scenarioCost(calls, model, thinking);
+  const input = calls.reduce(
+    (total, call) => total + contextSize(call.tokens),
+    0,
+  );
+  const cacheRead = calls.reduce(
+    (total, call) => total + call.tokens.cacheRead,
+    0,
+  );
+  return {
+    elapsed: elapsed(turn.startedAt, end),
+    calls: turn.calls.length,
+    tools: turn.calls.reduce(
+      (total, call) => total + call.activity.tools.length,
+      0,
+    ),
+    subagents: subagents.length,
+    context: contextRange(turn.calls),
+    input,
+    cacheRead,
+    uncachedInput: calls.reduce(
+      (total, call) => total + call.tokens.uncachedInput,
+      0,
+    ),
+    cacheWrite: calls.reduce(
+      (total, call) => total + (call.tokens.cacheWrite ?? 0),
+      0,
+    ),
+    reuse: input === 0 ? undefined : cacheRead / input,
+    output: calls.reduce((total, call) => total + call.tokens.output, 0),
+    reasoning: calls.reduce(
+      (total, call) => total + call.tokens.reasoning,
+      0,
+    ),
+    cost,
+  };
+}
+
 function breadcrumbEntries(
   session: SessionDetail,
   metric: ColorMetric,
@@ -378,17 +461,7 @@ function breadcrumbEntries(
   collapsedTurnIDs: Set<string>,
 ): BreadcrumbEntry[] {
   return session.turns.flatMap((turn) => {
-    const childIDs = new Set(
-      turn.calls.flatMap((call) =>
-        call.activity.tools.flatMap((tool) =>
-          tool.childSessionID ? [tool.childSessionID] : []
-        )
-      ),
-    );
-    const children = session.subagents.filter((child) =>
-      childIDs.has(child.id)
-    );
-    const calls = [...turn.calls, ...children.flatMap(callsInTree)];
+    const { calls } = callsForTurn(turn, session);
     const end = calls.reduce(
       (latest, call) => Math.max(latest, call.completedAt ?? call.startedAt),
       turn.startedAt,
@@ -919,12 +992,17 @@ function TurnBlock({
   pathMode: PathMode;
   rootDirectory?: string;
 }) {
-  const { collapsedTurnIDs, toggleTurn, turnColors } = useContext(
-    TurnCollapseContext,
-  );
+  const {
+    collapsedTurnIDs,
+    model,
+    thinking,
+    toggleTurn,
+    turnColors,
+  } = useContext(TurnCollapseContext);
   const id = turnAnchor(session.id, turn.number);
   const collapsed = collapsedTurnIDs.has(id);
   const turnColor = turnColors.get(id);
+  const summary = turnSummary(turn, session, model, thinking);
   const text = (turn.inputs ?? []).filter((input) => input.kind === "text")
     .map((input) => input.preview).filter((value): value is string =>
       Boolean(value)
@@ -963,6 +1041,15 @@ function TurnBlock({
                 {turn.branchNumber}
               </span>
             )}
+            {summary.elapsed !== undefined && (
+              <span
+                className="sd-turn-duration"
+                aria-label={`Turn duration: ${summary.elapsed}`}
+                title="Turn duration"
+              >
+                · {summary.elapsed}
+              </span>
+            )}
             <time title={fullTimestamp.format(turn.startedAt)}>
               {timestamp.format(turn.startedAt)}
             </time>
@@ -978,6 +1065,86 @@ function TurnBlock({
               <ChevronDown size={14} />
             </button>
           </header>
+          <div className="sd-turn-summary" aria-label="Turn summary">
+            <span
+              className="sd-turn-metric sd-turn-activity"
+              title="Direct activity"
+            >
+              <strong>
+                {summary.calls} call{summary.calls === 1 ? "" : "s"}
+              </strong>
+              {(summary.tools > 0 || summary.subagents > 0) && (
+                <small>
+                  {[
+                    summary.tools > 0
+                      ? `${summary.tools} tool${summary.tools === 1 ? "" : "s"}`
+                      : undefined,
+                    summary.subagents > 0
+                      ? `${summary.subagents} subagent${
+                        summary.subagents === 1 ? "" : "s"
+                      }`
+                      : undefined,
+                  ].filter(Boolean).join(" · ")}
+                </small>
+              )}
+            </span>
+            <span
+              className="sd-turn-metric sd-turn-context"
+              title="Context in the latest direct model request"
+            >
+              <strong>
+                {summary.context.latest === undefined
+                  ? "—"
+                  : compact.format(summary.context.latest.size)}
+              </strong>{" "}
+              context
+              {summary.context.first !== undefined && (
+                <small>
+                  {compact.format(summary.context.first.size)} start
+                </small>
+              )}
+            </span>
+            <span
+              className="sd-turn-metric sd-turn-input"
+              title="Cumulative input, including linked subagents"
+            >
+              <strong>{compact.format(summary.input)}</strong> input
+              <small>
+                {[
+                  `${compact.format(summary.uncachedInput)} uncached`,
+                  summary.reuse === undefined
+                    ? "Reuse unavailable"
+                    : `${(summary.reuse * 100).toFixed(1)}% reused`,
+                  summary.cacheWrite > 0
+                    ? `${compact.format(summary.cacheWrite)} written`
+                    : undefined,
+                ].filter(Boolean).join(" · ")}
+              </small>
+            </span>
+            <span
+              className="sd-turn-metric sd-turn-output"
+              title="Output tokens, including linked subagents"
+            >
+              <strong>{compact.format(summary.output)}</strong> output
+              {summary.reasoning > 0 && (
+                <small>{compact.format(summary.reasoning)} reasoning</small>
+              )}
+            </span>
+            <span
+              className="sd-turn-metric sd-turn-cost"
+              title={summary.cost.hasUnpricedCost
+                ? "Known cost; some calls could not be priced"
+                : "Computed cost, including linked subagents"}
+            >
+              <strong>
+                {summary.cost.cost === undefined
+                  ? "Unpriced"
+                  : `${money.format(summary.cost.cost)}${
+                    summary.cost.hasUnpricedCost ? "+" : ""
+                  }`}
+              </strong>
+            </span>
+          </div>
           {collapsed
             ? (
               <p className="sd-turn-collapsed-preview">
@@ -1259,7 +1426,7 @@ function Metadata({
             <option value="none">None</option>
             <option value="time">Time spent</option>
             <option value="cost">Cost</option>
-            <option value="input">Input processed</option>
+            <option value="input">Cumulative input</option>
             <option value="output">Output</option>
           </select>
         </label>
@@ -1586,9 +1753,15 @@ export function SessionDetailPage() {
             } turns`}
           />
           <DetailMetric
-            label="Input processed"
-            value={compact.format(tokens.processed)}
-            detail={`${compact.format(tokens.cacheRead)} cached`}
+            label="Cumulative input"
+            value={compact.format(contextSize(tokens))}
+            detail={[
+              `${compact.format(tokens.cacheRead)} cached`,
+              `${compact.format(tokens.uncachedInput)} uncached`,
+              (tokens.cacheWrite ?? 0) > 0
+                ? `${compact.format(tokens.cacheWrite ?? 0)} written`
+                : undefined,
+            ].filter(Boolean).join(" · ")}
           />
           <DetailMetric
             label="Output"
@@ -1610,6 +1783,8 @@ export function SessionDetailPage() {
           value={{
             collapsedTurnIDs,
             turnColors,
+            model: selectedModel,
+            thinking,
             toggleTurn: (id) =>
               setCollapsedTurnIDs((current) => {
                 const next = new Set(current);
