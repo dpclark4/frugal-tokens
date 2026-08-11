@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, Info } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   Bar,
@@ -544,23 +544,11 @@ function DayDetail({ day }: { day: WorkRhythmDay }) {
   );
 }
 
-function MethodologyTip({ label, children }: {
-  label: string;
-  children: string;
-}) {
-  return (
-    <span className="structure-methodology" tabIndex={0} aria-label={label}>
-      <Info size={11} aria-hidden="true" />
-      <span role="tooltip">{children}</span>
-    </span>
-  );
-}
-
 function ParallelWork({ data }: { data: WorkRhythmData["parallelWork"] }) {
   const rows = [
-    ["1 session", data.activeTimeShare.oneSession],
-    ["2 sessions", data.activeTimeShare.twoSessions],
-    ["3+ sessions", data.activeTimeShare.threePlusSessions],
+    ["1 root", data.activeTimeShare.oneSession],
+    ["2 roots", data.activeTimeShare.twoSessions],
+    ["3+ roots", data.activeTimeShare.threePlusSessions],
   ] as const;
   const percent = (value: number) => `${Math.round(value * 100)}%`;
 
@@ -571,11 +559,6 @@ function ParallelWork({ data }: { data: WorkRhythmData["parallelWork"] }) {
     >
       <header className="structure-heading">
         <h3 id="parallel-work-title">Parallel work</h3>
-        <MethodologyTip label="Parallel work methodology">
-          Concurrency is measured only where estimated active-work windows from
-          different root sessions overlap. Subagents and idle session lifetime
-          are excluded.
-        </MethodologyTip>
       </header>
       <div className="parallel-summary">
         <strong>{percent(data.overlappingShare)}</strong>
@@ -583,7 +566,7 @@ function ParallelWork({ data }: { data: WorkRhythmData["parallelWork"] }) {
           active time<br />overlapping
         </span>
         <span className="parallel-peak">
-          Peak <b>{integer.format(data.peakConcurrentSessions)}</b>
+          Peak <b>{integer.format(data.peakConcurrentSessions)}</b> roots
         </span>
       </div>
       <div className="concurrency-bars">
@@ -690,10 +673,6 @@ function WorkBlocks({ data }: { data: WorkRhythmData["workBlocks"] }) {
     >
       <header className="structure-heading">
         <h3 id="work-blocks-title">Work blocks</h3>
-        <MethodologyTip label="Work block methodology">
-          A block is a continuous span of estimated active work across root
-          sessions; a gap longer than 10 minutes starts a new block.
-        </MethodologyTip>
       </header>
       <div className="block-summary">
         <span>
