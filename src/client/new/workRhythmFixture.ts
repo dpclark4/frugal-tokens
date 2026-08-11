@@ -265,5 +265,27 @@ export const workRhythmFixture: WorkRhythmData = {
     hourlyMinutes.slice(20).reduce((sum, minutes) => sum + minutes, 0) /
     totalMinutes,
   peakHour: 15,
+  parallelWork: {
+    overlappingShare: 0.21,
+    activeTimeShare: {
+      oneSession: 0.79,
+      twoSessions: 0.16,
+      threePlusSessions: 0.05,
+    },
+    peakConcurrentSessions: 4,
+  },
+  workBlocks: {
+    count: 74,
+    blocksPerActiveDay: 74 / 27,
+    oneHourShare: 0.18,
+    durationMinutes: {
+      p10: 8,
+      p25: 19,
+      median: 42,
+      average: 51,
+      p75: 68,
+      p90: 108,
+    },
+  },
   days,
 };

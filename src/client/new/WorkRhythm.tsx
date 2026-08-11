@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Info } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   Bar,
@@ -15,7 +15,7 @@ import type {
   WorkRhythmSession,
 } from "./workRhythmTypes.ts";
 import { displayModelName } from "../../shared/modelNames.ts";
-import { compact, currency, integer } from "./formatters.ts";
+import { compact, currency, decimal, integer } from "./formatters.ts";
 import "./WorkRhythm.css";
 
 const readableDate = new Intl.DateTimeFormat(undefined, {
@@ -544,6 +544,182 @@ function DayDetail({ day }: { day: WorkRhythmDay }) {
   );
 }
 
+function MethodologyTip({ label, children }: {
+  label: string;
+  children: string;
+}) {
+  return (
+    <span className="structure-methodology" tabIndex={0} aria-label={label}>
+      <Info size={11} aria-hidden="true" />
+      <span role="tooltip">{children}</span>
+    </span>
+  );
+}
+
+function ParallelWork({ data }: { data: WorkRhythmData["parallelWork"] }) {
+  const rows = [
+    ["1 session", data.activeTimeShare.oneSession],
+    ["2 sessions", data.activeTimeShare.twoSessions],
+    ["3+ sessions", data.activeTimeShare.threePlusSessions],
+  ] as const;
+  const percent = (value: number) => `${Math.round(value * 100)}%`;
+
+  return (
+    <section
+      className="work-structure-unit"
+      aria-labelledby="parallel-work-title"
+    >
+      <header className="structure-heading">
+        <h3 id="parallel-work-title">Parallel work</h3>
+        <MethodologyTip label="Parallel work methodology">
+          Concurrency is measured only where estimated active-work windows from
+          different root sessions overlap. Subagents and idle session lifetime
+          are excluded.
+        </MethodologyTip>
+      </header>
+      <div className="parallel-summary">
+        <strong>{percent(data.overlappingShare)}</strong>
+        <span>
+          active time<br />overlapping
+        </span>
+        <span className="parallel-peak">
+          Peak <b>{integer.format(data.peakConcurrentSessions)}</b>
+        </span>
+      </div>
+      <div className="concurrency-bars">
+        {rows.map(([label, value]) => (
+          <div className="concurrency-row" key={label}>
+            <span>{label}</span>
+            <i aria-hidden="true">
+              <b style={{ width: `${value * 100}%` }} />
+            </i>
+            <strong>{percent(value)}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function distributionPosition(value: number, minimum: number, maximum: number) {
+  if (maximum === minimum) return 50;
+  return 5 +
+    90 * Math.max(0, Math.min(1, (value - minimum) / (maximum - minimum)));
+}
+
+function WorkBlockDistribution({
+  distribution,
+}: {
+  distribution: NonNullable<WorkRhythmData["workBlocks"]["durationMinutes"]>;
+}) {
+  const position = (value: number) =>
+    distributionPosition(value, distribution.p10, distribution.p90);
+  const values = [
+    ["P10", distribution.p10],
+    ["P25", distribution.p25],
+    ["Median", distribution.median],
+    ["Mean", distribution.average],
+    ["P75", distribution.p75],
+    ["P90", distribution.p90],
+  ] as const;
+  const points = {
+    p10: position(distribution.p10),
+    p25: position(distribution.p25),
+    median: position(distribution.median),
+    average: position(distribution.average),
+    p75: position(distribution.p75),
+    p90: position(distribution.p90),
+  };
+
+  return (
+    <div
+      className="block-distribution"
+      role="img"
+      tabIndex={0}
+      aria-label={values.map(([label, value]) =>
+        `${label} ${formatDuration(value)}`
+      ).join(", ")}
+    >
+      <span className="block-quartile-label" style={{ left: `${points.p25}%` }}>
+        P25
+      </span>
+      <span className="block-quartile-label" style={{ left: `${points.p75}%` }}>
+        P75
+      </span>
+      <span
+        className="block-whisker"
+        style={{ left: `${points.p10}%`, width: `${points.p90 - points.p10}%` }}
+      />
+      <span className="block-end" style={{ left: `${points.p10}%` }} />
+      <span className="block-end" style={{ left: `${points.p90}%` }} />
+      <span
+        className="block-iqr"
+        style={{ left: `${points.p25}%`, width: `${points.p75 - points.p25}%` }}
+      />
+      <span className="block-median" style={{ left: `${points.median}%` }} />
+      <span className="block-average" style={{ left: `${points.average}%` }} />
+      <span
+        className="block-range block-range-start"
+        style={{ left: `${points.p10}%` }}
+      >
+        {formatDuration(distribution.p10)}
+      </span>
+      <span
+        className="block-range block-range-end"
+        style={{ left: `${points.p90}%` }}
+      >
+        {formatDuration(distribution.p90)}
+      </span>
+      <span className="block-distribution-tooltip" role="tooltip">
+        {values.map(([label, value]) => (
+          <span key={label}>
+            <small>{label}</small>
+            <strong>{formatDuration(value)}</strong>
+          </span>
+        ))}
+      </span>
+    </div>
+  );
+}
+
+function WorkBlocks({ data }: { data: WorkRhythmData["workBlocks"] }) {
+  return (
+    <section
+      className="work-structure-unit"
+      aria-labelledby="work-blocks-title"
+    >
+      <header className="structure-heading">
+        <h3 id="work-blocks-title">Work blocks</h3>
+        <MethodologyTip label="Work block methodology">
+          A block is a continuous span of estimated active work across root
+          sessions; a gap longer than 10 minutes starts a new block.
+        </MethodologyTip>
+      </header>
+      <div className="block-summary">
+        <span>
+          <strong>
+            {data.durationMinutes
+              ? formatDuration(data.durationMinutes.median)
+              : "—"}
+          </strong>
+          median
+        </span>
+        <span>
+          <strong>{decimal.format(data.blocksPerActiveDay)}</strong>
+          / active day
+        </span>
+      </div>
+      {data.durationMinutes
+        ? <WorkBlockDistribution distribution={data.durationMinutes} />
+        : <div className="block-distribution-empty">No work blocks</div>}
+      <div className="block-support">
+        <span>{integer.format(data.count)} blocks</span>
+        <span>{Math.round(data.oneHourShare * 100)}% lasted 1h+</span>
+      </div>
+    </section>
+  );
+}
+
 function mostRecentActiveDate(data: WorkRhythmData) {
   return Object.values(data.days)
     .filter((day) => day.estimatedActiveMinutes > 0)
@@ -619,6 +795,10 @@ export function WorkRhythm({ data }: { data: WorkRhythmData }) {
           <DayDetail day={selectedDay} />
         </div>
       </section>
+      <div className="work-structure-row">
+        <ParallelWork data={data.parallelWork} />
+        <WorkBlocks data={data.workBlocks} />
+      </div>
     </section>
   );
 }

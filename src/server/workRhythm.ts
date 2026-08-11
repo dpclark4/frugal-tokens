@@ -52,6 +52,79 @@ function overlapMs(intervals: Interval[], span: Interval) {
   return total;
 }
 
+function percentile(values: number[], quantile: number) {
+  const index = (values.length - 1) * quantile;
+  const lower = Math.floor(index);
+  const upper = Math.ceil(index);
+  const remainder = index - lower;
+  return values[lower] + (values[upper] - values[lower]) * remainder;
+}
+
+function workStructure(
+  intervalsByRoot: Interval[][],
+  merged: Interval[],
+  activeDays: number,
+): Pick<WorkRhythmData, "parallelWork" | "workBlocks"> {
+  const events = new Map<number, number>();
+  for (const intervals of intervalsByRoot) {
+    for (const interval of intervals) {
+      events.set(interval.start, (events.get(interval.start) ?? 0) + 1);
+      events.set(interval.end, (events.get(interval.end) ?? 0) - 1);
+    }
+  }
+
+  const concurrentMs = [0, 0, 0];
+  let active = 0;
+  let peak = 0;
+  let previous: number | undefined;
+  for (const [at, delta] of [...events].toSorted(([a], [b]) => a - b)) {
+    if (previous !== undefined && active > 0) {
+      concurrentMs[Math.min(active, 3) - 1] += at - previous;
+    }
+    active += delta;
+    peak = Math.max(peak, active);
+    previous = at;
+  }
+
+  const totalMs = concurrentMs.reduce((sum, duration) => sum + duration, 0);
+  const share = (duration: number) => totalMs === 0 ? 0 : duration / totalMs;
+  const durationMinutes = merged.map((interval) =>
+    (interval.end - interval.start) / 60_000
+  ).toSorted((a, b) => a - b);
+  const durationDistribution = durationMinutes.length === 0 ? undefined : {
+    p10: percentile(durationMinutes, 0.1),
+    p25: percentile(durationMinutes, 0.25),
+    median: percentile(durationMinutes, 0.5),
+    average: durationMinutes.reduce((sum, value) => sum + value, 0) /
+      durationMinutes.length,
+    p75: percentile(durationMinutes, 0.75),
+    p90: percentile(durationMinutes, 0.9),
+  };
+
+  return {
+    parallelWork: {
+      overlappingShare: share(concurrentMs[1] + concurrentMs[2]),
+      activeTimeShare: {
+        oneSession: share(concurrentMs[0]),
+        twoSessions: share(concurrentMs[1]),
+        threePlusSessions: share(concurrentMs[2]),
+      },
+      peakConcurrentSessions: peak,
+    },
+    workBlocks: {
+      count: durationMinutes.length,
+      blocksPerActiveDay: activeDays === 0
+        ? 0
+        : durationMinutes.length / activeDays,
+      oneHourShare: durationMinutes.length === 0
+        ? 0
+        : durationMinutes.filter((duration) => duration >= 60).length /
+          durationMinutes.length,
+      durationMinutes: durationDistribution,
+    },
+  };
+}
+
 function intensity(
   minutes: number,
   nonzero: number[],
@@ -97,10 +170,14 @@ export function aggregateWorkRhythm(
     date = date.add({ days: 1 })
   ) dates.push(date);
 
-  const intervals = roots.flatMap((root) =>
-    estimatedWorkIntervals(root.rootExecutionIntervals ?? [])
-  );
-  const merged = mergeWorkIntervals(intervals, start, end);
+  const intervalsByRoot = roots.map((root) =>
+    mergeWorkIntervals(
+      estimatedWorkIntervals(root.rootExecutionIntervals ?? []),
+      start,
+      end,
+    )
+  ).filter((intervals) => intervals.length > 0);
+  const merged = mergeWorkIntervals(intervalsByRoot.flat(), start, end);
   const totalMs = merged.reduce(
     (sum, interval) => sum + interval.end - interval.start,
     0,
@@ -287,6 +364,11 @@ export function aggregateWorkRhythm(
     0,
   );
 
+  const activeDays =
+    [...dayValues.values()].filter((day) => day.estimatedActiveMinutes > 0)
+      .length;
+  const structure = workStructure(intervalsByRoot, merged, activeDays);
+
   return {
     range: { start: startDate.toString(), end: endDate.toString() },
     estimatedActiveMinutes: totalMs / 60_000,
@@ -302,6 +384,7 @@ export function aggregateWorkRhythm(
       ? 0
       : hourlyMs.slice(20).reduce((sum, value) => sum + value, 0) / totalMs,
     peakHour,
+    ...structure,
     days,
   };
 }

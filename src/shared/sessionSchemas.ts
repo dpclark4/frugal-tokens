@@ -438,6 +438,28 @@ export const workRhythmDataSchema = z.object({
   })),
   afterHoursShare: z.number().min(0).max(1),
   peakHour: z.number().int().min(0).max(23).optional(),
+  parallelWork: z.object({
+    overlappingShare: z.number().min(0).max(1),
+    activeTimeShare: z.object({
+      oneSession: z.number().min(0).max(1),
+      twoSessions: z.number().min(0).max(1),
+      threePlusSessions: z.number().min(0).max(1),
+    }),
+    peakConcurrentSessions: z.number().int().nonnegative(),
+  }),
+  workBlocks: z.object({
+    count: z.number().int().nonnegative(),
+    blocksPerActiveDay: z.number().nonnegative(),
+    oneHourShare: z.number().min(0).max(1),
+    durationMinutes: z.object({
+      p10: z.number().nonnegative(),
+      p25: z.number().nonnegative(),
+      median: z.number().nonnegative(),
+      average: z.number().nonnegative(),
+      p75: z.number().nonnegative(),
+      p90: z.number().nonnegative(),
+    }).optional(),
+  }),
   days: z.record(z.string(), workRhythmDaySchema),
 });
 

@@ -106,6 +106,40 @@ Deno.test("work rhythm unions isolated, overlapping, duplicate, and touching tur
   workRhythmDataSchema.parse(result);
 });
 
+Deno.test("work rhythm summarizes root-session overlap and global work blocks", () => {
+  const start = utc("2026-07-01T00:00:00");
+  const end = utc("2026-07-01T23:59:59");
+  const at = utc("2026-07-01T10:00:00");
+  const result = aggregateWorkRhythm(
+    [
+      root("continuous", [at, at + 8 * minute]),
+      root("overlap", [at + 4 * minute], { numericID: 2 }),
+      root("three-way", [at + 2 * minute], { numericID: 3 }),
+      root("later", [at + 60 * minute], { numericID: 4 }),
+    ],
+    start,
+    end,
+    "UTC",
+  );
+
+  strictEqual(result.parallelWork.peakConcurrentSessions, 3);
+  strictEqual(result.parallelWork.activeTimeShare.oneSession, 11 / 18);
+  strictEqual(result.parallelWork.activeTimeShare.twoSessions, 4 / 18);
+  strictEqual(result.parallelWork.activeTimeShare.threePlusSessions, 3 / 18);
+  strictEqual(result.parallelWork.overlappingShare, 7 / 18);
+  strictEqual(result.workBlocks.count, 2);
+  strictEqual(result.workBlocks.blocksPerActiveDay, 2);
+  strictEqual(result.workBlocks.oneHourShare, 0);
+  deepStrictEqual(result.workBlocks.durationMinutes, {
+    p10: 5.8,
+    p25: 7,
+    median: 9,
+    average: 9,
+    p75: 11,
+    p90: 12.2,
+  });
+});
+
 Deno.test("work rhythm extends activity between prompts within the timeout", () => {
   const start = utc("2026-07-01T00:00:00");
   const end = utc("2026-07-01T23:59:59");
