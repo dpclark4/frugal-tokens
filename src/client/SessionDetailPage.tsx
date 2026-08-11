@@ -11,18 +11,17 @@ import { getRouteApi } from "@tanstack/react-router";
 import {
   ArrowLeft,
   Bot,
-  Brain,
   Check,
   ChevronDown,
   ChevronRight,
   CircleAlert,
   FileText,
+  Gauge,
   Image,
   Moon,
   Sparkles,
   Split,
   Sun,
-  TerminalSquare,
   User,
   Wrench,
   X,
@@ -892,38 +891,17 @@ function ToolGroup({
   );
 }
 
-function ReasoningDisclosure({ call }: { call: ModelCall }) {
-  const [open, setOpen] = useState(false);
+function ReasoningSummary({ call }: { call: ModelCall }) {
   const hasReasoning = call.activity.hasReasoning ||
     call.tokens.reasoning > 0 ||
     call.reasoningSetting !== undefined;
   if (!hasReasoning) return null;
   const callDuration = elapsed(call.startedAt, call.completedAt);
   return (
-    <Disclosure
-      open={open}
-      onToggle={() => setOpen((current) => !current)}
-      icon={<Sparkles size={15} />}
-      label={callDuration ? `Thought for ${callDuration}` : "Reasoning trace"}
-      className="sd-thinking"
-    >
-      <div className="sd-thinking-trace">
-        <span>
-          <Brain size={13} />
-          {integer.format(call.tokens.reasoning)} reasoning tokens
-        </span>
-        {call.reasoningSetting && (
-          <span>
-            <Sparkles size={13} />Thinking: {call.reasoningSetting.settingValue}
-          </span>
-        )}
-        <span>
-          <TerminalSquare size={13} />
-          {displayModelName(call.model)}
-        </span>
-        <small>Reasoning content is not retained by this harness.</small>
-      </div>
-    </Disclosure>
+    <div className="sd-thinking-summary">
+      <Sparkles size={15} />
+      <span>{callDuration ? `Thought for ${callDuration}` : "Thought"}</span>
+    </div>
   );
 }
 
@@ -969,6 +947,7 @@ function CallBlock({
   rootDirectory?: string;
 }) {
   const input = contextSize(call.tokens);
+  const reuse = input === 0 ? undefined : call.tokens.cacheRead / input;
   const assessment = cacheLabel(call);
   return (
     <section
@@ -984,12 +963,17 @@ function CallBlock({
         <span>
           {elapsed(call.startedAt, call.completedAt) ?? "Timing unavailable"}
         </span>
-        {effort && <em className="sd-call-effort">{effort}</em>}
+        {effort && (
+          <em className="sd-call-effort" title={`Thinking level: ${effort}`}>
+            <Gauge size={11} />
+            {effort}
+          </em>
+        )}
         {assessment && <b>{assessment}</b>}
       </div>
       <div className="sd-call-body">
         <ContextEvents call={call} />
-        <ReasoningDisclosure call={call} />
+        <ReasoningSummary call={call} />
         <ToolGroup
           call={call}
           session={session}
@@ -1009,7 +993,13 @@ function CallBlock({
         <div className="sd-call-stats">
           <span>{compact.format(input)} context</span>
           <span>{compact.format(call.tokens.cacheRead)} cached</span>
+          {reuse !== undefined && (
+            <span>{(reuse * 100).toFixed(1)}% reused</span>
+          )}
           <span>{compact.format(call.tokens.output)} output</span>
+          {call.tokens.reasoning > 0 && (
+            <span>{compact.format(call.tokens.reasoning)} reasoning</span>
+          )}
           <span>
             {call.computedCost === undefined
               ? "Unpriced"
@@ -1381,6 +1371,9 @@ function Metadata({
 }) {
   const tokens = inclusiveTokens(session);
   const calls = callsInTree(session);
+  const context = contextRange(session.turns.flatMap((turn) => turn.calls));
+  const contextLatest = context.latest?.size ?? session.contextLatest;
+  const contextPeak = context.peak?.size ?? session.contextPeak;
   const cacheInput = tokens.uncachedInput + tokens.cacheRead +
     (tokens.cacheWrite ?? 0);
   const reuse = cacheInput === 0 ? undefined : tokens.cacheRead / cacheInput;
@@ -1395,6 +1388,19 @@ function Metadata({
       call.reasoningSetting ? [call.reasoningSetting.settingValue] : []
     ),
   ].filter((value, index, values) => values.indexOf(value) === index);
+  const thinkingByModel = new Map<string, string[]>();
+  for (const item of sessionTree(session)) {
+    for (const turn of item.turns) {
+      for (const call of turn.calls) {
+        const value = call.reasoningSetting?.settingValue ??
+          turn.reasoningSetting?.settingValue;
+        if (value === undefined) continue;
+        const values = thinkingByModel.get(call.model) ?? [];
+        if (!values.includes(value)) values.push(value);
+        thinkingByModel.set(call.model, values);
+      }
+    }
+  }
   const openAIModels = counterfactualModelIDs.filter((value) =>
     value.startsWith("gpt-")
   );
@@ -1441,22 +1447,47 @@ function Metadata({
       <section>
         <h2>Models</h2>
         <div className="sd-model-list">
-          {session.models.map((model) => (
-            <span key={model}>{displayModelName(model)}</span>
-          ))}
+          {session.models.map((model) => {
+            const thinkingValues = thinkingByModel.get(model) ?? [];
+            return (
+              <div className="sd-model-row" key={model}>
+                <span className="sd-model-identity">
+                  <ModelMark model={model} />
+                  <span className="sd-model-name">
+                    {displayModelName(model)}
+                  </span>
+                </span>
+                {thinkingValues.length > 0 && (
+                  <span
+                    className="sd-model-thinking"
+                    title={`Thinking levels: ${thinkingValues.join(", ")}`}
+                  >
+                    <Gauge size={12} />
+                    <span className="sd-model-levels">
+                      {thinkingValues.map((value) => (
+                        <span className="sd-model-level" key={value}>
+                          {value}
+                        </span>
+                      ))}
+                    </span>
+                  </span>
+                )}
+              </div>
+            );
+          })}
         </div>
       </section>
       <section>
         <h2>Context</h2>
         <MetadataRow label="Latest">
-          {session.contextLatest === undefined
+          {contextLatest === undefined
             ? "Unavailable"
-            : compact.format(session.contextLatest)}
+            : compact.format(contextLatest)}
         </MetadataRow>
         <MetadataRow label="Peak">
-          {session.contextPeak === undefined
+          {contextPeak === undefined
             ? "Unavailable"
-            : compact.format(session.contextPeak)}
+            : compact.format(contextPeak)}
         </MetadataRow>
         <MetadataRow label="Token reuse">
           {reuse === undefined ? "Unavailable" : `${(reuse * 100).toFixed(1)}%`}
@@ -1785,13 +1816,6 @@ export function SessionDetailPage() {
             </span>
             <h1>{session.title}</h1>
           </div>
-          {session.thinking?.latest && (
-            <div className="sd-session-badges">
-              <span>
-                <Sparkles size={12} />Thinking {session.thinking.latest}
-              </span>
-            </div>
-          )}
         </header>
 
         <div className="sd-metrics">

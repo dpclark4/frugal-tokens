@@ -491,6 +491,7 @@
   object-fit: contain;
 }
 
+.session-detail-page.is-light .sd-model-mark.is-openai,
 .session-detail-page.is-light .sd-model-mark.is-xai,
 .session-detail-page.is-dark .sd-model-mark.is-moonshot {
   filter: invert(1);
@@ -710,7 +711,7 @@
 
 .sd-agent-sequence {
   position: relative;
-  margin: 19px 0 0 12px;
+  margin: 19px 0 0 18px;
   padding-left: 25px;
 }
 
@@ -765,6 +766,9 @@
 }
 
 .sd-call-effort {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 3px 6px;
   border-radius: 5px;
   background: var(--sd-field);
@@ -873,34 +877,14 @@
   border-left: 1px solid var(--sd-line-strong);
 }
 
-.sd-thinking {
-  margin: 5px 0 4px;
-}
-
-.sd-thinking > button svg:first-child {
-  color: var(--sd-ink-2);
-}
-
-.sd-thinking-trace {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 4px 0 7px 4px;
-}
-
-.sd-thinking-trace span {
+.sd-thinking-summary {
   display: flex;
   min-height: 28px;
   align-items: center;
   gap: 8px;
+  margin: 5px 0 4px;
   color: var(--sd-ink-2);
   font-size: 12px;
-}
-
-.sd-thinking-trace small {
-  padding: 4px 0;
-  color: var(--sd-ink-3);
-  font-size: 11px;
 }
 
 .sd-tool-group {
@@ -1118,18 +1102,49 @@
 }
 
 .sd-model-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  display: grid;
+  width: fit-content;
+  max-width: 100%;
+  grid-template-columns: max-content max-content;
+  gap: 7px 0;
 }
 
-.sd-model-list span {
-  padding: 4px 7px;
-  border-radius: 6px;
+.sd-model-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  border-radius: 7px;
   background: var(--sd-field);
   color: var(--sd-ink-2);
   box-shadow: 0 0 0 1px var(--sd-line-strong);
   font: 10.5px var(--mono);
+}
+
+.sd-model-identity,
+.sd-model-thinking {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 7px;
+}
+
+.sd-model-thinking {
+  border-left: 1px solid var(--sd-line-strong);
+}
+
+.sd-model-levels {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  text-transform: capitalize;
+}
+
+.sd-model-level + .sd-model-level::before {
+  content: "·";
+  margin-right: 4px;
+  color: var(--sd-ink-3);
 }
 
 .sd-setting {
@@ -1459,7 +1474,7 @@
   }
 
   .sd-agent-sequence {
-    margin-left: 9px;
+    margin-left: 18px;
     padding-left: 20px;
   }
 
