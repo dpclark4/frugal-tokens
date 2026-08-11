@@ -1,5 +1,6 @@
 import { deepStrictEqual, strictEqual } from "node:assert";
 import { workRhythmDataSchema } from "../shared/sessionSchemas.ts";
+import { summarizeWorkTime } from "../shared/workTime.ts";
 import type { StoredOverviewRollup } from "./overviewAnalytics.ts";
 import { aggregateWorkRhythm, workRhythmRange } from "./workRhythm.ts";
 
@@ -46,35 +47,54 @@ function root(
         cost: options.spend ?? 0,
         hasPricedCost: !options.unpriced,
         hasUnpricedCost: options.unpriced ?? false,
-        models: options.model ? [{
-          model: options.model,
-          input: options.input ?? 0,
-          cacheRead: 0,
-          cost: options.spend ?? 0,
-          hasPricedCost: !options.unpriced,
-          hasUnpricedCost: options.unpriced ?? false,
-        }] : [],
+        models: options.model
+          ? [{
+            model: options.model,
+            input: options.input ?? 0,
+            cacheRead: 0,
+            cost: options.spend ?? 0,
+            hasPricedCost: !options.unpriced,
+            hasUnpricedCost: options.unpriced ?? false,
+          }]
+          : [],
       }],
     },
   };
 }
 
+Deno.test("work time groups nearby prompts into distinct continuous blocks", () => {
+  const first = utc("2026-07-01T09:00:00");
+  const summary = summarizeWorkTime([
+    { startedAt: first, executionEndAt: first },
+    { startedAt: first + 4 * minute, executionEndAt: first + 4 * minute },
+    { startedAt: first + 20 * minute, executionEndAt: first + 20 * minute },
+  ]);
+
+  strictEqual(summary.activeMilliseconds / minute, 14);
+  strictEqual(summary.blocks, 2);
+});
+
 Deno.test("work rhythm unions isolated, overlapping, duplicate, and touching turn windows globally", () => {
   const start = utc("2026-07-01T00:00:00");
   const end = utc("2026-07-02T00:00:00");
-  const result = aggregateWorkRhythm([
-    root("a", [utc("2026-07-01T09:00:00"), utc("2026-07-01T09:50:00")]),
-    root("b", [utc("2026-07-01T10:00:00"), utc("2026-07-01T10:03:00")], {
-      numericID: 2,
-      harness: "codex",
-    }),
-    root("c", [utc("2026-07-01T11:00:00"), utc("2026-07-01T11:00:00")], {
-      numericID: 3,
-    }),
-    root("d", [utc("2026-07-01T12:00:00"), utc("2026-07-01T12:05:00")], {
-      numericID: 4,
-    }),
-  ], start, end, "UTC");
+  const result = aggregateWorkRhythm(
+    [
+      root("a", [utc("2026-07-01T09:00:00"), utc("2026-07-01T09:50:00")]),
+      root("b", [utc("2026-07-01T10:00:00"), utc("2026-07-01T10:03:00")], {
+        numericID: 2,
+        harness: "codex",
+      }),
+      root("c", [utc("2026-07-01T11:00:00"), utc("2026-07-01T11:00:00")], {
+        numericID: 3,
+      }),
+      root("d", [utc("2026-07-01T12:00:00"), utc("2026-07-01T12:05:00")], {
+        numericID: 4,
+      }),
+    ],
+    start,
+    end,
+    "UTC",
+  );
 
   // 10 isolated + 8 overlapping + 5 duplicate + 10 touching.
   strictEqual(result.estimatedActiveMinutes, 33);
@@ -86,36 +106,46 @@ Deno.test("work rhythm unions isolated, overlapping, duplicate, and touching tur
   workRhythmDataSchema.parse(result);
 });
 
-Deno.test("work rhythm counts completion-to-follow-up gaps within the timeout", () => {
+Deno.test("work rhythm extends activity between prompts within the timeout", () => {
   const start = utc("2026-07-01T00:00:00");
   const end = utc("2026-07-01T23:59:59");
   const first = utc("2026-07-01T10:00:00");
 
-  const shortReview = aggregateWorkRhythm([
-    root("short-review", [first, first + 15 * minute], {
-      rootIntervals: [{
-        startedAt: first,
-        executionEndAt: first + 12 * minute,
-      }, {
-        startedAt: first + 15 * minute,
-        executionEndAt: first + 15 * minute,
-      }],
-    }),
-  ], start, end, "UTC");
-  strictEqual(shortReview.estimatedActiveMinutes, 8);
+  const shortReview = aggregateWorkRhythm(
+    [
+      root("short-review", [first, first + 8 * minute], {
+        rootIntervals: [{
+          startedAt: first,
+          executionEndAt: first + 12 * minute,
+        }, {
+          startedAt: first + 8 * minute,
+          executionEndAt: first + 8 * minute,
+        }],
+      }),
+    ],
+    start,
+    end,
+    "UTC",
+  );
+  strictEqual(shortReview.estimatedActiveMinutes, 13);
 
-  const longerReview = aggregateWorkRhythm([
-    root("longer-review", [first, first + 21 * minute], {
-      rootIntervals: [{
-        startedAt: first,
-        executionEndAt: first + 12 * minute,
-      }, {
-        startedAt: first + 21 * minute,
-        executionEndAt: first + 21 * minute,
-      }],
-    }),
-  ], start, end, "UTC");
-  strictEqual(longerReview.estimatedActiveMinutes, 14);
+  const longerReview = aggregateWorkRhythm(
+    [
+      root("longer-review", [first, first + 21 * minute], {
+        rootIntervals: [{
+          startedAt: first,
+          executionEndAt: first + 12 * minute,
+        }, {
+          startedAt: first + 21 * minute,
+          executionEndAt: first + 21 * minute,
+        }],
+      }),
+    ],
+    start,
+    end,
+    "UTC",
+  );
+  strictEqual(longerReview.estimatedActiveMinutes, 10);
 });
 
 Deno.test("work rhythm falls back to five minutes after the gap timeout", () => {
@@ -123,61 +153,81 @@ Deno.test("work rhythm falls back to five minutes after the gap timeout", () => 
   const end = utc("2026-07-01T23:59:59");
   const first = utc("2026-07-01T10:00:00");
   const followUp = first + 42 * minute;
-  const result = aggregateWorkRhythm([
-    root("returned-later", [first, followUp], {
-      rootIntervals: [{
-        startedAt: first,
-        executionEndAt: first + 12 * minute,
-      }, {
-        startedAt: followUp,
-        executionEndAt: followUp,
-      }],
-    }),
-  ], start, end, "UTC");
+  const result = aggregateWorkRhythm(
+    [
+      root("returned-later", [first, followUp], {
+        rootIntervals: [{
+          startedAt: first,
+          executionEndAt: first + 12 * minute,
+        }, {
+          startedAt: followUp,
+          executionEndAt: followUp,
+        }],
+      }),
+    ],
+    start,
+    end,
+    "UTC",
+  );
 
   strictEqual(result.estimatedActiveMinutes, 10);
 });
 
-Deno.test("work rhythm gives mid-run turns a clamped fallback window", () => {
+Deno.test("work rhythm continuity depends on prompt gaps, not execution windows", () => {
   const start = utc("2026-07-01T00:00:00");
   const end = utc("2026-07-01T23:59:59");
   const first = utc("2026-07-01T10:00:00");
 
-  const midRun = aggregateWorkRhythm([
-    root("mid-run", [first, first + 8 * minute], {
-      rootIntervals: [{
-        startedAt: first,
-        executionEndAt: first + 12 * minute,
-      }, {
-        startedAt: first + 8 * minute,
-        executionEndAt: first + 8 * minute,
-      }],
-    }),
-  ], start, end, "UTC");
-  strictEqual(midRun.estimatedActiveMinutes, 10);
+  const midRun = aggregateWorkRhythm(
+    [
+      root("mid-run", [first, first + 8 * minute], {
+        rootIntervals: [{
+          startedAt: first,
+          executionEndAt: first + 12 * minute,
+        }, {
+          startedAt: first + 8 * minute,
+          executionEndAt: first + 8 * minute,
+        }],
+      }),
+    ],
+    start,
+    end,
+    "UTC",
+  );
+  strictEqual(midRun.estimatedActiveMinutes, 13);
 
-  const immediate = aggregateWorkRhythm([
-    root("immediate-mid-run", [first, first + minute], {
-      rootIntervals: [{
-        startedAt: first,
-        executionEndAt: first + 12 * minute,
-      }, {
-        startedAt: first + minute,
-        executionEndAt: first + minute,
-      }],
-    }),
-  ], start, end, "UTC");
+  const immediate = aggregateWorkRhythm(
+    [
+      root("immediate-mid-run", [first, first + minute], {
+        rootIntervals: [{
+          startedAt: first,
+          executionEndAt: first + 12 * minute,
+        }, {
+          startedAt: first + minute,
+          executionEndAt: first + minute,
+        }],
+      }),
+    ],
+    start,
+    end,
+    "UTC",
+  );
   strictEqual(immediate.estimatedActiveMinutes, 6);
 });
 
 Deno.test("work rhythm clips boundaries and splits merged activity across midnight and hours", () => {
   const start = utc("2026-07-01T00:00:00");
   const end = utc("2026-07-02T00:03:00");
-  const result = aggregateWorkRhythm([
-    root("boundary", [utc("2026-07-01T00:02:00")]),
-    root("midnight", [utc("2026-07-02T00:02:00")], { numericID: 2 }),
-    root("hour", [utc("2026-07-01T13:02:00")], { numericID: 3 }),
-  ], start, end, "UTC");
+  const result = aggregateWorkRhythm(
+    [
+      root("boundary", [utc("2026-07-01T00:02:00")]),
+      root("midnight", [utc("2026-07-02T00:02:00")], { numericID: 2 }),
+      root("hour", [utc("2026-07-01T13:02:00")], { numericID: 3 }),
+    ],
+    start,
+    end,
+    "UTC",
+  );
 
   strictEqual(result.estimatedActiveMinutes, 12);
   strictEqual(result.days["2026-07-01"].estimatedActiveMinutes, 10);
@@ -191,9 +241,14 @@ Deno.test("work rhythm clips boundaries and splits merged activity across midnig
 Deno.test("work rhythm includes inactive dates and complete weekday denominators", () => {
   const start = utc("2026-07-06T00:00:00"); // Monday
   const end = utc("2026-07-19T23:59:59"); // two complete weeks
-  const result = aggregateWorkRhythm([
-    root("only-monday", [utc("2026-07-06T10:00:00")]),
-  ], start, end, "UTC");
+  const result = aggregateWorkRhythm(
+    [
+      root("only-monday", [utc("2026-07-06T10:00:00")]),
+    ],
+    start,
+    end,
+    "UTC",
+  );
 
   strictEqual(Object.keys(result.days).length, 14);
   strictEqual(result.days["2026-07-07"].estimatedActiveMinutes, 0);
@@ -205,7 +260,10 @@ Deno.test("work rhythm includes inactive dates and complete weekday denominators
     occurrences: 2,
     activeOccurrences: 1,
   });
-  strictEqual(result.weekdayActivity.every((weekday) => weekday.occurrences === 2), true);
+  strictEqual(
+    result.weekdayActivity.every((weekday) => weekday.occurrences === 2),
+    true,
+  );
 });
 
 Deno.test("work rhythm has deterministic zero behavior and earlier peak-hour ties", () => {
@@ -217,9 +275,14 @@ Deno.test("work rhythm has deterministic zero behavior and earlier peak-hour tie
   strictEqual(empty.afterHoursShare, 0);
   strictEqual(empty.days["2026-07-01"].intensity, 0);
 
-  const tied = aggregateWorkRhythm([
-    root("tie", [utc("2026-07-01T09:00:00"), utc("2026-07-01T10:00:00")]),
-  ], start, end, "UTC");
+  const tied = aggregateWorkRhythm(
+    [
+      root("tie", [utc("2026-07-01T09:00:00"), utc("2026-07-01T10:00:00")]),
+    ],
+    start,
+    end,
+    "UTC",
+  );
   strictEqual(tied.peakHour, 8);
 });
 
@@ -227,12 +290,27 @@ Deno.test("work rhythm ranks top sessions by known spend, input, then public ID"
   const start = utc("2026-07-01T00:00:00");
   const end = utc("2026-07-01T23:59:59");
   const at = utc("2026-07-01T10:00:00");
-  const result = aggregateWorkRhythm([
-    root("public-c", [at], { numericID: 30, spend: 5, input: 100 }),
-    root("public-b", [at], { numericID: 20, spend: 5, input: 200, unpriced: true }),
-    root("public-a", [at], { numericID: 10, spend: 5, input: 200, model: "model-a" }),
-    root("public-high", [at], { numericID: 40, spend: 6, input: 1 }),
-  ], start, end, "UTC");
+  const result = aggregateWorkRhythm(
+    [
+      root("public-c", [at], { numericID: 30, spend: 5, input: 100 }),
+      root("public-b", [at], {
+        numericID: 20,
+        spend: 5,
+        input: 200,
+        unpriced: true,
+      }),
+      root("public-a", [at], {
+        numericID: 10,
+        spend: 5,
+        input: 200,
+        model: "model-a",
+      }),
+      root("public-high", [at], { numericID: 40, spend: 6, input: 1 }),
+    ],
+    start,
+    end,
+    "UTC",
+  );
 
   deepStrictEqual(
     result.days["2026-07-01"].topSessions.map((session) => session.id),
@@ -247,7 +325,12 @@ Deno.test("work rhythm ranges contain 30 or 90 local dates across DST", () => {
   const now = Date.parse("2026-11-10T20:00:00Z");
   for (const rangeDays of [30, 90] as const) {
     const range = workRhythmRange(rangeDays, "America/Los_Angeles", now);
-    const result = aggregateWorkRhythm([], range.start, range.end, "America/Los_Angeles");
+    const result = aggregateWorkRhythm(
+      [],
+      range.start,
+      range.end,
+      "America/Los_Angeles",
+    );
     strictEqual(Object.keys(result.days).length, rangeDays);
   }
 });
@@ -264,7 +347,16 @@ Deno.test("work rhythm excludes subagent turns and unions root turns across harn
     numericID: 2,
     harness: "codex",
   });
-  strictEqual(aggregateWorkRhythm([pi, codex], start, end, "UTC").estimatedActiveMinutes, 6);
-  strictEqual(aggregateWorkRhythm([pi], start, end, "UTC").estimatedActiveMinutes, 5);
-  strictEqual(aggregateWorkRhythm([codex], start, end, "UTC").estimatedActiveMinutes, 5);
+  strictEqual(
+    aggregateWorkRhythm([pi, codex], start, end, "UTC").estimatedActiveMinutes,
+    6,
+  );
+  strictEqual(
+    aggregateWorkRhythm([pi], start, end, "UTC").estimatedActiveMinutes,
+    5,
+  );
+  strictEqual(
+    aggregateWorkRhythm([codex], start, end, "UTC").estimatedActiveMinutes,
+    5,
+  );
 });

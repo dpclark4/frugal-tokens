@@ -85,7 +85,12 @@ const selectedDaySessions: WorkRhythmSession[] = [
 ];
 
 const harnesses = ["claude-code", "codex", "pi", "opencode"] as const;
-const models = ["Claude Sonnet 4", "GPT-5.2 Codex", "Claude Opus 4.1", null] as const;
+const models = [
+  "Claude Sonnet 4",
+  "GPT-5.2 Codex",
+  "Claude Opus 4.1",
+  null,
+] as const;
 const generatedTitles = [
   "Tighten session parser",
   null,
@@ -105,22 +110,29 @@ function sessionsForDay(seed: DaySeed, index: number): WorkRhythmSession[] {
   if (date === "2026-08-06") return selectedDaySessions;
   if (rootSessions === 0) return [];
 
-  return Array.from({ length: Math.min(3, rootSessions) }, (_, sessionIndex) => {
-    const harness = harnesses[(index + sessionIndex) % harnesses.length];
-    const hour = 9 + sessionIndex * 3 + (index % 3);
-    return {
-      id: `mock-${date}-${sessionIndex + 1}`,
-      title: generatedTitles[(index + sessionIndex) % generatedTitles.length],
-      harness,
-      model: models[(index + sessionIndex) % models.length],
-      startTime: `${date}T${String(hour).padStart(2, "0")}:${sessionIndex === 1 ? "35" : "10"}:00-07:00`,
-      activeDateRange: { start: date, end: date },
-      spend: Number((spend * [0.43, 0.27, 0.16][sessionIndex]).toFixed(2)),
-      hasUnpricedSpend: false,
-      totalSpend: Number((spend * [0.43, 0.27, 0.16][sessionIndex]).toFixed(2)),
-      hasUnpricedTotalSpend: false,
-    };
-  });
+  return Array.from(
+    { length: Math.min(3, rootSessions) },
+    (_, sessionIndex) => {
+      const harness = harnesses[(index + sessionIndex) % harnesses.length];
+      const hour = 9 + sessionIndex * 3 + (index % 3);
+      return {
+        id: `mock-${date}-${sessionIndex + 1}`,
+        title: generatedTitles[(index + sessionIndex) % generatedTitles.length],
+        harness,
+        model: models[(index + sessionIndex) % models.length],
+        startTime: `${date}T${String(hour).padStart(2, "0")}:${
+          sessionIndex === 1 ? "35" : "10"
+        }:00-07:00`,
+        activeDateRange: { start: date, end: date },
+        spend: Number((spend * [0.43, 0.27, 0.16][sessionIndex]).toFixed(2)),
+        hasUnpricedSpend: false,
+        totalSpend: Number(
+          (spend * [0.43, 0.27, 0.16][sessionIndex]).toFixed(2),
+        ),
+        hasUnpricedTotalSpend: false,
+      };
+    },
+  );
 }
 
 const days: Record<string, WorkRhythmDay> = Object.fromEntries(
@@ -144,28 +156,102 @@ const days: Record<string, WorkRhythmDay> = Object.fromEntries(
 );
 
 const hourlyMinutes = [
-  12, 6, 4, 3, 4, 18, 40, 72, 105, 140, 160, 180,
-  175, 190, 215, 270, 260, 235, 200, 180, 130, 80, 50, 43,
+  12,
+  6,
+  4,
+  3,
+  4,
+  18,
+  40,
+  72,
+  105,
+  140,
+  160,
+  180,
+  175,
+  190,
+  215,
+  270,
+  260,
+  235,
+  200,
+  180,
+  130,
+  80,
+  50,
+  43,
 ];
-const totalMinutes = hourlyMinutes.reduce((total, minutes) => total + minutes, 0);
+const totalMinutes = hourlyMinutes.reduce(
+  (total, minutes) => total + minutes,
+  0,
+);
 
 export const workRhythmFixture: WorkRhythmData = {
   range: { start: "2026-07-08", end: "2026-08-06" },
   estimatedActiveMinutes: totalMinutes,
   methodology: {
     initialMinutes: 5,
-    completionGapTimeoutMinutes: 10,
+    continuationGapTimeoutMinutes: 10,
     fallbackMinutes: 5,
     overlapsCountedOnce: true,
   },
   weekdayActivity: [
-    { weekday: 1, label: "Mon", averageMinutes: 163, totalMinutes: 652, occurrences: 4, activeOccurrences: 4 },
-    { weekday: 2, label: "Tue", averageMinutes: 84, totalMinutes: 336, occurrences: 4, activeOccurrences: 3 },
-    { weekday: 3, label: "Wed", averageMinutes: 140, totalMinutes: 700, occurrences: 5, activeOccurrences: 5 },
-    { weekday: 4, label: "Thu", averageMinutes: 79, totalMinutes: 397, occurrences: 5, activeOccurrences: 4 },
-    { weekday: 5, label: "Fri", averageMinutes: 111, totalMinutes: 445, occurrences: 4, activeOccurrences: 4 },
-    { weekday: 6, label: "Sat", averageMinutes: 26, totalMinutes: 104, occurrences: 4, activeOccurrences: 4 },
-    { weekday: 0, label: "Sun", averageMinutes: 35, totalMinutes: 138, occurrences: 4, activeOccurrences: 3 },
+    {
+      weekday: 1,
+      label: "Mon",
+      averageMinutes: 163,
+      totalMinutes: 652,
+      occurrences: 4,
+      activeOccurrences: 4,
+    },
+    {
+      weekday: 2,
+      label: "Tue",
+      averageMinutes: 84,
+      totalMinutes: 336,
+      occurrences: 4,
+      activeOccurrences: 3,
+    },
+    {
+      weekday: 3,
+      label: "Wed",
+      averageMinutes: 140,
+      totalMinutes: 700,
+      occurrences: 5,
+      activeOccurrences: 5,
+    },
+    {
+      weekday: 4,
+      label: "Thu",
+      averageMinutes: 79,
+      totalMinutes: 397,
+      occurrences: 5,
+      activeOccurrences: 4,
+    },
+    {
+      weekday: 5,
+      label: "Fri",
+      averageMinutes: 111,
+      totalMinutes: 445,
+      occurrences: 4,
+      activeOccurrences: 4,
+    },
+    {
+      weekday: 6,
+      label: "Sat",
+      averageMinutes: 26,
+      totalMinutes: 104,
+      occurrences: 4,
+      activeOccurrences: 4,
+    },
+    {
+      weekday: 0,
+      label: "Sun",
+      averageMinutes: 35,
+      totalMinutes: 138,
+      occurrences: 4,
+      activeOccurrences: 3,
+    },
   ],
   hourlyActivity: hourlyMinutes.map((estimatedMinutes, hour) => ({
     hour,
@@ -175,7 +261,9 @@ export const workRhythmFixture: WorkRhythmData = {
       ? Math.max(1, Math.round(estimatedMinutes / 4))
       : Math.min(26, Math.round(estimatedMinutes / 12) + 3),
   })),
-  afterHoursShare: hourlyMinutes.slice(20).reduce((sum, minutes) => sum + minutes, 0) / totalMinutes,
+  afterHoursShare:
+    hourlyMinutes.slice(20).reduce((sum, minutes) => sum + minutes, 0) /
+    totalMinutes,
   peakHour: 15,
   days,
 };

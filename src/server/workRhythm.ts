@@ -4,13 +4,14 @@ import type {
   WorkRhythmSession,
 } from "../shared/sessionSchemas.ts";
 import type { StoredOverviewRollup } from "./overviewAnalytics.ts";
-
-export const WORK_RHYTHM_INITIAL_MINUTES = 5;
-export const WORK_RHYTHM_GAP_TIMEOUT_MINUTES = 10;
-export const WORK_RHYTHM_FALLBACK_MINUTES = 5;
-const INITIAL_WINDOW_MS = WORK_RHYTHM_INITIAL_MINUTES * 60_000;
-const GAP_TIMEOUT_MS = WORK_RHYTHM_GAP_TIMEOUT_MINUTES * 60_000;
-const FALLBACK_WINDOW_MS = WORK_RHYTHM_FALLBACK_MINUTES * 60_000;
+import {
+  estimatedWorkIntervals,
+  mergeWorkIntervals,
+  WORK_RHYTHM_FALLBACK_MINUTES,
+  WORK_RHYTHM_GAP_TIMEOUT_MINUTES,
+  WORK_RHYTHM_INITIAL_MINUTES,
+  type WorkInterval,
+} from "../shared/workTime.ts";
 const WEEKDAYS = [
   { weekday: 1 as const, label: "Mon" },
   { weekday: 2 as const, label: "Tue" },
@@ -21,7 +22,7 @@ const WEEKDAYS = [
   { weekday: 0 as const, label: "Sun" },
 ];
 
-type Interval = { start: number; end: number };
+type Interval = WorkInterval;
 
 function zonedAt(date: Temporal.PlainDate, timeZone: string) {
   return Temporal.ZonedDateTime.from({
@@ -38,62 +39,6 @@ function zonedDateKey(timestamp: number, timeZone: string) {
     .toZonedDateTimeISO(timeZone).toPlainDate().toString();
 }
 
-function mergeIntervals(intervals: Interval[], start: number, end: number) {
-  const merged: Interval[] = [];
-  for (const interval of intervals.toSorted((a, b) =>
-    a.start - b.start || a.end - b.end
-  )) {
-    const clipped = {
-      start: Math.max(start, interval.start),
-      end: Math.min(end, interval.end),
-    };
-    if (clipped.end <= clipped.start) continue;
-    const previous = merged.at(-1);
-    if (previous && clipped.start <= previous.end) {
-      previous.end = Math.max(previous.end, clipped.end);
-    } else {
-      merged.push(clipped);
-    }
-  }
-  return merged;
-}
-
-function estimatedWorkIntervals(root: StoredOverviewRollup): Interval[] {
-  const turns = (root.rootExecutionIntervals ?? []).toSorted((a, b) =>
-    a.startedAt - b.startedAt || a.executionEndAt - b.executionEndAt
-  );
-  return turns.map((turn, index) => {
-    if (index === 0) {
-      return {
-        start: turn.startedAt - INITIAL_WINDOW_MS,
-        end: turn.startedAt,
-      };
-    }
-
-    const previous = turns[index - 1];
-    const previousEnd = Math.max(
-      previous.startedAt,
-      previous.executionEndAt,
-    );
-    if (turn.startedAt < previousEnd) {
-      return {
-        start: Math.max(
-          previous.startedAt,
-          turn.startedAt - FALLBACK_WINDOW_MS,
-        ),
-        end: turn.startedAt,
-      };
-    }
-    if (turn.startedAt - previousEnd <= GAP_TIMEOUT_MS) {
-      return { start: previousEnd, end: turn.startedAt };
-    }
-    return {
-      start: turn.startedAt - FALLBACK_WINDOW_MS,
-      end: turn.startedAt,
-    };
-  });
-}
-
 function overlapMs(intervals: Interval[], span: Interval) {
   let total = 0;
   for (const interval of intervals) {
@@ -107,11 +52,16 @@ function overlapMs(intervals: Interval[], span: Interval) {
   return total;
 }
 
-function intensity(minutes: number, nonzero: number[]): WorkRhythmDay["intensity"] {
+function intensity(
+  minutes: number,
+  nonzero: number[],
+): WorkRhythmDay["intensity"] {
   if (minutes <= 0) return 0;
   const lower = nonzero.filter((value) => value < minutes).length;
-  return Math.min(4, Math.floor(lower * 4 / nonzero.length) + 1) as
-    WorkRhythmDay["intensity"];
+  return Math.min(
+    4,
+    Math.floor(lower * 4 / nonzero.length) + 1,
+  ) as WorkRhythmDay["intensity"];
 }
 
 export function workRhythmRange(
@@ -147,8 +97,10 @@ export function aggregateWorkRhythm(
     date = date.add({ days: 1 })
   ) dates.push(date);
 
-  const intervals = roots.flatMap(estimatedWorkIntervals);
-  const merged = mergeIntervals(intervals, start, end);
+  const intervals = roots.flatMap((root) =>
+    estimatedWorkIntervals(root.rootExecutionIntervals ?? [])
+  );
+  const merged = mergeWorkIntervals(intervals, start, end);
   const totalMs = merged.reduce(
     (sum, interval) => sum + interval.end - interval.start,
     0,
@@ -174,12 +126,20 @@ export function aggregateWorkRhythm(
   }
 
   const dailyRoots = new Map<string, Set<string>>();
-  const dailySessions = new Map<string, Map<string, WorkRhythmSession & {
-    processedInput: number;
-    modelSpend: number;
-  }>>();
+  const dailySessions = new Map<
+    string,
+    Map<
+      string,
+      WorkRhythmSession & {
+        processedInput: number;
+        modelSpend: number;
+      }
+    >
+  >();
   for (const root of roots) {
-    const rootKey = `${root.harness ?? "unknown"}:${root.sessionID ?? root.rootSessionID}`;
+    const rootKey = `${root.harness ?? "unknown"}:${
+      root.sessionID ?? root.rootSessionID
+    }`;
     const rootDates = root.overview.days.map((day) =>
       zonedDateKey(day.firstTurnAt, timeZone)
     ).toSorted();
@@ -195,7 +155,9 @@ export function aggregateWorkRhythm(
       day.hasUnpricedCost
     );
     for (const rollupDay of root.overview.days) {
-      if (rollupDay.firstTurnAt < start || rollupDay.firstTurnAt > end) continue;
+      if (rollupDay.firstTurnAt < start || rollupDay.firstTurnAt > end) {
+        continue;
+      }
       const key = zonedDateKey(rollupDay.firstTurnAt, timeZone);
       const day = dayValues.get(key);
       if (!day) continue;
@@ -213,33 +175,42 @@ export function aggregateWorkRhythm(
         )[0];
         const sessions = dailySessions.get(key) ?? new Map();
         const previous = sessions.get(rootKey);
-        sessions.set(rootKey, previous ? {
-          ...previous,
-          model: (rankedModel?.cost ?? -1) > previous.modelSpend
-            ? rankedModel!.model
-            : previous.model,
-          modelSpend: Math.max(previous.modelSpend, rankedModel?.cost ?? -1),
-          startTime: new Date(Math.min(
-            new Date(previous.startTime).getTime(),
-            rollupDay.firstTurnAt,
-          )).toISOString(),
-          spend: previous.spend + rollupDay.cost,
-          hasUnpricedSpend: previous.hasUnpricedSpend || rollupDay.hasUnpricedCost,
-          processedInput: previous.processedInput + rollupDay.input,
-        } : {
-          id: root.sessionID,
-          title: root.title ?? null,
-          harness: root.harness,
-          model: rankedModel?.model ?? null,
-          modelSpend: rankedModel?.cost ?? -1,
-          startTime: new Date(rollupDay.firstTurnAt).toISOString(),
-          activeDateRange,
-          spend: rollupDay.cost,
-          hasUnpricedSpend: rollupDay.hasUnpricedCost,
-          totalSpend,
-          hasUnpricedTotalSpend,
-          processedInput: rollupDay.input,
-        });
+        sessions.set(
+          rootKey,
+          previous
+            ? {
+              ...previous,
+              model: (rankedModel?.cost ?? -1) > previous.modelSpend
+                ? rankedModel!.model
+                : previous.model,
+              modelSpend: Math.max(
+                previous.modelSpend,
+                rankedModel?.cost ?? -1,
+              ),
+              startTime: new Date(Math.min(
+                new Date(previous.startTime).getTime(),
+                rollupDay.firstTurnAt,
+              )).toISOString(),
+              spend: previous.spend + rollupDay.cost,
+              hasUnpricedSpend: previous.hasUnpricedSpend ||
+                rollupDay.hasUnpricedCost,
+              processedInput: previous.processedInput + rollupDay.input,
+            }
+            : {
+              id: root.sessionID,
+              title: root.title ?? null,
+              harness: root.harness,
+              model: rankedModel?.model ?? null,
+              modelSpend: rankedModel?.cost ?? -1,
+              startTime: new Date(rollupDay.firstTurnAt).toISOString(),
+              activeDateRange,
+              spend: rollupDay.cost,
+              hasUnpricedSpend: rollupDay.hasUnpricedCost,
+              totalSpend,
+              hasUnpricedTotalSpend,
+              processedInput: rollupDay.input,
+            },
+        );
         dailySessions.set(key, sessions);
       }
     }
@@ -277,7 +248,9 @@ export function aggregateWorkRhythm(
     return {
       weekday,
       label,
-      averageMinutes: matching.length === 0 ? 0 : totalMinutes / matching.length,
+      averageMinutes: matching.length === 0
+        ? 0
+        : totalMinutes / matching.length,
       totalMinutes,
       occurrences: matching.length,
       activeOccurrences: matching.filter((day) =>
@@ -319,7 +292,7 @@ export function aggregateWorkRhythm(
     estimatedActiveMinutes: totalMs / 60_000,
     methodology: {
       initialMinutes: WORK_RHYTHM_INITIAL_MINUTES,
-      completionGapTimeoutMinutes: WORK_RHYTHM_GAP_TIMEOUT_MINUTES,
+      continuationGapTimeoutMinutes: WORK_RHYTHM_GAP_TIMEOUT_MINUTES,
       fallbackMinutes: WORK_RHYTHM_FALLBACK_MINUTES,
       overlapsCountedOnce: true,
     },
@@ -335,5 +308,11 @@ export function aggregateWorkRhythm(
 
 function dateWeekday(date: string): 0 | 1 | 2 | 3 | 4 | 5 | 6 {
   return (Temporal.PlainDate.from(date).dayOfWeek % 7) as
-    0 | 1 | 2 | 3 | 4 | 5 | 6;
+    | 0
+    | 1
+    | 2
+    | 3
+    | 4
+    | 5
+    | 6;
 }

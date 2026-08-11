@@ -1154,6 +1154,120 @@
   font: 10.5px/1.5 var(--mono);
 }
 
+.sd-work-block-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: -2px 0;
+  padding: 2px 3px 2px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.sd-work-block-trigger svg {
+  color: var(--sd-ink-3);
+  transition: transform 120ms ease;
+}
+
+.sd-work-block-trigger:hover,
+.sd-work-block-trigger:focus-visible,
+.sd-work-block-trigger[aria-expanded="true"] {
+  color: var(--sd-ink);
+  outline: none;
+}
+
+.sd-work-block-trigger:hover svg,
+.sd-work-block-trigger:focus-visible svg,
+.sd-work-block-trigger[aria-expanded="true"] svg {
+  color: currentColor;
+}
+
+.sd-work-block-trigger[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+
+.sd-work-block-trigger:disabled {
+  cursor: default;
+}
+
+.sd-work-block-popover {
+  margin-top: 7px;
+  overflow: hidden;
+  border: 1px solid var(--sd-line-strong);
+  border-radius: 7px;
+  background: var(--sd-surface);
+  box-shadow: 0 8px 20px #0003;
+}
+
+.sd-work-block-popover header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--sd-line);
+  color: var(--sd-ink-2);
+  font: 10px var(--mono);
+}
+
+.sd-work-block-popover header strong {
+  color: var(--sd-accent);
+  font: inherit;
+  font-weight: 600;
+}
+
+.sd-work-block-list {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.sd-work-block-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 7px;
+  align-items: center;
+  padding: 8px;
+  border-bottom: 1px solid var(--sd-line);
+}
+
+.sd-work-block-item:last-child {
+  border-bottom: 0;
+}
+
+.sd-work-block-item > span {
+  display: inline-flex;
+  width: 17px;
+  height: 17px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--sd-line-strong);
+  border-radius: 50%;
+  color: var(--sd-ink-3);
+  font: 8.5px var(--mono);
+}
+
+.sd-work-block-item > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.sd-work-block-item strong {
+  overflow: hidden;
+  color: var(--sd-ink-2);
+  font: 9.5px var(--mono);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sd-work-block-item small {
+  color: var(--sd-ink-3);
+  font: 9px var(--mono);
+}
+
 .sd-session-id {
   display: flex;
   min-width: 0;

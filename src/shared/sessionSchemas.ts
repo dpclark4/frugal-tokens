@@ -410,7 +410,7 @@ export const workRhythmDataSchema = z.object({
   estimatedActiveMinutes: z.number().nonnegative(),
   methodology: z.object({
     initialMinutes: z.literal(5),
-    completionGapTimeoutMinutes: z.literal(10),
+    continuationGapTimeoutMinutes: z.literal(10),
     fallbackMinutes: z.literal(5),
     overlapsCountedOnce: z.literal(true),
   }),

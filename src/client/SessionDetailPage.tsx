@@ -38,6 +38,7 @@ import type {
 import { contextRange, contextSize } from "../shared/contextMetrics.ts";
 import { canonicalModelId, displayModelName } from "../shared/modelNames.ts";
 import { rollupCosts } from "../shared/costMetrics.ts";
+import { summarizeWorkTime } from "../shared/workTime.ts";
 import {
   computeModelCallCost,
   counterfactualModelIDs,
@@ -94,6 +95,14 @@ const fullTimestamp = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
   timeStyle: "medium",
 });
+const workBlockDate = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+});
+const workBlockTime = new Intl.DateTimeFormat(undefined, {
+  hour: "numeric",
+  minute: "2-digit",
+});
 
 function elapsed(startedAt?: number, completedAt?: number) {
   if (startedAt === undefined || completedAt === undefined) return undefined;
@@ -106,6 +115,35 @@ function elapsed(startedAt?: number, completedAt?: number) {
   if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
 }
+
+function estimatedActiveDuration(milliseconds: number) {
+  if (milliseconds <= 0) return undefined;
+  const minutes = Math.max(1, Math.round(milliseconds / 60_000));
+  if (minutes < 60) return `~${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return `~${hours}h${remainder ? ` ${remainder}m` : ""}`;
+}
+
+function sessionWorkTime(session: SessionDetail) {
+  const executionIntervals = session.turns.flatMap((turn) => {
+    const calls = turn.calls.filter((call) =>
+      !call.id.startsWith("context-operation:") &&
+      !call.id.startsWith("unmeasured:")
+    );
+    if (calls.length === 0) return [];
+    return [{
+      startedAt: turn.startedAt,
+      executionEndAt: Math.max(
+        turn.startedAt,
+        ...calls.map((call) => call.completedAt ?? call.startedAt),
+      ),
+    }];
+  });
+  return summarizeWorkTime(executionIntervals);
+}
+
+type WorkTimeSummary = ReturnType<typeof sessionWorkTime>;
 
 function HarnessMark({ harness }: { harness: SessionDetail["harness"] }) {
   return (
@@ -1581,6 +1619,89 @@ function MetadataRow({ label, children, mono = false }: {
   );
 }
 
+function workBlockRange(start: number, end: number) {
+  const startDate = new Date(start);
+  const endDate = new Date(end);
+  const sameDate = startDate.getFullYear() === endDate.getFullYear() &&
+    startDate.getMonth() === endDate.getMonth() &&
+    startDate.getDate() === endDate.getDate();
+  if (sameDate) {
+    return `${workBlockDate.format(start)} · ${workBlockTime.format(start)}–${
+      workBlockTime.format(end)
+    }`;
+  }
+  return `${workBlockDate.format(start)}, ${workBlockTime.format(start)}–${
+    workBlockDate.format(end)
+  }, ${workBlockTime.format(end)}`;
+}
+
+function WorkBlocks({ workTime }: { workTime: WorkTimeSummary }) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOnOutsidePointer = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  return (
+    <div className="sd-work-blocks" ref={containerRef}>
+      <MetadataRow label="Work blocks">
+        <button
+          type="button"
+          className="sd-work-block-trigger"
+          aria-expanded={open}
+          aria-controls="work-block-details"
+          disabled={workTime.blocks === 0}
+          onClick={() => setOpen((current) => !current)}
+        >
+          <span>{integer.format(workTime.blocks)}</span>
+          {workTime.blocks > 0 && <ChevronDown size={12} />}
+        </button>
+      </MetadataRow>
+      {open && (
+        <div
+          className="sd-work-block-popover"
+          id="work-block-details"
+          role="dialog"
+          aria-label="Estimated work blocks"
+        >
+          <header>
+            <span>Estimated work blocks</span>
+            <strong>{integer.format(workTime.blocks)}</strong>
+          </header>
+          <div className="sd-work-block-list">
+            {workTime.intervals.map((interval, index) => (
+              <div className="sd-work-block-item" key={interval.start}>
+                <span>{index + 1}</span>
+                <div>
+                  <strong>
+                    {workBlockRange(interval.start, interval.end)}
+                  </strong>
+                  <small>
+                    {estimatedActiveDuration(interval.end - interval.start)}
+                  </small>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function piSessionIDLabel(id: string) {
   const uuid = /_[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.exec(id);
   return uuid === null ? id : uuid[0].slice(1);
@@ -1702,6 +1823,7 @@ function Metadata({
   estimatedCost,
   estimateIncomplete,
   actualCost,
+  workTime,
   turnsExpanded,
   onToggleAllTurns,
   onPathModeChange,
@@ -1722,6 +1844,7 @@ function Metadata({
   estimatedCost?: number;
   estimateIncomplete: boolean;
   actualCost?: number;
+  workTime: WorkTimeSummary;
   turnsExpanded: boolean;
   onToggleAllTurns: () => void;
   onPathModeChange: (value: PathMode) => void;
@@ -1734,14 +1857,11 @@ function Metadata({
   ghosttyError?: string;
   onOpenInGhostty: () => void;
 }) {
-  const tokens = inclusiveTokens(session);
   const calls = callsInTree(session);
   const context = contextRange(session.turns.flatMap((turn) => turn.calls));
+  const contextStarting = context.first?.size;
   const contextLatest = context.latest?.size ?? session.contextLatest;
   const contextPeak = context.peak?.size ?? session.contextPeak;
-  const cacheInput = tokens.uncachedInput + tokens.cacheRead +
-    (tokens.cacheWrite ?? 0);
-  const reuse = cacheInput === 0 ? undefined : tokens.cacheRead / cacheInput;
   const cacheMisses =
     calls.filter((call) =>
       call.cacheAssessment?.status === "partial-hit" ||
@@ -1870,23 +1990,35 @@ function Metadata({
       </section>
       <section>
         <h2>Context</h2>
+        <MetadataRow label="Starting">
+          {contextStarting === undefined
+            ? "Unavailable"
+            : compact.format(contextStarting)}
+        </MetadataRow>
         <MetadataRow label="Latest">
           {contextLatest === undefined
             ? "Unavailable"
             : compact.format(contextLatest)}
         </MetadataRow>
-        <MetadataRow label="Peak">
-          {contextPeak === undefined
-            ? "Unavailable"
-            : compact.format(contextPeak)}
-        </MetadataRow>
-        <MetadataRow label="Token reuse">
-          {reuse === undefined ? "Unavailable" : `${(reuse * 100).toFixed(1)}%`}
-        </MetadataRow>
+        {contextPeak !== contextLatest && (
+          <MetadataRow label="Peak">
+            {contextPeak === undefined
+              ? "Unavailable"
+              : compact.format(contextPeak)}
+          </MetadataRow>
+        )}
         <MetadataRow label="Cache misses">
           {integer.format(cacheMisses)}
         </MetadataRow>
         <CacheMissBadges session={session} onJumpToCall={onJumpToCall} />
+      </section>
+      <section>
+        <h2>Work</h2>
+        <MetadataRow label="Active time">
+          {estimatedActiveDuration(workTime.activeMilliseconds) ??
+            "Unavailable"}
+        </MetadataRow>
+        <WorkBlocks workTime={workTime} />
       </section>
       <SubagentLinks session={session} onJumpToCall={onJumpToCall} />
       <section>
@@ -2158,6 +2290,13 @@ export function SessionDetailPage() {
   const input = contextSize(tokens);
   const reuse = input === 0 ? undefined : tokens.cacheRead / input;
   const bounds = sessionBounds(session);
+  const workTime = sessionWorkTime(session);
+  const activeDuration = estimatedActiveDuration(workTime.activeMilliseconds);
+  const turnCount = tree.reduce((sum, item) => sum + item.turns.length, 0);
+  const toolCount = calls.reduce(
+    (sum, call) => sum + call.activity.tools.length,
+    0,
+  );
   const computed = rollupCosts(tree.map((item) => item.computedCost)).cost;
   const cost = session.inclusiveComputedCost ?? computed;
   const subagents = tree.length - 1;
@@ -2268,18 +2407,18 @@ export function SessionDetailPage() {
           <DetailMetric
             label="Elapsed"
             value={elapsed(bounds.start, bounds.end) ?? "Unavailable"}
-            detail={bounds.start === undefined
+            detail={activeDuration === undefined
               ? undefined
-              : `Started ${timestamp.format(bounds.start)}`}
+              : `${activeDuration} active · ${
+                integer.format(workTime.blocks)
+              } work block${workTime.blocks === 1 ? "" : "s"}`}
           />
           <DetailMetric
             label="Activity"
-            value={`${integer.format(calls.length)} calls`}
-            detail={`${
-              integer.format(
-                tree.reduce((sum, item) => sum + item.turns.length, 0),
-              )
-            } turns`}
+            value={`${integer.format(turnCount)} turns`}
+            detail={`${integer.format(calls.length)} calls · ${
+              integer.format(toolCount)
+            } tools`}
           />
           <DetailMetric
             label="Cumulative input"
@@ -2347,6 +2486,7 @@ export function SessionDetailPage() {
               estimatedCost={estimatedCost}
               estimateIncomplete={scenarioChanged && estimate.hasUnpricedCost}
               actualCost={cost}
+              workTime={workTime}
               turnsExpanded={turnsExpanded}
               onToggleAllTurns={() =>
                 setCollapsedTurnIDs(
