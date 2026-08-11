@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   CartesianGrid,
   Line,
@@ -63,13 +64,17 @@ function datesBetween(first: string, last: string) {
   return dates;
 }
 
-function InitialInputTooltip({ active, payload }: {
+function InitialInputTooltip({ active, payload, enabledHarnesses }: {
   active?: boolean;
   payload?: Array<{ payload?: ChartRow }>;
+  enabledHarnesses: Set<Harness>;
 }) {
   const row = payload?.[0]?.payload;
   if (!active || !row || row.cohorts.length === 0) return null;
-  const cohorts = [...row.cohorts].sort((a, b) => b.median - a.median);
+  const cohorts = row.cohorts
+    .filter((cohort) => enabledHarnesses.has(cohort.harness))
+    .toSorted((a, b) => b.median - a.median);
+  if (cohorts.length === 0) return null;
   return (
     <div className="usage-tooltip initial-input-tooltip">
       <p>{day.format(new Date(`${row.date}T00:00:00`))}</p>
@@ -119,6 +124,9 @@ export function InitialInputChart({
   bare?: boolean;
   showLegend?: boolean;
 }) {
+  const [enabledHarnesses, setEnabledHarnesses] = useState<Set<Harness>>(
+    () => new Set(harnesses.map(({ value }) => value)),
+  );
   const cohorts = usage.initialInputDays;
   const cohortsByDate = Map.groupBy(cohorts, (cohort) => cohort.date);
   const observedDates = [...cohortsByDate.keys()].sort();
@@ -133,9 +141,21 @@ export function InitialInputChart({
       }
       return row;
     });
-  const visibleHarnesses = harnesses.filter(({ value }) =>
+  const availableHarnesses = harnesses.filter(({ value }) =>
     cohorts.some((cohort) => cohort.harness === value)
   );
+  const visibleHarnesses = availableHarnesses.filter(({ value }) =>
+    enabledHarnesses.has(value)
+  );
+
+  function toggleHarness(harness: Harness) {
+    setEnabledHarnesses((current) => {
+      const next = new Set(current);
+      if (next.has(harness)) next.delete(harness);
+      else next.add(harness);
+      return next;
+    });
+  }
   const gaps: Gap[] = [];
   for (const { value } of visibleHarnesses) {
     const observed = observedDates.filter((date) =>
@@ -168,7 +188,9 @@ export function InitialInputChart({
           </p>
         </div>
       )}
-      <div className={`usage-chart-body${bare ? " bare-initial-input-chart" : ""}`}>
+      <div
+        className={`usage-chart-body${bare ? " bare-initial-input-chart" : ""}`}
+      >
         {data.length === 0
           ? <div className="chart-message">No sessions in this range.</div>
           : (
@@ -204,6 +226,7 @@ export function InitialInputChart({
                       payload={props.payload as Array<{
                         payload?: ChartRow;
                       }>}
+                      enabledHarnesses={enabledHarnesses}
                     />
                   )}
                 />
@@ -243,14 +266,26 @@ export function InitialInputChart({
             </ResponsiveContainer>
           )}
       </div>
-      {showLegend && visibleHarnesses.length > 0 && (
-        <div className="model-summary" aria-label="Harness legend">
-          {visibleHarnesses.map(({ value, label, color }) => (
-            <span key={value} className="model-summary-item">
-              <i style={{ background: color }} />
-              <span>{label}</span>
-            </span>
-          ))}
+      {showLegend && availableHarnesses.length > 0 && (
+        <div
+          className="model-summary initial-input-legend"
+          aria-label="Harnesses"
+        >
+          {availableHarnesses.map(({ value, label, color }) => {
+            const enabled = enabledHarnesses.has(value);
+            return (
+              <button
+                key={value}
+                type="button"
+                className="model-summary-item"
+                aria-pressed={enabled}
+                onClick={() => toggleHarness(value)}
+              >
+                <i style={{ background: color }} />
+                <span>{label}</span>
+              </button>
+            );
+          })}
         </div>
       )}
     </>
