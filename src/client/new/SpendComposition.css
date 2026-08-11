@@ -20,6 +20,11 @@
   padding: 16px 22px;
 }
 
+.composition-chart-card {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
 .composition-chart-header {
   justify-content: flex-end;
 }
@@ -188,6 +193,7 @@
 
 .composition-trend {
   display: grid;
+  min-height: 0;
   grid-template-rows: minmax(280px, 1fr);
 }
 
