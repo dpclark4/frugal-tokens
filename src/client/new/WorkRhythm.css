@@ -51,9 +51,9 @@
 
 .rhythm-charts {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
-  margin-top: 12px;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 18px;
+  margin-top: 10px;
 }
 
 .rhythm-chart-section {
@@ -63,7 +63,7 @@
 .rhythm-subheading {
   min-height: 20px;
   align-items: center;
-  padding-bottom: 5px;
+  padding-bottom: 4px;
   border-bottom: 1px solid #e4ebe8;
 }
 
@@ -79,13 +79,13 @@
 
 .weekday-chart {
   position: relative;
-  height: 150px;
-  margin-top: 3px;
+  height: 146px;
+  margin-top: 2px;
 }
 
 .hourly-chart {
-  height: 154px;
-  margin-top: 3px;
+  height: 150px;
+  margin-top: 2px;
 }
 
 .weekday-chart:focus-visible,
@@ -139,7 +139,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-top: 3px;
+  margin-top: 2px;
   color: #64716d;
   font: 10px var(--mono);
   font-variant-numeric: tabular-nums;
@@ -493,12 +493,15 @@
 @media (max-width: 700px) {
   .work-rhythm-module { grid-template-rows: auto auto; }
   .work-rhythm-overview, .day-explorer { padding: 14px; }
-  .rhythm-charts { gap: 17px; }
-  .weekday-chart { height: 180px; }
-  .hourly-chart { height: 180px; }
+  .rhythm-charts { gap: 14px; }
   .day-explorer-body { min-height: 0; grid-template-columns: 1fr; gap: 18px; }
   .rhythm-day-detail { padding-left: 0; border-left: 0; }
   .rhythm-calendar { max-width: 340px; width: 100%; }
+}
+
+@media (max-width: 520px) {
+  .rhythm-charts { grid-template-columns: minmax(0, 1fr); }
+  .weekday-chart, .hourly-chart { height: 160px; }
 }
 
 @media (max-width: 430px) {
