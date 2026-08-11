@@ -722,6 +722,7 @@ type CacheMissKind =
   | "compaction"
   | "ttl"
   | "thinking-change"
+  | "model-change"
   | "full-miss"
   | "partial-miss";
 
@@ -742,6 +743,7 @@ function cacheMissKind(call: ModelCall): CacheMissKind | undefined {
   if (assessment.cause === "compaction") return "compaction";
   if (assessment.cause === "ttl") return "ttl";
   if (assessment.cause === "thinking-change") return "thinking-change";
+  if (assessment.reason === "model-change") return "model-change";
   if (assessment.status === "full-miss") return "full-miss";
   if (assessment.status === "partial-hit") return "partial-miss";
   return undefined;
@@ -757,6 +759,9 @@ function CacheMissIcon(
   if (kind === "thinking-change") {
     return <Brain size={size} aria-hidden="true" />;
   }
+  if (kind === "model-change") {
+    return <Split size={size} aria-hidden="true" />;
+  }
   return <TriangleAlert size={size} aria-hidden="true" />;
 }
 
@@ -764,6 +769,7 @@ function cacheMissLabel(kind: CacheMissKind) {
   if (kind === "compaction") return "Compaction";
   if (kind === "ttl") return "TTL miss";
   if (kind === "thinking-change") return "Thinking change";
+  if (kind === "model-change") return "Model change";
   if (kind === "full-miss") return "Full miss";
   return "Partial miss";
 }
@@ -803,6 +809,7 @@ function CacheMissBadges({
     "compaction",
     "ttl",
     "thinking-change",
+    "model-change",
     "full-miss",
     "partial-miss",
   ];

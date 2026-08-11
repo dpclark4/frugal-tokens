@@ -127,6 +127,15 @@ Deno.test("counts every root TTL miss in its elapsed-time bucket", () => {
       otherAffectedSessions: 0,
       affectedSessionCost: 0.0015,
       hasUnpricedAffectedSessionCost: false,
+      modelChange: {
+        affectedSessions: 0,
+        misses: 0,
+        attributedCost: 0,
+        expectedReadCost: 0,
+        estimatedExtraCost: 0,
+        missedTokens: 0,
+        unpriced: 0,
+      },
       compaction: {
         affectedSessions: 0,
         misses: 0,
@@ -297,8 +306,9 @@ Deno.test("keeps a recent model-switch full miss out of unexpected metrics", () 
   );
 
   strictEqual(result.cacheMisses.full.misses, 1);
+  strictEqual(result.cacheMisses.modelChange.misses, 1);
   strictEqual(result.cacheMisses.unexpected.full.misses, 0);
-  strictEqual(result.cacheMisses.otherAffectedSessions, 0);
+  strictEqual(result.cacheMisses.otherAffectedSessions, 1);
 });
 
 Deno.test("separates subagent misses and keeps compactions outside TTL", () => {
@@ -351,6 +361,15 @@ Deno.test("separates subagent misses and keeps compactions outside TTL", () => {
       otherAffectedSessions: 1,
       affectedSessionCost: 0.00075,
       hasUnpricedAffectedSessionCost: false,
+      modelChange: {
+        affectedSessions: 0,
+        misses: 0,
+        attributedCost: 0,
+        expectedReadCost: 0,
+        estimatedExtraCost: 0,
+        missedTokens: 0,
+        unpriced: 0,
+      },
       compaction: {
         affectedSessions: 1,
         misses: 1,

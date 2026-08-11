@@ -513,24 +513,54 @@ export function sessionCacheIssues(
   return [
     ...session.turns.flatMap((turn) => {
       const issues: CacheIssue[] = [];
-      for (const cause of [undefined, "ttl", "thinking-change"] as const) {
-        const misses = turn.calls.filter((call) =>
-          isMiss(call.cacheAssessment) &&
-          call.cacheAssessment?.cause === cause
-        );
-        if (misses.length === 0) continue;
+      function addIssues(
+        misses: ModelCall[],
+        cause?: CacheIssue["cause"],
+        reason?: CacheIssue["reason"],
+      ) {
         for (const status of ["full-miss", "partial-hit"] as const) {
           if (!misses.some((call) => call.cacheAssessment?.status === status)) {
             continue;
           }
           issues.push({
             status,
-            ...(cause ? { cause } : {}),
+            ...(cause === undefined ? {} : { cause }),
+            ...(reason === undefined ? {} : { reason }),
             turn: turn.number,
             scope,
           });
         }
       }
+      addIssues(
+        turn.calls.filter((call) =>
+          isMiss(call.cacheAssessment) &&
+          call.cacheAssessment?.cause === "ttl"
+        ),
+        "ttl",
+      );
+      addIssues(
+        turn.calls.filter((call) =>
+          isMiss(call.cacheAssessment) &&
+          call.cacheAssessment?.cause === "thinking-change"
+        ),
+        "thinking-change",
+      );
+      addIssues(
+        turn.calls.filter((call) =>
+          isMiss(call.cacheAssessment) &&
+          call.cacheAssessment?.cause === undefined &&
+          call.cacheAssessment?.reason === "model-change"
+        ),
+        undefined,
+        "model-change",
+      );
+      addIssues(
+        turn.calls.filter((call) =>
+          isMiss(call.cacheAssessment) &&
+          call.cacheAssessment?.cause === undefined &&
+          call.cacheAssessment?.reason !== "model-change"
+        ),
+      );
       return issues;
     }),
     ...session.subagents.flatMap((subagent) =>

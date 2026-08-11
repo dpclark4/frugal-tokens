@@ -314,17 +314,45 @@ const cacheAssessmentReasonLabels = {
   "no-input-context": "Usage record has no input context",
 } as const;
 
+function isUnclassifiedMiss(assessment?: CacheAssessment) {
+  return (assessment?.status === "partial-hit" ||
+    assessment?.status === "full-miss") &&
+    assessment.cause === undefined && assessment.reason !== "model-change";
+}
+
+function isModelChangeMiss(assessment?: CacheAssessment) {
+  return (assessment?.status === "partial-hit" ||
+    assessment?.status === "full-miss") &&
+    assessment.cause === undefined && assessment.reason === "model-change";
+}
+
+function isUnclassifiedIssue(issue: CacheIssue) {
+  return issue.cause === undefined && issue.reason !== "model-change";
+}
+
+function isModelChangeIssue(issue: CacheIssue) {
+  return issue.cause === undefined && issue.reason === "model-change";
+}
+
+function ModelChangeBadge({ count = 1 }: { count?: number }) {
+  if (count === 0) return null;
+  return (
+    <span
+      className="cache-issue-badge model-change-badge"
+      title={`${count} cache miss${count === 1 ? "" : "es"} after a provider or model change`}
+    >
+      Model change
+    </span>
+  );
+}
+
 function CacheAssessmentBadge(
   { assessment, title: providedTitle }: {
     assessment?: CacheAssessment;
     title?: string;
   },
 ) {
-  if (
-    !assessment ||
-    assessment.cause !== undefined ||
-    (assessment.status !== "partial-hit" && assessment.status !== "full-miss")
-  ) return null;
+  if (!assessment || !isUnclassifiedMiss(assessment)) return null;
   const title = providedTitle ??
     (assessment.reason !== undefined
       ? cacheAssessmentReasonLabels[assessment.reason]
@@ -456,19 +484,21 @@ function SessionCacheStatus({
 }) {
   const full =
     issues?.filter((issue) =>
-      issue.status === "full-miss" && issue.cause === undefined
+      issue.status === "full-miss" && isUnclassifiedIssue(issue)
     ) ?? [];
   const partial =
     issues?.filter((issue) =>
-      issue.status === "partial-hit" && issue.cause === undefined
+      issue.status === "partial-hit" && isUnclassifiedIssue(issue)
     ) ?? [];
   const ttl = issues?.filter((issue) => issue.cause === "ttl") ?? [];
   const thinkingChange =
     issues?.filter((issue) => issue.cause === "thinking-change") ?? [];
+  const modelChanges = issues?.filter(isModelChangeIssue) ?? [];
   if (
     !summary ||
     (full.length === 0 && partial.length === 0 && ttl.length === 0 &&
-      thinkingChange.length === 0 && !compactionCount)
+      thinkingChange.length === 0 && modelChanges.length === 0 &&
+      !compactionCount)
   ) {
     return null;
   }
@@ -485,6 +515,11 @@ function SessionCacheStatus({
     thinkingChange.length > 0
       ? `Thinking-change miss turns:\n${
         thinkingChange.map(cacheIssueLabel).join("\n")
+      }`
+      : undefined,
+    modelChanges.length > 0
+      ? `Model-change miss turns:\n${
+        modelChanges.map(cacheIssueLabel).join("\n")
       }`
       : undefined,
     `Call totals: ${cacheSummaryTitle(summary)}`,
@@ -519,6 +554,12 @@ function SessionCacheStatus({
           <span className="session-cache-count">x{thinkingChange.length}</span>
         </>
       )}
+      {modelChanges.length > 0 && (
+        <>
+          <ModelChangeBadge count={modelChanges.length} />
+          <span className="session-cache-count">x{modelChanges.length}</span>
+        </>
+      )}
       {!!compactionCount && (
         <>
           <CompactionBadge count={compactionCount} />
@@ -539,15 +580,18 @@ function TurnCacheStatus({
   const calls = [...turn.calls, ...callsFromSessionTrees(subagents)];
   const full = calls.filter((call) =>
     call.cacheAssessment?.status === "full-miss" &&
-    call.cacheAssessment.cause === undefined
+    isUnclassifiedMiss(call.cacheAssessment)
   );
   const partial = calls.filter((call) =>
     call.cacheAssessment?.status === "partial-hit" &&
-    call.cacheAssessment.cause === undefined
+    isUnclassifiedMiss(call.cacheAssessment)
   );
   const ttl = calls.filter((call) => call.cacheAssessment?.cause === "ttl");
   const thinkingChange = calls.filter((call) =>
     call.cacheAssessment?.cause === "thinking-change"
+  );
+  const modelChanges = calls.filter((call) =>
+    isModelChangeMiss(call.cacheAssessment)
   );
   const compactions = calls.reduce(
     (total, call) =>
@@ -578,13 +622,19 @@ function TurnCacheStatus({
         thinkingChange.map((call) => `#${call.callWithinTurn}`).join(", ")
       }`
       : undefined,
+    modelChanges.length > 0
+      ? `Model-change miss calls: ${
+        modelChanges.map((call) => `#${call.callWithinTurn}`).join(", ")
+      }`
+      : undefined,
     turn.cacheSummary === undefined
       ? undefined
       : `Call totals: ${cacheSummaryTitle(turn.cacheSummary)}`,
   ].filter(Boolean).join("\n");
   if (
     full.length === 0 && partial.length === 0 && ttl.length === 0 &&
-    thinkingChange.length === 0 && compactions === 0
+    thinkingChange.length === 0 && modelChanges.length === 0 &&
+    compactions === 0
   ) {
     return null;
   }
@@ -604,6 +654,7 @@ function TurnCacheStatus({
       )}
       <TtlMissBadge count={ttl.length} />
       <ThinkingChangeBadge count={thinkingChange.length} />
+      <ModelChangeBadge count={modelChanges.length} />
       <CompactionBadge count={compactions} />
     </span>
   );
@@ -825,17 +876,20 @@ function SubagentSummary({
   const cacheCalls = callsFromSessionTrees([session]);
   const fullMisses = cacheCalls.filter((call) =>
     call.cacheAssessment?.status === "full-miss" &&
-    call.cacheAssessment.cause === undefined
+    isUnclassifiedMiss(call.cacheAssessment)
   );
   const partialMisses = cacheCalls.filter((call) =>
     call.cacheAssessment?.status === "partial-hit" &&
-    call.cacheAssessment.cause === undefined
+    isUnclassifiedMiss(call.cacheAssessment)
   );
   const ttlMisses = cacheCalls.filter((call) =>
     call.cacheAssessment?.cause === "ttl"
   );
   const thinkingChangeMisses = cacheCalls.filter((call) =>
     call.cacheAssessment?.cause === "thinking-change"
+  );
+  const modelChanges = cacheCalls.filter((call) =>
+    isModelChangeMiss(call.cacheAssessment)
   );
   const compactions = cacheCalls.reduce(
     (total, call) =>
@@ -944,7 +998,7 @@ function SubagentSummary({
             <td className="subagent-summary-cache">
               {(fullMisses.length > 0 || partialMisses.length > 0 ||
                 ttlMisses.length > 0 || thinkingChangeMisses.length > 0 ||
-                compactions > 0) && (
+                modelChanges.length > 0 || compactions > 0) && (
                 <span className="cache-issue-group">
                   {fullMisses.length > 0 && (
                     <CacheAssessmentBadge
@@ -958,6 +1012,7 @@ function SubagentSummary({
                   )}
                   <TtlMissBadge count={ttlMisses.length} />
                   <ThinkingChangeBadge count={thinkingChangeMisses.length} />
+                  <ModelChangeBadge count={modelChanges.length} />
                   <CompactionBadge count={compactions} />
                 </span>
               )}
@@ -1072,6 +1127,7 @@ const sessionMissFilterOptions: Array<{
   { value: "compaction", label: "Compaction" },
   { value: "ttl", label: "TTL miss" },
   { value: "thinking-change", label: "Thinking change" },
+  { value: "model-change", label: "Model change" },
   { value: "full-miss", label: "Full miss" },
   { value: "partial-miss", label: "Partial miss" },
 ];
@@ -1489,17 +1545,20 @@ function CallTable({
             const cacheCalls = [call, ...callsFromSessionTrees(subagents)];
             const fullMisses = cacheCalls.filter((relatedCall) =>
               relatedCall.cacheAssessment?.status === "full-miss" &&
-              relatedCall.cacheAssessment.cause === undefined
+              isUnclassifiedMiss(relatedCall.cacheAssessment)
             );
             const partialMisses = cacheCalls.filter((relatedCall) =>
               relatedCall.cacheAssessment?.status === "partial-hit" &&
-              relatedCall.cacheAssessment.cause === undefined
+              isUnclassifiedMiss(relatedCall.cacheAssessment)
             );
             const ttlMisses = cacheCalls.filter((relatedCall) =>
               relatedCall.cacheAssessment?.cause === "ttl"
             );
             const thinkingChangeMisses = cacheCalls.filter((relatedCall) =>
               relatedCall.cacheAssessment?.cause === "thinking-change"
+            );
+            const modelChanges = cacheCalls.filter((relatedCall) =>
+              isModelChangeMiss(relatedCall.cacheAssessment)
             );
             const compactions = cacheCalls.reduce(
               (total, relatedCall) =>
@@ -1620,7 +1679,8 @@ function CallTable({
                   <td className="call-cache-cell">
                     {(fullMisses.length > 0 || partialMisses.length > 0 ||
                       ttlMisses.length > 0 ||
-                      thinkingChangeMisses.length > 0 || compactions > 0) && (
+                      thinkingChangeMisses.length > 0 ||
+                      modelChanges.length > 0 || compactions > 0) && (
                       <span className="cache-issue-group">
                         {fullMisses.length > 0 && (
                           <CacheAssessmentBadge
@@ -1636,6 +1696,7 @@ function CallTable({
                         <ThinkingChangeBadge
                           count={thinkingChangeMisses.length}
                         />
+                        <ModelChangeBadge count={modelChanges.length} />
                         <CompactionBadge count={compactions} />
                       </span>
                     )}

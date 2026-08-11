@@ -156,6 +156,7 @@ export function aggregateTtlMisses(
       hasUnpricedAffectedSessionCost: false,
       compaction: emptyCacheMissCategory(),
       thinkingChange: emptyCacheMissCategory(),
+      modelChange: emptyCacheMissCategory(),
       unexpected: {
         affectedSessions: 0,
         affectedSessionCost: 0,
@@ -205,6 +206,9 @@ export function aggregateTtlMisses(
     const thinkingChangeMisses = allRootMisses.filter((miss) =>
       miss.cause === "thinking-change"
     );
+    const modelChangeMisses = allRootMisses.filter((miss) =>
+      miss.reason === "model-change" && miss.cause === undefined
+    );
     const unexpectedMisses = allRootMisses.filter((miss) =>
       miss.cause === undefined && miss.reason !== "model-change"
     );
@@ -236,6 +240,7 @@ export function aggregateTtlMisses(
     addCacheMisses(result.cacheMisses.partial, partialMisses);
     addCacheMisses(result.cacheMisses.compaction, compactionMisses);
     addCacheMisses(result.cacheMisses.thinkingChange, thinkingChangeMisses);
+    addCacheMisses(result.cacheMisses.modelChange, modelChangeMisses);
     addCacheMisses(
       result.cacheMisses.unexpected.full,
       unexpectedMisses.filter((miss) => miss.status === "full-miss"),
@@ -252,7 +257,7 @@ export function aggregateTtlMisses(
     }
     if (
       compactionMisses.length > 0 || thinkingChangeMisses.length > 0 ||
-      unexpectedMisses.length > 0
+      modelChangeMisses.length > 0 || unexpectedMisses.length > 0
     ) {
       result.cacheMisses.otherAffectedSessions++;
     }

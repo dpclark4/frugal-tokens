@@ -582,6 +582,54 @@ Deno.test("records a recent model switch as a non-unexpected full miss", () => {
   });
   strictEqual(actual.turns[1].cacheSummary?.fullMisses, 1);
   strictEqual(actual.turns[1].cacheSummary?.unexpectedMisses, 0);
+  deepStrictEqual(sessionCacheIssues(actual), [{
+    status: "full-miss",
+    reason: "model-change",
+    turn: 2,
+    scope: undefined,
+  }]);
+});
+
+Deno.test("records a provider switch on the same model as a cache-chain change", () => {
+  const previous = call(
+    "anthropic",
+    80_000,
+    undefined,
+    "claude-opus-4-5",
+    "anthropic",
+  );
+  previous.startedAt = 0;
+  const switched = call(
+    "opencode",
+    0,
+    undefined,
+    "claude-opus-4-5",
+    "opencode",
+  );
+  switched.startedAt = 2 * 60 * 1_000;
+  const base = session("provider-switch", []);
+  base.userTurns = 2;
+  base.modelCalls = 2;
+  base.turns = [
+    { number: 1, startedAt: previous.startedAt, calls: [previous] },
+    { number: 2, startedAt: switched.startedAt, calls: [switched] },
+  ];
+
+  const actual = analyzeSessionCache(base);
+
+  deepStrictEqual(actual.turns[1].calls[0].cacheAssessment, {
+    status: "full-miss",
+    reason: "model-change",
+    retainedRatio: 0,
+    previousReusableTokens: 80_000,
+  });
+  strictEqual(actual.turns[1].cacheSummary?.unexpectedMisses, 0);
+  deepStrictEqual(sessionCacheIssues(actual), [{
+    status: "full-miss",
+    reason: "model-change",
+    turn: 2,
+    scope: undefined,
+  }]);
 });
 
 Deno.test("attributes an expired model switch to TTL", () => {

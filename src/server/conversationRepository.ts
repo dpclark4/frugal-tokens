@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import {
+  type CacheIssue,
   type ContextEvent,
   type ModelCall,
   type SessionDetail,
@@ -272,11 +273,22 @@ function missPredicates(filters: SessionMissFilter[]) {
   if (filters.includes("thinking-change")) {
     predicates.push("miss.cause = 'thinking-change'");
   }
+  if (filters.includes("model-change")) {
+    predicates.push(
+      "miss.reason = 'model-change' AND miss.cause IS NULL",
+    );
+  }
   if (filters.includes("full-miss")) {
-    predicates.push("miss.status = 'full-miss' AND miss.cause IS NULL");
+    predicates.push(
+      "miss.status = 'full-miss' AND miss.cause IS NULL " +
+        "AND (miss.reason IS NULL OR miss.reason <> 'model-change')",
+    );
   }
   if (filters.includes("partial-miss")) {
-    predicates.push("miss.status = 'partial-hit' AND miss.cause IS NULL");
+    predicates.push(
+      "miss.status = 'partial-hit' AND miss.cause IS NULL " +
+        "AND (miss.reason IS NULL OR miss.reason <> 'model-change')",
+    );
   }
   return predicates;
 }
@@ -307,12 +319,17 @@ export class ConversationRepository {
       throw new RangeError("page and pageSize must be positive integers");
     }
     const totalItems = this.#rootCount(harness, missFilters);
-    const items = this.#rootRows(
+    const rows = this.#rootRows(
       harness,
       missFilters,
       pageSize,
       (page - 1) * pageSize,
-    ).map((row) => this.#summary(row));
+    );
+    const cacheIssues = this.#storedCacheIssues(rows.map((row) => row.id));
+    const items = rows.map((row) => ({
+      ...this.#summary(row),
+      cacheIssues: cacheIssues.get(row.id) ?? [],
+    }));
     return sessionListResponseSchema.parse({
       items,
       pagination: {
@@ -1125,6 +1142,62 @@ export class ConversationRepository {
       limit,
       offset,
     ) as ConversationRow[];
+  }
+
+  #storedCacheIssues(rootIDs: number[]): Map<number, CacheIssue[]> {
+    if (rootIDs.length === 0) return new Map();
+    const placeholders = rootIDs.map(() => "?").join(", ");
+    const rows = this.db.prepare(`
+      WITH RECURSIVE tree(conversation_id, root_id, nested) AS (
+        SELECT c.id, c.id, 0 FROM conversations c
+        WHERE c.id IN (${placeholders})
+        UNION ALL
+        SELECT launch.child_conversation_id, tree.root_id, 1
+        FROM conversation_subagent_launches launch
+        JOIN tree ON tree.conversation_id = launch.parent_conversation_id
+      )
+      SELECT tree.root_id, tree.nested, miss.status, miss.cause, miss.reason,
+        turn.ordinal AS turn_ordinal, c.title, c.agent
+      FROM tree
+      JOIN conversation_cache_misses miss
+        ON miss.conversation_id = tree.conversation_id
+      JOIN conversation_turns turn ON turn.id = miss.turn_id
+      JOIN conversations c ON c.id = tree.conversation_id
+      WHERE miss.cause IS NULL OR miss.cause <> 'compaction'
+      ORDER BY tree.root_id, tree.nested, miss.started_at, miss.model_call_id
+    `).all(...rootIDs) as Array<{
+      root_id: number;
+      nested: number;
+      status: CacheIssue["status"];
+      cause: CacheIssue["cause"] | null;
+      reason: CacheIssue["reason"] | null;
+      turn_ordinal: number;
+      title: string;
+      agent: string | null;
+    }>;
+    const issues = new Map<number, CacheIssue[]>();
+    const seen = new Set<string>();
+    for (const row of rows) {
+      const scope = row.nested === 0
+        ? undefined
+        : row.agent === null ? row.title : `${row.agent}: ${row.title}`;
+      const issue: CacheIssue = {
+        status: row.status,
+        ...(row.cause === null ? {} : { cause: row.cause }),
+        ...(row.cause === null && row.reason !== null
+          ? { reason: row.reason }
+          : {}),
+        turn: row.turn_ordinal,
+        ...(scope === undefined ? {} : { scope }),
+      };
+      const key = `${row.root_id}:${JSON.stringify(issue)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const rootIssues = issues.get(row.root_id) ?? [];
+      rootIssues.push(issue);
+      issues.set(row.root_id, rootIssues);
+    }
+    return issues;
   }
 
   #storedThinking(row: ConversationRow) {

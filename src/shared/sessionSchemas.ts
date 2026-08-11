@@ -17,6 +17,7 @@ export const sessionMissFilterValues = [
   "compaction",
   "ttl",
   "thinking-change",
+  "model-change",
   "full-miss",
   "partial-miss",
 ] as const;
@@ -110,6 +111,7 @@ export const cacheSummarySchema = z.object({
 export const cacheIssueSchema = z.object({
   status: z.enum(["partial-hit", "full-miss"]),
   cause: cacheMissCauseSchema.optional(),
+  reason: cacheAssessmentReasonSchema.optional(),
   turn: z.number().int().positive(),
   scope: z.string().optional(),
 });
@@ -714,6 +716,15 @@ export const ttlMissMetricsSchema = z.object({
       unpriced: z.number().int().nonnegative(),
     }),
     thinkingChange: z.object({
+      affectedSessions: z.number().int().nonnegative(),
+      misses: z.number().int().nonnegative(),
+      attributedCost: z.number().nonnegative(),
+      expectedReadCost: z.number().nonnegative(),
+      estimatedExtraCost: z.number(),
+      missedTokens: z.number().int().nonnegative(),
+      unpriced: z.number().int().nonnegative(),
+    }),
+    modelChange: z.object({
       affectedSessions: z.number().int().nonnegative(),
       misses: z.number().int().nonnegative(),
       attributedCost: z.number().nonnegative(),

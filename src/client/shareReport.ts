@@ -221,6 +221,7 @@ export function buildHomepageReport({
   const otherMissRows = [
     ["Compaction", cache.compaction],
     ["Thinking change", cache.thinkingChange],
+    ["Model change", cache.modelChange],
     ["Unexpected full", cache.unexpected.full],
     ["Unexpected partial", cache.unexpected.partial],
   ] as const;

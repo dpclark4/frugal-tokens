@@ -194,6 +194,62 @@ Deno.test("conversation repository linearizes Codex branches without duplicating
   }
 });
 
+Deno.test("session lists read cache issue reasons from normalized misses", () => {
+  const db = openArchiveDatabase(":memory:");
+  migrateTestDatabase(db);
+  const sources = new SourceArtifactRepository(db);
+  const projection = new ConversationWriteRepository(db);
+  const conversations = new ConversationRepository(db);
+  try {
+    const sourceID = sources.ensureSource(
+      "codex",
+      "directory",
+      "Codex",
+      "/sessions",
+    );
+    const session = linearSession(sourceID);
+    session.session.turns[1].calls[0].model = "gpt-5.6-sol";
+    session.session.contextEvents = [];
+    sources.recordUnchangedArtifact(
+      sourceID,
+      session.externalID,
+      session.artifactPath!,
+      10,
+    );
+    projection.replaceLinearConversationTree([session]);
+
+    const row = db.prepare(`
+      SELECT cr.conversation_id, cr.summary_json
+      FROM conversation_rollups cr
+      JOIN conversations c ON c.id = cr.conversation_id
+      WHERE c.external_id = 'linear'
+    `).get() as { conversation_id: number; summary_json: string };
+    const staleSummary = JSON.parse(row.summary_json);
+    staleSummary.cacheIssues = [{ status: "full-miss", turn: 2 }];
+    db.prepare(`
+      UPDATE conversation_rollups SET summary_json = ?
+      WHERE conversation_id = ?
+    `).run(JSON.stringify(staleSummary), row.conversation_id);
+
+    const list = conversations.listSessions(1, 10, "codex", [
+      "model-change",
+    ]);
+    strictEqual(list.pagination.totalItems, 1);
+    deepStrictEqual(list.items[0].cacheIssues, [{
+      status: "full-miss",
+      reason: "model-change",
+      turn: 2,
+    }]);
+    strictEqual(
+      conversations.listSessions(1, 10, "codex", ["full-miss"])
+        .pagination.totalItems,
+      0,
+    );
+  } finally {
+    db.close();
+  }
+});
+
 Deno.test("conversation repository keeps subagent launches separate from branches", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);

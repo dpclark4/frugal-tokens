@@ -34,7 +34,7 @@ function CacheSummary({ metrics }: { metrics: TtlMissMetrics }) {
         <strong>{currency.format(cost)}</strong>
       </div>
       <div className="cache-summary-metric">
-        <span>Cache misses</span>
+        <span>Misses</span>
         <strong>{integer.format(misses)}</strong>
       </div>
       <div className="cache-summary-metric">
@@ -103,6 +103,12 @@ function CacheMissTable({ metrics }: { metrics: TtlMissMetrics }) {
       sessions: cacheMisses.compaction.affectedSessions,
     },
     {
+      label: "Model change",
+      cost: cacheMisses.modelChange.attributedCost,
+      misses: cacheMisses.modelChange.misses,
+      sessions: cacheMisses.modelChange.affectedSessions,
+    },
+    {
       label: "Unexpected full",
       cost: cacheMisses.unexpected.full.attributedCost,
       misses: cacheMisses.unexpected.full.misses,
@@ -166,7 +172,7 @@ export function CacheOverview({ range, harness }: CacheOverviewProps) {
   return (
     <section className="new-placeholder-section cache-overview-section" aria-labelledby="cache-section-title">
       <header>
-        <h2 id="cache-section-title">Cache</h2>
+        <h2 id="cache-section-title">Cache misses</h2>
       </header>
       {metrics
         ? (
