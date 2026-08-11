@@ -48,9 +48,11 @@ The evidence supports at least two distinct patterns:
    `cached_tokens` dips for one call around tool-heavy context growth and then
    recovers.
 
-Large or multi-item tool outputs are the strongest shared context shape so far.
-An image is not required: a text-only phase reproduced `8704 -> 0 -> 26112`.
-The sequence resembles delayed cache eligibility or publication, but that is a
+Large or multi-item tool outputs are a common context shape, but not a
+requirement: Case 005 includes classified partial busts after one 154–1,543-byte
+function output, and Case 007 is a full bust after a small user delta. An image
+is not required: a text-only phase reproduced `8704 -> 0 -> 26112`. The
+sequence resembles delayed cache eligibility or publication, but that is a
 hypothesis, not proof.
 
 Stable client-visible inputs do not guarantee stable reads. Captures have shown
@@ -358,6 +360,9 @@ provider zero when the field is present, but it is not a comparable bust.
 | 003A | `1536 -> 0 -> 4608` | Healthy same-socket continuation | Image tool output, then text tool output | Raw full one-call bust |
 | 003B | `8704 -> 0 -> 26112` | Healthy continuation | Large text-only multi-output phase | Raw full one-call bust; image not required |
 | 004 | `2560 -> 0 -> 12800`; three partial dips | Healthy WebSocket continuations | Function-output growth | One raw full and three raw partial one-call busts |
+| 005 | Six partial dips; one zero after fallback | Healthy WebSocket continuations; one SSE fallback | Mixed-size function outputs | Six raw partial one-call busts; one transport-associated candidate |
+| 006 | `4992 -> 1536 -> 11136` | Healthy same-socket continuation | Four text function outputs, about 11 KB | Raw partial one-call bust |
+| 007 | `39552 -> 0 -> 40576` | Healthy same-socket continuation | Small user delta after one text function output | Raw full one-call bust |
 
 ### Case 001 — WebSocket failure and SSE retry
 
@@ -488,6 +493,136 @@ This is evidence of transient provider-reported cache-read regressions on
 otherwise healthy Pi continuations, not evidence of a Pi transport or
 request-construction failure. It does not establish the provider's internal
 cause or prove cache invalidation.
+
+### Case 005 — Repeated partial busts with mixed-size deltas
+
+**Date:** 2026-08-11; **Model:** `gpt-5.6-sol`, medium reasoning
+**Pi session:** `019fee5c-ce79-7655-8285-c913ce9351d1`
+
+```text
+Session:
+~/.pi/agent/sessions/--Users-danclark-programming-frugal-tokens--/2026-08-11T01-08-07-417Z_019fee5c-ce79-7655-8285-c913ce9351d1.jsonl
+Telemetry:
+~/.pi/agent/diagnostics/cache-telemetry/2026-08-11T01-08-07-417Z_019fee5c-ce79-7655-8285-c913ce9351d1.jsonl
+Wiretap:
+~/.pi/agent/diagnostics/cache-telemetry/wiretap/codex-websocket-2026-08-11T01-08-06Z-31520.jsonl
+Archive model-call rows: unavailable; the configured database lacked the expected `model_calls` table
+```
+
+The dashboard showed four affected turns: partial-miss markers on turns 1, 6,
+and 11, plus a full-miss marker on turn 14. These are turn-level markers, not
+four model calls: turn 1 contains four classified partial dips. The raw
+wiretap explicitly included `cached_tokens` on the completed WebSocket calls.
+Six calls had a warm predecessor, a lower positive raw read, and immediate
+warm recovery:
+
+| Dashboard turn / telemetry call | Raw cache sequence | Immediate added `function_call_output` | Classification |
+| --- | --- | --- | --- |
+| 1 / 4 | `7040 -> 1536 -> 15232` | 7 outputs, 19,043 bytes | Partial bust |
+| 1 / 6 | `15232 -> 10112 -> 20352` | 1 output, 1,543 bytes | Partial bust |
+| 1 / 11 | `23424 -> 20352 -> 25472` | 1 output, 154 bytes | Partial bust |
+| 1 / 14 | `27520 -> 24448 -> 29568` | 1 output, 154 bytes | Partial bust |
+| 6 / 37 | `41088 -> 34816 -> 41088` | 1 output, 969 bytes | Partial bust |
+| 11 / 55 | `54528 -> 42112 -> 54528` | 1 output, 154 bytes | Partial bust |
+
+For all six partial busts, telemetry recorded an exact prior logical-input
+prefix, unchanged envelope, instructions, tools, settings, and prompt-cache
+key. Each used a WebSocket delta with `previous_response_id` on reused
+connection 1; no failure, retry, reconnect, or SSE fallback was recorded.
+The sequence therefore extends Case 004: repeated healthy-continuation dips
+are not limited to large or multi-output additions. The captures show no Pi
+transport failure, retry, reconnection, or request-envelope change at these six
+calls, but they do not isolate the cause to OpenAI: Pi remains part of the
+continuation request path and provider cache state is not observable.
+
+Turn 14's dashboard full-miss marker corresponds to telemetry call 63:
+`55552 -> normalized 0 -> 59648`. It added three text function outputs
+(1,067, 1,564, and 4,129 bytes), retained an exact 258-item logical prefix and
+unchanged envelope, and initially sent a delta using `previous_response_id`.
+The socket then closed cleanly with code `1000` before message streaming;
+Pi retried full logical context over SSE and recorded a normalized zero. The
+next completed call read 59,648 cached tokens. The wiretap ended with the
+WebSocket, so it cannot establish raw provider `cached_tokens` for the SSE
+retry. A clean `1000` close does not identify whether Pi, the provider, or an
+intermediary initiated it. Classify this event as a transport-associated
+candidate, not a raw full bust.
+
+The dashboard's 90% retained-read threshold does not mark three smaller raw
+dips (93.3%, 96.5%, and 97.1% retained) as misses. They are not included in
+the table or the Case 005 count.
+
+### Case 006 — Repeat early multi-output partial bust
+
+**Date:** 2026-08-11; **Model:** `gpt-5.6-sol`, medium reasoning
+**Pi session:** `019fee71-77ab-7062-b6a9-577ec0169129`
+
+```text
+Session:
+~/.pi/agent/sessions/--Users-danclark-programming-frugal-tokens--/2026-08-11T01-30-41-451Z_019fee71-77ab-7062-b6a9-577ec0169129.jsonl
+Telemetry:
+~/.pi/agent/diagnostics/cache-telemetry/2026-08-11T01-30-41-451Z_019fee71-77ab-7062-b6a9-577ec0169129.jsonl
+Wiretap:
+~/.pi/agent/diagnostics/cache-telemetry/wiretap/codex-websocket-2026-08-11T01-30-40Z-33323.jsonl
+Archive model-call rows: unavailable; the configured database lacked the expected `model_calls` table
+```
+
+The first two completed calls explicitly reported `cached_tokens=0`, which is a
+cold baseline. Calls 3–5 then reported raw reads of `4992 -> 1536 -> 11136`.
+The call-4 raw usage field explicitly included `cached_tokens=1536`, making
+this a partial bust rather than a telemetry-only candidate.
+
+Call 4 had 11,338 total input tokens and added four text
+`function_call_output` items of 3,561, 3,075, 2,264, and 2,015 bytes (10,915
+bytes total). Telemetry recorded an exact prior logical-input prefix and an
+unchanged envelope, instructions, tools, settings, and prompt-cache-key
+fingerprints. The call was a WebSocket delta with `previous_response_id` on
+reused connection 1; no error, retry, reconnect, or SSE fallback occurred.
+The following call had 15,903 total input tokens and recovered to 11,136
+cached tokens.
+
+This independently repeats the early shape in Case 005 (`7040 -> 1536 ->
+15232`): following a `0 -> 0` baseline and one warm call, a multi-output delta
+received a 1,536-token raw read and the next call recovered. It is evidence of
+a repeated provider-reported cache-read regression on healthy Pi
+continuations, not proof of a provider-internal cause or a Pi defect.
+
+### Case 007 — Healthy-continuation full bust after a small user delta
+
+**Date:** 2026-08-11; **Model:** `gpt-5.6-sol`, medium reasoning
+**Pi session:** `019fee41-939c-7233-8149-81e81be9169c`
+
+```text
+Session:
+~/.pi/agent/sessions/--Users-danclark-programming-frugal-tokens--/2026-08-11T00-38-22-876Z_019fee41-939c-7233-8149-81e81be9169c.jsonl
+Telemetry:
+~/.pi/agent/diagnostics/cache-telemetry/2026-08-11T00-38-22-876Z_019fee41-939c-7233-8149-81e81be9169c.jsonl
+Wiretap:
+~/.pi/agent/diagnostics/cache-telemetry/wiretap/codex-websocket-2026-08-11T00-38-21Z-29892.jsonl
+Archive model-call rows: unavailable; the configured database lacked the expected `model_calls` table
+```
+
+Calls 23–25 reported raw cache reads of `39552 -> 0 -> 40576`. The middle
+call's raw provider usage explicitly included `cached_tokens=0`, establishing
+a full one-call bust with immediate recovery.
+
+The zero-read call had 41,646 total input tokens. Telemetry recorded an exact
+prior logical-input prefix and unchanged envelope, instructions, tools,
+settings, and prompt-cache-key fingerprints. It used a WebSocket delta with
+`previous_response_id` on reused connection 1; no error, retry, reconnect, or
+SSE fallback was recorded. The actual delta had one item: an 81-byte user
+message. Its logical suffix also contained 4,238 bytes of reasoning and a
+1,964-byte preceding assistant message. The preceding request had added one
+1,470-byte text `function_call_output`.
+
+The nearby transport sequence was: a 6,013-byte user delta, a 3,618-byte
+function output, a 1,470-byte function output, a normal model text response,
+the 81-byte user-delta bust, then a 109-byte user-delta recovery. The preceding
+model response completed 15.8 seconds before the bust request. Connection 1
+remained healthy through recovery and did not receive its unrelated
+`debug_close` until more than six minutes later. This shows that a large or
+multi-output immediate delta is not required for a raw full bust. It is
+evidence of a transient provider-reported cache-read regression on a healthy
+Pi continuation, not proof of the provider's internal cause or a Pi defect.
 
 ### Unclassified candidates — missing wiretap
 

@@ -6,10 +6,7 @@ import type {
   SessionMissFilter,
   SessionSummary,
 } from "../../shared/sessionSchemas.ts";
-import {
-  parseSessionMissFilters,
-  sessionMissFilterValues,
-} from "../../shared/sessionSchemas.ts";
+import { parseSessionMissFilters } from "../../shared/sessionSchemas.ts";
 import { getSession, getSessions, syncSessions } from "../api.ts";
 import { SessionsPanel } from "../SessionsPage.tsx";
 import type { OverviewHarness } from "./OverviewToolbar.tsx";
@@ -34,11 +31,8 @@ export function RecentSessions({
   onMissesChange,
 }: RecentSessionsProps) {
   const navigate = route.useNavigate();
-  const parsedMissFilters = parseSessionMissFilters(misses);
-  const missFilters = parsedMissFilters?.length === 0
-    ? undefined
-    : parsedMissFilters;
-  const selectedMissFilters = missFilters ?? [...sessionMissFilterValues];
+  const missFilters = parseSessionMissFilters(misses);
+  const selectedMissFilters = missFilters;
   const missFilterKey = missFilters === undefined
     ? "all"
     : missFilters.length === 0
@@ -216,10 +210,12 @@ export function RecentSessions({
     missFilterKey,
   ]);
 
-  function changeMissFilters(filters: SessionMissFilter[]) {
+  function changeMissFilters(filters?: SessionMissFilter[]) {
     onMissesChange(
-      filters.length === sessionMissFilterValues.length || filters.length === 0
+      filters === undefined
         ? undefined
+        : filters.length === 0
+        ? "none"
         : filters.join(","),
     );
   }

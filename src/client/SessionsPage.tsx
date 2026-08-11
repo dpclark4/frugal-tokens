@@ -24,10 +24,7 @@ import type {
   TurnInput,
   UsageResponse,
 } from "../shared/sessionSchemas.ts";
-import {
-  parseSessionMissFilters,
-  sessionMissFilterValues,
-} from "../shared/sessionSchemas.ts";
+import { parseSessionMissFilters } from "../shared/sessionSchemas.ts";
 import { contextRange, contextSize } from "../shared/contextMetrics.ts";
 import { displayModelName } from "../shared/modelNames.ts";
 import { rollupCosts } from "../shared/costMetrics.ts";
@@ -1083,17 +1080,22 @@ function SessionMissFilterControl({
   selected,
   onChange,
 }: {
-  selected: SessionMissFilter[];
-  onChange: (filters: SessionMissFilter[]) => void;
+  selected?: SessionMissFilter[];
+  onChange: (filters?: SessionMissFilter[]) => void;
 }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  const allSelected = selected.length === sessionMissFilterOptions.length;
-  const label = allSelected
+  const noFilter = selected === undefined;
+  const selectedFilters = selected ?? [];
+  const allSelected =
+    selectedFilters.length === sessionMissFilterOptions.length;
+  const label = noFilter
+    ? "No filter"
+    : allSelected
     ? "All"
-    : selected.length === 0
+    : selectedFilters.length === 0
     ? "None"
-    : `${selected.length} selected`;
+    : `${selectedFilters.length} selected`;
 
   useEffect(() => {
     if (!open) return;
@@ -1117,13 +1119,14 @@ function SessionMissFilterControl({
   }, [open]);
 
   function toggle(value: SessionMissFilter) {
-    onChange(
-      allSelected
-        ? [value]
-        : selected.includes(value)
-        ? selected.filter((current) => current !== value)
-        : [...selected, value],
-    );
+    if (noFilter || allSelected) {
+      onChange([value]);
+      return;
+    }
+    const filters = selectedFilters.includes(value)
+      ? selectedFilters.filter((current) => current !== value)
+      : [...selectedFilters, value];
+    onChange(filters.length === 0 ? undefined : filters);
   }
 
   return (
@@ -1145,11 +1148,20 @@ function SessionMissFilterControl({
           role="dialog"
           aria-label="Session miss filters"
         >
+          <label className="session-filter-option">
+            <input
+              type="checkbox"
+              checked={noFilter}
+              onChange={() => onChange(undefined)}
+            />
+            <span>No filter</span>
+          </label>
+          <div className="session-filter-divider" role="separator" />
           {sessionMissFilterOptions.map(({ value, label: optionLabel }) => (
             <label className="session-filter-option" key={value}>
               <input
                 type="checkbox"
-                checked={selected.includes(value)}
+                checked={selectedFilters.includes(value)}
                 onChange={() => toggle(value)}
               />
               <span>{optionLabel}</span>
@@ -2028,7 +2040,7 @@ type SessionsPanelProps = {
   loadingSessions: boolean;
   refreshing: boolean;
   refreshData: () => Promise<void>;
-  selectedMissFilters: SessionMissFilter[];
+  selectedMissFilters?: SessionMissFilter[];
   harness: "all" | SessionSummary["harness"];
   harnesses: SessionSummary["harness"][];
   error?: string;
@@ -2041,7 +2053,7 @@ type SessionsPanelProps = {
   loadNextPage: () => Promise<void>;
   showLoadMoreButton?: boolean;
   onHarnessChange: (harness: "all" | SessionSummary["harness"]) => void;
-  onMissFiltersChange: (filters: SessionMissFilter[]) => void;
+  onMissFiltersChange: (filters?: SessionMissFilter[]) => void;
   onOpenSession: (session: SessionSummary) => void;
 };
 
@@ -2527,11 +2539,8 @@ export function SessionsPanel({
 export function SessionsPage() {
   const { harness, misses } = route.useSearch();
   const navigate = route.useNavigate();
-  const parsedMissFilters = parseSessionMissFilters(misses);
-  const missFilters = parsedMissFilters?.length === 0
-    ? undefined
-    : parsedMissFilters;
-  const selectedMissFilters = missFilters ?? [...sessionMissFilterValues];
+  const missFilters = parseSessionMissFilters(misses);
+  const selectedMissFilters = missFilters;
   const missFilterKey = missFilters === undefined
     ? "all"
     : missFilters.length === 0
@@ -2835,9 +2844,10 @@ export function SessionsPage() {
           navigate({
             search: {
               harness,
-              misses: filters.length === sessionMissFilterValues.length ||
-                  filters.length === 0
+              misses: filters === undefined
                 ? undefined
+                : filters.length === 0
+                ? "none"
                 : filters.join(","),
             },
             resetScroll: false,
