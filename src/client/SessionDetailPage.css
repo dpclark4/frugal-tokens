@@ -249,7 +249,7 @@
 
 .sd-metrics {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr)) 268px;
   border-bottom: 1px solid var(--sd-line);
   background: var(--sd-inset);
   flex: none;
@@ -727,7 +727,8 @@
 }
 
 @keyframes sd-call-target {
-  0%, 45% {
+  0%,
+  45% {
     background: color-mix(in srgb, var(--sd-accent) 14%, transparent);
   }
   100% {
@@ -780,6 +781,18 @@
   font-size: 10px;
   font-style: normal;
   font-weight: 500;
+}
+
+.sd-call-subagent {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 6px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--sd-accent) 12%, transparent);
+  color: var(--sd-accent);
+  font-size: 10px;
+  font-weight: 600;
 }
 
 .sd-call-body {
@@ -951,6 +964,38 @@
   color: var(--sd-ink);
   font-size: 12.5px;
   font-weight: 500;
+}
+
+.sd-tool-event .sd-subagent-tool-label {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.sd-subagent-tool-label > svg {
+  flex: 0 0 auto;
+  color: var(--sd-accent);
+}
+
+.sd-subagent-tool-label > span {
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sd-accent) 12%, transparent);
+  color: var(--sd-accent);
+  font: 9px var(--mono);
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+.sd-subagent-tool-title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--sd-ink-2);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sd-tool-event code {
@@ -1147,6 +1192,71 @@
   color: var(--sd-ink);
 }
 
+.sd-subagent-links {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sd-subagent-link {
+  display: grid;
+  width: 100%;
+  grid-template-columns: 18px minmax(0, 1fr) 13px;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 6px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--sd-ink-2);
+  cursor: pointer;
+  text-align: left;
+}
+
+.sd-subagent-link:hover,
+.sd-subagent-link:focus-visible {
+  background: var(--sd-field);
+  color: var(--sd-ink);
+}
+
+.sd-subagent-link:disabled {
+  cursor: default;
+  opacity: .6;
+}
+
+.sd-subagent-link > svg:first-child {
+  color: var(--sd-accent);
+}
+
+.sd-subagent-link > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sd-subagent-link strong,
+.sd-subagent-link small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sd-subagent-link strong {
+  color: var(--sd-ink);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+.sd-subagent-link small {
+  color: var(--sd-ink-3);
+  font: 9.5px var(--mono);
+}
+
+.sd-subagent-link > svg:last-child {
+  color: var(--sd-ink-3);
+}
+
 .sd-cache-misses {
   margin-top: 8px;
 }
@@ -1310,6 +1420,17 @@
 
 .sd-model-thinking {
   border-left: 1px solid var(--sd-line-strong);
+}
+
+.sd-model-subagent-only {
+  display: inline-grid;
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--sd-accent) 12%, transparent);
+  color: var(--sd-accent);
 }
 
 .sd-model-levels {
@@ -1559,6 +1680,10 @@
 }
 
 @media (max-width: 900px) {
+  .sd-metrics {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
   .session-detail-page {
     height: auto;
     min-height: 100dvh;

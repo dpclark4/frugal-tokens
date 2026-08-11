@@ -725,11 +725,15 @@ type CacheMissKind =
   | "full-miss"
   | "partial-miss";
 
-type CacheMissOccurrence = {
-  kind: CacheMissKind;
+type CallOccurrence = {
   session: SessionDetail;
   turn: SessionDetail["turns"][number];
   call: ModelCall;
+  jumpTarget?: "call" | "turn";
+};
+
+type CacheMissOccurrence = CallOccurrence & {
+  kind: CacheMissKind;
 };
 
 function cacheMissKind(call: ModelCall): CacheMissKind | undefined {
@@ -967,6 +971,8 @@ function ToolEvent({
     ? undefined
     : relativePathText(tool.outputPreview, rootDirectory, pathMode);
   const target = toolTarget(inputPreview);
+  const childCalls = child === undefined ? 0 : callsInTree(child).length;
+  const duration = elapsed(tool.startedAt, tool.completedAt) ?? tool.status;
   return (
     <div className={`sd-tool-event${open ? " is-open" : ""}`}>
       <button
@@ -978,10 +984,25 @@ function ToolEvent({
         <span className={`sd-tool-status${failed ? " is-failed" : ""}`}>
           {failed ? <X size={12} /> : <Check size={12} />}
         </span>
-        <strong>{tool.name}</strong>
-        {target && <code>{target}</code>}
+        {child
+          ? (
+            <strong className="sd-subagent-tool-label">
+              <Bot size={13} />
+              {child.agent ?? "Subagent"}
+              <span>subagent</span>
+            </strong>
+          )
+          : <strong>{tool.name}</strong>}
+        {child
+          ? (
+            <span className="sd-subagent-tool-title" title={child.title}>
+              {child.title}
+            </span>
+          )
+          : target && <code>{target}</code>}
         <small>
-          {elapsed(tool.startedAt, tool.completedAt) ?? tool.status}
+          {child && `${childCalls} call${childCalls === 1 ? "" : "s"} · `}
+          {duration}
         </small>
         {hasDetails && <ChevronRight size={13} />}
       </button>
@@ -1138,6 +1159,11 @@ function CallBlock({
   const input = contextSize(call.tokens);
   const reuse = input === 0 ? undefined : call.tokens.cacheRead / input;
   const id = callAnchor(session.id, turnNumber, call.id);
+  const launchedSubagents = new Set(
+    call.activity.tools.flatMap((tool) =>
+      tool.childSessionID ? [tool.childSessionID] : []
+    ),
+  ).size;
   return (
     <section
       className={`sd-call${focusedCallAnchor === id ? " is-targeted" : ""}`}
@@ -1158,6 +1184,19 @@ function CallBlock({
             <Gauge size={11} />
             {effort}
           </em>
+        )}
+        {launchedSubagents > 0 && (
+          <span
+            className="sd-call-subagent"
+            title={`Launched ${launchedSubagents} subagent${
+              launchedSubagents === 1 ? "" : "s"
+            }`}
+          >
+            <Bot size={11} />
+            {launchedSubagents === 1
+              ? "Subagent"
+              : `${launchedSubagents} subagents`}
+          </span>
         )}
         <CacheIssue call={call} />
       </div>
@@ -1456,7 +1495,7 @@ function SubagentDisclosure({
       open={open}
       onToggle={() => setOpen((current) => !current)}
       icon={<Bot size={14} />}
-      label={session.agent ?? "Subagent"}
+      label={session.agent ? `${session.agent} subagent` : "Subagent"}
       meta={`${session.turns.length} turns · ${calls} calls`}
       className="sd-subagent-disclosure"
     >
@@ -1587,6 +1626,66 @@ function SessionID({ session }: { session: SessionDetail }) {
   );
 }
 
+function SubagentLinks({
+  session,
+  onJumpToCall,
+}: {
+  session: SessionDetail;
+  onJumpToCall: (occurrence: CallOccurrence) => void;
+}) {
+  const subagents = sessionTree(session).slice(1);
+  if (subagents.length === 0) return null;
+  return (
+    <section>
+      <h2>Subagents</h2>
+      <div className="sd-subagent-links">
+        {subagents.map((subagent) => {
+          const calls = callsInTree(subagent);
+          const firstTurn = subagent.turns.find((turn) =>
+            turn.calls.length > 0
+          );
+          const firstCall = firstTurn?.calls[0];
+          const cost = subagent.inclusiveComputedCost ??
+            rollupCosts(sessionTree(subagent).map((item) => item.computedCost))
+              .cost;
+          return (
+            <button
+              key={subagent.id}
+              type="button"
+              className="sd-subagent-link"
+              disabled={!firstTurn || !firstCall}
+              aria-label={`Jump to ${subagent.title}`}
+              onClick={() => {
+                if (firstTurn && firstCall) {
+                  onJumpToCall({
+                    session: subagent,
+                    turn: firstTurn,
+                    call: firstCall,
+                    jumpTarget: "turn",
+                  });
+                }
+              }}
+            >
+              <Bot size={14} aria-hidden="true" />
+              <span>
+                <strong title={subagent.title}>{subagent.title}</strong>
+                <small>
+                  {[
+                    subagent.agent ?? "Subagent",
+                    `${calls.length} call${calls.length === 1 ? "" : "s"}`,
+                    cost === undefined ? undefined : money.format(cost),
+                  ].filter(Boolean).join(" · ")}
+                </small>
+              </span>
+              {firstCall && <ChevronRight size={13} aria-hidden="true" />}
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function Metadata({
   session,
   pathMode,
@@ -1622,7 +1721,7 @@ function Metadata({
   onColorMetricChange: (value: ColorMetric) => void;
   onModelChange: (value: CostScenario) => void;
   onThinkingChange: (value: string) => void;
-  onJumpToCall: (occurrence: CacheMissOccurrence) => void;
+  onJumpToCall: (occurrence: CallOccurrence) => void;
   canOpenInGhostty: boolean;
   ghosttyOpening: boolean;
   ghosttyError?: string;
@@ -1641,6 +1740,21 @@ function Metadata({
       call.cacheAssessment?.status === "partial-hit" ||
       call.cacheAssessment?.status === "full-miss"
     ).length;
+  const directModels = new Set([
+    ...session.models,
+    ...session.turns.flatMap((turn) => turn.calls.map((call) => call.model)),
+  ]);
+  const models = [
+    ...new Set([
+      ...directModels,
+      ...sessionTree(session).slice(1).flatMap((subagent) => [
+        ...subagent.models,
+        ...subagent.turns.flatMap((turn) =>
+          turn.calls.map((call) => call.model)
+        ),
+      ]),
+    ]),
+  ];
   const observedThinking = [
     ...(session.thinking?.values ?? []),
     ...calls.flatMap((call) =>
@@ -1708,7 +1822,7 @@ function Metadata({
       <section>
         <h2>Models</h2>
         <div className="sd-model-list">
-          {session.models.map((model) => {
+          {models.map((model) => {
             const thinkingValues = thinkingByModel.get(model) ?? [];
             return (
               <div className="sd-model-row" key={model}>
@@ -1717,6 +1831,15 @@ function Metadata({
                   <span className="sd-model-name">
                     {displayModelName(model)}
                   </span>
+                  {!directModels.has(model) && (
+                    <span
+                      className="sd-model-subagent-only"
+                      aria-label="Used by subagents only"
+                      title="Used by subagents only"
+                    >
+                      <Bot size={11} aria-hidden="true" />
+                    </span>
+                  )}
                 </span>
                 {thinkingValues.length > 0 && (
                   <span
@@ -1758,6 +1881,7 @@ function Metadata({
         </MetadataRow>
         <CacheMissBadges session={session} onJumpToCall={onJumpToCall} />
       </section>
+      <SubagentLinks session={session} onJumpToCall={onJumpToCall} />
       <section>
         <h2>View</h2>
         <div className="sd-setting">
@@ -1956,7 +2080,7 @@ export function SessionDetailPage() {
     if (!focusedCallAnchor) return;
     const timeout = globalThis.setTimeout(
       () => setFocusedCallAnchor(undefined),
-      1600,
+      3000,
     );
     return () => globalThis.clearTimeout(timeout);
   }, [focusedCallAnchor]);
@@ -2030,6 +2154,9 @@ export function SessionDetailPage() {
   const computed = rollupCosts(tree.map((item) => item.computedCost)).cost;
   const cost = session.inclusiveComputedCost ?? computed;
   const subagents = tree.length - 1;
+  const subagentCost = rollupCosts(
+    tree.slice(1).map((item) => item.computedCost),
+  );
   const selectedModel = model === "recorded" ||
       counterfactualModelIDs.includes(
         model as typeof counterfactualModelIDs[number],
@@ -2058,7 +2185,11 @@ export function SessionDetailPage() {
         : `${costDelta >= 0 ? "+" : "−"}${money.format(Math.abs(costDelta))}`,
     ].filter(Boolean).join(" · ")
     : subagents > 0
-    ? `${subagents} subagent${subagents === 1 ? "" : "s"}`
+    ? subagentCost.cost === undefined
+      ? "Subagents unpriced"
+      : `${money.format(subagentCost.cost)}${
+        subagentCost.hasUnpricedCost ? "+" : ""
+      } subagents`
     : undefined;
   const canOpenInGhostty = Boolean(
     (session.harness === "pi" || session.harness === "opencode" ||
@@ -2066,24 +2197,29 @@ export function SessionDetailPage() {
       session.workingDirectory &&
       (session.harness !== "pi" || session.sourcePath),
   );
-  function jumpToCall(occurrence: CacheMissOccurrence) {
-    const anchor = callAnchor(
+  function jumpToCall(occurrence: CallOccurrence) {
+    const callID = callAnchor(
       occurrence.session.id,
       occurrence.turn.number,
       occurrence.call.id,
     );
-    setFocusedCallAnchor(anchor);
+    const targetID = occurrence.jumpTarget === "turn"
+      ? turnAnchor(occurrence.session.id, occurrence.turn.number)
+      : callID;
+    setFocusedCallAnchor(callID);
     setCollapsedTurnIDs(new Set());
     let attempts = 0;
     const focusTarget = () => {
-      const target = document.getElementById(anchor);
-      const transcript = target?.closest<HTMLElement>(".sd-transcript");
+      const target = document.getElementById(targetID);
+      const transcript = target?.closest<HTMLElement>(
+        ".sd-transcript:not(.is-nested)",
+      );
       if (target && transcript) {
         const top = transcript.scrollTop + target.getBoundingClientRect().top -
           transcript.getBoundingClientRect().top - 16;
         transcript.scrollTo({ behavior: "smooth", top });
         target.focus({ preventScroll: true });
-      } else if (attempts++ < 6) {
+      } else if (attempts++ < 20) {
         globalThis.setTimeout(focusTarget, 50);
       }
     };
