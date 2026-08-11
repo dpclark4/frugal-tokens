@@ -628,21 +628,8 @@
   white-space: nowrap;
 }
 
-.sd-turn-detail-grid {
-  display: grid;
-  grid-template-rows: 1fr;
-  opacity: 1;
-  transition: grid-template-rows 300ms cubic-bezier(.23, 1, .32, 1), opacity
-    180ms ease;
-}
-
 .sd-turn-detail-grid > div {
   overflow: hidden;
-}
-
-.sd-turn.is-collapsed .sd-turn-detail-grid {
-  grid-template-rows: 0fr;
-  opacity: 0;
 }
 
 .sd-expandable-text > div {
@@ -850,21 +837,6 @@
 
 .sd-disclosure.is-open > button .sd-disclosure-chevron {
   transform: rotate(90deg);
-}
-
-.sd-disclosure-grid,
-.sd-tool-detail-grid {
-  display: grid;
-  grid-template-rows: 0fr;
-  opacity: 0;
-  transition: grid-template-rows 300ms cubic-bezier(.23, 1, .32, 1), opacity
-    220ms ease;
-}
-
-.sd-disclosure.is-open > .sd-disclosure-grid,
-.sd-tool-event.is-open > .sd-tool-detail-grid {
-  grid-template-rows: 1fr;
-  opacity: 1;
 }
 
 .sd-disclosure-grid > div,

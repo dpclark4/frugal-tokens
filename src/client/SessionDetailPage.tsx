@@ -356,11 +356,13 @@ function Disclosure({
         {meta && <span className="sd-disclosure-meta">{meta}</span>}
         <ChevronRight className="sd-disclosure-chevron" size={14} />
       </button>
-      <div className="sd-disclosure-grid">
-        <div>
-          <div className="sd-disclosure-content">{children}</div>
+      {open && (
+        <div className="sd-disclosure-grid">
+          <div>
+            <div className="sd-disclosure-content">{children}</div>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
@@ -813,7 +815,7 @@ function ToolEvent({
         </small>
         {hasDetails && <ChevronRight size={13} />}
       </button>
-      {hasDetails && (
+      {hasDetails && open && (
         <div className="sd-tool-detail-grid">
           <div>
             <div className="sd-tool-detail">
@@ -1210,25 +1212,27 @@ function TurnBlock({
           )}
         </div>
       </div>
-      <div className="sd-turn-detail-grid">
-        <div>
-          <div className="sd-agent-sequence">
-            {turn.calls.map((call) => (
-              <CallBlock
-                key={call.id}
-                call={call}
-                session={session}
-                turnNumber={turn.number}
-                effort={call.reasoningSetting?.settingValue ??
-                  turn.reasoningSetting?.settingValue}
-                depth={depth}
-                pathMode={pathMode}
-                rootDirectory={rootDirectory}
-              />
-            ))}
+      {!collapsed && (
+        <div className="sd-turn-detail-grid">
+          <div>
+            <div className="sd-agent-sequence">
+              {turn.calls.map((call) => (
+                <CallBlock
+                  key={call.id}
+                  call={call}
+                  session={session}
+                  turnNumber={turn.number}
+                  effort={call.reasoningSetting?.settingValue ??
+                    turn.reasoningSetting?.settingValue}
+                  depth={depth}
+                  pathMode={pathMode}
+                  rootDirectory={rootDirectory}
+                />
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </article>
   );
 }
