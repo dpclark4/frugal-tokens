@@ -41,6 +41,8 @@ import {
 } from "../shared/modelPricing.ts";
 import { getSession, openSessionInGhostty } from "./api.ts";
 import { harnessIcon, harnessName } from "./harness.ts";
+import { modelIcon } from "./modelIcons.ts";
+import ghosttyIcon from "./assets/icons/ghostty.svg";
 import "./SessionDetailPage.css";
 
 const route = getRouteApi("/sessions/$harness/$sessionId");
@@ -101,7 +103,26 @@ function elapsed(startedAt?: number, completedAt?: number) {
 }
 
 function HarnessMark({ harness }: { harness: SessionDetail["harness"] }) {
-  return <img className="sd-harness-mark" src={harnessIcon(harness)} alt="" />;
+  return (
+    <img
+      className={`sd-harness-mark${harness === "pi" ? " is-pi" : ""}`}
+      src={harnessIcon(harness)}
+      alt=""
+    />
+  );
+}
+
+function ModelMark({ model }: { model: string }) {
+  const icon = modelIcon(model);
+  return icon
+    ? (
+      <img
+        className={`sd-model-mark is-${icon.provider}`}
+        src={icon.source}
+        alt=""
+      />
+    )
+    : <Bot size={13} />;
 }
 
 function sessionTree(session: SessionDetail): SessionDetail[] {
@@ -956,7 +977,7 @@ function CallBlock({
     >
       <div className="sd-call-heading">
         <span className="sd-agent-avatar">
-          <Bot size={13} />
+          <ModelMark model={call.model} />
         </span>
         <strong>{displayModelName(call.model)}</strong>
         <span>Call {call.callWithinTurn}</span>
@@ -1334,6 +1355,10 @@ function Metadata({
   onColorMetricChange,
   onModelChange,
   onThinkingChange,
+  canOpenInGhostty,
+  ghosttyOpening,
+  ghosttyError,
+  onOpenInGhostty,
 }: {
   session: SessionDetail;
   pathMode: PathMode;
@@ -1349,6 +1374,10 @@ function Metadata({
   onColorMetricChange: (value: ColorMetric) => void;
   onModelChange: (value: CostScenario) => void;
   onThinkingChange: (value: string) => void;
+  canOpenInGhostty: boolean;
+  ghosttyOpening: boolean;
+  ghosttyError?: string;
+  onOpenInGhostty: () => void;
 }) {
   const tokens = inclusiveTokens(session);
   const calls = callsInTree(session);
@@ -1382,18 +1411,31 @@ function Metadata({
     <aside className="sd-metadata">
       <section>
         <h2>Run</h2>
-        <MetadataRow label="Harness">
-          {harnessName(session.harness)}
-        </MetadataRow>
-        <MetadataRow label="Agent">{session.agent ?? "Default"}</MetadataRow>
-        <MetadataRow label="Session ID" mono>{session.id}</MetadataRow>
         {session.workingDirectory && (
           <MetadataRow label="Working directory" mono>
             {session.workingDirectory}
           </MetadataRow>
         )}
-        {session.sourcePath && (
-          <MetadataRow label="Source" mono>{session.sourcePath}</MetadataRow>
+        <MetadataRow label="Harness">
+          {harnessName(session.harness)}
+        </MetadataRow>
+        {session.agent && (
+          <MetadataRow label="Agent type">{session.agent}</MetadataRow>
+        )}
+        <MetadataRow label="Session ID" mono>{session.id}</MetadataRow>
+        {canOpenInGhostty && (
+          <button
+            className="sd-launch-button"
+            type="button"
+            disabled={ghosttyOpening}
+            onClick={onOpenInGhostty}
+          >
+            <img className="sd-ghostty-icon" src={ghosttyIcon} alt="" />
+            {ghosttyOpening ? "Opening…" : "Open in Ghostty"}
+          </button>
+        )}
+        {canOpenInGhostty && ghosttyError && (
+          <div className="sd-launch-error" role="alert">{ghosttyError}</div>
         )}
       </section>
       <section>
@@ -1708,6 +1750,12 @@ export function SessionDetailPage() {
     : subagents > 0
     ? `${subagents} subagent${subagents === 1 ? "" : "s"}`
     : undefined;
+  const canOpenInGhostty = Boolean(
+    (session.harness === "pi" || session.harness === "opencode" ||
+      session.harness === "claude-code" || session.harness === "codex") &&
+      session.workingDirectory &&
+      (session.harness !== "pi" || session.sourcePath),
+  );
   const rootBreadcrumbs = breadcrumbEntries(
     session,
     color,
@@ -1735,42 +1783,16 @@ export function SessionDetailPage() {
             <span className="sd-session-harness">
               <HarnessMark harness={session.harness} />
             </span>
-            <div>
-              <span className="sd-kicker">
-                {harnessName(session.harness)} session
-              </span>
-              <h1>{session.title}</h1>
-            </div>
+            <h1>{session.title}</h1>
           </div>
-          <div className="sd-session-badges">
-            <span>
-              <Check size={12} />Archived
-            </span>
-            {session.thinking?.latest && (
+          {session.thinking?.latest && (
+            <div className="sd-session-badges">
               <span>
                 <Sparkles size={12} />Thinking {session.thinking.latest}
               </span>
-            )}
-            {(session.harness === "pi" || session.harness === "opencode" ||
-              session.harness === "claude-code" ||
-              session.harness === "codex") &&
-              session.workingDirectory &&
-              (session.harness !== "pi" || session.sourcePath) && (
-              <button
-                type="button"
-                disabled={ghosttyOpening}
-                onClick={openInGhostty}
-              >
-                <TerminalSquare size={13} />
-                {ghosttyOpening ? "Opening…" : "Open in Ghostty"}
-              </button>
-            )}
-          </div>
+            </div>
+          )}
         </header>
-
-        {ghosttyError && (
-          <div className="sd-launch-error" role="alert">{ghosttyError}</div>
-        )}
 
         <div className="sd-metrics">
           <DetailMetric
@@ -1881,6 +1903,10 @@ export function SessionDetailPage() {
                   replace: true,
                   resetScroll: false,
                 })}
+              canOpenInGhostty={canOpenInGhostty}
+              ghosttyOpening={ghosttyOpening}
+              ghosttyError={ghosttyError}
+              onOpenInGhostty={openInGhostty}
             />
           </div>
         </TurnCollapseContext.Provider>

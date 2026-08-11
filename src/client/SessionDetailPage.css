@@ -138,7 +138,7 @@
 
 .sd-session-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 24px;
   padding: 24px 26px 22px;
@@ -150,7 +150,8 @@
 .sd-session-title-row {
   display: flex;
   min-width: 0;
-  align-items: flex-start;
+  flex: 1;
+  align-items: center;
   gap: 13px;
 }
 
@@ -171,15 +172,13 @@
   object-fit: contain;
 }
 
-.sd-kicker {
-  color: var(--sd-ink-3);
-  font: 11px var(--mono);
-  letter-spacing: .02em;
+.session-detail-page.is-light .sd-harness-mark.is-pi {
+  filter: invert(1);
 }
 
 .sd-session-header h1 {
-  max-width: 780px;
-  margin-top: 5px;
+  min-width: 0;
+  margin: 0;
   color: var(--sd-ink);
   font-size: clamp(20px, 2.5vw, 28px);
   line-height: 1.18;
@@ -208,45 +207,44 @@
   font-size: 11.5px;
 }
 
-.sd-session-badges span:first-child {
-  background: #3dbb721e;
-  color: #72d89c;
-  box-shadow: 0 0 0 1px #3dbb7240;
-}
-
-.sd-session-badges button {
+.sd-launch-button {
   display: inline-flex;
-  min-height: 24px;
+  min-height: 28px;
   align-items: center;
   gap: 6px;
+  margin-top: 12px;
   padding: 0 9px;
-  border: 1px solid #5792c7;
+  border: 1px solid var(--sd-line-strong);
   border-radius: 7px;
-  background: #3778ae24;
-  color: #a9d5ff;
+  background: var(--sd-field);
+  color: var(--sd-ink-2);
   font-size: 11.5px;
   cursor: pointer;
 }
 
-.sd-session-badges button:hover:not(:disabled),
-.sd-session-badges button:focus-visible {
+.sd-ghostty-icon {
+  width: 13px;
+  height: 15px;
+  flex: none;
+  object-fit: contain;
+}
+
+.sd-launch-button:hover:not(:disabled),
+.sd-launch-button:focus-visible {
   border-color: var(--sd-accent);
-  background: #3778ae3b;
+  background: var(--sd-hover-2);
   color: var(--sd-ink);
 }
 
-.sd-session-badges button:disabled {
+.sd-launch-button:disabled {
   cursor: default;
   opacity: .65;
 }
 
 .sd-launch-error {
-  flex: none;
-  padding: 9px 26px;
-  border-bottom: 1px solid #ee5c6145;
-  background: #ee5c6112;
-  color: #ff9b9e;
-  font: 11.5px/1.45 var(--mono);
+  margin-top: 8px;
+  color: var(--sd-red);
+  font: 10.5px/1.45 var(--mono);
 }
 
 .sd-metrics {
@@ -485,6 +483,17 @@
   background: var(--sd-field);
   color: var(--sd-ink-2);
   box-shadow: 0 0 0 1px var(--sd-line-strong);
+}
+
+.sd-model-mark {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+}
+
+.session-detail-page.is-light .sd-model-mark.is-xai,
+.session-detail-page.is-dark .sd-model-mark.is-moonshot {
+  filter: invert(1);
 }
 
 .sd-user-avatar {
@@ -1273,35 +1282,13 @@
   ), var(--sd-surface);
 }
 
-.session-detail-page.is-light .sd-session-badges span,
-.session-detail-page.is-light .sd-session-badges button {
+.session-detail-page.is-light .sd-session-badges span {
   min-height: 28px;
+  border: 1px solid #bdcac6;
   border-radius: 5px;
   background: var(--sd-surface);
   box-shadow: none;
   font: 10px var(--mono);
-}
-
-.session-detail-page.is-light .sd-session-badges span {
-  border: 1px solid #bdcac6;
-}
-
-.session-detail-page.is-light .sd-session-badges span:first-child {
-  border-color: #b7d1c6;
-  background: #edf6f1;
-  color: #2e7959;
-  box-shadow: none;
-}
-
-.session-detail-page.is-light .sd-session-badges button {
-  border-color: #91aaa4;
-  background: var(--sd-surface);
-  color: #0f7169;
-}
-
-.session-detail-page.is-light .sd-session-badges button:hover:not(:disabled),
-.session-detail-page.is-light .sd-session-badges button:focus-visible {
-  background: #0f71691c;
 }
 
 .session-detail-page.is-light .sd-call-heading b,
@@ -1434,6 +1421,7 @@
 
 @media (max-width: 680px) {
   .sd-session-header {
+    align-items: stretch;
     flex-direction: column;
     padding: 20px;
   }
