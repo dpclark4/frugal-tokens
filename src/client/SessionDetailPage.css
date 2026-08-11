@@ -97,12 +97,12 @@
 }
 
 .sd-theme-toggle {
-  display: inline-flex;
+  display: inline-grid;
+  width: 28px;
   min-height: 27px;
-  align-items: center;
-  gap: 7px;
+  place-items: center;
   margin-left: auto;
-  padding: 0 9px;
+  padding: 0;
   border: 1px solid var(--sd-line-strong);
   border-radius: 7px;
   background: var(--sd-field);
@@ -1089,6 +1089,44 @@
   font: 10.5px/1.5 var(--mono);
 }
 
+.sd-session-id {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.sd-session-id-value {
+  display: -webkit-box;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}
+
+.sd-copy-button {
+  display: inline-grid;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--sd-ink-3);
+  cursor: pointer;
+}
+
+.sd-copy-button:hover,
+.sd-copy-button:focus-visible {
+  background: var(--sd-field);
+  color: var(--sd-ink);
+}
+
 .sd-cache-misses {
   margin-top: 8px;
 }
@@ -1258,7 +1296,6 @@
   display: inline-flex;
   flex-wrap: wrap;
   gap: 4px;
-  text-transform: capitalize;
 }
 
 .sd-model-level + .sd-model-level::before {

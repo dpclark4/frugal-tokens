@@ -16,6 +16,7 @@ import {
   ChevronDown,
   ChevronRight,
   Clock3,
+  Copy,
   FileText,
   Gauge,
   Image,
@@ -1537,6 +1538,58 @@ function MetadataRow({ label, children, mono = false }: {
   );
 }
 
+function piSessionIDLabel(id: string) {
+  const uuid = /_[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.exec(id);
+  return uuid === null ? id : uuid[0].slice(1);
+}
+
+async function copyText(value: string) {
+  if (navigator.clipboard && globalThis.isSecureContext) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("Clipboard access is unavailable");
+}
+
+function SessionID({ session }: { session: SessionDetail }) {
+  const [copied, setCopied] = useState(false);
+  const label = session.harness === "pi"
+    ? piSessionIDLabel(session.id)
+    : session.id;
+
+  async function copySessionID() {
+    try {
+      await copyText(session.id);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <span className="sd-session-id">
+      <span className="sd-session-id-value" title={session.id}>{label}</span>
+      <button
+        type="button"
+        className="sd-copy-button"
+        aria-label={copied ? "Session ID copied" : "Copy full session ID"}
+        title={copied ? "Copied" : "Copy full session ID"}
+        onClick={() => void copySessionID()}
+      >
+        {copied ? <Check size={12} /> : <Copy size={12} />}
+      </button>
+    </span>
+  );
+}
+
 function Metadata({
   session,
   pathMode,
@@ -1637,7 +1690,9 @@ function Metadata({
         {session.agent && (
           <MetadataRow label="Agent type">{session.agent}</MetadataRow>
         )}
-        <MetadataRow label="Session ID" mono>{session.id}</MetadataRow>
+        <MetadataRow label="Session ID" mono>
+          <SessionID session={session} />
+        </MetadataRow>
         {canOpenInGhostty && (
           <button
             className="sd-launch-button"
@@ -1729,7 +1784,7 @@ function Metadata({
                 aria-pressed={pathMode === value}
                 onClick={() => onPathModeChange(value)}
               >
-                {value === "absolute" ? "Full" : "Relative"}
+                {value === "absolute" ? "Absolute" : "Relative"}
               </button>
             ))}
           </span>
@@ -1873,7 +1928,6 @@ function DetailNavigation({
         onClick={() => onThemeChange(nextTheme)}
       >
         {theme === "dark" ? <Sun size={14} /> : <Moon size={14} />}
-        {theme === "dark" ? "Light mode" : "Dark mode"}
       </button>
     </nav>
   );
@@ -1967,6 +2021,8 @@ export function SessionDetailPage() {
   const turnsExpanded = turnIDs.every((id) => !collapsedTurnIDs.has(id));
   const calls = callsInTree(session);
   const tokens = inclusiveTokens(session);
+  const input = contextSize(tokens);
+  const reuse = input === 0 ? undefined : tokens.cacheRead / input;
   const bounds = sessionBounds(session);
   const computed = rollupCosts(tree.map((item) => item.computedCost)).cost;
   const cost = session.inclusiveComputedCost ?? computed;
@@ -2068,7 +2124,7 @@ export function SessionDetailPage() {
             value={elapsed(bounds.start, bounds.end) ?? "Unavailable"}
             detail={bounds.start === undefined
               ? undefined
-              : timestamp.format(bounds.start)}
+              : `Started ${timestamp.format(bounds.start)}`}
           />
           <DetailMetric
             label="Activity"
@@ -2081,10 +2137,12 @@ export function SessionDetailPage() {
           />
           <DetailMetric
             label="Cumulative input"
-            value={compact.format(contextSize(tokens))}
+            value={compact.format(input)}
             detail={[
-              `${compact.format(tokens.cacheRead)} cached`,
               `${compact.format(tokens.uncachedInput)} uncached`,
+              reuse === undefined
+                ? "Reuse unavailable"
+                : `${(reuse * 100).toFixed(1)}% reused`,
               (tokens.cacheWrite ?? 0) > 0
                 ? `${compact.format(tokens.cacheWrite ?? 0)} written`
                 : undefined,
