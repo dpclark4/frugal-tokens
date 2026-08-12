@@ -1,4 +1,9 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  type PointerEvent as ReactPointerEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
@@ -594,6 +599,16 @@ function timelineDayBounds(day: WorkRhythmDay) {
 const minimumTimelineWindow = 4 * timelineHour;
 const timelineZoomLevels = [12, 6, 3, 1] as const;
 type TimelineZoom = "fit" | (typeof timelineZoomLevels)[number];
+type TimelineSelection = { start: number; end: number };
+type TimelineSegment = {
+  start: number;
+  end: number;
+  overlapping: boolean;
+};
+type TimelineDrag = TimelineSelection & {
+  pointerId: number;
+  startClientX: number;
+};
 
 function timelineFitBounds(day: WorkRhythmDay) {
   const dayBounds = timelineDayBounds(day);
@@ -653,7 +668,7 @@ function timelineSegments(
         point > interval.start && point < interval.end
       ),
     ].toSorted((a, b) => a - b);
-    return boundaries.slice(0, -1).map((start, index) => {
+    const segments = boundaries.slice(0, -1).map((start, index) => {
       const end = boundaries[index + 1];
       return {
         start,
@@ -662,14 +677,32 @@ function timelineSegments(
           other.start < end && other.end > start
         ),
       };
-    });
+    }).reduce<TimelineSegment[]>((joined, segment) => {
+      const previous = joined.at(-1);
+      if (
+        previous?.end === segment.start &&
+        previous.overlapping === segment.overlapping
+      ) {
+        previous.end = segment.end;
+      } else {
+        joined.push({ ...segment });
+      }
+      return joined;
+    }, []);
+    return segments.map((segment, index) => ({
+      ...segment,
+      startsInterval: index === 0,
+      endsInterval: index === segments.length - 1,
+    }));
   });
 }
 
 function ActivityTimeline({ day }: { day: WorkRhythmDay }) {
   const navigate = useNavigate();
   const viewportRef = useRef<HTMLDivElement>(null);
+  const timelineDragRef = useRef<TimelineDrag | undefined>(undefined);
   const [zoom, setZoom] = useState<TimelineZoom>("fit");
+  const [selection, setSelection] = useState<TimelineSelection>();
   const [tooltip, setTooltip] = useState<{
     session: WorkRhythmDay["sessions"][number];
     left: number;
@@ -677,6 +710,8 @@ function ActivityTimeline({ day }: { day: WorkRhythmDay }) {
   }>();
 
   useEffect(() => {
+    timelineDragRef.current = undefined;
+    setSelection(undefined);
     setZoom("fit");
     const frame = requestAnimationFrame(() => {
       viewportRef.current?.scrollTo({ top: 0, left: 0 });
@@ -706,6 +741,17 @@ function ActivityTimeline({ day }: { day: WorkRhythmDay }) {
     tick += tickHours * timelineHour
   ) ticks.push(tick);
 
+  function zoomAround(nextZoom: TimelineZoom, center: number) {
+    setZoom(nextZoom);
+    requestAnimationFrame(() => {
+      const viewport = viewportRef.current;
+      if (!viewport) return;
+      viewport.scrollLeft = nextZoom === "fit"
+        ? 0
+        : center * viewport.scrollWidth - viewport.clientWidth / 2;
+    });
+  }
+
   function changeZoom(nextIndex: number) {
     const nextZoom = zoomOptions[nextIndex];
     if (nextZoom === undefined) return;
@@ -714,14 +760,68 @@ function ActivityTimeline({ day }: { day: WorkRhythmDay }) {
       ? position(timelineActivityFocus(day)) / 100
       : (viewport.scrollLeft + viewport.clientWidth / 2) /
         viewport.scrollWidth;
-    setZoom(nextZoom);
-    requestAnimationFrame(() => {
-      const updated = viewportRef.current;
-      if (!updated) return;
-      updated.scrollLeft = nextZoom === "fit"
-        ? 0
-        : center * updated.scrollWidth - updated.clientWidth / 2;
-    });
+    zoomAround(nextZoom, center);
+  }
+
+  function pointerPosition(target: HTMLSpanElement, clientX: number) {
+    const trackBounds = target.getBoundingClientRect();
+    return Math.max(
+      0,
+      Math.min(1, (clientX - trackBounds.left) / trackBounds.width),
+    );
+  }
+
+  function beginTimelineSelection(
+    event: ReactPointerEvent<HTMLSpanElement>,
+  ) {
+    if (event.pointerType !== "mouse" || event.button !== 0) return;
+    const start = pointerPosition(event.currentTarget, event.clientX);
+    timelineDragRef.current = {
+      pointerId: event.pointerId,
+      start,
+      end: start,
+      startClientX: event.clientX,
+    };
+    setSelection({ start, end: start });
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  }
+
+  function updateTimelineSelection(
+    event: ReactPointerEvent<HTMLSpanElement>,
+  ) {
+    const drag = timelineDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    drag.end = pointerPosition(event.currentTarget, event.clientX);
+    setSelection({ start: drag.start, end: drag.end });
+  }
+
+  function finishTimelineSelection(
+    event: ReactPointerEvent<HTMLSpanElement>,
+  ) {
+    const drag = timelineDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    drag.end = pointerPosition(event.currentTarget, event.clientX);
+    timelineDragRef.current = undefined;
+    setSelection(undefined);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    if (Math.abs(event.clientX - drag.startClientX) < 8) return;
+
+    const selectedHours = Math.abs(drag.end - drag.start) * fitHours;
+    const nextZoom = zoomOptions
+      .filter((option): option is Exclude<TimelineZoom, "fit"> =>
+        option !== "fit" && option >= selectedHours
+      )
+      .at(-1) ?? "fit";
+    zoomAround(nextZoom, (drag.start + drag.end) / 2);
+  }
+
+  function cancelTimelineSelection(event: ReactPointerEvent<HTMLSpanElement>) {
+    if (timelineDragRef.current?.pointerId !== event.pointerId) return;
+    timelineDragRef.current = undefined;
+    setSelection(undefined);
   }
 
   function showSessionTooltip(
@@ -770,6 +870,16 @@ function ActivityTimeline({ day }: { day: WorkRhythmDay }) {
                 </strong>
               </span>
             </div>
+            {day.sessions.length > 0 && (
+              <div className="timeline-legend" aria-label="Timeline colors">
+                <span>
+                  <i className="overlapping" />Overlap
+                </span>
+                <span>
+                  <i />No overlap
+                </span>
+              </div>
+            )}
             {day.sessions.length > 0 && (
               <div className="timeline-zoom" aria-label="Timeline zoom">
                 <button
@@ -842,7 +952,14 @@ function ActivityTimeline({ day }: { day: WorkRhythmDay }) {
                             alt={harnessNames[session.harness]}
                           />
                         </button>
-                        <span className="timeline-track" aria-hidden="true">
+                        <span
+                          className="timeline-track"
+                          aria-hidden="true"
+                          onPointerDown={beginTimelineSelection}
+                          onPointerMove={updateTimelineSelection}
+                          onPointerUp={finishTimelineSelection}
+                          onPointerCancel={cancelTimelineSelection}
+                        >
                           {ticks.map((tick) => (
                             <i
                               className="timeline-gridline"
@@ -856,7 +973,9 @@ function ActivityTimeline({ day }: { day: WorkRhythmDay }) {
                             <i
                               className={`timeline-interval${
                                 segment.overlapping ? " overlapping" : ""
-                              }`}
+                              }${
+                                segment.startsInterval ? " starts-interval" : ""
+                              }${segment.endsInterval ? " ends-interval" : ""}`}
                               key={`${segment.start}:${segment.end}`}
                               style={{
                                 left: `${position(segment.start)}%`,
@@ -870,6 +989,20 @@ function ActivityTimeline({ day }: { day: WorkRhythmDay }) {
                               }}
                             />
                           ))}
+                          {selection && (
+                            <i
+                              className="timeline-selection"
+                              style={{
+                                left: `${
+                                  Math.min(selection.start, selection.end) * 100
+                                }%`,
+                                width: `${
+                                  Math.abs(selection.end - selection.start) *
+                                  100
+                                }%`,
+                              }}
+                            />
+                          )}
                         </span>
                       </li>
                     );
