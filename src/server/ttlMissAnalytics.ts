@@ -6,6 +6,7 @@ import {
 import type {
   ModelCallCostSummary,
   StoredCacheMiss,
+  StoredCacheMissAggregate,
 } from "./conversationRepository.ts";
 import { computeModelCallCost, estimateModelCacheMissCost } from "./pricing.ts";
 import type { UsageCall } from "./usage.ts";
@@ -14,25 +15,69 @@ const THIRTY_MINUTES_MS = 30 * 60 * 1_000;
 const TWO_HOURS_MS = 2 * 60 * 60 * 1_000;
 const EIGHT_HOURS_MS = 8 * 60 * 60 * 1_000;
 
-type CacheMiss = CacheMissRecord;
+type CacheMiss = {
+  gap: number;
+  gapBucket?: StoredCacheMissAggregate["gapBucket"];
+  status: CacheMissRecord["status"];
+  reason?: CacheMissRecord["reason"];
+  cause?: CacheMissRecord["cause"];
+  missedTokens: number;
+  actualMissedCost?: number;
+  expectedReadCost?: number;
+  estimatedExtraCost?: number;
+  count: number;
+  unpriced: number;
+};
 
-/**
- * Cost of the root-session misses shown by the cache overview. A miss's
- * modelCallCost is the full current call cost; actualMissedCost is the
- * attributed cost of the reusable context that was not read.
- */
-export function sumRootCacheMissCost(
-  misses: StoredCacheMiss[],
-  start?: number,
-) {
-  return misses.reduce(
-    (sum, miss) =>
-      miss.sessionID === miss.rootID &&
-        (start === undefined || miss.sessionStartedAt >= start)
-        ? sum + (miss.actualMissedCost ?? 0)
-        : sum,
-    0,
-  );
+function storedCacheMiss(miss: StoredCacheMiss): CacheMiss {
+  return {
+    gap: miss.gap,
+    status: miss.status,
+    ...(miss.reason === undefined ? {} : { reason: miss.reason }),
+    ...(miss.cause === undefined ? {} : { cause: miss.cause }),
+    missedTokens: miss.missedTokens,
+    actualMissedCost: miss.actualMissedCost,
+    expectedReadCost: miss.expectedReadCost,
+    estimatedExtraCost: miss.estimatedExtraCost,
+    count: 1,
+    unpriced: miss.actualMissedCost === undefined ? 1 : 0,
+  };
+}
+
+function aggregatedCacheMiss(miss: StoredCacheMissAggregate): CacheMiss {
+  return {
+    gap: 0,
+    gapBucket: miss.gapBucket,
+    status: miss.status,
+    ...(miss.reason === undefined ? {} : { reason: miss.reason }),
+    ...(miss.cause === undefined ? {} : { cause: miss.cause }),
+    missedTokens: miss.missedTokens,
+    actualMissedCost: miss.attributedCost,
+    expectedReadCost: miss.expectedReadCost,
+    estimatedExtraCost: miss.estimatedExtraCost,
+    count: miss.misses,
+    unpriced: miss.unpriced,
+  };
+}
+
+function categorizedMisses(misses: CacheMiss[]) {
+  return {
+    ttl: misses.filter((miss) => miss.cause === "ttl"),
+    compaction: misses.filter((miss) => miss.cause === "compaction"),
+    thinkingChange: misses.filter((miss) => miss.cause === "thinking-change"),
+    modelChange: misses.filter((miss) =>
+      miss.reason === "model-change" && miss.cause === undefined
+    ),
+    unexpected: misses.filter((miss) =>
+      miss.cause === undefined && miss.reason !== "model-change"
+    ),
+    full: misses.filter((miss) => miss.status === "full-miss"),
+    partial: misses.filter((miss) => miss.status === "partial-hit"),
+  };
+}
+
+export function sumCacheMissCost(misses: StoredCacheMissAggregate[]) {
+  return misses.reduce((sum, miss) => sum + miss.attributedCost, 0);
 }
 
 function cacheMisses(calls: UsageCall[]) {
@@ -56,18 +101,12 @@ function cacheMisses(calls: UsageCall[]) {
       status: assessment.status,
       ...(assessment.reason === undefined ? {} : { reason: assessment.reason }),
       ...(assessment.cause === undefined ? {} : { cause: assessment.cause }),
-      retainedRatio: assessment.retainedRatio,
-      previousReusableTokens: assessment.previousReusableTokens,
-      previousContextTokens: previous.tokens.uncachedInput +
-        previous.tokens.cacheRead + (previous.tokens.cacheWrite ?? 0),
-      currentContextTokens: call.tokens.uncachedInput + call.tokens.cacheRead +
-        (call.tokens.cacheWrite ?? 0),
-      actualCacheReadTokens: call.tokens.cacheRead,
       missedTokens: estimate?.missedTokens ?? 0,
-      modelCallCost: undefined,
       actualMissedCost: estimate?.actualMissedCost,
       expectedReadCost: estimate?.expectedReadCost,
       estimatedExtraCost: estimate?.estimatedExtraCost,
+      count: 1,
+      unpriced: estimate === undefined ? 1 : 0,
     });
   }
   return misses;
@@ -89,16 +128,14 @@ function addCacheMisses(
   category: TtlMissMetrics["cacheMisses"]["full"],
   misses: CacheMiss[],
 ) {
-  if (misses.length > 0) category.affectedSessions++;
-  category.misses += misses.length;
+  if (misses.some((miss) => miss.count > 0)) category.affectedSessions++;
   for (const miss of misses) {
-    if (miss.actualMissedCost === undefined) category.unpriced++;
-    else {
-      category.attributedCost += miss.actualMissedCost;
-      category.expectedReadCost += miss.expectedReadCost!;
-      category.estimatedExtraCost += miss.estimatedExtraCost!;
-      category.missedTokens += miss.missedTokens;
-    }
+    category.misses += miss.count;
+    category.unpriced += miss.unpriced;
+    category.attributedCost += miss.actualMissedCost ?? 0;
+    category.expectedReadCost += miss.expectedReadCost ?? 0;
+    category.estimatedExtraCost += miss.estimatedExtraCost ?? 0;
+    category.missedTokens += miss.missedTokens;
   }
 }
 
@@ -108,6 +145,7 @@ export function aggregateTtlMisses(
   rangeDays: number,
   storedMisses?: StoredCacheMiss[],
   storedCosts?: ModelCallCostSummary,
+  storedAggregates?: StoredCacheMissAggregate[],
 ): TtlMissMetrics {
   const rangedCalls = usageCalls.filter((call) => call.startedAt >= start);
   const sessionGroups: Array<{
@@ -167,7 +205,30 @@ export function aggregateTtlMisses(
       eightHoursOrMoreSessions: 0,
       eightHoursOrMoreCost: 0,
     },
-    subagents: { affectedSessions: 0, misses: 0 },
+    combined: {
+      affectedSessions: 0,
+      misses: 0,
+      attributedCost: 0,
+      missedTokens: 0,
+      unpriced: 0,
+    },
+    subagents: {
+      affectedSessions: 0,
+      misses: 0,
+      attributedCost: 0,
+      missedTokens: 0,
+      unpriced: 0,
+      ttl: emptyCacheMissCategory(),
+      compaction: emptyCacheMissCategory(),
+      thinkingChange: emptyCacheMissCategory(),
+      modelChange: emptyCacheMissCategory(),
+      unexpected: {
+        full: emptyCacheMissCategory(),
+        partial: emptyCacheMissCategory(),
+      },
+      full: emptyCacheMissCategory(),
+      partial: emptyCacheMissCategory(),
+    },
     cacheMisses: {
       affectedSessions: 0,
       otherAffectedSessions: 0,
@@ -211,32 +272,26 @@ export function aggregateTtlMisses(
     const rootCalls = calls.filter((call) =>
       call.session.id === call.session.rootID
     );
-    const allRootMisses = storedMisses === undefined
-      ? cacheMisses(rootCalls)
-      : storedMisses.filter((miss) =>
+    const allRootMisses = storedAggregates !== undefined
+      ? storedAggregates.filter((miss) =>
+        miss.harness === group.harness && miss.rootID === group.rootID &&
+        miss.scope === "root"
+      ).map(aggregatedCacheMiss)
+      : storedMisses !== undefined
+      ? storedMisses.filter((miss) =>
         miss.harness === group.harness &&
         miss.rootID === group.rootID &&
         miss.sessionID === group.rootID
-      );
-    const rootMisses = allRootMisses.filter((miss) => miss.cause === "ttl");
-    const compactionMisses = allRootMisses.filter((miss) =>
-      miss.cause === "compaction"
-    );
-    const thinkingChangeMisses = allRootMisses.filter((miss) =>
-      miss.cause === "thinking-change"
-    );
-    const modelChangeMisses = allRootMisses.filter((miss) =>
-      miss.reason === "model-change" && miss.cause === undefined
-    );
-    const unexpectedMisses = allRootMisses.filter((miss) =>
-      miss.cause === undefined && miss.reason !== "model-change"
-    );
-    const fullMisses = allRootMisses.filter((miss) =>
-      miss.status === "full-miss"
-    );
-    const partialMisses = allRootMisses.filter((miss) =>
-      miss.status === "partial-hit"
-    );
+      ).map(storedCacheMiss)
+      : cacheMisses(rootCalls);
+    const rootCategories = categorizedMisses(allRootMisses);
+    const rootMisses = rootCategories.ttl;
+    const compactionMisses = rootCategories.compaction;
+    const thinkingChangeMisses = rootCategories.thinkingChange;
+    const modelChangeMisses = rootCategories.modelChange;
+    const unexpectedMisses = rootCategories.unexpected;
+    const fullMisses = rootCategories.full;
+    const partialMisses = rootCategories.partial;
     let rootSessionCost = group.rootCost ?? 0;
     let hasUnpricedRootSessionCost = group.hasUnpricedRootCost ?? false;
     if (storedCosts === undefined) {
@@ -291,60 +346,128 @@ export function aggregateTtlMisses(
       result.affectedSessionCost += rootSessionCost;
       result.hasUnpricedAffectedSessionCost ||= hasUnpricedRootSessionCost;
     }
-    result.misses.total += rootMisses.length;
-    let hasUnderThirtyMinutesMiss = false;
-    let hasThirtyMinutesToTwoHoursMiss = false;
-    let hasUnderTwoHoursMiss = false;
-    let hasTwoToEightHoursMiss = false;
-    let hasEightHoursOrMoreMiss = false;
     for (const miss of rootMisses) {
-      if (miss.actualMissedCost === undefined) result.misses.unpriced++;
-      else result.misses.attributedCost += miss.actualMissedCost;
-      if (miss.gap < TWO_HOURS_MS) {
-        hasUnderTwoHoursMiss = true;
-        result.misses.underTwoHours++;
+      result.misses.total += miss.count;
+      result.misses.unpriced += miss.unpriced;
+      result.misses.attributedCost += miss.actualMissedCost ?? 0;
+      const bucket = miss.gapBucket ??
+        (miss.gap < THIRTY_MINUTES_MS
+          ? "under-thirty"
+          : miss.gap < TWO_HOURS_MS
+          ? "thirty-to-two"
+          : miss.gap < EIGHT_HOURS_MS
+          ? "two-to-eight"
+          : "eight-plus");
+      if (bucket === "under-thirty" || bucket === "thirty-to-two") {
+        result.misses.underTwoHours += miss.count;
         result.misses.underTwoHoursCost += miss.actualMissedCost ?? 0;
-        if (miss.gap < THIRTY_MINUTES_MS) {
-          hasUnderThirtyMinutesMiss = true;
-          result.misses.underThirtyMinutes++;
-          result.misses.underThirtyMinutesCost += miss.actualMissedCost ?? 0;
-        } else {
-          hasThirtyMinutesToTwoHoursMiss = true;
-          result.misses.thirtyMinutesToTwoHours++;
-          result.misses.thirtyMinutesToTwoHoursCost += miss.actualMissedCost ??
-            0;
-        }
-      } else if (miss.gap < EIGHT_HOURS_MS) {
-        hasTwoToEightHoursMiss = true;
-        result.misses.twoToEightHours++;
+      }
+      if (bucket === "under-thirty") {
+        result.misses.underThirtyMinutes += miss.count;
+        result.misses.underThirtyMinutesCost += miss.actualMissedCost ?? 0;
+      } else if (bucket === "thirty-to-two") {
+        result.misses.thirtyMinutesToTwoHours += miss.count;
+        result.misses.thirtyMinutesToTwoHoursCost += miss.actualMissedCost ?? 0;
+      } else if (bucket === "two-to-eight") {
+        result.misses.twoToEightHours += miss.count;
         result.misses.twoToEightHoursCost += miss.actualMissedCost ?? 0;
       } else {
-        hasEightHoursOrMoreMiss = true;
-        result.misses.eightHoursOrMore++;
+        result.misses.eightHoursOrMore += miss.count;
         result.misses.eightHoursOrMoreCost += miss.actualMissedCost ?? 0;
       }
     }
-    if (hasUnderThirtyMinutesMiss) result.misses.underThirtyMinutesSessions++;
-    if (hasThirtyMinutesToTwoHoursMiss) {
+    const ttlBuckets = new Set(
+      rootMisses.map((miss) =>
+        miss.gapBucket ??
+          (miss.gap < THIRTY_MINUTES_MS
+            ? "under-thirty"
+            : miss.gap < TWO_HOURS_MS
+            ? "thirty-to-two"
+            : miss.gap < EIGHT_HOURS_MS
+            ? "two-to-eight"
+            : "eight-plus")
+      ),
+    );
+    if (ttlBuckets.has("under-thirty")) {
+      result.misses.underThirtyMinutesSessions++;
+    }
+    if (ttlBuckets.has("thirty-to-two")) {
       result.misses.thirtyMinutesToTwoHoursSessions++;
     }
-    if (hasUnderTwoHoursMiss) result.misses.underTwoHoursSessions++;
-    if (hasTwoToEightHoursMiss) result.misses.twoToEightHoursSessions++;
-    if (hasEightHoursOrMoreMiss) result.misses.eightHoursOrMoreSessions++;
+    if (
+      ttlBuckets.has("under-thirty") || ttlBuckets.has("thirty-to-two")
+    ) result.misses.underTwoHoursSessions++;
+    if (ttlBuckets.has("two-to-eight")) {
+      result.misses.twoToEightHoursSessions++;
+    }
+    if (ttlBuckets.has("eight-plus")) {
+      result.misses.eightHoursOrMoreSessions++;
+    }
 
-    const subagentMisses = storedMisses === undefined
-      ? cacheMisses(
+    const allSubagentMisses = storedAggregates !== undefined
+      ? storedAggregates.filter((miss) =>
+        miss.harness === group.harness && miss.rootID === group.rootID &&
+        miss.scope === "subagent"
+      ).map(aggregatedCacheMiss)
+      : storedMisses !== undefined
+      ? storedMisses.filter((miss) =>
+        miss.harness === group.harness && miss.rootID === group.rootID &&
+        miss.sessionID !== group.rootID
+      ).map(storedCacheMiss)
+      : cacheMisses(
         calls.filter((call) => call.session.id !== call.session.rootID),
-      ).filter((miss) => miss.cause === "ttl")
-      : storedMisses.filter((miss) =>
-        miss.harness === group.harness &&
-        miss.rootID === group.rootID &&
-        miss.sessionID !== group.rootID &&
-        miss.cause === "ttl"
       );
-    if (subagentMisses.length > 0) result.subagents.affectedSessions++;
-    result.subagents.misses += subagentMisses.length;
+    const subagentCategories = categorizedMisses(allSubagentMisses);
+    addCacheMisses(result.subagents.full, subagentCategories.full);
+    addCacheMisses(result.subagents.partial, subagentCategories.partial);
+    addCacheMisses(result.subagents.ttl, subagentCategories.ttl);
+    addCacheMisses(
+      result.subagents.compaction,
+      subagentCategories.compaction,
+    );
+    addCacheMisses(
+      result.subagents.thinkingChange,
+      subagentCategories.thinkingChange,
+    );
+    addCacheMisses(
+      result.subagents.modelChange,
+      subagentCategories.modelChange,
+    );
+    addCacheMisses(
+      result.subagents.unexpected.full,
+      subagentCategories.unexpected.filter((miss) =>
+        miss.status === "full-miss"
+      ),
+    );
+    addCacheMisses(
+      result.subagents.unexpected.partial,
+      subagentCategories.unexpected.filter((miss) =>
+        miss.status === "partial-hit"
+      ),
+    );
+    if (allSubagentMisses.length > 0) result.subagents.affectedSessions++;
+    if (allRootMisses.length > 0 || allSubagentMisses.length > 0) {
+      result.combined.affectedSessions++;
+    }
   }
+
+  result.subagents.misses = result.subagents.full.misses +
+    result.subagents.partial.misses;
+  result.subagents.attributedCost = result.subagents.full.attributedCost +
+    result.subagents.partial.attributedCost;
+  result.subagents.missedTokens = result.subagents.full.missedTokens +
+    result.subagents.partial.missedTokens;
+  result.subagents.unpriced = result.subagents.full.unpriced +
+    result.subagents.partial.unpriced;
+  result.combined.misses = result.cacheMisses.full.misses +
+    result.cacheMisses.partial.misses + result.subagents.misses;
+  result.combined.attributedCost = result.cacheMisses.full.attributedCost +
+    result.cacheMisses.partial.attributedCost +
+    result.subagents.attributedCost;
+  result.combined.missedTokens = result.cacheMisses.full.missedTokens +
+    result.cacheMisses.partial.missedTokens + result.subagents.missedTokens;
+  result.combined.unpriced = result.cacheMisses.full.unpriced +
+    result.cacheMisses.partial.unpriced + result.subagents.unpriced;
 
   return result;
 }

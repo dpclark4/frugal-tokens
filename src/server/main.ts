@@ -14,10 +14,7 @@ import {
   sessionMissFilterSchema,
 } from "../shared/sessionSchemas.ts";
 import { aggregateUsageRollups } from "./usageAnalytics.ts";
-import {
-  aggregateTtlMisses,
-  sumRootCacheMissCost,
-} from "./ttlMissAnalytics.ts";
+import { aggregateTtlMisses, sumCacheMissCost } from "./ttlMissAnalytics.ts";
 import { aggregateToolCalls } from "./toolCallAnalytics.ts";
 import {
   aggregatePerformance,
@@ -446,7 +443,7 @@ const cacheMissOverview = (context: Context) => {
   ).getTime();
   const sourceDurations = new Map<string, number>();
   const sourceStartedAt = performance.now();
-  const storedMisses = readRepository.listCacheMisses(
+  const storedMisses = readRepository.summarizeCacheMisses(
     start,
     harness === "all" ? undefined : harness as SessionSummary["harness"],
   );
@@ -464,8 +461,9 @@ const cacheMissOverview = (context: Context) => {
     [],
     start,
     range,
-    storedMisses,
+    undefined,
     storedCosts,
+    storedMisses,
   );
   const aggregationDuration = performance.now() - aggregationStartedAt;
   const totalDuration = performance.now() - requestStartedAt;
@@ -479,7 +477,7 @@ const cacheMissOverview = (context: Context) => {
     }, total;dur=${totalDuration.toFixed(1)}`,
   );
   console.info(
-    `[cache-miss-overview] harness=${harness} range=${rangeParam} calls=0 storedMisses=${storedMisses.length} sources=${
+    `[cache-miss-overview] harness=${harness} range=${rangeParam} calls=0 storedGroups=${storedMisses.length} sources=${
       formatTiming(sourceDuration)
     } ${sourceTimings} aggregate=${formatTiming(aggregationDuration)} total=${
       formatTiming(totalDuration)
@@ -566,9 +564,8 @@ app.get("/api/activity-overview", (context) => {
   );
   const loadDuration = performance.now() - loadStartedAt;
   const aggregationStartedAt = performance.now();
-  const spendAtMissCalls = sumRootCacheMissCost(
-    readRepository.listCacheMisses(start, selectedHarness),
-    start,
+  const spendAtMissCalls = sumCacheMissCost(
+    readRepository.summarizeCacheMisses(start, selectedHarness),
   );
   const overview = aggregateActivityOverview(
     loaded,

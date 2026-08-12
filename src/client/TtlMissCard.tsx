@@ -29,9 +29,8 @@ function countLabel(value: number, singular: string, plural: string) {
 
 function CacheMissOverview({ metrics }: { metrics: TtlMissMetrics }) {
   const { cacheMisses } = metrics;
-  const totalMisses = cacheMisses.full.misses + cacheMisses.partial.misses;
-  const attributedCost = cacheMisses.full.attributedCost +
-    cacheMisses.partial.attributedCost;
+  const totalMisses = metrics.combined.misses;
+  const attributedCost = metrics.combined.attributedCost;
   const unexpected = cacheMisses.unexpected;
   const unexpectedMisses = unexpected.full.misses + unexpected.partial.misses;
   const unexpectedCost = unexpected.full.attributedCost +
@@ -55,9 +54,8 @@ function CacheMissOverview({ metrics }: { metrics: TtlMissMetrics }) {
       <div className="compact-overview-summary cache-miss-summary">
         <div>
           <strong>
-            {integer.format(cacheMisses.affectedSessions)} ({
-              share(cacheMisses.affectedSessions, metrics.sessions)
-            })
+            {integer.format(metrics.combined.affectedSessions)}{" "}
+            ({share(metrics.combined.affectedSessions, metrics.sessions)})
           </strong>
           <span>Sessions with cache misses</span>
         </div>
@@ -67,17 +65,15 @@ function CacheMissOverview({ metrics }: { metrics: TtlMissMetrics }) {
         </div>
         <div>
           <strong>
-            {money.format(cacheMisses.affectedSessionCost)} ({
-              share(cacheMisses.affectedSessionCost, metrics.totalSessionCost)
-            })
+            {money.format(cacheMisses.affectedSessionCost)}{" "}
+            ({share(cacheMisses.affectedSessionCost, metrics.totalSessionCost)})
           </strong>
           <span>Spend in affected sessions</span>
         </div>
         <div>
           <strong>
-            {money.format(attributedCost)} ({
-              share(attributedCost, cacheMisses.affectedSessionCost)
-            })
+            {money.format(attributedCost)}{" "}
+            ({share(attributedCost, metrics.totalCost)})
           </strong>
           <span>Cache-miss cost</span>
         </div>
@@ -89,7 +85,8 @@ function CacheMissOverview({ metrics }: { metrics: TtlMissMetrics }) {
             <h3>TTL misses</h3>
             <span>
               {countLabel(metrics.misses.total, "miss", "misses")} across{" "}
-              {countLabel(metrics.affectedSessions, "session", "sessions")} ·{" "}
+              {countLabel(metrics.affectedSessions, "session", "sessions")} ·
+              {" "}
               {money.format(metrics.misses.attributedCost)}
             </span>
           </div>
@@ -138,8 +135,7 @@ function CacheMissOverview({ metrics }: { metrics: TtlMissMetrics }) {
           <div className="cache-miss-section-heading">
             <h3>Other misses</h3>
             <span>
-              {countLabel(otherMisses, "miss", "misses")} across{" "}
-              {countLabel(
+              {countLabel(otherMisses, "miss", "misses")} across {countLabel(
                 cacheMisses.otherAffectedSessions,
                 "session",
                 "sessions",
@@ -219,7 +215,9 @@ export function TtlMissCard({
 
   return (
     <section
-      className={`ttl-miss-card ${view === "overview" ? "overview-view" : "cache-view"}`}
+      className={`ttl-miss-card ${
+        view === "overview" ? "overview-view" : "cache-view"
+      }`}
       aria-label="Overview and cache misses"
     >
       <div className="ttl-analytics-toolbar">

@@ -26,6 +26,22 @@ export type StoredCacheMiss = CacheMissRecord & {
   turnID: number;
 };
 
+export type StoredCacheMissAggregate = {
+  harness: Harness;
+  rootID: string;
+  scope: "root" | "subagent";
+  status: StoredCacheMiss["status"];
+  reason?: StoredCacheMiss["reason"];
+  cause?: StoredCacheMiss["cause"];
+  gapBucket: "under-thirty" | "thirty-to-two" | "two-to-eight" | "eight-plus";
+  misses: number;
+  attributedCost: number;
+  expectedReadCost: number;
+  estimatedExtraCost: number;
+  missedTokens: number;
+  unpriced: number;
+};
+
 export type InitialInputSample = {
   harness: Harness;
   sessionStartedAt: number;
@@ -65,6 +81,10 @@ import type { UsageCall } from "./usage.ts";
 import { compactHomePath } from "./database.ts";
 
 type Harness = SessionSummary["harness"];
+
+const THIRTY_MINUTES_MS = 30 * 60 * 1_000;
+const TWO_HOURS_MS = 2 * 60 * 60 * 1_000;
+const EIGHT_HOURS_MS = 8 * 60 * 60 * 1_000;
 
 type ConversationRow = {
   id: number;
@@ -765,6 +785,91 @@ export class ConversationRepository {
       ...(row.estimated_extra_cost === null ? {} : {
         estimatedExtraCost: row.estimated_extra_cost,
       }),
+    }));
+  }
+
+  summarizeCacheMisses(
+    startedAt: number,
+    harness?: Harness,
+  ): StoredCacheMissAggregate[] {
+    type Row = {
+      harness: Harness;
+      root_public_id: string;
+      scope: StoredCacheMissAggregate["scope"];
+      status: StoredCacheMissAggregate["status"];
+      reason: StoredCacheMissAggregate["reason"] | null;
+      cause: StoredCacheMissAggregate["cause"] | null;
+      gap_bucket: StoredCacheMissAggregate["gapBucket"];
+      misses: number;
+      attributed_cost: number;
+      expected_read_cost: number;
+      estimated_extra_cost: number;
+      missed_tokens: number;
+      unpriced: number;
+    };
+    const rows = this.db.prepare(`
+      WITH RECURSIVE tree(conversation_id, root_id) AS (
+        SELECT c.id, c.id FROM conversations c
+        WHERE NOT EXISTS (
+          SELECT 1 FROM conversation_subagent_launches launch
+          WHERE launch.child_conversation_id = c.id
+        )
+        UNION ALL
+        SELECT launch.child_conversation_id, tree.root_id
+        FROM conversation_subagent_launches launch
+        JOIN tree ON tree.conversation_id = launch.parent_conversation_id
+      ), scoped AS (
+        SELECT so.harness,
+          COALESCE(root.public_id, root.external_id) AS root_public_id,
+          CASE WHEN miss.conversation_id = tree.root_id
+            THEN 'root' ELSE 'subagent' END AS scope,
+          miss.status, miss.reason, miss.cause,
+          CASE
+            WHEN miss.gap_ms < ${THIRTY_MINUTES_MS} THEN 'under-thirty'
+            WHEN miss.gap_ms < ${TWO_HOURS_MS} THEN 'thirty-to-two'
+            WHEN miss.gap_ms < ${EIGHT_HOURS_MS} THEN 'two-to-eight'
+            ELSE 'eight-plus'
+          END AS gap_bucket,
+          miss.actual_missed_cost, miss.expected_read_cost,
+          miss.estimated_extra_cost, miss.missed_tokens
+        FROM conversation_cache_misses miss
+        JOIN tree ON tree.conversation_id = miss.conversation_id
+        JOIN conversations root ON root.id = tree.root_id
+        JOIN sources so ON so.id = root.source_id
+        WHERE miss.started_at >= ?
+          AND COALESCE(root.started_at, root.updated_at) >= ?
+          AND (? IS NULL OR so.harness = ?)
+      )
+      SELECT harness, root_public_id, scope, status, reason, cause, gap_bucket,
+        COUNT(*) AS misses,
+        SUM(COALESCE(actual_missed_cost, 0)) AS attributed_cost,
+        SUM(COALESCE(expected_read_cost, 0)) AS expected_read_cost,
+        SUM(COALESCE(estimated_extra_cost, 0)) AS estimated_extra_cost,
+        SUM(missed_tokens) AS missed_tokens,
+        SUM(actual_missed_cost IS NULL) AS unpriced
+      FROM scoped
+      GROUP BY harness, root_public_id, scope, status, reason, cause, gap_bucket
+      ORDER BY harness, root_public_id, scope, status, reason, cause, gap_bucket
+    `).all(
+      startedAt,
+      startedAt,
+      harness ?? null,
+      harness ?? null,
+    ) as Row[];
+    return rows.map((row) => ({
+      harness: row.harness,
+      rootID: row.root_public_id,
+      scope: row.scope,
+      status: row.status,
+      ...(row.reason === null ? {} : { reason: row.reason }),
+      ...(row.cause === null ? {} : { cause: row.cause }),
+      gapBucket: row.gap_bucket,
+      misses: Number(row.misses),
+      attributedCost: row.attributed_cost,
+      expectedReadCost: row.expected_read_cost,
+      estimatedExtraCost: row.estimated_extra_cost,
+      missedTokens: Number(row.missed_tokens),
+      unpriced: Number(row.unpriced),
     }));
   }
 

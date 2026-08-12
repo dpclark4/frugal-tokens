@@ -110,14 +110,18 @@ function topModelRows(
   const other = ranked.slice(5);
   const rows: Array<Array<string | number>> = shown.map((model) => [
     displayModelName(model.model),
-    metric === "spend" ? money.format(model.spend) : integer.format(model.input),
+    metric === "spend"
+      ? money.format(model.spend)
+      : integer.format(model.input),
     share(model[metric], total),
   ]);
   if (other.length > 0) {
     const otherTotal = other.reduce((sum, model) => sum + model[metric], 0);
     rows.push([
       "Other models",
-      metric === "spend" ? money.format(otherTotal) : integer.format(otherTotal),
+      metric === "spend"
+        ? money.format(otherTotal)
+        : integer.format(otherTotal),
       share(otherTotal, total),
     ]);
   }
@@ -148,75 +152,173 @@ export function buildHomepageReport({
       "Harness",
       "Generated",
     ],
-    [sameRange
-      ? [rangeLabel(overviewRange), harnessLabel(harness), new Date().toISOString()]
-      : [
-        rangeLabel(overviewRange),
-        rangeLabel(usageRange),
-        harnessLabel(harness),
-        new Date().toISOString(),
+    [
+      sameRange
+        ? [
+          rangeLabel(overviewRange),
+          harnessLabel(harness),
+          new Date().toISOString(),
+        ]
+        : [
+          rangeLabel(overviewRange),
+          rangeLabel(usageRange),
+          harnessLabel(harness),
+          new Date().toISOString(),
+        ],
+    ],
+  ));
+
+  const knownSpend = overview.models.reduce(
+    (sum, model) => sum + model.spend,
+    0,
+  );
+  const totalInput = overview.models.reduce(
+    (sum, model) => sum + model.input,
+    0,
+  );
+  sections.push(
+    "## Summary\n\n" + table(
+      [
+        "Active days",
+        "Sessions",
+        "Spend",
+        "Input processed",
+        "Token reuse",
+        "Multi-day sessions",
+      ],
+      [[
+        integer.format(overview.activeDays),
+        integer.format(overview.sessions),
+        money.format(knownSpend),
+        integer.format(totalInput),
+        percent(overview.sessionProfile.overallEfficiency),
+        `${integer.format(overview.multiDaySessions)} (${
+          percent(overview.multiDaySessionRate)
+        })`,
       ]],
-  ));
+    ),
+  );
 
-  const knownSpend = overview.models.reduce((sum, model) => sum + model.spend, 0);
-  const totalInput = overview.models.reduce((sum, model) => sum + model.input, 0);
-  sections.push("## Summary\n\n" + table(
-    ["Active days", "Sessions", "Spend", "Input processed", "Token reuse", "Multi-day sessions"],
-    [[
-      integer.format(overview.activeDays),
-      integer.format(overview.sessions),
-      money.format(knownSpend),
-      integer.format(totalInput),
-      percent(overview.sessionProfile.overallEfficiency),
-      `${integer.format(overview.multiDaySessions)} (${percent(overview.multiDaySessionRate)})`,
-    ]],
-  ));
+  sections.push(
+    "## Activity per Active Day\n\n" + table(
+      ["Metric", "Median", "Average", "P90"],
+      [
+        distributionRow("Sessions", overview.activity.sessions),
+        distributionRow(
+          "Peak concurrent sessions",
+          overview.activity.peakConcurrentSessions,
+        ),
+        distributionRow("Turns", overview.activity.turns),
+        distributionRow("Spend", overview.activity.spend, money.format),
+      ],
+    ),
+  );
 
-  sections.push("## Activity per Active Day\n\n" + table(
-    ["Metric", "Median", "Average", "P90"],
-    [
-      distributionRow("Sessions", overview.activity.sessions),
-      distributionRow("Peak concurrent sessions", overview.activity.peakConcurrentSessions),
-      distributionRow("Turns", overview.activity.turns),
-      distributionRow("Spend", overview.activity.spend, money.format),
-    ],
-  ));
-
-  sections.push("## Session Profile\n\n" + table(
-    ["Metric", "Median", "Average", "P90"],
-    [
-      distributionRow("Active dates / session", overview.sessionProfile.activeSpan, days),
-      distributionRow("Turns / session", overview.sessionProfile.turns),
-      distributionRow("Input processed", overview.sessionProfile.input, compact.format),
-      distributionRow("Initial input", overview.sessionProfile.initialInput, compact.format),
-      distributionRow("Peak context", overview.sessionProfile.peakContext, compact.format),
-      distributionRow("Session duration", overview.sessionProfile.elapsed, duration),
-      distributionRow("Spend / session", overview.sessionProfile.spend, money.format),
-      distributionRow("Token reuse / session", overview.sessionProfile.efficiency, percent),
-    ],
-  ));
+  sections.push(
+    "## Session Profile\n\n" + table(
+      ["Metric", "Median", "Average", "P90"],
+      [
+        distributionRow(
+          "Active dates / session",
+          overview.sessionProfile.activeSpan,
+          days,
+        ),
+        distributionRow("Turns / session", overview.sessionProfile.turns),
+        distributionRow(
+          "Input processed",
+          overview.sessionProfile.input,
+          compact.format,
+        ),
+        distributionRow(
+          "Initial input",
+          overview.sessionProfile.initialInput,
+          compact.format,
+        ),
+        distributionRow(
+          "Peak context",
+          overview.sessionProfile.peakContext,
+          compact.format,
+        ),
+        distributionRow(
+          "Session duration",
+          overview.sessionProfile.elapsed,
+          duration,
+        ),
+        distributionRow(
+          "Spend / session",
+          overview.sessionProfile.spend,
+          money.format,
+        ),
+        distributionRow(
+          "Token reuse / session",
+          overview.sessionProfile.efficiency,
+          percent,
+        ),
+      ],
+    ),
+  );
 
   const cache = cacheMisses.cacheMisses;
-  const totalCacheMisses = cache.full.misses + cache.partial.misses;
-  const cacheMissCost = cache.full.attributedCost + cache.partial.attributedCost;
-  sections.push("## Cache Misses\n\n" + table(
-    ["Metric", "Value"],
-    [
-      ["Sessions with cache misses", `${integer.format(cache.affectedSessions)} (${share(cache.affectedSessions, cacheMisses.sessions)})`],
-      ["Total cache misses", integer.format(totalCacheMisses)],
-      ["Spend in affected sessions", `${money.format(cache.affectedSessionCost)} (${share(cache.affectedSessionCost, cacheMisses.totalSessionCost)})`],
-      ["Cache-miss cost", `${money.format(cacheMissCost)} (${share(cacheMissCost, cache.affectedSessionCost)})`],
-    ],
-  ));
+  const totalCacheMisses = cacheMisses.combined.misses;
+  const cacheMissCost = cacheMisses.combined.attributedCost;
+  sections.push(
+    "## Cache Misses\n\n" + table(
+      ["Metric", "Value"],
+      [
+        [
+          "Sessions with cache misses",
+          `${integer.format(cacheMisses.combined.affectedSessions)} (${
+            share(cacheMisses.combined.affectedSessions, cacheMisses.sessions)
+          })`,
+        ],
+        ["Total cache misses", integer.format(totalCacheMisses)],
+        [
+          "Subagent cache misses",
+          `${integer.format(cacheMisses.subagents.misses)} across ${
+            integer.format(cacheMisses.subagents.affectedSessions)
+          } sessions`,
+        ],
+        [
+          "Spend in affected sessions",
+          `${money.format(cache.affectedSessionCost)} (${
+            share(cache.affectedSessionCost, cacheMisses.totalSessionCost)
+          })`,
+        ],
+        [
+          "Cache-miss cost",
+          `${money.format(cacheMissCost)} (${
+            share(cacheMissCost, cacheMisses.totalCost)
+          })`,
+        ],
+      ],
+    ),
+  );
 
-  sections.push("### TTL Misses\n\n" + table(
-    ["Time since previous session", "Misses", "Sessions", "Cost at miss"],
-    [
-      ["< 2h", integer.format(cacheMisses.misses.underTwoHours), integer.format(cacheMisses.misses.underTwoHoursSessions), money.format(cacheMisses.misses.underTwoHoursCost)],
-      ["2–8h", integer.format(cacheMisses.misses.twoToEightHours), integer.format(cacheMisses.misses.twoToEightHoursSessions), money.format(cacheMisses.misses.twoToEightHoursCost)],
-      ["8h+", integer.format(cacheMisses.misses.eightHoursOrMore), integer.format(cacheMisses.misses.eightHoursOrMoreSessions), money.format(cacheMisses.misses.eightHoursOrMoreCost)],
-    ],
-  ));
+  sections.push(
+    "### TTL Misses\n\n" + table(
+      ["Time since previous session", "Misses", "Sessions", "Cost at miss"],
+      [
+        [
+          "< 2h",
+          integer.format(cacheMisses.misses.underTwoHours),
+          integer.format(cacheMisses.misses.underTwoHoursSessions),
+          money.format(cacheMisses.misses.underTwoHoursCost),
+        ],
+        [
+          "2–8h",
+          integer.format(cacheMisses.misses.twoToEightHours),
+          integer.format(cacheMisses.misses.twoToEightHoursSessions),
+          money.format(cacheMisses.misses.twoToEightHoursCost),
+        ],
+        [
+          "8h+",
+          integer.format(cacheMisses.misses.eightHoursOrMore),
+          integer.format(cacheMisses.misses.eightHoursOrMoreSessions),
+          money.format(cacheMisses.misses.eightHoursOrMoreCost),
+        ],
+      ],
+    ),
+  );
 
   const otherMissRows = [
     ["Compaction", cache.compaction],
@@ -225,27 +327,35 @@ export function buildHomepageReport({
     ["Unexpected full", cache.unexpected.full],
     ["Unexpected partial", cache.unexpected.partial],
   ] as const;
-  sections.push("### Other Cache Misses\n\n" + table(
-    ["Cause", "Misses", "Sessions", "Cost at miss"],
-    otherMissRows.map(([label, category]) => [
-      label,
-      integer.format(category.misses),
-      integer.format(category.affectedSessions),
-      money.format(category.attributedCost),
-    ]),
-  ));
+  sections.push(
+    "### Other Cache Misses\n\n" + table(
+      ["Cause", "Misses", "Sessions", "Cost at miss"],
+      otherMissRows.map(([label, category]) => [
+        label,
+        integer.format(category.misses),
+        integer.format(category.affectedSessions),
+        money.format(category.attributedCost),
+      ]),
+    ),
+  );
 
   const models = modelTotals(usage);
   const spend = topModelRows(models, "spend");
   const input = topModelRows(models, "input");
-  sections.push(`## Spend by Model\n\n**Total: ${money.format(spend.total)}**\n\n` + table(
-    ["Model", "Spend", "Share"],
-    spend.rows,
-  ));
-  sections.push(`## Input by Model\n\n**Total: ${integer.format(input.total)} tokens**\n\n` + table(
-    ["Model", "Input tokens", "Share"],
-    input.rows,
-  ));
+  sections.push(
+    `## Spend by Model\n\n**Total: ${money.format(spend.total)}**\n\n` + table(
+      ["Model", "Spend", "Share"],
+      spend.rows,
+    ),
+  );
+  sections.push(
+    `## Input by Model\n\n**Total: ${
+      integer.format(input.total)
+    } tokens**\n\n` + table(
+      ["Model", "Input tokens", "Share"],
+      input.rows,
+    ),
+  );
 
   if (usage.subagentCoverage !== "none") {
     const subagents = usage.subagentDays.reduce((total, day) => ({
@@ -267,17 +377,39 @@ export function buildHomepageReport({
       cost: 0,
       subagentCost: 0,
     });
-    sections.push("## Subagents\n\n" + table(
-      ["Metric", "Value"],
-      [
-        ["Sessions", integer.format(subagents.sessions)],
-        ["Sessions with subagents", `${integer.format(subagents.withSubagents)} (${share(subagents.withSubagents, subagents.sessions)})`],
-        ["Sessions with 2+ subagents", `${integer.format(subagents.withMultiple)} (${share(subagents.withMultiple, subagents.sessions)})`],
-        ["Subagent runs", integer.format(subagents.runs)],
-        ["Subagent input", `${integer.format(subagents.subagentInput)} (${share(subagents.subagentInput, subagents.input)})`],
-        ["Subagent spend", `${money.format(subagents.subagentCost)} (${share(subagents.subagentCost, subagents.cost)})`],
-      ],
-    ));
+    sections.push(
+      "## Subagents\n\n" + table(
+        ["Metric", "Value"],
+        [
+          ["Sessions", integer.format(subagents.sessions)],
+          [
+            "Sessions with subagents",
+            `${integer.format(subagents.withSubagents)} (${
+              share(subagents.withSubagents, subagents.sessions)
+            })`,
+          ],
+          [
+            "Sessions with 2+ subagents",
+            `${integer.format(subagents.withMultiple)} (${
+              share(subagents.withMultiple, subagents.sessions)
+            })`,
+          ],
+          ["Subagent runs", integer.format(subagents.runs)],
+          [
+            "Subagent input",
+            `${integer.format(subagents.subagentInput)} (${
+              share(subagents.subagentInput, subagents.input)
+            })`,
+          ],
+          [
+            "Subagent spend",
+            `${money.format(subagents.subagentCost)} (${
+              share(subagents.subagentCost, subagents.cost)
+            })`,
+          ],
+        ],
+      ),
+    );
   }
 
   return `${sections.join("\n\n")}\n`;

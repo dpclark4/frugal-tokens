@@ -89,17 +89,54 @@
   font: 650 12px var(--mono);
 }
 
+.cache-overview-table .cache-scope-row th,
+.cache-overview-table .cache-scope-row td {
+  font-weight: 700;
+}
+
+.cache-overview-table .cache-scope-row button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cache-overview-table .cache-scope-row button span {
+  width: 8px;
+  color: var(--dashboard-signal);
+  font-size: 14px;
+  line-height: 1;
+}
+
 .cache-overview-table .cache-cause-child th {
-  padding-left: 18px;
   color: #74817c;
   font-size: 11px;
   font-weight: 500;
+}
+
+.cache-overview-table .cache-cause-depth-1 th {
+  padding-left: 26px;
+}
+
+.cache-overview-table .cache-cause-depth-2 th {
+  padding-left: 42px;
 }
 
 .cache-overview-table .cache-cause-child td {
   color: #65736e;
   font-size: 11px;
   font-weight: 500;
+}
+
+.cache-overview-table .cache-subagent-rows .cache-scope-row > * {
+  border-top: 1px solid #d4dfdb;
 }
 
 .cache-overview-message {
@@ -114,12 +151,29 @@
 }
 
 @media (max-width: 520px) {
-  .cache-summary-grid { margin-inline: 12px; }
-  .cache-summary-metric { padding-inline: 8px; }
-  .cache-summary-metric > strong { font-size: 17px; }
-  .cache-overview-table-wrap { padding-inline: 12px; }
-  .cache-overview-table th:first-child { width: 43%; }
+  .cache-summary-grid {
+    margin-inline: 12px;
+  }
+  .cache-summary-metric {
+    padding-inline: 8px;
+  }
+  .cache-summary-metric > strong {
+    font-size: 17px;
+  }
+  .cache-overview-table-wrap {
+    padding-inline: 12px;
+  }
+  .cache-overview-table th:first-child {
+    width: 43%;
+  }
   .cache-overview-table th,
-  .cache-overview-table td { padding-inline: 3px; }
-  .cache-overview-table .cache-cause-child th { padding-left: 14px; }
+  .cache-overview-table td {
+    padding-inline: 3px;
+  }
+  .cache-overview-table .cache-cause-depth-1 th {
+    padding-left: 20px;
+  }
+  .cache-overview-table .cache-cause-depth-2 th {
+    padding-left: 32px;
+  }
 }

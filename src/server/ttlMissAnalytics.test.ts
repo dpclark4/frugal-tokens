@@ -1,9 +1,9 @@
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
-import {
-  aggregateTtlMisses,
-  sumRootCacheMissCost,
-} from "./ttlMissAnalytics.ts";
-import type { StoredCacheMiss } from "./conversationRepository.ts";
+import { aggregateTtlMisses } from "./ttlMissAnalytics.ts";
+import type {
+  StoredCacheMiss,
+  StoredCacheMissAggregate,
+} from "./conversationRepository.ts";
 import type { UsageCall } from "./usage.ts";
 
 const MINUTE = 60 * 1_000;
@@ -54,43 +54,37 @@ function call(
   };
 }
 
-function storedMiss(
-  overrides: Partial<StoredCacheMiss> = {},
-): StoredCacheMiss {
+function emptyCategory() {
   return {
-    harness: "claude-code",
-    sessionID: "root",
-    rootID: "root",
-    sessionStartedAt: start,
-    modelCallID: 2,
-    previousModelCallID: 1,
-    turnID: 1,
-    gap: MINUTE,
-    status: "full-miss",
-    previousContextTokens: 100,
-    currentContextTokens: 100,
-    actualCacheReadTokens: 0,
-    missedTokens: 100,
-    ...overrides,
+    affectedSessions: 0,
+    misses: 0,
+    attributedCost: 0,
+    expectedReadCost: 0,
+    estimatedExtraCost: 0,
+    missedTokens: 0,
+    unpriced: 0,
   };
 }
 
-Deno.test("sums attributed cost for in-range root misses only", () => {
-  strictEqual(
-    sumRootCacheMissCost([
-      storedMiss({ actualMissedCost: 1.25 }),
-      storedMiss({
-        sessionID: "child",
-        actualMissedCost: 2,
-      }),
-      storedMiss({
-        sessionStartedAt: start - MINUTE,
-        actualMissedCost: 4,
-      }),
-    ], start),
-    1.25,
-  );
-});
+function emptySubagents() {
+  return {
+    affectedSessions: 0,
+    misses: 0,
+    attributedCost: 0,
+    missedTokens: 0,
+    unpriced: 0,
+    ttl: emptyCategory(),
+    compaction: emptyCategory(),
+    thinkingChange: emptyCategory(),
+    modelChange: emptyCategory(),
+    unexpected: {
+      full: emptyCategory(),
+      partial: emptyCategory(),
+    },
+    full: emptyCategory(),
+    partial: emptyCategory(),
+  };
+}
 
 Deno.test("counts every root TTL miss in its elapsed-time bucket", () => {
   const calls = [
@@ -162,7 +156,14 @@ Deno.test("counts every root TTL miss in its elapsed-time bucket", () => {
       eightHoursOrMoreSessions: 1,
       eightHoursOrMoreCost: 0,
     },
-    subagents: { affectedSessions: 0, misses: 0 },
+    combined: {
+      affectedSessions: 1,
+      misses: 3,
+      attributedCost: 0.0011250000000000001,
+      missedTokens: 300,
+      unpriced: 0,
+    },
+    subagents: emptySubagents(),
     cacheMisses: {
       affectedSessions: 1,
       otherAffectedSessions: 0,
@@ -396,7 +397,38 @@ Deno.test("separates subagent misses and keeps compactions outside TTL", () => {
       eightHoursOrMoreSessions: 0,
       eightHoursOrMoreCost: 0,
     },
-    subagents: { affectedSessions: 1, misses: 1 },
+    combined: {
+      affectedSessions: 1,
+      misses: 2,
+      attributedCost: 0.00075,
+      missedTokens: 200,
+      unpriced: 0,
+    },
+    subagents: {
+      ...emptySubagents(),
+      affectedSessions: 1,
+      misses: 1,
+      attributedCost: 0.000375,
+      missedTokens: 100,
+      ttl: {
+        affectedSessions: 1,
+        misses: 1,
+        attributedCost: 0.000375,
+        expectedReadCost: 0.00003,
+        estimatedExtraCost: 0.000345,
+        missedTokens: 100,
+        unpriced: 0,
+      },
+      full: {
+        affectedSessions: 1,
+        misses: 1,
+        attributedCost: 0.000375,
+        expectedReadCost: 0.00003,
+        estimatedExtraCost: 0.000345,
+        missedTokens: 100,
+        unpriced: 0,
+      },
+    },
     cacheMisses: {
       affectedSessions: 1,
       otherAffectedSessions: 1,
@@ -496,6 +528,69 @@ Deno.test("reports incomplete affected-session and miss pricing", () => {
   strictEqual(result.misses.unpriced, 1);
   strictEqual(result.cacheMisses.full.misses, 1);
   strictEqual(result.cacheMisses.full.unpriced, 1);
+});
+
+Deno.test("aggregates every subagent cause from stored summary rows", () => {
+  const aggregate = (
+    overrides: Partial<StoredCacheMissAggregate>,
+  ): StoredCacheMissAggregate => ({
+    harness: "claude-code",
+    rootID: "root",
+    scope: "subagent",
+    status: "full-miss",
+    gapBucket: "under-thirty",
+    misses: 1,
+    attributedCost: 1,
+    expectedReadCost: 0.1,
+    estimatedExtraCost: 0.9,
+    missedTokens: 100,
+    unpriced: 0,
+    ...overrides,
+  });
+  const stored = [
+    aggregate({ cause: "ttl" }),
+    aggregate({ cause: "compaction" }),
+    aggregate({ cause: "thinking-change" }),
+    aggregate({ reason: "model-change" }),
+    aggregate({}),
+    aggregate({
+      status: "partial-hit",
+      attributedCost: 0,
+      expectedReadCost: 0,
+      estimatedExtraCost: 0,
+      unpriced: 1,
+    }),
+    aggregate({ scope: "root", cause: "compaction" }),
+  ];
+  const result = aggregateTtlMisses([], start, 90, undefined, {
+    totalCost: 20,
+    hasUnpricedTotalCost: false,
+    totalSessionCost: 10,
+    hasUnpricedSessionCost: false,
+    sessions: [{
+      harness: "claude-code",
+      rootID: "root",
+      sessionStartedAt: start,
+      rootCost: 10,
+      hasUnpricedRootCost: false,
+    }],
+  }, stored);
+
+  strictEqual(result.subagents.misses, 6);
+  strictEqual(result.subagents.affectedSessions, 1);
+  strictEqual(result.subagents.attributedCost, 5);
+  strictEqual(result.subagents.unpriced, 1);
+  strictEqual(result.subagents.ttl.misses, 1);
+  strictEqual(result.subagents.compaction.misses, 1);
+  strictEqual(result.subagents.thinkingChange.misses, 1);
+  strictEqual(result.subagents.modelChange.misses, 1);
+  strictEqual(result.subagents.unexpected.full.misses, 1);
+  strictEqual(result.subagents.unexpected.partial.misses, 1);
+  strictEqual(result.combined.misses, 7);
+  strictEqual(result.combined.affectedSessions, 1);
+  strictEqual(result.combined.attributedCost, 6);
+  strictEqual(result.combined.missedTokens, 700);
+  strictEqual(result.combined.unpriced, 1);
 });
 
 Deno.test("separates full and partial miss costs", () => {

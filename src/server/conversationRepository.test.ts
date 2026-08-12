@@ -326,6 +326,31 @@ Deno.test("conversation repository keeps subagent launches separate from branche
       conversations.listSubagentUsage(undefined, "claude-code").length,
       1,
     );
+    const storedMisses = conversations.listCacheMisses(0, "claude-code");
+    const missGroups = conversations.summarizeCacheMisses(0, "claude-code");
+    deepStrictEqual(
+      new Set(missGroups.map((group) => group.scope)),
+      new Set(["root", "subagent"]),
+    );
+    strictEqual(
+      missGroups.reduce((sum, group) => sum + group.misses, 0),
+      storedMisses.length,
+    );
+    strictEqual(
+      missGroups.reduce((sum, group) => sum + group.missedTokens, 0),
+      storedMisses.reduce((sum, miss) => sum + miss.missedTokens, 0),
+    );
+    strictEqual(
+      missGroups.reduce((sum, group) => sum + group.attributedCost, 0),
+      storedMisses.reduce(
+        (sum, miss) => sum + (miss.actualMissedCost ?? 0),
+        0,
+      ),
+    );
+    strictEqual(
+      missGroups.reduce((sum, group) => sum + group.unpriced, 0),
+      storedMisses.filter((miss) => miss.actualMissedCost === undefined).length,
+    );
   } finally {
     db.close();
   }
