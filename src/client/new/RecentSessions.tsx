@@ -8,7 +8,7 @@ import type {
 } from "../../shared/sessionSchemas.ts";
 import { parseSessionMissFilters } from "../../shared/sessionSchemas.ts";
 import { getSession, getSessions, syncSessions } from "../api.ts";
-import { SessionsPanel } from "../SessionsPage.tsx";
+import { SessionsPanel } from "../SessionsPanel.tsx";
 import type { OverviewHarness } from "./OverviewToolbar.tsx";
 import {
   overviewReturnScrollKey,

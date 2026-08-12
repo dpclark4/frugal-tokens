@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { getRouteApi } from "@tanstack/react-router";
 import type {
   ActivityOverviewResponse,
@@ -10,13 +10,25 @@ import "./NewPage.css";
 import { OverviewToolbar } from "./new/OverviewToolbar.tsx";
 import { UsageOverview } from "./new/UsageOverview.tsx";
 import { SessionShape } from "./new/SessionShape.tsx";
-import { WorkRhythm } from "./new/WorkRhythm.tsx";
-import { SpendComposition } from "./new/SpendComposition.tsx";
 import { CacheOverview } from "./new/CacheOverview.tsx";
-import { SessionDiagnostics } from "./new/SessionDiagnostics.tsx";
 import { RecentSessions } from "./new/RecentSessions.tsx";
 
 const route = getRouteApi("/");
+const WorkRhythm = lazy(() =>
+  import("./new/WorkRhythm.tsx").then(({ WorkRhythm }) => ({
+    default: WorkRhythm,
+  }))
+);
+const SpendComposition = lazy(() =>
+  import("./new/SpendComposition.tsx").then(({ SpendComposition }) => ({
+    default: SpendComposition,
+  }))
+);
+const SessionDiagnostics = lazy(() =>
+  import("./new/SessionDiagnostics.tsx").then(({ SessionDiagnostics }) => ({
+    default: SessionDiagnostics,
+  }))
+);
 
 export function NewPage() {
   const search = route.useSearch();
@@ -93,16 +105,26 @@ export function NewPage() {
             <UsageOverview data={data} />
             <SessionShape range={search.range} harness={search.harness} />
           </div>
-          {data && <WorkRhythm data={data.workRhythm} />}
+          {data && (
+            <Suspense fallback={null}>
+              <WorkRhythm data={data.workRhythm} />
+            </Suspense>
+          )}
         </div>
 
-        {data && <SpendComposition data={data.spendComposition} />}
+        {data && (
+          <Suspense fallback={null}>
+            <SpendComposition data={data.spendComposition} />
+          </Suspense>
+        )}
 
         {data && (
           <>
             <div className="new-placeholder-grid">
               <CacheOverview range={search.range} harness={search.harness} />
-              <SessionDiagnostics data={data.sessionDiagnostics} />
+              <Suspense fallback={null}>
+                <SessionDiagnostics data={data.sessionDiagnostics} />
+              </Suspense>
             </div>
 
             <RecentSessions
