@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
-import type { SessionShapeResponse } from "../../shared/sessionSchemas.ts";
-import { getSessionShape } from "../api.ts";
+import type {
+  SessionShapeResponse,
+  UsageResponse,
+} from "../../shared/sessionSchemas.ts";
+import { getSessionShape, getUsage } from "../api.ts";
+import { InitialInputChart } from "../analytics/InitialInputChart.tsx";
 import { compact, currency, decimal, integer } from "./formatters.ts";
 import "./SessionShape.css";
 
@@ -55,25 +59,60 @@ function position(value: number, minimum: number, maximum: number) {
 function DistributionStrip({
   metric,
   multiDaySessionRate,
+  initialInputUsage,
+  initialInputError,
 }: {
   metric: DistributionMetric;
   multiDaySessionRate?: number;
+  initialInputUsage?: UsageResponse;
+  initialInputError?: string;
 }) {
   const { distribution } = metric;
   const label = metricLabels[metric.key];
   const multiDay = metric.key === "observedSpan" &&
       multiDaySessionRate !== undefined
-    ? `${decimal.format(multiDaySessionRate * 100)}% multi-day`
+    ? `${decimal.format(multiDaySessionRate * 100)}% span multiple days`
     : undefined;
+  const metricLabel = (
+    <div className="shape-metric-label">
+      <div className="shape-metric-name">
+        {label}
+        {metric.key === "startingContext" && (
+          <div className="shape-context-help">
+            <button type="button" aria-label="Show starting context by day">
+              i
+            </button>
+            <div className="shape-context-popover">
+              <strong>Starting context by day</strong>
+              {initialInputUsage
+                ? (
+                  <InitialInputChart
+                    usage={initialInputUsage}
+                    bare
+                    showLegend
+                    label="Starting context"
+                  />
+                )
+                : (
+                  <span className="shape-context-message">
+                    {initialInputError ?? "Loading…"}
+                  </span>
+                )}
+            </div>
+          </div>
+        )}
+      </div>
+      {multiDay && (
+        <small title="Share of sessions with activity on more than one day">
+          {multiDay}
+        </small>
+      )}
+    </div>
+  );
   if (!distribution) {
     return (
       <tr>
-        <th scope="row">
-          <div className="shape-metric-label">
-            <span>{label}</span>
-            {multiDay && <small>{multiDay}</small>}
-          </div>
-        </th>
+        <th scope="row">{metricLabel}</th>
         <td className="shape-p50">—</td>
         <td className="shape-distribution-cell">No data</td>
       </tr>
@@ -103,12 +142,7 @@ function DistributionStrip({
 
   return (
     <tr>
-      <th scope="row">
-        <div className="shape-metric-label">
-          <span>{label}</span>
-          {multiDay && <small>{multiDay}</small>}
-        </div>
-      </th>
+      <th scope="row">{metricLabel}</th>
       <td className="shape-p50">
         <strong>{formatted(distribution.median)}</strong>
       </td>
@@ -171,10 +205,14 @@ function DistributionStrip({
 export function SessionShape({ range, harness }: SessionShapeProps) {
   const [data, setData] = useState<SessionShapeResponse>();
   const [error, setError] = useState<string>();
+  const [initialInputUsage, setInitialInputUsage] = useState<UsageResponse>();
+  const [initialInputError, setInitialInputError] = useState<string>();
 
   useEffect(() => {
     let active = true;
     setError(undefined);
+    setInitialInputError(undefined);
+    setInitialInputUsage(undefined);
     getSessionShape(range, harness).then((result) => {
       if (active) setData(result);
     }).catch((reason) => {
@@ -183,6 +221,17 @@ export function SessionShape({ range, harness }: SessionShapeProps) {
           reason instanceof Error
             ? reason.message
             : "Unable to load session shape",
+        );
+      }
+    });
+    getUsage(range, harness).then((result) => {
+      if (active) setInitialInputUsage(result);
+    }).catch((reason) => {
+      if (active) {
+        setInitialInputError(
+          reason instanceof Error
+            ? reason.message
+            : "Unable to load initial input",
         );
       }
     });
@@ -210,7 +259,9 @@ export function SessionShape({ range, harness }: SessionShapeProps) {
             <span className="shape-key-label shape-key-label-p10">P10</span>
             <span className="shape-key-label shape-key-label-p25">P25</span>
             <span className="shape-key-label shape-key-label-p75">P75</span>
-            <span className="shape-key-label shape-key-label-median">Median</span>
+            <span className="shape-key-label shape-key-label-median">
+              Median
+            </span>
             <span className="shape-key-label shape-key-label-mean">Mean</span>
             <span className="shape-key-label shape-key-label-p90">P90</span>
           </div>
@@ -234,6 +285,8 @@ export function SessionShape({ range, harness }: SessionShapeProps) {
               <DistributionStrip
                 metric={metric}
                 multiDaySessionRate={data.multiDaySessionRate}
+                initialInputUsage={initialInputUsage}
+                initialInputError={initialInputError}
                 key={metric.key}
               />
             ))}

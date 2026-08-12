@@ -64,10 +64,16 @@ function datesBetween(first: string, last: string) {
   return dates;
 }
 
-function InitialInputTooltip({ active, payload, enabledHarnesses }: {
+function InitialInputTooltip({
+  active,
+  payload,
+  enabledHarnesses,
+  label,
+}: {
   active?: boolean;
   payload?: Array<{ payload?: ChartRow }>;
   enabledHarnesses: Set<Harness>;
+  label: string;
 }) {
   const row = payload?.[0]?.payload;
   if (!active || !row || row.cohorts.length === 0) return null;
@@ -78,7 +84,7 @@ function InitialInputTooltip({ active, payload, enabledHarnesses }: {
   return (
     <div className="usage-tooltip initial-input-tooltip">
       <p>{day.format(new Date(`${row.date}T00:00:00`))}</p>
-      <strong>Median initial input</strong>
+      <strong>Median {label.toLocaleLowerCase()}</strong>
       <div className="initial-input-tooltip-header" aria-hidden="true">
         <span>Harness</span>
         <span>Median</span>
@@ -119,10 +125,12 @@ export function InitialInputChart({
   usage,
   bare = false,
   showLegend = !bare,
+  label = "Initial input",
 }: {
   usage: UsageResponse;
   bare?: boolean;
   showLegend?: boolean;
+  label?: string;
 }) {
   const [enabledHarnesses, setEnabledHarnesses] = useState<Set<Harness>>(
     () => new Set(harnesses.map(({ value }) => value)),
@@ -227,6 +235,7 @@ export function InitialInputChart({
                         payload?: ChartRow;
                       }>}
                       enabledHarnesses={enabledHarnesses}
+                      label={label}
                     />
                   )}
                 />
