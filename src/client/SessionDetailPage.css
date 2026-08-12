@@ -769,6 +769,12 @@
   font-weight: 500;
 }
 
+.sd-cache-gap {
+  color: var(--sd-ink-3);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
 .sd-call-effort {
   display: inline-flex;
   align-items: center;

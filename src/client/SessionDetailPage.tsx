@@ -812,17 +812,38 @@ function cacheMissLabel(kind: CacheMissKind) {
   return "Partial miss";
 }
 
-function CacheIssue({ call }: { call: ModelCall }) {
+function CacheIssue({
+  call,
+  previousMessageAt,
+}: {
+  call: ModelCall;
+  previousMessageAt?: number;
+}) {
   const kind = cacheMissKind(call);
   if (!kind) return null;
+  const timeSinceLastMessage = kind === "ttl"
+    ? elapsed(previousMessageAt, call.startedAt)
+    : undefined;
   return (
-    <span
-      className="sd-cache-issue"
-      title={cacheMissLabel(kind)}
-    >
-      <CacheMissIcon kind={kind} />
-      {cacheMissLabel(kind)}
-    </span>
+    <>
+      <span
+        className="sd-cache-issue"
+        title={cacheMissLabel(kind)}
+      >
+        <CacheMissIcon kind={kind} />
+        {cacheMissLabel(kind)}
+      </span>
+      {timeSinceLastMessage && (
+        <span
+          className="sd-cache-gap"
+          title={previousMessageAt === undefined
+            ? undefined
+            : `Previous message: ${fullTimestamp.format(previousMessageAt)}`}
+        >
+          Time since last message: {timeSinceLastMessage}
+        </span>
+      )}
+    </>
   );
 }
 
@@ -1183,6 +1204,20 @@ function ContextEvents({ call }: { call: ModelCall }) {
   );
 }
 
+function previousComparableCallStartedAt(
+  session: SessionDetail,
+  currentCall: ModelCall,
+) {
+  let previousStartedAt: number | undefined;
+  for (const turn of session.turns) {
+    for (const call of turn.calls) {
+      if (call === currentCall) return previousStartedAt;
+      if (contextSize(call.tokens) > 0) previousStartedAt = call.startedAt;
+    }
+  }
+  return undefined;
+}
+
 function CallBlock({
   call,
   session,
@@ -1209,6 +1244,9 @@ function CallBlock({
       tool.childSessionID ? [tool.childSessionID] : []
     ),
   ).size;
+  const previousMessageAt = call.cacheAssessment?.cause === "ttl"
+    ? previousComparableCallStartedAt(session, call)
+    : undefined;
   return (
     <section
       className={`sd-call${focusedCallAnchor === id ? " is-targeted" : ""}`}
@@ -1243,7 +1281,7 @@ function CallBlock({
               : `${launchedSubagents} subagents`}
           </span>
         )}
-        <CacheIssue call={call} />
+        <CacheIssue call={call} previousMessageAt={previousMessageAt} />
       </div>
       <div className="sd-call-body">
         <ContextEvents call={call} />
