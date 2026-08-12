@@ -14,7 +14,10 @@ import {
   sessionMissFilterSchema,
 } from "../shared/sessionSchemas.ts";
 import { aggregateUsageRollups } from "./usageAnalytics.ts";
-import { aggregateTtlMisses } from "./ttlMissAnalytics.ts";
+import {
+  aggregateTtlMisses,
+  sumRootCacheMissCost,
+} from "./ttlMissAnalytics.ts";
 import { aggregateToolCalls } from "./toolCallAnalytics.ts";
 import {
   aggregatePerformance,
@@ -563,10 +566,10 @@ app.get("/api/activity-overview", (context) => {
   );
   const loadDuration = performance.now() - loadStartedAt;
   const aggregationStartedAt = performance.now();
-  const spendAtMissCalls = readRepository.listCacheMisses(
+  const spendAtMissCalls = sumRootCacheMissCost(
+    readRepository.listCacheMisses(start, selectedHarness),
     start,
-    selectedHarness,
-  ).reduce((sum, miss) => sum + (miss.modelCallCost ?? 0), 0);
+  );
   const overview = aggregateActivityOverview(
     loaded,
     start,

@@ -16,6 +16,25 @@ const EIGHT_HOURS_MS = 8 * 60 * 60 * 1_000;
 
 type CacheMiss = CacheMissRecord;
 
+/**
+ * Cost of the root-session misses shown by the cache overview. A miss's
+ * modelCallCost is the full current call cost; actualMissedCost is the
+ * attributed cost of the reusable context that was not read.
+ */
+export function sumRootCacheMissCost(
+  misses: StoredCacheMiss[],
+  start?: number,
+) {
+  return misses.reduce(
+    (sum, miss) =>
+      miss.sessionID === miss.rootID &&
+        (start === undefined || miss.sessionStartedAt >= start)
+        ? sum + (miss.actualMissedCost ?? 0)
+        : sum,
+    0,
+  );
+}
+
 function cacheMisses(calls: UsageCall[]) {
   const misses: CacheMiss[] = [];
   for (const call of categorizeUsageCallCache(calls)) {

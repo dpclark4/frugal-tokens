@@ -1,5 +1,8 @@
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
-import { aggregateTtlMisses } from "./ttlMissAnalytics.ts";
+import {
+  aggregateTtlMisses,
+  sumRootCacheMissCost,
+} from "./ttlMissAnalytics.ts";
 import type { StoredCacheMiss } from "./conversationRepository.ts";
 import type { UsageCall } from "./usage.ts";
 
@@ -50,6 +53,44 @@ function call(
     },
   };
 }
+
+function storedMiss(
+  overrides: Partial<StoredCacheMiss> = {},
+): StoredCacheMiss {
+  return {
+    harness: "claude-code",
+    sessionID: "root",
+    rootID: "root",
+    sessionStartedAt: start,
+    modelCallID: 2,
+    previousModelCallID: 1,
+    turnID: 1,
+    gap: MINUTE,
+    status: "full-miss",
+    previousContextTokens: 100,
+    currentContextTokens: 100,
+    actualCacheReadTokens: 0,
+    missedTokens: 100,
+    ...overrides,
+  };
+}
+
+Deno.test("sums attributed cost for in-range root misses only", () => {
+  strictEqual(
+    sumRootCacheMissCost([
+      storedMiss({ actualMissedCost: 1.25 }),
+      storedMiss({
+        sessionID: "child",
+        actualMissedCost: 2,
+      }),
+      storedMiss({
+        sessionStartedAt: start - MINUTE,
+        actualMissedCost: 4,
+      }),
+    ], start),
+    1.25,
+  );
+});
 
 Deno.test("counts every root TTL miss in its elapsed-time bucket", () => {
   const calls = [
