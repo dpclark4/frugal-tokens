@@ -387,6 +387,34 @@ export const workRhythmSessionSchema = z.object({
   hasUnpricedTotalSpend: z.boolean(),
 });
 
+const workRhythmParallelWorkSchema = z.object({
+  overlappingShare: z.number().min(0).max(1),
+  activeTimeShare: z.object({
+    oneSession: z.number().min(0).max(1),
+    twoSessions: z.number().min(0).max(1),
+    threeSessions: z.number().min(0).max(1),
+    fourPlusSessions: z.number().min(0).max(1),
+  }),
+  peakConcurrentSessions: z.number().int().nonnegative(),
+});
+
+const workRhythmDurationDistributionSchema = z.object({
+  p10: z.number().nonnegative(),
+  p25: z.number().nonnegative(),
+  median: z.number().nonnegative(),
+  average: z.number().nonnegative(),
+  p75: z.number().nonnegative(),
+  p90: z.number().nonnegative(),
+});
+
+const workRhythmTimelineSessionSchema = workRhythmSessionSchema.extend({
+  estimatedActiveMinutes: z.number().nonnegative(),
+  intervals: z.array(z.object({
+    start: z.number().int().nonnegative(),
+    end: z.number().int().nonnegative(),
+  })),
+});
+
 export const workRhythmDaySchema = z.object({
   date: z.string(),
   estimatedActiveMinutes: z.number().nonnegative(),
@@ -403,6 +431,9 @@ export const workRhythmDaySchema = z.object({
     z.literal(4),
   ]),
   topSessions: z.array(workRhythmSessionSchema),
+  sessions: z.array(workRhythmTimelineSessionSchema),
+  parallelWork: workRhythmParallelWorkSchema,
+  workBlocks: z.object({ count: z.number().int().nonnegative() }),
 });
 
 export const workRhythmDataSchema = z.object({
@@ -438,27 +469,16 @@ export const workRhythmDataSchema = z.object({
   })),
   afterHoursShare: z.number().min(0).max(1),
   peakHour: z.number().int().min(0).max(23).optional(),
-  parallelWork: z.object({
-    overlappingShare: z.number().min(0).max(1),
-    activeTimeShare: z.object({
-      oneSession: z.number().min(0).max(1),
-      twoSessions: z.number().min(0).max(1),
-      threePlusSessions: z.number().min(0).max(1),
-    }),
-    peakConcurrentSessions: z.number().int().nonnegative(),
-  }),
+  parallelWork: workRhythmParallelWorkSchema,
   workBlocks: z.object({
     count: z.number().int().nonnegative(),
     blocksPerActiveDay: z.number().nonnegative(),
-    oneHourShare: z.number().min(0).max(1),
-    durationMinutes: z.object({
-      p10: z.number().nonnegative(),
-      p25: z.number().nonnegative(),
-      median: z.number().nonnegative(),
-      average: z.number().nonnegative(),
-      p75: z.number().nonnegative(),
-      p90: z.number().nonnegative(),
-    }).optional(),
+    durationShare: z.object({
+      underFifteenMinutes: z.number().min(0).max(1),
+      fifteenToSixtyMinutes: z.number().min(0).max(1),
+      oneHourPlus: z.number().min(0).max(1),
+    }),
+    durationMinutes: workRhythmDurationDistributionSchema.optional(),
   }),
   days: z.record(z.string(), workRhythmDaySchema),
 });

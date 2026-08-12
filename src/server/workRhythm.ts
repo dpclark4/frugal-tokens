@@ -73,13 +73,13 @@ function workStructure(
     }
   }
 
-  const concurrentMs = [0, 0, 0];
+  const concurrentMs = [0, 0, 0, 0];
   let active = 0;
   let peak = 0;
   let previous: number | undefined;
   for (const [at, delta] of [...events].toSorted(([a], [b]) => a - b)) {
     if (previous !== undefined && active > 0) {
-      concurrentMs[Math.min(active, 3) - 1] += at - previous;
+      concurrentMs[Math.min(active, 4) - 1] += at - previous;
     }
     active += delta;
     peak = Math.max(peak, active);
@@ -103,11 +103,14 @@ function workStructure(
 
   return {
     parallelWork: {
-      overlappingShare: share(concurrentMs[1] + concurrentMs[2]),
+      overlappingShare: share(
+        concurrentMs[1] + concurrentMs[2] + concurrentMs[3],
+      ),
       activeTimeShare: {
         oneSession: share(concurrentMs[0]),
         twoSessions: share(concurrentMs[1]),
-        threePlusSessions: share(concurrentMs[2]),
+        threeSessions: share(concurrentMs[2]),
+        fourPlusSessions: share(concurrentMs[3]),
       },
       peakConcurrentSessions: peak,
     },
@@ -116,10 +119,21 @@ function workStructure(
       blocksPerActiveDay: activeDays === 0
         ? 0
         : durationMinutes.length / activeDays,
-      oneHourShare: durationMinutes.length === 0
-        ? 0
-        : durationMinutes.filter((duration) => duration >= 60).length /
-          durationMinutes.length,
+      durationShare: {
+        underFifteenMinutes: durationMinutes.length === 0
+          ? 0
+          : durationMinutes.filter((duration) => duration < 15).length /
+            durationMinutes.length,
+        fifteenToSixtyMinutes: durationMinutes.length === 0
+          ? 0
+          : durationMinutes.filter((duration) =>
+            duration >= 15 && duration < 60
+          ).length / durationMinutes.length,
+        oneHourPlus: durationMinutes.length === 0
+          ? 0
+          : durationMinutes.filter((duration) => duration >= 60).length /
+            durationMinutes.length,
+      },
       durationMinutes: durationDistribution,
     },
   };
@@ -170,13 +184,18 @@ export function aggregateWorkRhythm(
     date = date.add({ days: 1 })
   ) dates.push(date);
 
-  const intervalsByRoot = roots.map((root) =>
-    mergeWorkIntervals(
+  const rootActivity = roots.map((root) => ({
+    root,
+    rootKey: `${root.harness ?? "unknown"}: ${
+      root.sessionID ?? root.rootSessionID
+    }`,
+    intervals: mergeWorkIntervals(
       estimatedWorkIntervals(root.rootExecutionIntervals ?? []),
       start,
       end,
-    )
-  ).filter((intervals) => intervals.length > 0);
+    ),
+  })).filter(({ intervals }) => intervals.length > 0);
+  const intervalsByRoot = rootActivity.map(({ intervals }) => intervals);
   const merged = mergeWorkIntervals(intervalsByRoot.flat(), start, end);
   const totalMs = merged.reduce(
     (sum, interval) => sum + interval.end - interval.start,
@@ -184,12 +203,14 @@ export function aggregateWorkRhythm(
   );
 
   const dayValues = new Map<string, Omit<WorkRhythmDay, "intensity">>();
+  const daySpans = new Map<string, Interval>();
   for (const date of dates) {
     const next = date.add({ days: 1 });
     const span = {
       start: Math.max(start, zonedAt(date, timeZone).epochMilliseconds),
       end: Math.min(end, zonedAt(next, timeZone).epochMilliseconds),
     };
+    daySpans.set(date.toString(), span);
     dayValues.set(date.toString(), {
       date: date.toString(),
       estimatedActiveMinutes: overlapMs(merged, span) / 60_000,
@@ -199,10 +220,21 @@ export function aggregateWorkRhythm(
       userTurns: 0,
       rootSessions: 0,
       topSessions: [],
+      sessions: [],
+      parallelWork: {
+        overlappingShare: 0,
+        activeTimeShare: {
+          oneSession: 0,
+          twoSessions: 0,
+          threeSessions: 0,
+          fourPlusSessions: 0,
+        },
+        peakConcurrentSessions: 0,
+      },
+      workBlocks: { count: 0 },
     });
   }
 
-  const dailyRoots = new Map<string, Set<string>>();
   const dailySessions = new Map<
     string,
     Map<
@@ -214,7 +246,7 @@ export function aggregateWorkRhythm(
     >
   >();
   for (const root of roots) {
-    const rootKey = `${root.harness ?? "unknown"}:${
+    const rootKey = `${root.harness ?? "unknown"}: ${
       root.sessionID ?? root.rootSessionID
     }`;
     const rootDates = root.overview.days.map((day) =>
@@ -242,10 +274,6 @@ export function aggregateWorkRhythm(
       day.hasUnpricedSpend ||= rollupDay.hasUnpricedCost;
       day.processedInputTokens += rollupDay.input;
       day.userTurns += rollupDay.turns;
-      const rootsOnDate = dailyRoots.get(key) ?? new Set<string>();
-      rootsOnDate.add(rootKey);
-      dailyRoots.set(key, rootsOnDate);
-
       if (root.harness && root.sessionID) {
         const rankedModel = rollupDay.models.toSorted((a, b) =>
           b.cost - a.cost || b.input - a.input || a.model.localeCompare(b.model)
@@ -298,7 +326,26 @@ export function aggregateWorkRhythm(
   ).filter((minutes) => minutes > 0).toSorted((a, b) => a - b);
   const days: Record<string, WorkRhythmDay> = {};
   for (const day of dayValues.values()) {
-    day.rootSessions = dailyRoots.get(day.date)?.size ?? 0;
+    const span = daySpans.get(day.date)!;
+    const activityOnDate = rootActivity.map(({ root, rootKey, intervals }) => ({
+      root,
+      rootKey,
+      intervals: mergeWorkIntervals(intervals, span.start, span.end),
+    })).filter(({ intervals }) => intervals.length > 0);
+    const mergedOnDate = mergeWorkIntervals(
+      activityOnDate.flatMap(({ intervals }) => intervals),
+      span.start,
+      span.end,
+    );
+    const structure = workStructure(
+      activityOnDate.map(({ intervals }) => intervals),
+      mergedOnDate,
+      mergedOnDate.length > 0 ? 1 : 0,
+    );
+
+    day.rootSessions = activityOnDate.length;
+    day.parallelWork = structure.parallelWork;
+    day.workBlocks = { count: structure.workBlocks.count };
     day.topSessions = [...(dailySessions.get(day.date)?.values() ?? [])]
       .toSorted((a, b) =>
         b.spend - a.spend || b.processedInput - a.processedInput ||
@@ -308,6 +355,52 @@ export function aggregateWorkRhythm(
         modelSpend: _modelSpend,
         ...session
       }) => session);
+    day.sessions = activityOnDate.flatMap(({ root, rootKey, intervals }) => {
+      if (!root.harness || !root.sessionID) return [];
+      const daily = dailySessions.get(day.date)?.get(rootKey);
+      const rootDates = root.overview.days.map((entry) =>
+        zonedDateKey(entry.firstTurnAt, timeZone)
+      ).toSorted();
+      const totalSpend = root.overview.days.reduce(
+        (sum, entry) => sum + entry.cost,
+        0,
+      );
+      const fallback: WorkRhythmSession = {
+        id: root.sessionID,
+        title: root.title ?? null,
+        harness: root.harness,
+        model: null,
+        startTime: new Date(intervals[0].start).toISOString(),
+        activeDateRange: {
+          start: rootDates[0] ?? day.date,
+          end: rootDates.at(-1) ?? day.date,
+        },
+        spend: 0,
+        hasUnpricedSpend: false,
+        totalSpend,
+        hasUnpricedTotalSpend: root.overview.days.some((entry) =>
+          entry.hasUnpricedCost
+        ),
+      };
+      const session = daily
+        ? (({
+          processedInput: _processedInput,
+          modelSpend: _modelSpend,
+          ...value
+        }) => value)(daily)
+        : fallback;
+      return [{
+        ...session,
+        startTime: new Date(intervals[0].start).toISOString(),
+        estimatedActiveMinutes: intervals.reduce(
+          (sum, interval) => sum + interval.end - interval.start,
+          0,
+        ) / 60_000,
+        intervals,
+      }];
+    }).toSorted((a, b) =>
+      a.intervals[0].start - b.intervals[0].start || a.id.localeCompare(b.id)
+    );
     days[day.date] = {
       ...day,
       intensity: intensity(day.estimatedActiveMinutes, nonzero),

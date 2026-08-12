@@ -125,11 +125,16 @@ Deno.test("work rhythm summarizes root-session overlap and global work blocks", 
   strictEqual(result.parallelWork.peakConcurrentSessions, 3);
   strictEqual(result.parallelWork.activeTimeShare.oneSession, 11 / 18);
   strictEqual(result.parallelWork.activeTimeShare.twoSessions, 4 / 18);
-  strictEqual(result.parallelWork.activeTimeShare.threePlusSessions, 3 / 18);
+  strictEqual(result.parallelWork.activeTimeShare.threeSessions, 3 / 18);
+  strictEqual(result.parallelWork.activeTimeShare.fourPlusSessions, 0);
   strictEqual(result.parallelWork.overlappingShare, 7 / 18);
   strictEqual(result.workBlocks.count, 2);
   strictEqual(result.workBlocks.blocksPerActiveDay, 2);
-  strictEqual(result.workBlocks.oneHourShare, 0);
+  deepStrictEqual(result.workBlocks.durationShare, {
+    underFifteenMinutes: 1,
+    fifteenToSixtyMinutes: 0,
+    oneHourPlus: 0,
+  });
   deepStrictEqual(result.workBlocks.durationMinutes, {
     p10: 5.8,
     p25: 7,

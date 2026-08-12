@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import {
@@ -15,7 +16,8 @@ import type {
   WorkRhythmSession,
 } from "./workRhythmTypes.ts";
 import { displayModelName } from "../../shared/modelNames.ts";
-import { compact, currency, decimal, integer } from "./formatters.ts";
+import { harnessIcon } from "../harness.ts";
+import { compact, currency, integer } from "./formatters.ts";
 import "./WorkRhythm.css";
 
 const readableDate = new Intl.DateTimeFormat(undefined, {
@@ -262,11 +264,11 @@ function CompactCalendar({ data, selectedDate, onSelect }: {
     new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), 1)
   );
 
-  useEffect(
-    () =>
-      setVisibleMonth(new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), 1)),
-    [data.range.end],
-  );
+  useEffect(() => {
+    setVisibleMonth(
+      new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), 1),
+    );
+  }, [data.range.end]);
 
   const visibleIndex = monthIndex(visibleMonth);
   const today = dateKey(new Date());
@@ -395,6 +397,11 @@ function sessionDateExplanation(
 
 function DayDetail({ day }: { day: WorkRhythmDay }) {
   const navigate = useNavigate();
+  const sessionsBySpend = day.sessions.toSorted((a, b) =>
+    b.spend - a.spend ||
+    b.estimatedActiveMinutes - a.estimatedActiveMinutes ||
+    a.id.localeCompare(b.id)
+  );
 
   function openSession(session: WorkRhythmSession) {
     navigate({
@@ -421,7 +428,7 @@ function DayDetail({ day }: { day: WorkRhythmDay }) {
           <strong>{formatDuration(day.estimatedActiveMinutes)}</strong>
         </div>
         <div>
-          <span>Root sessions</span>
+          <span>Sessions</span>
           <strong>{integer.format(day.rootSessions)}</strong>
         </div>
         <div
@@ -439,42 +446,25 @@ function DayDetail({ day }: { day: WorkRhythmDay }) {
       </div>
       <section
         className="expensive-sessions"
-        aria-labelledby="expensive-sessions-title"
+        aria-labelledby="day-sessions-title"
       >
         <div className="expensive-sessions-heading">
-          <h4 id="expensive-sessions-title">Highest spend this day</h4>
-          <button
-            type="button"
-            onClick={() =>
-              navigate({
-                to: "/",
-                search: { harness: "all", range: 30, misses: undefined },
-              })}
-          >
-            View all sessions
-          </button>
+          <h4 id="day-sessions-title">Highest spend this day</h4>
+          <span>{integer.format(day.sessions.length)} sessions</span>
         </div>
-        {day.topSessions.length
+        {sessionsBySpend.length
           ? (
-            <ol>
-              {day.topSessions.slice(0, 3).map((session, index) => {
+            <ol className="day-spend-sessions">
+              {sessionsBySpend.map((session) => {
                 const span = sessionDateSpan(session);
-                const tooltipId = span
-                  ? `session-spend-scope-${day.date}-${index}`
-                  : undefined;
                 return (
-                  <li key={session.id}>
+                  <li key={`${session.harness}:${session.id}`}>
                     <button
                       type="button"
                       onClick={() => openSession(session)}
-                      aria-describedby={tooltipId}
                       aria-label={`Open ${sessionName(session)}, ${
                         currency.format(session.spend)
-                      } on this date${
-                        session.totalSpend !== session.spend
-                          ? `, ${currency.format(session.totalSpend)} total`
-                          : ""
-                      }`}
+                      } on this date`}
                     >
                       <span className="session-row-copy">
                         <strong>{sessionName(session)}</strong>
@@ -486,37 +476,11 @@ function DayDetail({ day }: { day: WorkRhythmDay }) {
                               : ""}
                           </span>
                           {span && (
-                            <span className="session-date-scope">
-                              ·{" "}
-                              <span className="session-date-scope-label">
-                                spans {span}
-                              </span>
-                              <span
-                                className="session-spend-tooltip"
-                                id={tooltipId}
-                                role="tooltip"
-                              >
-                                <span>
-                                  <span>
-                                    Spend on{" "}
-                                    {fullMonthDay.format(parseDate(day.date))}
-                                  </span>
-                                  <strong>
-                                    {currency.format(session.spend)}
-                                    {session.hasUnpricedSpend ? "*" : ""}
-                                  </strong>
-                                </span>
-                                <span>
-                                  <span>Entire session</span>
-                                  <strong>
-                                    {currency.format(session.totalSpend)}
-                                    {session.hasUnpricedTotalSpend ? "*" : ""}
-                                  </strong>
-                                </span>
-                                <em>
-                                  {sessionDateExplanation(session, day.date)}
-                                </em>
-                              </span>
+                            <span
+                              className="session-date-scope"
+                              title={sessionDateExplanation(session, day.date)}
+                            >
+                              · spans {span}
                             </span>
                           )}
                         </small>
@@ -544,158 +508,406 @@ function DayDetail({ day }: { day: WorkRhythmDay }) {
   );
 }
 
-function ParallelWork({ data }: { data: WorkRhythmData["parallelWork"] }) {
-  const rows = [
-    ["1 root", data.activeTimeShare.oneSession],
-    ["2 roots", data.activeTimeShare.twoSessions],
-    ["3+ roots", data.activeTimeShare.threePlusSessions],
-  ] as const;
-  const percent = (value: number) => `${Math.round(value * 100)}%`;
+const timelineHour = 60 * 60 * 1_000;
 
-  return (
-    <section
-      className="work-structure-unit"
-      aria-labelledby="parallel-work-title"
-    >
-      <header className="structure-heading">
-        <h3 id="parallel-work-title">Parallel work</h3>
-      </header>
-      <div className="parallel-summary">
-        <strong>{percent(data.overlappingShare)}</strong>
-        <span>
-          active time<br />overlapping
-        </span>
-        <span className="parallel-peak">
-          Peak <b>{integer.format(data.peakConcurrentSessions)}</b> roots
-        </span>
-      </div>
-      <div className="concurrency-bars">
-        {rows.map(([label, value]) => (
-          <div className="concurrency-row" key={label}>
-            <span>{label}</span>
-            <i aria-hidden="true">
-              <b style={{ width: `${value * 100}%` }} />
-            </i>
-            <strong>{percent(value)}</strong>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
+function percent(value: number) {
+  return `${Math.round(value * 100)}%`;
 }
 
-function distributionPosition(value: number, minimum: number, maximum: number) {
-  if (maximum === minimum) return 50;
-  return 5 +
-    90 * Math.max(0, Math.min(1, (value - minimum) / (maximum - minimum)));
-}
-
-function WorkBlockDistribution({
-  distribution,
-}: {
-  distribution: NonNullable<WorkRhythmData["workBlocks"]["durationMinutes"]>;
-}) {
-  const position = (value: number) =>
-    distributionPosition(value, distribution.p10, distribution.p90);
-  const values = [
-    ["P10", distribution.p10],
-    ["P25", distribution.p25],
-    ["Median", distribution.median],
-    ["Mean", distribution.average],
-    ["P75", distribution.p75],
-    ["P90", distribution.p90],
-  ] as const;
-  const points = {
-    p10: position(distribution.p10),
-    p25: position(distribution.p25),
-    median: position(distribution.median),
-    average: position(distribution.average),
-    p75: position(distribution.p75),
-    p90: position(distribution.p90),
-  };
-
+function RangeStructureSummary({ data }: { data: WorkRhythmData }) {
+  const { parallelWork, workBlocks } = data;
+  const concurrency = [
+    { label: "1", value: parallelWork.activeTimeShare.oneSession },
+    { label: "2", value: parallelWork.activeTimeShare.twoSessions },
+    {
+      label: "3+",
+      value: parallelWork.activeTimeShare.threeSessions +
+        parallelWork.activeTimeShare.fourPlusSessions,
+    },
+  ];
+  const durations = [
+    { label: "<15m", value: workBlocks.durationShare.underFifteenMinutes },
+    {
+      label: "15–60m",
+      value: workBlocks.durationShare.fifteenToSixtyMinutes,
+    },
+    { label: "1h+", value: workBlocks.durationShare.oneHourPlus },
+  ];
   return (
-    <div
-      className="block-distribution"
-      role="img"
-      tabIndex={0}
-      aria-label={values.map(([label, value]) =>
-        `${label} ${formatDuration(value)}`
-      ).join(", ")}
-    >
-      <span className="block-quartile-label" style={{ left: `${points.p25}%` }}>
-        P25
-      </span>
-      <span className="block-quartile-label" style={{ left: `${points.p75}%` }}>
-        P75
-      </span>
-      <span
-        className="block-whisker"
-        style={{ left: `${points.p10}%`, width: `${points.p90 - points.p10}%` }}
-      />
-      <span className="block-end" style={{ left: `${points.p10}%` }} />
-      <span className="block-end" style={{ left: `${points.p90}%` }} />
-      <span
-        className="block-iqr"
-        style={{ left: `${points.p25}%`, width: `${points.p75 - points.p25}%` }}
-      />
-      <span className="block-median" style={{ left: `${points.median}%` }} />
-      <span className="block-average" style={{ left: `${points.average}%` }} />
-      <span
-        className="block-range block-range-start"
-        style={{ left: `${points.p10}%` }}
+    <div className="range-structure-summary">
+      <section
+        aria-label="Active sessions distribution"
+        title="Share of estimated active time by number of simultaneously active root sessions."
       >
-        {formatDuration(distribution.p10)}
-      </span>
-      <span
-        className="block-range block-range-end"
-        style={{ left: `${points.p90}%` }}
+        <h4>Active sessions</h4>
+        <div className="structure-values">
+          {concurrency.map((segment) => (
+            <span key={segment.label}>
+              {segment.label} <strong>{percent(segment.value)}</strong>
+            </span>
+          ))}
+        </div>
+      </section>
+      <section
+        aria-label="Work block duration distribution"
+        title="A work block is a continuous span of estimated active work; a gap longer than the configured threshold starts a new block."
       >
-        {formatDuration(distribution.p90)}
-      </span>
-      <span className="block-distribution-tooltip" role="tooltip">
-        {values.map(([label, value]) => (
-          <span key={label}>
-            <small>{label}</small>
-            <strong>{formatDuration(value)}</strong>
-          </span>
-        ))}
-      </span>
+        <h4>Work blocks</h4>
+        <div className="structure-values">
+          {durations.map((segment) => (
+            <span key={segment.label}>
+              {segment.label} <strong>{percent(segment.value)}</strong>
+            </span>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }
 
-function WorkBlocks({ data }: { data: WorkRhythmData["workBlocks"] }) {
+function floorTimelineHour(timestamp: number, step: number) {
+  const date = new Date(timestamp);
+  date.setMinutes(0, 0, 0);
+  date.setHours(Math.floor(date.getHours() / step) * step);
+  return date.getTime();
+}
+
+function ceilTimelineHour(timestamp: number, step: number) {
+  const floor = floorTimelineHour(timestamp, step);
+  return floor === timestamp ? floor : floor + step * timelineHour;
+}
+
+function timelineDayBounds(day: WorkRhythmDay) {
+  const date = parseDate(day.date);
+  return {
+    start: date.getTime(),
+    end: new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate() + 1,
+    ).getTime(),
+  };
+}
+
+const minimumTimelineWindow = 4 * timelineHour;
+const timelineZoomLevels = [12, 6, 3, 1] as const;
+type TimelineZoom = "fit" | (typeof timelineZoomLevels)[number];
+
+function timelineFitBounds(day: WorkRhythmDay) {
+  const dayBounds = timelineDayBounds(day);
+  const starts = day.sessions.flatMap((session) =>
+    session.intervals.map((interval) => interval.start)
+  );
+  const ends = day.sessions.flatMap((session) =>
+    session.intervals.map((interval) => interval.end)
+  );
+  if (!starts.length || !ends.length) {
+    return {
+      start: dayBounds.start,
+      end: Math.min(dayBounds.end, dayBounds.start + minimumTimelineWindow),
+    };
+  }
+
+  const paddedStart = Math.min(...starts) - timelineHour / 2;
+  const paddedEnd = Math.max(...ends) + timelineHour / 2;
+  const daySpan = dayBounds.end - dayBounds.start;
+  const span = Math.min(
+    daySpan,
+    Math.max(minimumTimelineWindow, paddedEnd - paddedStart),
+  );
+  const midpoint = (paddedStart + paddedEnd) / 2;
+  const start = Math.max(
+    dayBounds.start,
+    Math.min(dayBounds.end - span, midpoint - span / 2),
+  );
+  return { start, end: start + span };
+}
+
+function timelineActivityFocus(day: WorkRhythmDay) {
+  const midpoints = day.sessions.flatMap((session) =>
+    session.intervals.map((interval) => (interval.start + interval.end) / 2)
+  ).toSorted((a, b) => a - b);
+  return midpoints[Math.floor(midpoints.length / 2)] ??
+    (timelineDayBounds(day).start + timelineDayBounds(day).end) / 2;
+}
+
+function timelineTickHours(span: number) {
+  if (span > 16 * timelineHour) return 3;
+  if (span > 8 * timelineHour) return 2;
+  return 1;
+}
+
+function timelineSegments(
+  session: WorkRhythmDay["sessions"][number],
+  sessions: WorkRhythmDay["sessions"],
+) {
+  const others = sessions.filter((candidate) => candidate !== session)
+    .flatMap((candidate) => candidate.intervals);
+  return session.intervals.flatMap((interval) => {
+    const boundaries = [
+      interval.start,
+      interval.end,
+      ...others.flatMap((other) => [other.start, other.end]).filter((point) =>
+        point > interval.start && point < interval.end
+      ),
+    ].toSorted((a, b) => a - b);
+    return boundaries.slice(0, -1).map((start, index) => {
+      const end = boundaries[index + 1];
+      return {
+        start,
+        end,
+        overlapping: others.some((other) =>
+          other.start < end && other.end > start
+        ),
+      };
+    });
+  });
+}
+
+function ActivityTimeline({ day }: { day: WorkRhythmDay }) {
+  const navigate = useNavigate();
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const [zoom, setZoom] = useState<TimelineZoom>("fit");
+  const [tooltip, setTooltip] = useState<{
+    session: WorkRhythmDay["sessions"][number];
+    left: number;
+    top: number;
+  }>();
+
+  useEffect(() => {
+    setZoom("fit");
+    const frame = requestAnimationFrame(() => {
+      viewportRef.current?.scrollTo({ top: 0, left: 0 });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [day.date]);
+
+  const sessions = day.sessions.toSorted((a, b) =>
+    a.intervals[0].start - b.intervals[0].start || a.id.localeCompare(b.id)
+  );
+  const bounds = timelineFitBounds(day);
+  const span = bounds.end - bounds.start;
+  const fitHours = span / timelineHour;
+  const zoomOptions: TimelineZoom[] = [
+    "fit",
+    ...timelineZoomLevels.filter((hours) => hours < fitHours - 0.05),
+  ];
+  const zoomIndex = Math.max(0, zoomOptions.indexOf(zoom));
+  const viewportHours = zoom === "fit" ? fitHours : zoom;
+  const tickHours = timelineTickHours(viewportHours * timelineHour);
+  const position = (timestamp: number) =>
+    Math.max(0, Math.min(100, (timestamp - bounds.start) / span * 100));
+  const ticks: number[] = [];
+  for (
+    let tick = ceilTimelineHour(bounds.start, tickHours);
+    tick <= bounds.end;
+    tick += tickHours * timelineHour
+  ) ticks.push(tick);
+
+  function changeZoom(nextIndex: number) {
+    const nextZoom = zoomOptions[nextIndex];
+    if (nextZoom === undefined) return;
+    const viewport = viewportRef.current;
+    const center = zoom === "fit" || !viewport
+      ? position(timelineActivityFocus(day)) / 100
+      : (viewport.scrollLeft + viewport.clientWidth / 2) /
+        viewport.scrollWidth;
+    setZoom(nextZoom);
+    requestAnimationFrame(() => {
+      const updated = viewportRef.current;
+      if (!updated) return;
+      updated.scrollLeft = nextZoom === "fit"
+        ? 0
+        : center * updated.scrollWidth - updated.clientWidth / 2;
+    });
+  }
+
+  function showSessionTooltip(
+    target: HTMLButtonElement,
+    session: WorkRhythmDay["sessions"][number],
+  ) {
+    const targetBounds = target.getBoundingClientRect();
+    setTooltip({
+      session,
+      left: targetBounds.right + 8,
+      top: targetBounds.top + targetBounds.height / 2,
+    });
+  }
+
+  function openSession(session: WorkRhythmSession) {
+    navigate({
+      to: "/sessions/$harness/$sessionId",
+      params: { harness: session.harness, sessionId: session.id },
+      search: {
+        misses: undefined,
+        paths: "relative",
+        color: "time",
+        model: "recorded",
+        thinking: "recorded",
+      },
+    });
+  }
+
   return (
-    <section
-      className="work-structure-unit"
-      aria-labelledby="work-blocks-title"
-    >
-      <header className="structure-heading">
-        <h3 id="work-blocks-title">Work blocks</h3>
-      </header>
-      <div className="block-summary">
-        <span>
-          <strong>
-            {data.durationMinutes
-              ? formatDuration(data.durationMinutes.median)
-              : "—"}
-          </strong>
-          median
-        </span>
-        <span>
-          <strong>{decimal.format(data.blocksPerActiveDay)}</strong>
-          / active day
-        </span>
-      </div>
-      {data.durationMinutes
-        ? <WorkBlockDistribution distribution={data.durationMinutes} />
-        : <div className="block-distribution-empty">No work blocks</div>}
-      <div className="block-support">
-        <span>{integer.format(data.count)} blocks</span>
-        <span>{Math.round(data.oneHourShare * 100)}% lasted 1h+</span>
-      </div>
-    </section>
+    <>
+      <section className="activity-timeline" aria-label="Sessions by time">
+        {day.estimatedActiveMinutes > 0 && (
+          <header className="timeline-toolbar">
+            <div className="timeline-summary">
+              <span>
+                Activity overlap{" "}
+                <strong>
+                  {percent(day.parallelWork.overlappingShare)}
+                </strong>
+              </span>
+              <span>
+                Peak concurrent sessions{" "}
+                <strong>
+                  {integer.format(day.parallelWork.peakConcurrentSessions)}
+                </strong>
+              </span>
+            </div>
+            {day.sessions.length > 0 && (
+              <div className="timeline-zoom" aria-label="Timeline zoom">
+                <button
+                  type="button"
+                  disabled={zoomIndex === 0}
+                  onClick={() =>
+                    changeZoom(zoomIndex - 1)}
+                  aria-label="Zoom out"
+                >
+                  −
+                </button>
+                <output aria-live="polite">
+                  {zoom === "fit" ? "Fit" : `${zoom}h`}
+                </output>
+                <button
+                  type="button"
+                  disabled={zoomIndex === zoomOptions.length - 1}
+                  onClick={() =>
+                    changeZoom(zoomIndex + 1)}
+                  aria-label="Zoom in"
+                >
+                  +
+                </button>
+              </div>
+            )}
+          </header>
+        )}
+        {day.sessions.length
+          ? (
+            <div
+              className={`timeline-viewport${zoom === "fit" ? "" : " zoomed"}`}
+              ref={viewportRef}
+            >
+              <div
+                className="timeline-canvas"
+                style={{
+                  width: `${Math.max(1, fitHours / viewportHours) * 100}%`,
+                }}
+              >
+                <div className="timeline-axis" aria-hidden="true">
+                  {ticks.map((tick) => (
+                    <span key={tick} style={{ left: `${position(tick)}%` }}>
+                      {formatHour(new Date(tick).getHours())}
+                    </span>
+                  ))}
+                </div>
+                <ol className="timeline-rows">
+                  {sessions.map((session) => {
+                    return (
+                      <li key={`${session.harness}:${session.id}`}>
+                        <button
+                          className={`timeline-harness harness-${session.harness}`}
+                          type="button"
+                          onClick={() => openSession(session)}
+                          onMouseEnter={(event) =>
+                            showSessionTooltip(event.currentTarget, session)}
+                          onMouseLeave={() => setTooltip(undefined)}
+                          onFocus={(event) =>
+                            showSessionTooltip(event.currentTarget, session)}
+                          onBlur={() => setTooltip(undefined)}
+                          aria-describedby={tooltip?.session === session
+                            ? "active-timeline-session-tooltip"
+                            : undefined}
+                          aria-label={`Open ${sessionName(session)}. ${
+                            formatDuration(session.estimatedActiveMinutes)
+                          } estimated active on this date.`}
+                        >
+                          <img
+                            src={harnessIcon(session.harness)}
+                            alt={harnessNames[session.harness]}
+                          />
+                        </button>
+                        <span className="timeline-track" aria-hidden="true">
+                          {ticks.map((tick) => (
+                            <i
+                              className="timeline-gridline"
+                              key={tick}
+                              style={{ left: `${position(tick)}%` }}
+                            />
+                          ))}
+                          {timelineSegments(session, sessions).map((
+                            segment,
+                          ) => (
+                            <i
+                              className={`timeline-interval${
+                                segment.overlapping ? " overlapping" : ""
+                              }`}
+                              key={`${segment.start}:${segment.end}`}
+                              style={{
+                                left: `${position(segment.start)}%`,
+                                width: `${
+                                  Math.max(
+                                    0,
+                                    position(segment.end) -
+                                      position(segment.start),
+                                  )
+                                }%`,
+                              }}
+                            />
+                          ))}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </div>
+            </div>
+          )
+          : (
+            <p className="timeline-empty">
+              No estimated activity on this date.
+            </p>
+          )}
+      </section>
+      {tooltip && createPortal(
+        <div
+          className="timeline-session-tooltip floating"
+          id="active-timeline-session-tooltip"
+          role="tooltip"
+          style={{ left: tooltip.left, top: tooltip.top }}
+        >
+          <strong>{sessionName(tooltip.session)}</strong>
+          <span>
+            {harnessNames[tooltip.session.harness]}
+            {tooltip.session.model
+              ? ` · ${displayModelName(tooltip.session.model)}`
+              : ""}
+          </span>
+          <span>
+            {timeOnly.format(new Date(tooltip.session.intervals[0].start))}–
+            {timeOnly.format(new Date(tooltip.session.intervals.at(-1)!.end))}
+            {" · "}
+            {formatDuration(tooltip.session.estimatedActiveMinutes)}{" "}
+            estimated active
+          </span>
+          <span>{currency.format(tooltip.session.spend)} on this date</span>
+          <em>Click to open session</em>
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
 
@@ -709,7 +921,9 @@ function mostRecentActiveDate(data: WorkRhythmData) {
 export function WorkRhythm({ data }: { data: WorkRhythmData }) {
   const defaultDate = useMemo(() => mostRecentActiveDate(data), [data]);
   const [selectedDate, setSelectedDate] = useState(defaultDate);
-  useEffect(() => setSelectedDate(defaultDate), [defaultDate]);
+  useEffect(() => {
+    setSelectedDate(defaultDate);
+  }, [defaultDate]);
   const selectedDay = data.days[selectedDate] ?? {
     date: selectedDate,
     estimatedActiveMinutes: 0,
@@ -719,6 +933,18 @@ export function WorkRhythm({ data }: { data: WorkRhythmData }) {
     rootSessions: 0,
     intensity: 0 as const,
     topSessions: [],
+    sessions: [],
+    parallelWork: {
+      overlappingShare: 0,
+      activeTimeShare: {
+        oneSession: 0,
+        twoSessions: 0,
+        threeSessions: 0,
+        fourPlusSessions: 0,
+      },
+      peakConcurrentSessions: 0,
+    },
+    workBlocks: { count: 0 },
   };
 
   return (
@@ -746,17 +972,16 @@ export function WorkRhythm({ data }: { data: WorkRhythmData }) {
           >
             <div className="rhythm-subheading">
               <h3 id="hourly-chart-title">By hour</h3>
-            </div>
-            <HourlyChart data={data.hourlyActivity} />
-            <div className="hourly-annotations">
               {data.peakHour !== undefined && (
-                <span>
+                <span className="hourly-peak">
                   <i aria-hidden="true" />Peak: {hourRange(data.peakHour)}
                 </span>
               )}
             </div>
+            <HourlyChart data={data.hourlyActivity} />
           </section>
         </div>
+        <RangeStructureSummary data={data} />
       </div>
       <section className="day-explorer" aria-labelledby="day-explorer-title">
         <header className="day-explorer-header">
@@ -774,10 +999,7 @@ export function WorkRhythm({ data }: { data: WorkRhythmData }) {
           <DayDetail day={selectedDay} />
         </div>
       </section>
-      <div className="work-structure-row">
-        <ParallelWork data={data.parallelWork} />
-        <WorkBlocks data={data.workBlocks} />
-      </div>
+      <ActivityTimeline day={selectedDay} />
     </section>
   );
 }

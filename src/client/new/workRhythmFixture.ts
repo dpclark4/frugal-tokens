@@ -141,6 +141,20 @@ const days: Record<string, WorkRhythmDay> = Object.fromEntries(
     const processedInputTokens = date === "2026-08-06"
       ? 18_600_000
       : Math.round(estimatedActiveMinutes * 125_000 + userTurns * 40_000);
+    const topSessions = sessionsForDay(seed, index);
+    const sessions = topSessions.map((session, sessionIndex) => {
+      const start = new Date(session.startTime).getTime() - 5 * 60_000;
+      const duration = Math.max(
+        8,
+        Math.round(estimatedActiveMinutes / Math.max(1, topSessions.length)) -
+          sessionIndex * 3,
+      );
+      return {
+        ...session,
+        estimatedActiveMinutes: duration,
+        intervals: [{ start, end: start + duration * 60_000 }],
+      };
+    });
     return [date, {
       date,
       estimatedActiveMinutes,
@@ -150,7 +164,25 @@ const days: Record<string, WorkRhythmDay> = Object.fromEntries(
       userTurns,
       rootSessions,
       intensity: intensity(estimatedActiveMinutes),
-      topSessions: sessionsForDay(seed, index),
+      topSessions,
+      sessions,
+      parallelWork: {
+        overlappingShare: rootSessions > 2 ? 0.2 : 0,
+        activeTimeShare: {
+          oneSession: rootSessions > 2
+            ? 0.8
+            : estimatedActiveMinutes > 0
+            ? 1
+            : 0,
+          twoSessions: rootSessions > 2 ? 0.2 : 0,
+          threeSessions: 0,
+          fourPlusSessions: 0,
+        },
+        peakConcurrentSessions: estimatedActiveMinutes > 0
+          ? Math.min(2, rootSessions)
+          : 0,
+      },
+      workBlocks: { count: estimatedActiveMinutes > 0 ? sessions.length : 0 },
     }];
   }),
 );
@@ -270,14 +302,19 @@ export const workRhythmFixture: WorkRhythmData = {
     activeTimeShare: {
       oneSession: 0.79,
       twoSessions: 0.16,
-      threePlusSessions: 0.05,
+      threeSessions: 0.04,
+      fourPlusSessions: 0.01,
     },
     peakConcurrentSessions: 4,
   },
   workBlocks: {
     count: 74,
     blocksPerActiveDay: 74 / 27,
-    oneHourShare: 0.18,
+    durationShare: {
+      underFifteenMinutes: 0.31,
+      fifteenToSixtyMinutes: 0.51,
+      oneHourPlus: 0.18,
+    },
     durationMinutes: {
       p10: 8,
       p25: 19,
