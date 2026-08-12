@@ -2,6 +2,10 @@ import type { ActivityOverviewResponse } from "../shared/sessionSchemas.ts";
 import type { StoredOverviewRollup } from "./overviewAnalytics.ts";
 import { aggregateWorkRhythm } from "./workRhythm.ts";
 import { modelMetadata } from "../shared/modelMetadata.ts";
+import {
+  estimatedWorkIntervals,
+  mergeWorkIntervals,
+} from "../shared/workTime.ts";
 
 export const ACTIVITY_INACTIVITY_MINUTES = 10;
 
@@ -183,6 +187,73 @@ function estimatedActiveMs(date: string, intervals: Interval[]) {
   );
 }
 
+function sessionDiagnostics(
+  roots: StoredOverviewRollup[],
+  start: number,
+  end: number,
+): ActivityOverviewResponse["sessionDiagnostics"] {
+  const sessions = roots.flatMap((root) => {
+    const days = root.overview.days.filter((day) =>
+      day.firstTurnAt >= start && day.firstTurnAt <= end
+    );
+    if (days.length === 0) return [];
+
+    const processedInput = days.reduce((sum, day) => sum + day.input, 0);
+    const cacheRead = days.reduce((sum, day) => sum + day.cacheRead, 0);
+    const intervals = mergeWorkIntervals(
+      estimatedWorkIntervals(
+        root.rootExecutionIntervals ?? root.overview.executionIntervals,
+      ),
+      start,
+      end,
+    );
+    const models = new Map<string, { input: number; spend: number }>();
+    for (const day of days) {
+      for (const model of day.models) {
+        const total = models.get(model.model) ?? { input: 0, spend: 0 };
+        total.input += model.input;
+        total.spend += model.cost;
+        models.set(model.model, total);
+      }
+    }
+    const primaryModel = [...models.entries()].toSorted(([, a], [, b]) =>
+      b.spend - a.spend || b.input - a.input
+    )[0]?.[0] ?? null;
+
+    return [{
+      id: root.sessionID ?? String(root.rootSessionID),
+      title: root.title ?? `Session ${root.rootSessionID}`,
+      ...(root.harness === undefined ? {} : { harness: root.harness }),
+      primaryModel,
+      estimatedActiveMinutes: intervals.reduce(
+        (sum, interval) =>
+          sum + interval.end - interval.start,
+        0,
+      ) / 60_000,
+      observedSessionMinutes: Math.max(
+        0,
+        (root.endedAt ?? Math.max(
+          ...root.overview.days.map((day) => day.lastCallAt ?? day.firstTurnAt),
+        )) -
+          (root.startedAt ?? Math.min(
+            ...root.overview.days.map((day) => day.firstTurnAt),
+          )),
+      ) / 60_000,
+      spend: days.reduce((sum, day) => sum + day.cost, 0),
+      hasUnpricedSpend: days.some((day) => day.hasUnpricedCost),
+      processedInput,
+      ...(processedInput === 0
+        ? {}
+        : { tokenReuse: cacheRead / processedInput }),
+      userTurns: days.reduce((sum, day) => sum + day.turns, 0),
+    }];
+  }).toSorted((a, b) =>
+    a.spend - b.spend || a.processedInput - b.processedInput ||
+    a.id.localeCompare(b.id)
+  );
+  return { sessions };
+}
+
 export function aggregateActivityOverview(
   roots: StoredOverviewRollup[],
   start: number,
@@ -304,6 +375,7 @@ export function aggregateActivityOverview(
         ? 0
         : topDecileSpend / pricedSessionSpend,
     },
+    sessionDiagnostics: sessionDiagnostics(roots, start, end),
     workRhythm: aggregateWorkRhythm(roots, start, end, timeZone),
     spendComposition: spendComposition(days, start, end),
     days: [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(

@@ -13,7 +13,7 @@ import { SessionShape } from "./new/SessionShape.tsx";
 import { WorkRhythm } from "./new/WorkRhythm.tsx";
 import { SpendComposition } from "./new/SpendComposition.tsx";
 import { CacheOverview } from "./new/CacheOverview.tsx";
-import { HarnessOverview } from "./new/HarnessOverview.tsx";
+import { SessionDiagnostics } from "./new/SessionDiagnostics.tsx";
 import { RecentSessions } from "./new/RecentSessions.tsx";
 
 const route = getRouteApi("/");
@@ -102,7 +102,7 @@ export function NewPage() {
           <>
             <div className="new-placeholder-grid">
               <CacheOverview range={search.range} harness={search.harness} />
-              <HarnessOverview range={search.range} harness={search.harness} />
+              <SessionDiagnostics data={data.sessionDiagnostics} />
             </div>
 
             <RecentSessions

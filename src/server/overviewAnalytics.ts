@@ -14,6 +14,8 @@ export type StoredOverviewRollup = {
   }>;
   /** Public/external ID accepted by /sessions/$harness/$sessionId. */
   sessionID?: string;
+  startedAt?: number;
+  endedAt?: number;
   title?: string;
   harness?: SessionDetail["harness"];
   subagentSpend?: number;

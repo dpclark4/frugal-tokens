@@ -18,6 +18,7 @@ import type {
 import { displayModelName } from "../../shared/modelNames.ts";
 import { harnessIcon } from "../harness.ts";
 import { compact, currency, integer } from "./formatters.ts";
+import { saveOverviewReturnScroll } from "./overviewReturnScroll.ts";
 import "./WorkRhythm.css";
 
 const readableDate = new Intl.DateTimeFormat(undefined, {
@@ -404,6 +405,7 @@ function DayDetail({ day }: { day: WorkRhythmDay }) {
   );
 
   function openSession(session: WorkRhythmSession) {
+    saveOverviewReturnScroll();
     navigate({
       to: "/sessions/$harness/$sessionId",
       params: { harness: session.harness, sessionId: session.id },
@@ -735,6 +737,7 @@ function ActivityTimeline({ day }: { day: WorkRhythmDay }) {
   }
 
   function openSession(session: WorkRhythmSession) {
+    saveOverviewReturnScroll();
     navigate({
       to: "/sessions/$harness/$sessionId",
       params: { harness: session.harness, sessionId: session.id },

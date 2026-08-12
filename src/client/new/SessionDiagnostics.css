@@ -1,0 +1,162 @@
+.session-diagnostics-section {
+  display: grid;
+  grid-template-rows: auto minmax(340px, 1fr);
+  color: var(--dashboard-ink);
+}
+
+.session-diagnostics-section > header {
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 0;
+}
+
+.session-diagnostics-toggle {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid #c6d1cd;
+  border-radius: 4px;
+}
+
+.session-diagnostics-toggle button {
+  min-width: 58px;
+  padding: 5px 9px;
+  border: 0;
+  background: transparent;
+  color: #697672;
+  font: 10px var(--mono);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.session-diagnostics-toggle button + button {
+  border-left: 1px solid #c6d1cd;
+}
+
+.session-diagnostics-toggle button.active {
+  background: var(--dashboard-ink);
+  color: #fff;
+}
+
+.session-diagnostics-chart {
+  min-height: 340px;
+  padding: 2px 12px 0 2px;
+}
+
+.session-diagnostics-message {
+  margin: 0;
+  padding: 24px 22px;
+  color: var(--dashboard-muted);
+  font: 10px var(--mono);
+}
+
+.session-diagnostics-chart .recharts-cartesian-axis-tick-value,
+.session-diagnostics-chart .recharts-label {
+  fill: #697572;
+  font: 9px var(--mono);
+}
+
+.session-diagnostics-point {
+  color: #657a76;
+  outline: none;
+}
+
+.session-diagnostics-point circle {
+  fill: currentColor;
+  fill-opacity: .34;
+  stroke: currentColor;
+  stroke-opacity: .5;
+  stroke-width: .75px;
+}
+
+.session-diagnostics-point.is-highlighted {
+  color: #235f59;
+}
+
+.session-diagnostics-point.is-highlighted circle {
+  fill-opacity: .88;
+  stroke-opacity: 1;
+}
+
+.session-diagnostics-point.is-linked {
+  cursor: pointer;
+}
+
+.session-diagnostics-point:focus-visible circle {
+  fill-opacity: 1;
+  stroke: #172522;
+  stroke-width: 2px;
+}
+
+.session-diagnostics-point text {
+  fill: #29433f;
+  font: 9px var(--mono);
+  font-weight: 700;
+  paint-order: stroke;
+  pointer-events: none;
+  stroke: var(--dashboard-panel);
+  stroke-linejoin: round;
+  stroke-width: 3px;
+}
+
+.session-diagnostics-tooltip {
+  min-width: 205px;
+  max-width: 280px;
+}
+
+.session-diagnostics-tooltip > p {
+  overflow: hidden;
+  margin-bottom: 3px;
+  color: var(--dashboard-ink);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-diagnostics-tooltip-model {
+  display: block;
+  overflow: hidden;
+  color: var(--dashboard-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-diagnostics-tooltip dl {
+  display: grid;
+  gap: 5px;
+  margin: 14px 0 0;
+}
+
+.session-diagnostics-tooltip dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.session-diagnostics-tooltip dt {
+  color: #596762;
+}
+
+.session-diagnostics-tooltip dd {
+  margin: 0;
+  color: var(--dashboard-ink);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 620px) {
+  .session-diagnostics-section {
+    grid-template-rows: auto minmax(300px, 1fr);
+  }
+
+  .session-diagnostics-section > header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .session-diagnostics-chart {
+    min-height: 300px;
+    padding-right: 4px;
+  }
+}

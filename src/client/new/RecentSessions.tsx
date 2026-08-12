@@ -10,10 +10,13 @@ import { parseSessionMissFilters } from "../../shared/sessionSchemas.ts";
 import { getSession, getSessions, syncSessions } from "../api.ts";
 import { SessionsPanel } from "../SessionsPage.tsx";
 import type { OverviewHarness } from "./OverviewToolbar.tsx";
+import {
+  overviewReturnScrollKey,
+  saveOverviewReturnScroll,
+} from "./overviewReturnScroll.ts";
 import "./RecentSessions.css";
 
 const route = getRouteApi("/");
-const returnScrollKey = "frugal-tokens:overview-return-scroll";
 
 type RecentSessionsProps = {
   harness: OverviewHarness;
@@ -55,8 +58,11 @@ export function RecentSessions({
   missFilterRef.current = missFilterKey;
   const [returnScrollY] = useState<number | undefined>(() => {
     try {
-      const saved = JSON.parse(sessionStorage.getItem(returnScrollKey) ?? "null");
-      return saved?.href === window.location.href && Number.isFinite(saved.scrollY)
+      const saved = JSON.parse(
+        sessionStorage.getItem(overviewReturnScrollKey) ?? "null",
+      );
+      return saved?.href === globalThis.location.href &&
+          Number.isFinite(saved.scrollY)
         ? saved.scrollY
         : undefined;
     } catch {
@@ -77,7 +83,9 @@ export function RecentSessions({
       if (active) setData(result);
     }).catch((reason) => {
       if (active) {
-        setError(reason instanceof Error ? reason.message : "Unable to load sessions");
+        setError(
+          reason instanceof Error ? reason.message : "Unable to load sessions",
+        );
       }
     }).finally(() => {
       if (active) setLoadingSessions(false);
@@ -97,7 +105,9 @@ export function RecentSessions({
       setExpandedIDs(new Set());
       setDetails({});
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Unable to refresh sessions");
+      setError(
+        reason instanceof Error ? reason.message : "Unable to refresh sessions",
+      );
     } finally {
       setRefreshing(false);
     }
@@ -125,7 +135,9 @@ export function RecentSessions({
         next.delete(id);
         return next;
       });
-      setError(reason instanceof Error ? reason.message : "Unable to load session");
+      setError(
+        reason instanceof Error ? reason.message : "Unable to load session",
+      );
     }
   }
 
@@ -221,14 +233,7 @@ export function RecentSessions({
   }
 
   function openSession(session: SessionListResponse["items"][number]) {
-    try {
-      sessionStorage.setItem(returnScrollKey, JSON.stringify({
-        href: window.location.href,
-        scrollY: window.scrollY,
-      }));
-    } catch {
-      // Router scroll restoration remains the fallback when storage is unavailable.
-    }
+    saveOverviewReturnScroll();
     navigate({
       to: "/sessions/$harness/$sessionId",
       params: { harness: session.harness, sessionId: session.id },
@@ -243,44 +248,46 @@ export function RecentSessions({
   }
 
   useEffect(() => {
-    if (!data || returnScrollY === undefined || restoredScrollRef.current) return;
+    if (!data || returnScrollY === undefined || restoredScrollRef.current) {
+      return;
+    }
     restoredScrollRef.current = true;
     try {
-      sessionStorage.removeItem(returnScrollKey);
+      sessionStorage.removeItem(overviewReturnScrollKey);
     } catch {
       // The saved position is only a progressive enhancement.
     }
-    const restore = () => window.scrollTo(0, returnScrollY);
+    const restore = () => globalThis.scrollTo(0, returnScrollY);
     const frame = requestAnimationFrame(restore);
-    const timer = window.setTimeout(restore, 500);
+    const timer = globalThis.setTimeout(restore, 500);
     return () => {
       cancelAnimationFrame(frame);
-      window.clearTimeout(timer);
+      globalThis.clearTimeout(timer);
     };
   }, [data, returnScrollY]);
 
   return (
     <div className="new-recent-sessions">
       <SessionsPanel
-      data={data}
-      loadingSessions={loadingSessions}
-      refreshing={refreshing}
-      refreshData={refreshData}
-      selectedMissFilters={selectedMissFilters}
-      harness={harness}
-      harnesses={harnesses}
-      error={error}
-      expandedIDs={expandedIDs}
-      toggleSession={toggleSession}
-      details={details}
-      loadMoreRef={loadMoreRef}
-      loadingMore={loadingMore}
-      loadMoreError={loadMoreError}
-      loadNextPage={loadNextPage}
-      showLoadMoreButton={false}
-      onHarnessChange={onHarnessChange}
-      onMissFiltersChange={changeMissFilters}
-      onOpenSession={openSession}
+        data={data}
+        loadingSessions={loadingSessions}
+        refreshing={refreshing}
+        refreshData={refreshData}
+        selectedMissFilters={selectedMissFilters}
+        harness={harness}
+        harnesses={harnesses}
+        error={error}
+        expandedIDs={expandedIDs}
+        toggleSession={toggleSession}
+        details={details}
+        loadMoreRef={loadMoreRef}
+        loadingMore={loadingMore}
+        loadMoreError={loadMoreError}
+        loadNextPage={loadNextPage}
+        showLoadMoreButton={false}
+        onHarnessChange={onHarnessChange}
+        onMissFiltersChange={changeMissFilters}
+        onOpenSession={openSession}
       />
     </div>
   );

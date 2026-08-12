@@ -774,7 +774,7 @@ export class ConversationRepository {
   ): StoredOverviewRollup[] {
     const rows = this.db.prepare(`
       SELECT c.id, ${effectiveConversationTitle} AS title, so.harness,
-        cr.overview_json, COALESCE((
+        c.started_at, c.ended_at, cr.overview_json, COALESCE((
           WITH RECURSIVE descendants(id) AS (
             SELECT launch.child_conversation_id
             FROM conversation_subagent_launches launch
@@ -835,6 +835,8 @@ export class ConversationRepository {
       id: number;
       title: string;
       harness: Harness;
+      started_at: number | null;
+      ended_at: number | null;
       overview_json: string;
       subagent_spend: number;
       session_public_id: string;
@@ -844,6 +846,8 @@ export class ConversationRepository {
       rootSessionID: row.id,
       rootExecutionIntervals: JSON.parse(row.root_execution_intervals_json),
       sessionID: row.session_public_id,
+      ...(row.started_at === null ? {} : { startedAt: row.started_at }),
+      ...(row.ended_at === null ? {} : { endedAt: row.ended_at }),
       title: row.title,
       harness: row.harness,
       subagentSpend: row.subagent_spend,
@@ -1180,7 +1184,9 @@ export class ConversationRepository {
     for (const row of rows) {
       const scope = row.nested === 0
         ? undefined
-        : row.agent === null ? row.title : `${row.agent}: ${row.title}`;
+        : row.agent === null
+        ? row.title
+        : `${row.agent}: ${row.title}`;
       const issue: CacheIssue = {
         status: row.status,
         ...(row.cause === null ? {} : { cause: row.cause }),

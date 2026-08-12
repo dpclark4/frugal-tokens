@@ -548,6 +548,21 @@ export const activityOverviewResponseSchema = z.object({
     subagentSpend: z.number().nonnegative(),
     topDecileSpendShare: z.number().min(0).max(1),
   }),
+  sessionDiagnostics: z.object({
+    sessions: z.array(z.object({
+      id: z.string(),
+      title: z.string(),
+      harness: harnessSchema.optional(),
+      primaryModel: z.string().nullable(),
+      estimatedActiveMinutes: z.number().nonnegative(),
+      observedSessionMinutes: z.number().nonnegative(),
+      spend: z.number().nonnegative(),
+      hasUnpricedSpend: z.boolean(),
+      processedInput: z.number().int().nonnegative(),
+      tokenReuse: z.number().min(0).max(1).optional(),
+      userTurns: z.number().int().nonnegative(),
+    })),
+  }),
   workRhythm: workRhythmDataSchema,
   spendComposition: spendCompositionSchema,
   days: z.array(z.object({

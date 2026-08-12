@@ -34,6 +34,8 @@ Deno.test("activity overview returns period totals and daily drill-down data", (
   const outside = new Date(2026, 5, 30, 12).getTime();
   const roots: StoredOverviewRollup[] = [{
     rootSessionID: 1,
+    startedAt: first - 60_000,
+    endedAt: second + 120_000,
     subagentSpend: 2,
     overview: {
       days: [
@@ -68,6 +70,29 @@ Deno.test("activity overview returns period totals and daily drill-down data", (
   strictEqual(result.summary.spendAtMissCalls, 1.5);
   strictEqual(result.summary.subagentSpend, 2);
   strictEqual(result.summary.topDecileSpendShare, 5 / 9);
+  deepStrictEqual(result.sessionDiagnostics.sessions, [{
+    id: "2",
+    title: "Session 2",
+    primaryModel: null,
+    estimatedActiveMinutes: 0,
+    observedSessionMinutes: 1 / 60,
+    spend: 4,
+    hasUnpricedSpend: false,
+    processedInput: 2_000_000,
+    tokenReuse: 0.5,
+    userTurns: 1,
+  }, {
+    id: "1",
+    title: "Session 1",
+    primaryModel: null,
+    estimatedActiveMinutes: 0,
+    observedSessionMinutes: (second + 120_000 - (first - 60_000)) / 60_000,
+    spend: 5,
+    hasUnpricedSpend: true,
+    processedInput: 4_000_000,
+    tokenReuse: 3_300_000 / 4_000_000,
+    userTurns: 2,
+  }]);
   deepStrictEqual(result.days, [
     {
       date: "2026-07-01",
