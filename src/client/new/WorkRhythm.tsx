@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
@@ -261,15 +261,15 @@ function CompactCalendar({ data, selectedDate, onSelect }: {
   const rangeEnd = parseDate(data.range.end);
   const firstMonth = monthIndex(rangeStart);
   const lastMonth = monthIndex(rangeEnd);
-  const [visibleMonth, setVisibleMonth] = useState(() =>
-    new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), 1)
-  );
+  const [visibleMonth, setVisibleMonth] = useState(() => {
+    const selected = parseDate(selectedDate);
+    return new Date(selected.getFullYear(), selected.getMonth(), 1);
+  });
 
   useEffect(() => {
-    setVisibleMonth(
-      new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), 1),
-    );
-  }, [data.range.end]);
+    const selected = parseDate(selectedDate);
+    setVisibleMonth(new Date(selected.getFullYear(), selected.getMonth(), 1));
+  }, [selectedDate]);
 
   const visibleIndex = monthIndex(visibleMonth);
   const today = dateKey(new Date());
@@ -914,19 +914,15 @@ function ActivityTimeline({ day }: { day: WorkRhythmDay }) {
   );
 }
 
-function mostRecentActiveDate(data: WorkRhythmData) {
-  return Object.values(data.days)
-    .filter((day) => day.estimatedActiveMinutes > 0)
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .at(-1)?.date ?? data.range.end;
-}
-
-export function WorkRhythm({ data }: { data: WorkRhythmData }) {
-  const defaultDate = useMemo(() => mostRecentActiveDate(data), [data]);
-  const [selectedDate, setSelectedDate] = useState(defaultDate);
-  useEffect(() => {
-    setSelectedDate(defaultDate);
-  }, [defaultDate]);
+export function WorkRhythm({
+  data,
+  selectedDate,
+  onSelect,
+}: {
+  data: WorkRhythmData;
+  selectedDate: string;
+  onSelect: (date: string) => void;
+}) {
   const selectedDay = data.days[selectedDate] ?? {
     date: selectedDate,
     estimatedActiveMinutes: 0,
@@ -997,7 +993,7 @@ export function WorkRhythm({ data }: { data: WorkRhythmData }) {
           <CompactCalendar
             data={data}
             selectedDate={selectedDate}
-            onSelect={setSelectedDate}
+            onSelect={onSelect}
           />
           <DayDetail day={selectedDay} />
         </div>

@@ -30,6 +30,13 @@ const SessionDiagnostics = lazy(() =>
   }))
 );
 
+function calendarDate(
+  date: string | undefined,
+  range: { start: string; end: string },
+) {
+  return date && date >= range.start && date <= range.end ? date : range.end;
+}
+
 export function NewPage() {
   const search = route.useSearch();
   const navigate = route.useNavigate();
@@ -78,9 +85,22 @@ export function NewPage() {
     };
   }, [search.range, search.harness]);
 
-  function update(next: Partial<typeof search>) {
-    navigate({ search: { ...search, ...next }, resetScroll: false });
+  function update(next: Partial<typeof search>, replace = false) {
+    navigate({
+      search: { ...search, ...next },
+      resetScroll: false,
+      replace,
+    });
   }
+
+  const selectedDate = data
+    ? calendarDate(search.date, data.workRhythm.range)
+    : undefined;
+
+  useEffect(() => {
+    if (!selectedDate || search.date === selectedDate) return;
+    update({ date: selectedDate }, true);
+  }, [search.date, selectedDate]);
 
   return (
     <main className="new-page">
@@ -107,7 +127,11 @@ export function NewPage() {
           </div>
           {data && (
             <Suspense fallback={null}>
-              <WorkRhythm data={data.workRhythm} />
+              <WorkRhythm
+                data={data.workRhythm}
+                selectedDate={selectedDate!}
+                onSelect={(date) => update({ date })}
+              />
             </Suspense>
           )}
         </div>

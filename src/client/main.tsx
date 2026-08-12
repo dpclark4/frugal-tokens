@@ -109,6 +109,7 @@ const newRoute = createRoute({
       ),
     range: z.coerce.number().pipe(z.union([z.literal(30), z.literal(90)]))
       .catch(30),
+    date: z.iso.date().optional().catch(undefined),
     misses: z.string().optional(),
   }),
   component: NewPage,
