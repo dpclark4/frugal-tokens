@@ -2283,7 +2283,7 @@ export function SessionDetailPage() {
   const [ghosttyOpening, setGhosttyOpening] = useState(false);
   const [ghosttyError, setGhosttyError] = useState<string>();
   const [theme, setTheme] = useState<SessionTheme>(() =>
-    localStorage.getItem(SESSION_THEME_KEY) === "light" ? "light" : "dark"
+    localStorage.getItem(SESSION_THEME_KEY) === "dark" ? "dark" : "light"
   );
   const [collapsedTurnIDs, setCollapsedTurnIDs] = useState<Set<string>>(
     () => new Set(),
