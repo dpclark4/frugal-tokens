@@ -1160,6 +1160,26 @@
   font: 10.5px/1.5 var(--mono);
 }
 
+.sd-context-input-counts {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 0 8px;
+}
+
+.sd-context-input-counts span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--sd-ink-3);
+}
+
+.sd-context-input-counts strong {
+  color: var(--sd-ink-2);
+  font: 11.5px var(--mono);
+  font-weight: 500;
+}
+
 .sd-work-block-trigger {
   display: inline-flex;
   align-items: center;

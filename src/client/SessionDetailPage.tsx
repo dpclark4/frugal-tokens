@@ -1900,6 +1900,15 @@ function Metadata({
   const contextStarting = context.first?.size;
   const contextLatest = context.latest?.size ?? session.contextLatest;
   const contextPeak = context.peak?.size ?? session.contextPeak;
+  const contextInputs = sessionTree(session).flatMap((item) =>
+    item.turns.flatMap((turn) => turn.inputs ?? [])
+  );
+  const imageInputs = calls.reduce(
+    (total, call) => total + (call.activity.images ?? 0),
+    0,
+  );
+  const fileInputs =
+    contextInputs.filter((input) => input.kind === "file").length;
   const cacheMisses =
     calls.filter((call) =>
       call.cacheAssessment?.status === "partial-hit" ||
@@ -2028,6 +2037,34 @@ function Metadata({
       </section>
       <section>
         <h2>Context</h2>
+        {(imageInputs > 0 || fileInputs > 0) && (
+          <div className="sd-context-input-counts">
+            {imageInputs > 0 && (
+              <span
+                aria-label={`${imageInputs} image input${
+                  imageInputs === 1 ? "" : "s"
+                }`}
+                title={`${imageInputs} image input${
+                  imageInputs === 1 ? "" : "s"
+                }`}
+              >
+                <Image size={14} aria-hidden="true" />
+                <strong>{integer.format(imageInputs)}</strong>
+              </span>
+            )}
+            {fileInputs > 0 && (
+              <span
+                aria-label={`${fileInputs} file input${
+                  fileInputs === 1 ? "" : "s"
+                }`}
+                title={`${fileInputs} file input${fileInputs === 1 ? "" : "s"}`}
+              >
+                <FileText size={14} aria-hidden="true" />
+                <strong>{integer.format(fileInputs)}</strong>
+              </span>
+            )}
+          </div>
+        )}
         <MetadataRow label="Starting">
           {contextStarting === undefined
             ? "Unavailable"
