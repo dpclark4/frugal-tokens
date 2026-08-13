@@ -15,6 +15,8 @@ import { compact, currency } from "./formatters.ts";
 import { minorModelColor, modelColor, otherModelColor } from "./modelColors.ts";
 import "./SpendComposition.css";
 
+const chartMono = '"SFMono-Regular", Consolas, monospace';
+
 type Metric = "spend" | "tokens";
 type CompositionModel = SpendCompositionData["models"][number];
 type CompositionDay = SpendCompositionData["days"][number];
@@ -315,18 +317,17 @@ function CompositionChart(
             minTickGap={42}
             axisLine={false}
             tickLine={false}
-            tick={{ fill: "#73807c", fontSize: 9, fontFamily: "var(--mono)" }}
+            tick={{ fill: "#73807c", fontSize: 9, fontFamily: chartMono }}
           />
           <YAxis
             yAxisId="volume"
             width={48}
-            tickFormatter={(value) =>
-              metric === "spend"
-                ? `$${compact.format(Number(value))}`
-                : compact.format(Number(value))}
+            tickFormatter={(value) => metric === "spend"
+              ? `$${compact.format(Number(value))}`
+              : compact.format(Number(value))}
             axisLine={false}
             tickLine={false}
-            tick={{ fill: "#73807c", fontSize: 9, fontFamily: "var(--mono)" }}
+            tick={{ fill: "#73807c", fontSize: 9, fontFamily: chartMono }}
           />
           <YAxis
             yAxisId="rate"
@@ -339,7 +340,7 @@ function CompositionChart(
               ? {
                 fill: "#35433f",
                 fontSize: 9,
-                fontFamily: "var(--mono)",
+                fontFamily: chartMono,
               }
               : false}
           />
@@ -420,7 +421,11 @@ export function SpendComposition({ data }: { data: SpendCompositionData }) {
             <h2 id="spend-composition-title">Spend</h2>
           </header>
           {empty
-            ? <p className="composition-empty">No model usage in this period.</p>
+            ? (
+              <p className="composition-empty">
+                No model usage in this period.
+              </p>
+            )
             : <ModelTable data={data} />}
         </div>
         {!empty && (

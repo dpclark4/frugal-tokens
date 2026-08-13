@@ -34,7 +34,7 @@
   font: 10px var(--mono);
 }
 
-.overview-screenshot-button {
+.overview-action-button {
   display: grid;
   width: 34px;
   height: 34px;
@@ -48,18 +48,18 @@
   cursor: pointer;
 }
 
-.overview-screenshot-button:hover:not(:disabled),
-.overview-screenshot-button:focus-visible {
+.overview-action-button:hover:not(:disabled),
+.overview-action-button:focus-visible {
   border-color: var(--dashboard-ink);
   color: var(--dashboard-ink);
 }
 
-.overview-screenshot-button:disabled {
+.overview-action-button:disabled {
   cursor: wait;
   opacity: .5;
 }
 
-.overview-screenshot-button.error {
+.overview-action-button.error {
   border-color: var(--danger);
   color: var(--danger);
 }

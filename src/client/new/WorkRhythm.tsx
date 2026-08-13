@@ -26,6 +26,7 @@ import { compact, currency, integer } from "./formatters.ts";
 import { saveOverviewReturnScroll } from "./overviewReturnScroll.ts";
 import "./WorkRhythm.css";
 
+const chartMono = '"SFMono-Regular", Consolas, monospace';
 const readableDate = new Intl.DateTimeFormat(undefined, {
   weekday: "long",
   month: "long",
@@ -153,7 +154,7 @@ function WeekdayChart({ data }: { data: WorkRhythmData["weekdayActivity"] }) {
             width={40}
             axisLine={false}
             tickLine={false}
-            tick={{ fill: "#52615d", fontSize: 11, fontFamily: "var(--mono)" }}
+            tick={{ fill: "#52615d", fontSize: 11, fontFamily: chartMono }}
           />
           <Tooltip
             cursor={{ fill: "rgba(15, 113, 105, .045)" }}
@@ -166,7 +167,7 @@ function WeekdayChart({ data }: { data: WorkRhythmData["weekdayActivity"] }) {
           />
           <Bar
             dataKey="averageMinutes"
-            fill="var(--dashboard-signal)"
+            fill="#0f7169"
             fillOpacity={0.76}
             barSize={12}
             radius={[0, 2, 2, 0]}
@@ -214,7 +215,7 @@ function HourlyChart({ data }: { data: WorkRhythmData["hourlyActivity"] }) {
             tickFormatter={formatHourTick}
             axisLine={false}
             tickLine={false}
-            tick={{ fill: "#6f7d78", fontSize: 11, fontFamily: "var(--mono)" }}
+            tick={{ fill: "#6f7d78", fontSize: 11, fontFamily: chartMono }}
           />
           <YAxis hide domain={[0, "dataMax"]} />
           <Tooltip
@@ -228,7 +229,7 @@ function HourlyChart({ data }: { data: WorkRhythmData["hourlyActivity"] }) {
           />
           <Bar
             dataKey="estimatedMinutes"
-            fill="var(--dashboard-signal)"
+            fill="#0f7169"
             fillOpacity={0.72}
             radius={[1.5, 1.5, 0, 0]}
             isAnimationActive={false}

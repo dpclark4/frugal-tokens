@@ -1,4 +1,4 @@
-import { Camera, Check } from "lucide-react";
+import { Camera, Check, Copy } from "lucide-react";
 import type { SessionSummary } from "../../shared/sessionSchemas.ts";
 import { HarnessOptions } from "../HarnessOptions.tsx";
 import "./OverviewToolbar.css";
@@ -12,6 +12,7 @@ export type OverviewHarness =
   | "codex"
   | "cursor";
 export type ScreenshotState = "idle" | "capturing" | "copied" | "error";
+export type CopyReportState = "idle" | "copied" | "error";
 
 type OverviewToolbarProps = {
   range: OverviewRange;
@@ -22,6 +23,9 @@ type OverviewToolbarProps = {
   screenshotState: ScreenshotState;
   screenshotDisabled?: boolean;
   onScreenshot: () => void;
+  copyReportState: CopyReportState;
+  copyReportDisabled?: boolean;
+  onCopyReport: () => void;
 };
 
 export function OverviewToolbar({
@@ -33,6 +37,9 @@ export function OverviewToolbar({
   screenshotState,
   screenshotDisabled = false,
   onScreenshot,
+  copyReportState,
+  copyReportDisabled = false,
+  onCopyReport,
 }: OverviewToolbarProps) {
   return (
     <div className="new-overview-controls">
@@ -45,9 +52,10 @@ export function OverviewToolbar({
             aria-pressed={range === option}
             onClick={() => onRangeChange(option)}
             onDoubleClick={option === 30
-              ? () => window.dispatchEvent(
-                new Event("frugal-tokens:toggle-secondary-pages"),
-              )
+              ? () =>
+                globalThis.dispatchEvent(
+                  new Event("frugal-tokens:toggle-secondary-pages"),
+                )
               : undefined}
           >
             {option}D
@@ -66,7 +74,27 @@ export function OverviewToolbar({
       </label>
       <button
         type="button"
-        className={`overview-screenshot-button${
+        className={`overview-action-button${
+          copyReportState === "error" ? " error" : ""
+        }`}
+        disabled={copyReportDisabled}
+        onClick={onCopyReport}
+        aria-label={copyReportState === "copied"
+          ? "Markdown report copied"
+          : "Copy Markdown report"}
+        title={copyReportState === "copied"
+          ? "Markdown report copied"
+          : copyReportState === "error"
+          ? "Unable to copy Markdown report"
+          : "Copy Markdown report"}
+      >
+        {copyReportState === "copied"
+          ? <Check size={16} aria-hidden="true" />
+          : <Copy size={16} aria-hidden="true" />}
+      </button>
+      <button
+        type="button"
+        className={`overview-action-button${
           screenshotState === "error" ? " error" : ""
         }`}
         data-screenshot-control
