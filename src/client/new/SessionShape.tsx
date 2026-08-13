@@ -14,6 +14,7 @@ type MetricKey = DistributionMetric["key"];
 type SessionShapeProps = {
   range: 30 | 90;
   harness: string;
+  onDataChange?: (data: SessionShapeResponse | undefined) => void;
 };
 
 const metricLabels: Record<MetricKey, string> = {
@@ -202,7 +203,11 @@ function DistributionStrip({
   );
 }
 
-export function SessionShape({ range, harness }: SessionShapeProps) {
+export function SessionShape({
+  range,
+  harness,
+  onDataChange,
+}: SessionShapeProps) {
   const [data, setData] = useState<SessionShapeResponse>();
   const [error, setError] = useState<string>();
   const [initialInputUsage, setInitialInputUsage] = useState<UsageResponse>();
@@ -210,11 +215,16 @@ export function SessionShape({ range, harness }: SessionShapeProps) {
 
   useEffect(() => {
     let active = true;
+    setData(undefined);
     setError(undefined);
     setInitialInputError(undefined);
     setInitialInputUsage(undefined);
+    onDataChange?.(undefined);
     getSessionShape(range, harness).then((result) => {
-      if (active) setData(result);
+      if (active) {
+        setData(result);
+        onDataChange?.(result);
+      }
     }).catch((reason) => {
       if (active) {
         setError(
@@ -222,6 +232,7 @@ export function SessionShape({ range, harness }: SessionShapeProps) {
             ? reason.message
             : "Unable to load session shape",
         );
+        onDataChange?.(undefined);
       }
     });
     getUsage(range, harness).then((result) => {

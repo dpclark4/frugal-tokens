@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { getRouteApi } from "@tanstack/react-router";
-import { Check, Share } from "lucide-react";
+import { Check, Copy } from "lucide-react";
 import type {
   OverviewResponse,
   SessionDetail,
@@ -310,7 +310,7 @@ export function SessionsPage() {
           >
             {shareState === "copied"
               ? <Check size={16} aria-hidden="true" />
-              : <Share size={16} aria-hidden="true" />}
+              : <Copy size={16} aria-hidden="true" />}
           </button>
         }
       />

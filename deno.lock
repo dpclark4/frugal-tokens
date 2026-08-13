@@ -8,6 +8,7 @@
     "npm:concurrently@10.0.3": "10.0.3",
     "npm:dbmate@^2.28.0": "2.34.1",
     "npm:hono@4.12.29": "4.12.29",
+    "npm:html-to-image@1.11.13": "1.11.13",
     "npm:lucide-react@1.25.0": "1.25.0_react@19.2.7",
     "npm:pretty-ms@9.3.0": "9.3.0",
     "npm:react-dom@19.2.7": "19.2.7_react@19.2.7",
@@ -841,6 +842,9 @@
     "hono@4.12.29": {
       "integrity": "sha512-1hNiRjawYrLq/4m3DQQjPGFg0VZkk4RjQJDff/excI6Dm9BiL75qxGrd7/c6YOxPdq6AscP3LiXhQ6fKFC1Waw=="
     },
+    "html-to-image@1.11.13": {
+      "integrity": "sha512-cuOPoI7WApyhBElTTb9oqsawRvZ0rHhaHwghRLlTuffoD1B2aDemlCruLeZrUIIdvG7gs9xeELEPm6PhuASqrg=="
+    },
     "immer@10.2.0": {
       "integrity": "sha512-d/+XTN3zfODyjr89gM3mPq1WNX2B8pYsu7eORitdwyA2sBubnTl3laYlBk4sXY5FUa5qTZGBDPJICVbvqzjlbw=="
     },
@@ -1294,6 +1298,7 @@
       "npm:@types/react@19.2.17",
       "npm:@vitejs/plugin-react@6.0.3",
       "npm:hono@4.12.29",
+      "npm:html-to-image@1.11.13",
       "npm:lucide-react@1.25.0",
       "npm:pretty-ms@9.3.0",
       "npm:react-dom@19.2.7",
