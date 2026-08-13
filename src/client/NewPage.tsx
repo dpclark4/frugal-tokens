@@ -38,6 +38,18 @@ function calendarDate(
   return date && date >= range.start && date <= range.end ? date : range.end;
 }
 
+function WorkRhythmLoading() {
+  return (
+    <div
+      className="work-rhythm-loading"
+      role="status"
+      aria-label="Loading estimated work"
+    >
+      <span aria-hidden="true" />
+    </div>
+  );
+}
+
 export function NewPage() {
   const search = route.useSearch();
   const navigate = route.useNavigate();
@@ -153,15 +165,17 @@ export function NewPage() {
             <UsageOverview data={data} />
             <SessionShape range={search.range} harness={search.harness} />
           </div>
-          {workRhythmData && (
-            <Suspense fallback={null}>
-              <WorkRhythm
-                data={workRhythmData.workRhythm}
-                selectedDate={selectedDate!}
-                onSelect={(date) => update({ date })}
-              />
-            </Suspense>
-          )}
+          {workRhythmData
+            ? (
+              <Suspense fallback={<WorkRhythmLoading />}>
+                <WorkRhythm
+                  data={workRhythmData.workRhythm}
+                  selectedDate={selectedDate!}
+                  onSelect={(date) => update({ date })}
+                />
+              </Suspense>
+            )
+            : data && !workRhythmError && <WorkRhythmLoading />}
         </div>
 
         {data && (
