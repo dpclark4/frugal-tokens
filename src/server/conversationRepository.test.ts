@@ -104,6 +104,39 @@ function linearSession(sourceID: number): LinearConversationImport {
   };
 }
 
+Deno.test("overview rollups return ordered root execution intervals", () => {
+  const db = openArchiveDatabase(":memory:");
+  migrateTestDatabase(db);
+  const sources = new SourceArtifactRepository(db);
+  const projection = new ConversationWriteRepository(db);
+  const conversations = new ConversationRepository(db);
+  try {
+    const sourceID = sources.ensureSource(
+      "pi",
+      "directory",
+      "Pi",
+      "/sessions",
+    );
+    const imported = linearSession(sourceID);
+    sources.recordUnchangedArtifact(
+      sourceID,
+      imported.externalID,
+      "project/linear.jsonl",
+      imported.observedAt,
+    );
+    projection.replaceLinearConversationTree([imported]);
+
+    const rollups = conversations.listOverviewRollups(0, "pi");
+    strictEqual(rollups.length, 1);
+    deepStrictEqual(rollups[0].rootExecutionIntervals, [
+      { startedAt: 10, executionEndAt: 12 },
+      { startedAt: 20, executionEndAt: 22 },
+    ]);
+  } finally {
+    db.close();
+  }
+});
+
 Deno.test("conversation repository linearizes Codex branches without duplicating usage", async () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);

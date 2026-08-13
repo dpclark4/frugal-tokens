@@ -557,35 +557,57 @@ app.get("/api/activity-overview", (context) => {
   const selectedHarness = harness === "all"
     ? undefined
     : harness as SessionSummary["harness"];
+  const databaseTimings = new Map<string, number>();
   const loadStartedAt = performance.now();
   const loaded = readRepository.listOverviewRollups(
     start - 5 * 60_000,
     selectedHarness,
+    (name, duration) => databaseTimings.set(name, duration),
   );
   const loadDuration = performance.now() - loadStartedAt;
-  const aggregationStartedAt = performance.now();
+  const cacheMissStartedAt = performance.now();
   const spendAtMissCalls = sumCacheMissCost(
     readRepository.summarizeCacheMisses(start, selectedHarness),
   );
+  const cacheMissDuration = performance.now() - cacheMissStartedAt;
+  databaseTimings.set("cache-misses", cacheMissDuration);
+  const aggregationTimings = new Map<string, number>();
+  const aggregationStartedAt = performance.now();
   const overview = aggregateActivityOverview(
     loaded,
     start,
     end,
     timeZone,
     spendAtMissCalls,
+    (name, duration) => aggregationTimings.set(name, duration),
   );
   const aggregationDuration = performance.now() - aggregationStartedAt;
+  const databaseDuration = loadDuration + cacheMissDuration;
   const totalDuration = performance.now() - requestStartedAt;
+  const detailTimingHeader = [
+    ...databaseTimings.entries(),
+    ...aggregationTimings.entries(),
+  ].map(
+    ([name, duration]) => `${name};dur=${duration.toFixed(1)}`,
+  ).join(", ");
+  const detailTimingLog = [
+    ...databaseTimings.entries(),
+    ...aggregationTimings.entries(),
+  ].map(
+    ([name, duration]) => `${name}=${formatTiming(duration)}`,
+  ).join(" ");
   context.header(
     "Server-Timing",
-    `sources;dur=${loadDuration.toFixed(1)}, aggregate;dur=${
+    `database;dur=${
+      databaseDuration.toFixed(1)
+    }, ${detailTimingHeader}, aggregate;dur=${
       aggregationDuration.toFixed(1)
     }, total;dur=${totalDuration.toFixed(1)}`,
   );
   console.info(
-    `[activity-overview] harness=${harness} range=${range} roots=${loaded.length} days=${overview.days.length} load=${
-      formatTiming(loadDuration)
-    } aggregate=${formatTiming(aggregationDuration)} total=${
+    `[activity-overview] harness=${harness} range=${range} roots=${loaded.length} days=${overview.days.length} database=${
+      formatTiming(databaseDuration)
+    } ${detailTimingLog} aggregate=${formatTiming(aggregationDuration)} total=${
       formatTiming(totalDuration)
     }`,
   );

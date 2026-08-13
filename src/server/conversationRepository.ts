@@ -876,10 +876,42 @@ export class ConversationRepository {
   listOverviewRollups(
     startedAt: number,
     harness?: Harness,
+    recordTiming?: (name: string, duration: number) => void,
   ): StoredOverviewRollup[] {
-    const rows = this.db.prepare(`
-      SELECT c.id, ${effectiveConversationTitle} AS title, so.harness,
-        c.started_at, c.ended_at, cr.overview_json, COALESCE((
+    const measured = <T>(name: string, operation: () => T): T => {
+      const started = performance.now();
+      const result = operation();
+      recordTiming?.(name, performance.now() - started);
+      return result;
+    };
+    const parameters = [startedAt, harness ?? null, harness ?? null] as const;
+    const rows = measured("root-rollups", () =>
+      this.db.prepare(`
+        SELECT c.id, ${effectiveConversationTitle} AS title, so.harness,
+          c.started_at, c.ended_at, cr.overview_json,
+          COALESCE(c.public_id, c.external_id) AS session_public_id
+        FROM conversation_rollups cr
+        JOIN conversations c ON c.id = cr.conversation_id
+        JOIN sources so ON so.id = c.source_id
+        WHERE cr.last_activity_at >= ? AND cr.overview_json IS NOT NULL
+          AND (? IS NULL OR so.harness = ?)
+          AND NOT EXISTS (
+            SELECT 1 FROM conversation_subagent_launches launch
+            WHERE launch.child_conversation_id = c.id
+          )
+        ORDER BY c.id
+      `).all(...parameters) as Array<{
+        id: number;
+        title: string;
+        harness: Harness;
+        started_at: number | null;
+        ended_at: number | null;
+        overview_json: string;
+        session_public_id: string;
+      }>);
+    const spendRows = measured("descendant-spend", () =>
+      this.db.prepare(`
+        SELECT c.id, COALESCE((
           WITH RECURSIVE descendants(id) AS (
             SELECT launch.child_conversation_id
             FROM conversation_subagent_launches launch
@@ -894,15 +926,45 @@ export class ConversationRepository {
           FROM descendants
           JOIN conversation_rollups child
             ON child.conversation_id = descendants.id
-        ), 0) AS subagent_spend,
-        COALESCE(c.public_id, c.external_id) AS session_public_id,
-        COALESCE((
-          SELECT json_group_array(json_object(
-            'startedAt', measured_turn.started_at,
-            'executionEndAt', measured_turn.execution_end_at
-          ))
+        ), 0) AS subagent_spend
+        FROM conversation_rollups cr
+        JOIN conversations c ON c.id = cr.conversation_id
+        JOIN sources so ON so.id = c.source_id
+        WHERE cr.last_activity_at >= ? AND cr.overview_json IS NOT NULL
+          AND (? IS NULL OR so.harness = ?)
+          AND NOT EXISTS (
+            SELECT 1 FROM conversation_subagent_launches launch
+            WHERE launch.child_conversation_id = c.id
+          )
+        ORDER BY c.id
+      `).all(...parameters) as Array<{
+        id: number;
+        subagent_spend: number;
+      }>);
+    const intervalRows = measured(
+      "root-execution-intervals",
+      () =>
+        this.db.prepare(`
+          WITH selected_roots(id) AS MATERIALIZED (
+            SELECT c.id
+            FROM conversation_rollups cr
+            JOIN conversations c ON c.id = cr.conversation_id
+            JOIN sources so ON so.id = c.source_id
+            WHERE cr.last_activity_at >= ? AND cr.overview_json IS NOT NULL
+              AND (? IS NULL OR so.harness = ?)
+              AND NOT EXISTS (
+                SELECT 1 FROM conversation_subagent_launches launch
+                WHERE launch.child_conversation_id = c.id
+              )
+          )
+          SELECT measured_turn.root_id AS id,
+            json_group_array(json_object(
+              'startedAt', measured_turn.started_at,
+              'executionEndAt', measured_turn.execution_end_at
+            )) AS root_execution_intervals_json
           FROM (
-            SELECT root_turn.started_at,
+            SELECT root_turn.conversation_id AS root_id,
+              root_turn.id AS turn_id, root_turn.started_at, root_turn.ordinal,
               MAX(
                 root_turn.started_at,
                 MAX(COALESCE(
@@ -912,52 +974,50 @@ export class ConversationRepository {
                   root_call.started_at
                 ))
               ) AS execution_end_at
-            FROM conversation_turns root_turn
-            JOIN conversation_model_calls root_call
+            FROM selected_roots root
+            CROSS JOIN conversation_turns root_turn
+              ON root_turn.conversation_id = root.id
+            CROSS JOIN conversation_model_calls root_call
               ON root_call.turn_id = root_turn.id
             LEFT JOIN conversation_tool_events root_tool
               ON root_tool.model_call_id = root_call.id
-            WHERE root_turn.conversation_id = c.id
-              AND COALESCE(root_call.source_call_id, '')
+            WHERE COALESCE(root_call.source_call_id, '')
                 NOT LIKE 'context-operation:%'
               AND COALESCE(root_call.source_call_id, '')
                 NOT LIKE 'unmeasured:%'
-            GROUP BY root_turn.id
-            ORDER BY root_turn.started_at, root_turn.ordinal
+            GROUP BY root_turn.conversation_id, root_turn.id
+            ORDER BY root_turn.conversation_id, root_turn.started_at,
+              root_turn.ordinal
           ) measured_turn
-        ), '[]') AS root_execution_intervals_json
-      FROM conversation_rollups cr
-      JOIN conversations c ON c.id = cr.conversation_id
-      JOIN sources so ON so.id = c.source_id
-      WHERE cr.last_activity_at >= ? AND cr.overview_json IS NOT NULL
-        AND (? IS NULL OR so.harness = ?)
-        AND NOT EXISTS (
-          SELECT 1 FROM conversation_subagent_launches launch
-          WHERE launch.child_conversation_id = c.id
-        )
-      ORDER BY c.id
-    `).all(startedAt, harness ?? null, harness ?? null) as Array<{
-      id: number;
-      title: string;
-      harness: Harness;
-      started_at: number | null;
-      ended_at: number | null;
-      overview_json: string;
-      subagent_spend: number;
-      session_public_id: string;
-      root_execution_intervals_json: string;
-    }>;
-    return rows.map((row) => ({
-      rootSessionID: row.id,
-      rootExecutionIntervals: JSON.parse(row.root_execution_intervals_json),
-      sessionID: row.session_public_id,
-      ...(row.started_at === null ? {} : { startedAt: row.started_at }),
-      ...(row.ended_at === null ? {} : { endedAt: row.ended_at }),
-      title: row.title,
-      harness: row.harness,
-      subagentSpend: row.subagent_spend,
-      overview: JSON.parse(row.overview_json),
-    }));
+          GROUP BY measured_turn.root_id
+          ORDER BY measured_turn.root_id
+        `).all(...parameters) as Array<{
+          id: number;
+          root_execution_intervals_json: string;
+        }>,
+    );
+    return measured("hydrate-rollups", () => {
+      const spendByRoot = new Map(
+        spendRows.map((row) => [row.id, row.subagent_spend]),
+      );
+      const intervalsByRoot = new Map(
+        intervalRows.map((row) => [
+          row.id,
+          row.root_execution_intervals_json,
+        ]),
+      );
+      return rows.map((row) => ({
+        rootSessionID: row.id,
+        rootExecutionIntervals: JSON.parse(intervalsByRoot.get(row.id) ?? "[]"),
+        sessionID: row.session_public_id,
+        ...(row.started_at === null ? {} : { startedAt: row.started_at }),
+        ...(row.ended_at === null ? {} : { endedAt: row.ended_at }),
+        title: row.title,
+        harness: row.harness,
+        subagentSpend: spendByRoot.get(row.id) ?? 0,
+        overview: JSON.parse(row.overview_json),
+      }));
+    });
   }
 
   listSessionShapeRollups(
