@@ -3,8 +3,9 @@ import { getRouteApi } from "@tanstack/react-router";
 import type {
   ActivityOverviewResponse,
   SessionSummary,
+  WorkRhythmOverviewResponse,
 } from "../shared/sessionSchemas.ts";
-import { getActivityOverview, getHarnesses } from "./api.ts";
+import { getActivityOverview, getHarnesses, getWorkRhythm } from "./api.ts";
 import { SiteHeader } from "./SiteHeader.tsx";
 import "./NewPage.css";
 import { OverviewToolbar } from "./new/OverviewToolbar.tsx";
@@ -45,9 +46,16 @@ export function NewPage() {
     harness: string;
     data: ActivityOverviewResponse;
   }>();
+  const [loadedWorkRhythm, setLoadedWorkRhythm] = useState<{
+    range: 30 | 90;
+    harness: string;
+    data: WorkRhythmOverviewResponse;
+  }>();
   const [error, setError] = useState<string>();
+  const [workRhythmError, setWorkRhythmError] = useState<string>();
   const [harnesses, setHarnesses] = useState<SessionSummary["harness"][]>([]);
   const data = loadedOverview?.data;
+  const workRhythmData = loadedWorkRhythm?.data;
 
   useEffect(() => {
     let active = true;
@@ -64,15 +72,32 @@ export function NewPage() {
   useEffect(() => {
     let active = true;
     setError(undefined);
+    setWorkRhythmError(undefined);
+    setLoadedWorkRhythm(undefined);
     getActivityOverview(search.range, search.harness).then((result) => {
-      if (active) {
-        setLoadedOverview({
+      if (!active) return;
+      setLoadedOverview({
+        range: search.range,
+        harness: search.harness,
+        data: result,
+      });
+      setError(undefined);
+      return getWorkRhythm(search.range, search.harness).then((workRhythm) => {
+        if (!active) return;
+        setLoadedWorkRhythm({
           range: search.range,
           harness: search.harness,
-          data: result,
+          data: workRhythm,
         });
-        setError(undefined);
-      }
+      }).catch((reason) => {
+        if (active) {
+          setWorkRhythmError(
+            reason instanceof Error
+              ? reason.message
+              : "Unable to load estimated work",
+          );
+        }
+      });
     }).catch((reason) => {
       if (active) {
         setError(
@@ -93,8 +118,8 @@ export function NewPage() {
     });
   }
 
-  const selectedDate = data
-    ? calendarDate(search.date, data.workRhythm.range)
+  const selectedDate = workRhythmData
+    ? calendarDate(search.date, workRhythmData.workRhythm.range)
     : undefined;
 
   useEffect(() => {
@@ -119,16 +144,19 @@ export function NewPage() {
 
       <section className="new-overview-panel">
         {error && <div className="new-overview-error">{error}</div>}
+        {workRhythmError && (
+          <div className="new-overview-error">{workRhythmError}</div>
+        )}
 
         <div className="new-overview-grid">
           <div className="new-overview-left">
             <UsageOverview data={data} />
             <SessionShape range={search.range} harness={search.harness} />
           </div>
-          {data && (
+          {workRhythmData && (
             <Suspense fallback={null}>
               <WorkRhythm
-                data={data.workRhythm}
+                data={workRhythmData.workRhythm}
                 selectedDate={selectedDate!}
                 onSelect={(date) => update({ date })}
               />
@@ -146,9 +174,13 @@ export function NewPage() {
           <>
             <div className="new-placeholder-grid">
               <CacheOverview range={search.range} harness={search.harness} />
-              <Suspense fallback={null}>
-                <SessionDiagnostics data={data.sessionDiagnostics} />
-              </Suspense>
+              {workRhythmData && (
+                <Suspense fallback={null}>
+                  <SessionDiagnostics
+                    data={workRhythmData.sessionDiagnostics}
+                  />
+                </Suspense>
+              )}
             </div>
 
             <RecentSessions

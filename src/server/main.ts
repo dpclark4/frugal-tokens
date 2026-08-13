@@ -25,7 +25,10 @@ import {
   aggregateOverviewRollups,
   ROTATION_INACTIVITY_MINUTES,
 } from "./overviewAnalytics.ts";
-import { aggregateActivityOverview } from "./activityOverview.ts";
+import {
+  aggregateActivityOverview,
+  aggregateWorkRhythmOverview,
+} from "./activityOverview.ts";
 import { workRhythmRange } from "./workRhythm.ts";
 import { aggregateSessionShape } from "./sessionShapeAnalytics.ts";
 import { expandHomePath, openArchiveDatabase, sqlitePath } from "./database.ts";
@@ -562,7 +565,10 @@ app.get("/api/activity-overview", (context) => {
   const loaded = readRepository.listOverviewRollups(
     start - 5 * 60_000,
     selectedHarness,
-    (name, duration) => databaseTimings.set(name, duration),
+    {
+      includeRootExecutionIntervals: false,
+      recordTiming: (name, duration) => databaseTimings.set(name, duration),
+    },
   );
   const loadDuration = performance.now() - loadStartedAt;
   const cacheMissStartedAt = performance.now();
@@ -577,7 +583,6 @@ app.get("/api/activity-overview", (context) => {
     loaded,
     start,
     end,
-    timeZone,
     spendAtMissCalls,
     (name, duration) => aggregationTimings.set(name, duration),
   );
@@ -614,6 +619,77 @@ app.get("/api/activity-overview", (context) => {
   return context.json(overview);
 });
 
+app.get("/api/work-rhythm", (context) => {
+  const requestStartedAt = performance.now();
+  const harness = context.req.query("harness") ?? "all";
+  if (!isHarnessFilter(harness)) {
+    return context.json({ error: "Invalid harness" }, 400);
+  }
+  const rangeParam = context.req.query("range") ?? "30";
+  if (rangeParam !== "30" && rangeParam !== "90") {
+    return context.json({ error: "Invalid range; expected 30 or 90" }, 400);
+  }
+  const range = Number(rangeParam) as 30 | 90;
+  const timeZone = context.req.query("timeZone") ??
+    Intl.DateTimeFormat().resolvedOptions().timeZone;
+  let boundaries: { start: number; end: number };
+  try {
+    boundaries = workRhythmRange(range, timeZone);
+  } catch {
+    return context.json({ error: "Invalid IANA timezone" }, 400);
+  }
+  const { start, end } = boundaries;
+  const selectedHarness = harness === "all"
+    ? undefined
+    : harness as SessionSummary["harness"];
+  const databaseTimings = new Map<string, number>();
+  const databaseStartedAt = performance.now();
+  const loaded = readRepository.listOverviewRollups(
+    start - 5 * 60_000,
+    selectedHarness,
+    {
+      includeSubagentSpend: false,
+      recordTiming: (name, duration) => databaseTimings.set(name, duration),
+    },
+  );
+  const databaseDuration = performance.now() - databaseStartedAt;
+  const aggregationTimings = new Map<string, number>();
+  const aggregationStartedAt = performance.now();
+  const overview = aggregateWorkRhythmOverview(
+    loaded,
+    start,
+    end,
+    timeZone,
+    (name, duration) => aggregationTimings.set(name, duration),
+  );
+  const aggregationDuration = performance.now() - aggregationStartedAt;
+  const totalDuration = performance.now() - requestStartedAt;
+  const detailTimingHeader = [
+    ...databaseTimings.entries(),
+    ...aggregationTimings.entries(),
+  ].map(([name, duration]) => `${name};dur=${duration.toFixed(1)}`).join(", ");
+  const detailTimingLog = [
+    ...databaseTimings.entries(),
+    ...aggregationTimings.entries(),
+  ].map(([name, duration]) => `${name}=${formatTiming(duration)}`).join(" ");
+  context.header(
+    "Server-Timing",
+    `database;dur=${
+      databaseDuration.toFixed(1)
+    }, ${detailTimingHeader}, aggregate;dur=${
+      aggregationDuration.toFixed(1)
+    }, total;dur=${totalDuration.toFixed(1)}`,
+  );
+  console.info(
+    `[work-rhythm] harness=${harness} range=${range} roots=${loaded.length} days=${
+      Object.keys(overview.workRhythm.days).length
+    } database=${formatTiming(databaseDuration)} ${detailTimingLog} aggregate=${
+      formatTiming(aggregationDuration)
+    } total=${formatTiming(totalDuration)}`,
+  );
+  return context.json(overview);
+});
+
 app.get("/api/overview", (context) => {
   const requestStartedAt = performance.now();
   const harness = context.req.query("harness") ?? "all";
@@ -643,6 +719,10 @@ app.get("/api/overview", (context) => {
   const loaded = readRepository.listOverviewRollups(
     start - ROTATION_INACTIVITY_MINUTES * 60_000,
     harness === "all" ? undefined : harness as SessionSummary["harness"],
+    {
+      includeSubagentSpend: false,
+      includeRootExecutionIntervals: false,
+    },
   );
   const loadDuration = performance.now() - loadStartedAt;
   const aggregationStartedAt = performance.now();

@@ -1,4 +1,7 @@
-import type { ActivityOverviewResponse } from "../shared/sessionSchemas.ts";
+import type {
+  ActivityOverviewResponse,
+  WorkRhythmOverviewResponse,
+} from "../shared/sessionSchemas.ts";
 import type { StoredOverviewRollup } from "./overviewAnalytics.ts";
 import { aggregateWorkRhythm } from "./workRhythm.ts";
 import { modelMetadata } from "../shared/modelMetadata.ts";
@@ -191,7 +194,7 @@ function sessionDiagnostics(
   roots: StoredOverviewRollup[],
   start: number,
   end: number,
-): ActivityOverviewResponse["sessionDiagnostics"] {
+): WorkRhythmOverviewResponse["sessionDiagnostics"] {
   const sessions = roots.flatMap((root) => {
     const days = root.overview.days.filter((day) =>
       day.firstTurnAt >= start && day.firstTurnAt <= end
@@ -258,7 +261,6 @@ export function aggregateActivityOverview(
   roots: StoredOverviewRollup[],
   start: number,
   end: number,
-  timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone,
   spendAtMissCalls = 0,
   recordTiming?: (name: string, duration: number) => void,
 ): ActivityOverviewResponse {
@@ -371,14 +373,6 @@ export function aggregateActivityOverview(
     "activity-buckets",
     performance.now() - aggregationStartedAt,
   );
-  const diagnostics = measured(
-    "session-diagnostics",
-    () => sessionDiagnostics(roots, start, end),
-  );
-  const workRhythm = measured(
-    "work-rhythm",
-    () => aggregateWorkRhythm(roots, start, end, timeZone),
-  );
   const composition = measured(
     "spend-composition",
     () => spendComposition(days, start, end),
@@ -422,9 +416,32 @@ export function aggregateActivityOverview(
         ? 0
         : topDecileSpend / pricedSessionSpend,
     },
-    sessionDiagnostics: diagnostics,
-    workRhythm,
     spendComposition: composition,
     days: responseDays,
+  };
+}
+
+export function aggregateWorkRhythmOverview(
+  roots: StoredOverviewRollup[],
+  start: number,
+  end: number,
+  timeZone: string,
+  recordTiming?: (name: string, duration: number) => void,
+): WorkRhythmOverviewResponse {
+  const measured = <T>(name: string, operation: () => T): T => {
+    const startedAt = performance.now();
+    const result = operation();
+    recordTiming?.(name, performance.now() - startedAt);
+    return result;
+  };
+  return {
+    workRhythm: measured(
+      "work-rhythm",
+      () => aggregateWorkRhythm(roots, start, end, timeZone),
+    ),
+    sessionDiagnostics: measured(
+      "session-diagnostics",
+      () => sessionDiagnostics(roots, start, end),
+    ),
   };
 }

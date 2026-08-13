@@ -535,6 +535,27 @@ export const spendCompositionSchema = z.object({
   })),
 });
 
+export const sessionDiagnosticsSchema = z.object({
+  sessions: z.array(z.object({
+    id: z.string(),
+    title: z.string(),
+    harness: harnessSchema.optional(),
+    primaryModel: z.string().nullable(),
+    estimatedActiveMinutes: z.number().nonnegative(),
+    observedSessionMinutes: z.number().nonnegative(),
+    spend: z.number().nonnegative(),
+    hasUnpricedSpend: z.boolean(),
+    processedInput: z.number().int().nonnegative(),
+    tokenReuse: z.number().min(0).max(1).optional(),
+    userTurns: z.number().int().nonnegative(),
+  })),
+});
+
+export const workRhythmOverviewResponseSchema = z.object({
+  workRhythm: workRhythmDataSchema,
+  sessionDiagnostics: sessionDiagnosticsSchema,
+});
+
 export const activityOverviewResponseSchema = z.object({
   startDate: z.string(),
   endDate: z.string(),
@@ -548,22 +569,6 @@ export const activityOverviewResponseSchema = z.object({
     subagentSpend: z.number().nonnegative(),
     topDecileSpendShare: z.number().min(0).max(1),
   }),
-  sessionDiagnostics: z.object({
-    sessions: z.array(z.object({
-      id: z.string(),
-      title: z.string(),
-      harness: harnessSchema.optional(),
-      primaryModel: z.string().nullable(),
-      estimatedActiveMinutes: z.number().nonnegative(),
-      observedSessionMinutes: z.number().nonnegative(),
-      spend: z.number().nonnegative(),
-      hasUnpricedSpend: z.boolean(),
-      processedInput: z.number().int().nonnegative(),
-      tokenReuse: z.number().min(0).max(1).optional(),
-      userTurns: z.number().int().nonnegative(),
-    })),
-  }),
-  workRhythm: workRhythmDataSchema,
   spendComposition: spendCompositionSchema,
   days: z.array(z.object({
     date: z.string(),
@@ -970,6 +975,9 @@ export type WorkRhythmDay = z.infer<typeof workRhythmDaySchema>;
 export type WorkRhythmData = z.infer<typeof workRhythmDataSchema>;
 export type ActivityOverviewResponse = z.infer<
   typeof activityOverviewResponseSchema
+>;
+export type WorkRhythmOverviewResponse = z.infer<
+  typeof workRhythmOverviewResponseSchema
 >;
 export type SpendCompositionData = z.infer<typeof spendCompositionSchema>;
 export type OverviewResponse = z.infer<typeof overviewResponseSchema>;

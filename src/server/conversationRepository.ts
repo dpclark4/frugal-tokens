@@ -876,8 +876,17 @@ export class ConversationRepository {
   listOverviewRollups(
     startedAt: number,
     harness?: Harness,
-    recordTiming?: (name: string, duration: number) => void,
+    options: {
+      includeSubagentSpend?: boolean;
+      includeRootExecutionIntervals?: boolean;
+      recordTiming?: (name: string, duration: number) => void;
+    } = {},
   ): StoredOverviewRollup[] {
+    const {
+      includeSubagentSpend = true,
+      includeRootExecutionIntervals = true,
+      recordTiming,
+    } = options;
     const measured = <T>(name: string, operation: () => T): T => {
       const started = performance.now();
       const result = operation();
@@ -909,8 +918,9 @@ export class ConversationRepository {
         overview_json: string;
         session_public_id: string;
       }>);
-    const spendRows = measured("descendant-spend", () =>
-      this.db.prepare(`
+    const spendRows = includeSubagentSpend
+      ? measured("descendant-spend", () =>
+        this.db.prepare(`
         SELECT c.id, COALESCE((
           WITH RECURSIVE descendants(id) AS (
             SELECT launch.child_conversation_id
@@ -937,14 +947,16 @@ export class ConversationRepository {
             WHERE launch.child_conversation_id = c.id
           )
         ORDER BY c.id
-      `).all(...parameters) as Array<{
-        id: number;
-        subagent_spend: number;
-      }>);
-    const intervalRows = measured(
-      "root-execution-intervals",
-      () =>
-        this.db.prepare(`
+        `).all(...parameters) as Array<{
+          id: number;
+          subagent_spend: number;
+        }>)
+      : [];
+    const intervalRows = includeRootExecutionIntervals
+      ? measured(
+        "root-execution-intervals",
+        () =>
+          this.db.prepare(`
           WITH selected_roots(id) AS MATERIALIZED (
             SELECT c.id
             FROM conversation_rollups cr
@@ -991,11 +1003,12 @@ export class ConversationRepository {
           ) measured_turn
           GROUP BY measured_turn.root_id
           ORDER BY measured_turn.root_id
-        `).all(...parameters) as Array<{
-          id: number;
-          root_execution_intervals_json: string;
-        }>,
-    );
+          `).all(...parameters) as Array<{
+            id: number;
+            root_execution_intervals_json: string;
+          }>,
+      )
+      : [];
     return measured("hydrate-rollups", () => {
       const spendByRoot = new Map(
         spendRows.map((row) => [row.id, row.subagent_spend]),
@@ -1008,13 +1021,21 @@ export class ConversationRepository {
       );
       return rows.map((row) => ({
         rootSessionID: row.id,
-        rootExecutionIntervals: JSON.parse(intervalsByRoot.get(row.id) ?? "[]"),
+        ...(includeRootExecutionIntervals
+          ? {
+            rootExecutionIntervals: JSON.parse(
+              intervalsByRoot.get(row.id) ?? "[]",
+            ),
+          }
+          : {}),
         sessionID: row.session_public_id,
         ...(row.started_at === null ? {} : { startedAt: row.started_at }),
         ...(row.ended_at === null ? {} : { endedAt: row.ended_at }),
         title: row.title,
         harness: row.harness,
-        subagentSpend: spendByRoot.get(row.id) ?? 0,
+        ...(includeSubagentSpend
+          ? { subagentSpend: spendByRoot.get(row.id) ?? 0 }
+          : {}),
         overview: JSON.parse(row.overview_json),
       }));
     });
