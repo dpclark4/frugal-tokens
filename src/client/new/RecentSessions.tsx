@@ -267,7 +267,10 @@ export function RecentSessions({
   }, [data, returnScrollY]);
 
   return (
-    <div className="new-recent-sessions">
+    <div
+      className="new-recent-sessions"
+      data-screenshot-exclude
+    >
       <SessionsPanel
         data={data}
         loadingSessions={loadingSessions}

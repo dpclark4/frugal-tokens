@@ -1,3 +1,4 @@
+import { Camera, Check } from "lucide-react";
 import type { SessionSummary } from "../../shared/sessionSchemas.ts";
 import { HarnessOptions } from "../HarnessOptions.tsx";
 import "./OverviewToolbar.css";
@@ -10,6 +11,7 @@ export type OverviewHarness =
   | "pi"
   | "codex"
   | "cursor";
+export type ScreenshotState = "idle" | "capturing" | "copied" | "error";
 
 type OverviewToolbarProps = {
   range: OverviewRange;
@@ -17,6 +19,9 @@ type OverviewToolbarProps = {
   harnesses: SessionSummary["harness"][];
   onRangeChange: (range: OverviewRange) => void;
   onHarnessChange: (harness: OverviewHarness) => void;
+  screenshotState: ScreenshotState;
+  screenshotDisabled?: boolean;
+  onScreenshot: () => void;
 };
 
 export function OverviewToolbar({
@@ -25,6 +30,9 @@ export function OverviewToolbar({
   harnesses,
   onRangeChange,
   onHarnessChange,
+  screenshotState,
+  screenshotDisabled = false,
+  onScreenshot,
 }: OverviewToolbarProps) {
   return (
     <div className="new-overview-controls">
@@ -56,6 +64,27 @@ export function OverviewToolbar({
           <HarnessOptions harnesses={harnesses} />
         </select>
       </label>
+      <button
+        type="button"
+        className={`overview-screenshot-button${
+          screenshotState === "error" ? " error" : ""
+        }`}
+        data-screenshot-control
+        disabled={screenshotDisabled || screenshotState === "capturing"}
+        onClick={onScreenshot}
+        aria-label={screenshotState === "copied"
+          ? "Overview screenshot copied"
+          : "Copy overview screenshot"}
+        title={screenshotState === "copied"
+          ? "Overview screenshot copied"
+          : screenshotState === "error"
+          ? "Unable to copy overview screenshot"
+          : "Copy overview screenshot"}
+      >
+        {screenshotState === "copied"
+          ? <Check size={16} aria-hidden="true" />
+          : <Camera size={16} aria-hidden="true" />}
+      </button>
     </div>
   );
 }

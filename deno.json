@@ -7,6 +7,7 @@
     "hono": "npm:hono@4.12.29",
     "hono/cors": "npm:hono@4.12.29/cors",
     "hono/deno": "npm:hono@4.12.29/deno",
+    "html-to-image": "npm:html-to-image@1.11.13",
     "lucide-react": "npm:lucide-react@1.25.0",
     "pretty-ms": "npm:pretty-ms@9.3.0",
     "react": "npm:react@19.2.7",
