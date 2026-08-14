@@ -61,6 +61,8 @@ const recordSchema = z.object({
   compactMetadata: z.unknown().optional(),
   content: z.unknown().optional(),
   promptSource: z.string().optional(),
+  promptId: z.string().nullable().optional(),
+  userType: z.string().optional(),
   cwd: z.string().optional(),
   origin: z.object({ kind: z.string().optional() }).passthrough().optional(),
   message: z.object({
@@ -268,7 +270,8 @@ function startsTurn(record: Record, hasTurns: boolean) {
   if (!text) return false;
   return record.origin?.kind === "human" ||
     record.promptSource === "typed" || record.promptSource === "sdk" ||
-    text.startsWith("❯ ") || (record.isSidechain === true && !hasTurns);
+    text.startsWith("❯ ") || (record.isSidechain === true && !hasTurns) ||
+    (record.userType === "external" && record.promptId != null);
 }
 
 function claudeCheckpointItem(
