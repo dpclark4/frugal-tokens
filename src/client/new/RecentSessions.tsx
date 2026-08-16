@@ -24,6 +24,7 @@ type RecentSessionsProps = {
   misses?: string;
   onHarnessChange: (harness: OverviewHarness) => void;
   onMissesChange: (misses?: string) => void;
+  onLoadSettled?: () => void;
 };
 
 export function RecentSessions({
@@ -32,6 +33,7 @@ export function RecentSessions({
   misses,
   onHarnessChange,
   onMissesChange,
+  onLoadSettled,
 }: RecentSessionsProps) {
   const navigate = route.useNavigate();
   const missFilters = parseSessionMissFilters(misses);
@@ -88,7 +90,10 @@ export function RecentSessions({
         );
       }
     }).finally(() => {
-      if (active) setLoadingSessions(false);
+      if (active) {
+        setLoadingSessions(false);
+        onLoadSettled?.();
+      }
     });
     return () => {
       active = false;

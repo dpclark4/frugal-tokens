@@ -107,6 +107,7 @@ export function NewPage() {
     data: TtlMissMetrics;
   }>();
   const screenshotRef = useRef<HTMLDivElement>(null);
+  const pendingScrollYRef = useRef<number | undefined>(undefined);
   const data = loadedOverview?.range === search.range &&
       loadedOverview.harness === search.harness
     ? loadedOverview.data
@@ -177,12 +178,35 @@ export function NewPage() {
   }, [search.range, search.harness]);
 
   function update(next: Partial<typeof search>, replace = false) {
+    const overviewWillReload =
+      (next.harness !== undefined && next.harness !== search.harness) ||
+      (next.range !== undefined && next.range !== search.range);
+    if (overviewWillReload && screenshotRef.current) {
+      pendingScrollYRef.current = globalThis.scrollY;
+      screenshotRef.current.style.minHeight =
+        `${screenshotRef.current.offsetHeight}px`;
+    }
     navigate({
       search: { ...search, ...next },
       resetScroll: false,
       replace,
     });
   }
+
+  function finishOverviewFilterTransition() {
+    const scrollY = pendingScrollYRef.current;
+    const overview = screenshotRef.current;
+    if (scrollY === undefined || !overview) return;
+    pendingScrollYRef.current = undefined;
+    requestAnimationFrame(() => {
+      overview.style.removeProperty("min-height");
+      requestAnimationFrame(() => globalThis.scrollTo(0, scrollY));
+    });
+  }
+
+  useEffect(() => {
+    if (error) finishOverviewFilterTransition();
+  }, [error]);
 
   async function copyReport() {
     if (
@@ -325,6 +349,7 @@ export function NewPage() {
                 misses={search.misses}
                 onHarnessChange={(harness) => update({ harness })}
                 onMissesChange={(misses) => update({ misses })}
+                onLoadSettled={finishOverviewFilterTransition}
               />
             </>
           )}
