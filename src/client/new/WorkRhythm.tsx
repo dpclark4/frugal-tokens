@@ -60,9 +60,6 @@ function dateKey(date: Date) {
 }
 
 function formatDuration(minutes: number, compactTotal = false) {
-  if (compactTotal && minutes > 24 * 60) {
-    return `${(minutes / (24 * 60)).toFixed(1)}d`;
-  }
   if (compactTotal && minutes >= 60) return `${(minutes / 60).toFixed(1)}h`;
   const rounded = Math.round(minutes);
   if (rounded < 60) return `${rounded}m`;
@@ -525,21 +522,24 @@ function percent(value: number) {
 function RangeStructureSummary({ data }: { data: WorkRhythmData }) {
   const { parallelWork, workBlocks } = data;
   const concurrency = [
-    { label: "1", value: parallelWork.activeTimeShare.oneSession },
-    { label: "2", value: parallelWork.activeTimeShare.twoSessions },
+    { label: "1 session", value: parallelWork.activeTimeShare.oneSession },
+    { label: "2 sessions", value: parallelWork.activeTimeShare.twoSessions },
     {
-      label: "3+",
+      label: "3+ sessions",
       value: parallelWork.activeTimeShare.threeSessions +
         parallelWork.activeTimeShare.fourPlusSessions,
     },
   ];
   const durations = [
-    { label: "<15m", value: workBlocks.durationShare.underFifteenMinutes },
+    {
+      label: "Under 15m",
+      value: workBlocks.durationShare.underFifteenMinutes,
+    },
     {
       label: "15–60m",
       value: workBlocks.durationShare.fifteenToSixtyMinutes,
     },
-    { label: "1h+", value: workBlocks.durationShare.oneHourPlus },
+    { label: "Over 1h", value: workBlocks.durationShare.oneHourPlus },
   ];
   return (
     <div className="range-structure-summary">
@@ -547,7 +547,7 @@ function RangeStructureSummary({ data }: { data: WorkRhythmData }) {
         aria-label="Active sessions distribution"
         title="Share of estimated active time by number of simultaneously active root sessions."
       >
-        <h4>Active sessions</h4>
+        <h4>Sessions at once</h4>
         <div className="structure-values">
           {concurrency.map((segment) => (
             <span key={segment.label}>
@@ -560,7 +560,7 @@ function RangeStructureSummary({ data }: { data: WorkRhythmData }) {
         aria-label="Work block duration distribution"
         title="A work block is a continuous span of estimated active work; a gap longer than the configured threshold starts a new block."
       >
-        <h4>Work blocks</h4>
+        <h4>Work block length</h4>
         <div className="structure-values">
           {durations.map((segment) => (
             <span key={segment.label}>
@@ -1095,7 +1095,7 @@ export function WorkRhythm({
             aria-labelledby="weekday-chart-title"
           >
             <div className="rhythm-subheading">
-              <h3 id="weekday-chart-title">By day</h3>
+              <h3 id="weekday-chart-title">Average by day</h3>
             </div>
             <WeekdayChart data={data.weekdayActivity} />
           </section>

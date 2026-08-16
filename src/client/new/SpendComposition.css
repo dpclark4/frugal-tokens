@@ -245,7 +245,7 @@
   background: var(--dashboard-ink);
   box-shadow: 0 8px 20px rgba(32, 53, 48, .16);
   color: #dce8e4;
-  font: 9px/1.35 var(--mono);
+  font: 10px/1.35 var(--mono);
 }
 
 .composition-tooltip header,
@@ -265,7 +265,7 @@
 
 .composition-tooltip header strong {
   color: #fff;
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .composition-tooltip > div > span {
@@ -276,13 +276,14 @@
 
 .composition-tooltip > div > strong {
   color: #fff;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
 .composition-tooltip small {
   min-width: 55px;
   color: #aebfba;
-  font-size: 8px;
+  font-size: 10px;
   text-align: right;
 }
 
