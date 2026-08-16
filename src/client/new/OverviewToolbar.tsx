@@ -88,12 +88,6 @@ export function OverviewToolbar({
           value={range}
           onChange={(event) =>
             onRangeChange(Number(event.target.value) as OverviewRange)}
-          onDoubleClick={range === 30
-            ? () =>
-              globalThis.dispatchEvent(
-                new Event("frugal-tokens:toggle-secondary-pages"),
-              )
-            : undefined}
         >
           <option value={30}>30D</option>
           <option value={90}>90D</option>
@@ -121,6 +115,10 @@ export function OverviewToolbar({
             ? "Unable to copy overview"
             : "Share overview"}
           onClick={() => setShareOpen((open) => !open)}
+          onDoubleClick={() =>
+            globalThis.dispatchEvent(
+              new Event("frugal-tokens:toggle-secondary-pages"),
+            )}
         >
           {shareCopied
             ? <Check size={16} aria-hidden="true" />
