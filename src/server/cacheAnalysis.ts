@@ -434,7 +434,21 @@ export function analyzeSessionCache(session: SessionDetail): SessionDetail {
         }
         sequentialPrevious = effectiveCall;
       }
-      return { ...call, cacheAssessment };
+      const cacheMissCost = previous && isMiss(cacheAssessment)
+        ? estimateModelCacheMissCost(
+          previous.tokens,
+          effectiveCall.tokens,
+          effectiveCall.model,
+          effectiveCall.startedAt,
+          effectiveCall.provider,
+          cacheAssessment.previousReusableTokens,
+        )?.actualMissedCost
+        : undefined;
+      return {
+        ...call,
+        cacheAssessment,
+        ...(cacheMissCost === undefined ? {} : { cacheMissCost }),
+      };
     });
     const cacheAssessment = calls.reduce<CacheAssessment | undefined>(
       (worst, call) => {
@@ -455,10 +469,32 @@ export function analyzeSessionCache(session: SessionDetail): SessionDetail {
     };
   });
 
+  const subagents = session.subagents.map(analyzeSessionCache);
+  const missCalls = turns.flatMap((turn) => turn.calls).filter((call) =>
+    isMiss(call.cacheAssessment)
+  );
+  const cacheMissCost = missCalls.reduce(
+    (sum, call) => sum + (call.cacheMissCost ?? 0),
+    0,
+  );
+  const hasUnpricedCacheMissCost = missCalls.some((call) =>
+    call.cacheMissCost === undefined
+  );
+  const inclusiveCacheMissCost = cacheMissCost + subagents.reduce(
+    (sum, child) => sum + (child.inclusiveCacheMissCost ?? 0),
+    0,
+  );
+  const inclusiveHasUnpricedCacheMissCost = hasUnpricedCacheMissCost ||
+    subagents.some((child) => child.inclusiveHasUnpricedCacheMissCost);
+
   return {
     ...session,
     turns,
-    subagents: session.subagents.map(analyzeSessionCache),
+    subagents,
+    cacheMissCost,
+    inclusiveCacheMissCost,
+    hasUnpricedCacheMissCost,
+    inclusiveHasUnpricedCacheMissCost,
   };
 }
 

@@ -164,6 +164,7 @@ const sessionDetailRoute = createRoute({
     color: z.enum(["none", "time", "cost"]).catch("time"),
     model: z.string().catch("recorded"),
     thinking: z.string().catch("recorded"),
+    cacheTtl: z.enum(["5m", "1h"]).optional(),
     branch: z.string().optional(),
   }),
   parseParams: (params) => ({

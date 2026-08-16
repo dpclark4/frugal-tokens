@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import type {
   ConversationBranch,
+  CostScenarioResponse,
   ModelCall,
   SessionDetail,
   TokenUsage,
@@ -45,7 +46,11 @@ import {
   computeModelCallCost,
   counterfactualModelIDs,
 } from "../shared/modelPricing.ts";
-import { getSession, openSessionInGhostty } from "./api.ts";
+import {
+  getSession,
+  getSessionCostScenario,
+  openSessionInGhostty,
+} from "./api.ts";
 import { harnessIcon, harnessName } from "./harness.ts";
 import { modelIcon } from "./modelIcons.ts";
 import { costsMismatch, CostWarning } from "./CostWarning.tsx";
@@ -984,6 +989,11 @@ function CacheMissBadges({
                     {reuse === undefined
                       ? ""
                       : ` · ${(reuse * 100).toFixed(1)}% reused`}
+                    {occurrence.call.cacheMissCost === undefined
+                      ? ""
+                      : ` · ${
+                        money.format(occurrence.call.cacheMissCost)
+                      } miss`}
                   </small>
                   <ChevronRight size={14} aria-hidden="true" />
                 </button>
@@ -2124,9 +2134,9 @@ function Metadata({
   pathMode,
   colorMetric,
   model,
-  thinking,
-  estimatedCost,
-  estimateIncomplete,
+  scenario,
+  scenarioLoading,
+  cacheTtl,
   actualCost,
   workTime,
   turnsExpanded,
@@ -2134,7 +2144,7 @@ function Metadata({
   onPathModeChange,
   onColorMetricChange,
   onModelChange,
-  onThinkingChange,
+  onCacheTtlChange,
   onJumpToCall,
   canOpenInGhostty,
   ghosttyOpening,
@@ -2145,9 +2155,9 @@ function Metadata({
   pathMode: PathMode;
   colorMetric: ColorMetric;
   model: CostScenario;
-  thinking: string;
-  estimatedCost?: number;
-  estimateIncomplete: boolean;
+  scenario?: CostScenarioResponse;
+  scenarioLoading: boolean;
+  cacheTtl: "5m" | "1h";
   actualCost?: number;
   workTime: WorkTimeSummary;
   turnsExpanded: boolean;
@@ -2155,7 +2165,7 @@ function Metadata({
   onPathModeChange: (value: PathMode) => void;
   onColorMetricChange: (value: ColorMetric) => void;
   onModelChange: (value: CostScenario) => void;
-  onThinkingChange: (value: string) => void;
+  onCacheTtlChange: (value: "5m" | "1h") => void;
   onJumpToCall: (occurrence: CallOccurrence) => void;
   canOpenInGhostty: boolean;
   ghosttyOpening: boolean;
@@ -2196,12 +2206,6 @@ function Metadata({
       ]),
     ]),
   ];
-  const observedThinking = [
-    ...(session.thinking?.values ?? []),
-    ...calls.flatMap((call) =>
-      call.reasoningSetting ? [call.reasoningSetting.settingValue] : []
-    ),
-  ].filter((value, index, values) => values.indexOf(value) === index);
   const thinkingByModel = new Map<string, string[]>();
   for (const item of sessionTree(session)) {
     for (const turn of item.turns) {
@@ -2224,9 +2228,11 @@ function Metadata({
   const otherModels = counterfactualModelIDs.filter((value) =>
     !value.startsWith("gpt-") && !value.startsWith("claude-")
   );
-  const delta = estimatedCost === undefined || actualCost === undefined
+  const delta = scenario === undefined || actualCost === undefined
     ? undefined
-    : estimatedCost - actualCost;
+    : scenario.cost - actualCost;
+  const isAnthropicScenario = model !== "recorded" &&
+    canonicalModelId(model).startsWith("claude-");
   return (
     <aside className="sd-metadata">
       <section>
@@ -2413,14 +2419,14 @@ function Metadata({
         </div>
       </section>
       <section>
-        <h2>Cost scenario</h2>
+        <h2>Approximate other model cost</h2>
         <label className="sd-setting">
           <span>Model</span>
           <select
             value={model}
             onChange={(event) => onModelChange(event.target.value)}
           >
-            <option value="recorded">Recorded models</option>
+            <option value="recorded">Select a model</option>
             <optgroup label="OpenAI">
               {openAIModels.map((value) => (
                 <option key={value} value={value}>
@@ -2444,44 +2450,71 @@ function Metadata({
             </optgroup>
           </select>
         </label>
-        <label className="sd-setting">
-          <span>Thinking</span>
-          <select
-            value={thinking}
-            onChange={(event) => onThinkingChange(event.target.value)}
-          >
-            <option value="recorded">
-              Recorded{session.thinking?.latest
-                ? ` (${session.thinking.latest})`
-                : ""}
-            </option>
-            <option value="off">Off</option>
-            {observedThinking.filter((value) => value !== "off").map((
-              value,
-            ) => (
-              <option key={value} value={`level:${value}`}>
-                {value} (same tokens)
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="sd-cost-scenario-result">
-          <span>Estimated cost</span>
-          <strong>
-            {estimatedCost === undefined
-              ? "Unavailable"
-              : money.format(estimatedCost)}
-          </strong>
-          {delta !== undefined && Math.abs(delta) > 0.00005 && (
-            <small className={delta > 0 ? "is-higher" : "is-lower"}>
-              {delta > 0 ? "+" : "−"}
-              {money.format(Math.abs(delta))} vs recorded
-            </small>
-          )}
-          {estimateIncomplete && <small>Some calls could not be priced</small>}
-        </div>
+        {isAnthropicScenario && (
+          <label className="sd-setting">
+            <span>Cache duration</span>
+            <select
+              value={cacheTtl}
+              onChange={(event) =>
+                onCacheTtlChange(event.target.value as "5m" | "1h")}
+            >
+              <option value="5m">5 minutes</option>
+              <option value="1h">1 hour</option>
+            </select>
+          </label>
+        )}
+        {model !== "recorded" && (
+          <div className="sd-cost-scenario-result">
+            <span>Estimated cost</span>
+            <strong>
+              <span>
+                {scenarioLoading
+                  ? "Estimating…"
+                  : scenario === undefined
+                  ? "Unavailable"
+                  : money.format(scenario.cost)}
+              </span>
+              {delta !== undefined && Math.abs(delta) > 0.00005 && (
+                <span
+                  className={`sd-cost-scenario-delta ${
+                    delta > 0 ? "is-higher" : "is-lower"
+                  }`}
+                  title={`${money.format(Math.abs(delta))} ${
+                    delta > 0 ? "more" : "less"
+                  } than recorded`}
+                >
+                  ({delta > 0 ? "+" : "−"}
+                  {money.format(Math.abs(delta))})
+                </span>
+              )}
+            </strong>
+            {scenario && (
+              <div className="sd-cost-breakdown">
+                <span>
+                  Input <b>{money.format(scenario.breakdown.input)}</b>
+                </span>
+                <span>
+                  Cache reads{" "}
+                  <b>{money.format(scenario.breakdown.cacheRead)}</b>
+                </span>
+                <span>
+                  Cache writes{" "}
+                  <b>{money.format(scenario.breakdown.cacheWrite)}</b>
+                </span>
+                <span>
+                  Output* <b>{money.format(scenario.breakdown.output)}</b>
+                </span>
+              </div>
+            )}
+            {scenario?.hasUnpricedCost && (
+              <small>Some calls could not be priced</small>
+            )}
+          </div>
+        )}
         <p className="sd-scenario-note">
-          Non-off thinking levels retain the recorded reasoning tokens.
+          Root conversation only; subagents are excluded. *Uses recorded output,
+          including reasoning. Models may make different calls or produce
+          different output, so this is not an apples-to-apples comparison.
         </p>
       </section>
     </aside>
@@ -2543,9 +2576,19 @@ function DetailNavigation({
 
 export function SessionDetailPage() {
   const { harness, sessionId } = route.useParams();
-  const { misses, paths, color, model, thinking, branch } = route.useSearch();
+  const { misses, paths, color, model, cacheTtl, branch } = route.useSearch();
   const navigate = route.useNavigate();
+  const selectedModel = model === "recorded" ||
+      counterfactualModelIDs.includes(
+        model as typeof counterfactualModelIDs[number],
+      )
+    ? model
+    : "recorded";
+  const thinking = "recorded";
+  const selectedCacheTtl = cacheTtl ?? "5m";
   const [session, setSession] = useState<SessionDetail>();
+  const [costScenario, setCostScenario] = useState<CostScenarioResponse>();
+  const [scenarioLoading, setScenarioLoading] = useState(false);
   const [error, setError] = useState<string>();
   const [ghosttyOpening, setGhosttyOpening] = useState(false);
   const [ghosttyError, setGhosttyError] = useState<string>();
@@ -2586,6 +2629,30 @@ export function SessionDetailPage() {
       active = false;
     };
   }, [harness, sessionId]);
+
+  useEffect(() => {
+    if (selectedModel === "recorded") {
+      setCostScenario(undefined);
+      setScenarioLoading(false);
+      return;
+    }
+    let active = true;
+    setCostScenario(undefined);
+    setScenarioLoading(true);
+    getSessionCostScenario(sessionId, harness, selectedModel, selectedCacheTtl)
+      .then((result) => {
+        if (active) setCostScenario(result);
+      })
+      .catch(() => {
+        if (active) setCostScenario(undefined);
+      })
+      .finally(() => {
+        if (active) setScenarioLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [harness, selectedCacheTtl, selectedModel, sessionId]);
 
   const backQuery = new URLSearchParams({ harness });
   if (misses) backQuery.set("misses", misses);
@@ -2645,6 +2712,11 @@ export function SessionDetailPage() {
     (sum, call) => sum + call.activity.tools.length,
     0,
   );
+  const rootCost = session.computedCost ?? rollupCosts(
+    session.turns.flatMap((turn) =>
+      turn.calls.map((call) => call.computedCost)
+    ),
+  ).cost;
   const computed = rollupCosts(tree.map((item) => item.computedCost)).cost;
   const cost = session.inclusiveComputedCost ?? computed;
   const reportedCosts = tree.map((item) => item.reportedCost);
@@ -2655,40 +2727,46 @@ export function SessionDetailPage() {
   const subagentCost = rollupCosts(
     tree.slice(1).map((item) => item.computedCost),
   );
-  const selectedModel = model === "recorded" ||
-      counterfactualModelIDs.includes(
-        model as typeof counterfactualModelIDs[number],
-      )
-    ? model
-    : "recorded";
-  const estimate = scenarioCost(calls, selectedModel, thinking);
-  const scenarioChanged = selectedModel !== "recorded" ||
-    thinking !== "recorded";
-  const estimatedCost = scenarioChanged ? estimate.cost : cost;
-  const costDelta = estimatedCost === undefined || cost === undefined
+  const subagentMissCost = tree.slice(1).reduce(
+    (sum, item) => sum + (item.cacheMissCost ?? 0),
+    0,
+  );
+  const hasCacheMisses = calls.some((call) =>
+    call.cacheAssessment?.status === "partial-hit" ||
+    call.cacheAssessment?.status === "full-miss"
+  );
+  const totalMissCost = !hasCacheMisses ||
+      session.inclusiveCacheMissCost === undefined
     ? undefined
-    : estimatedCost - cost;
-  const scenarioDetail = scenarioChanged
-    ? [
-      selectedModel === "recorded"
-        ? "Recorded models"
-        : displayModelName(selectedModel),
-      thinking === "off"
-        ? "thinking off"
-        : thinking.startsWith("level:")
-        ? `thinking ${thinking.slice("level:".length)}`
-        : undefined,
-      costDelta === undefined
-        ? undefined
-        : `${costDelta >= 0 ? "+" : "−"}${money.format(Math.abs(costDelta))}`,
-    ].filter(Boolean).join(" · ")
-    : subagents > 0
+    : `${money.format(session.inclusiveCacheMissCost)}${
+      session.inclusiveHasUnpricedCacheMissCost ? "+" : ""
+    }`;
+  const subagentHasMisses = tree.slice(1).some((item) =>
+    item.turns.some((turn) =>
+      turn.calls.some((call) =>
+        call.cacheAssessment?.status === "partial-hit" ||
+        call.cacheAssessment?.status === "full-miss"
+      )
+    )
+  );
+  const subagentMissesUnpriced = tree.slice(1).some((item) =>
+    item.hasUnpricedCacheMissCost
+  );
+  const costDetail = subagents > 0
     ? subagentCost.cost === undefined
       ? "Subagents unpriced"
       : `${money.format(subagentCost.cost)}${
         subagentCost.hasUnpricedCost ? "+" : ""
-      } subagents`
-    : undefined;
+      } subagents${
+        subagentHasMisses
+          ? ` (${money.format(subagentMissCost)}${
+            subagentMissesUnpriced ? "+" : ""
+          } misses)`
+          : ""
+      }`
+    : totalMissCost === undefined
+    ? undefined
+    : `${totalMissCost} cache misses`;
   const canOpenInGhostty = Boolean(
     (session.harness === "pi" || session.harness === "opencode" ||
       session.harness === "claude-code" || session.harness === "codex") &&
@@ -2731,7 +2809,7 @@ export function SessionDetailPage() {
   const rootBreadcrumbs = breadcrumbEntries(
     session,
     color,
-    selectedModel,
+    "recorded",
     thinking,
     collapsedTurnIDs,
   ).filter((entry) => entry.depth === 0);
@@ -2761,7 +2839,7 @@ export function SessionDetailPage() {
             <BranchControl
               branches={branches}
               session={session}
-              model={selectedModel}
+              model="recorded"
               thinking={thinking}
               selected={selectedBranch}
               onSelect={(branchID) =>
@@ -2812,18 +2890,21 @@ export function SessionDetailPage() {
               : undefined}
           />
           <DetailMetric
-            label={scenarioChanged ? "Estimated cost" : "Cost"}
-            value={scenarioChanged
-              ? estimatedCost === undefined
-                ? "Unpriced"
-                : money.format(estimatedCost)
-              : (
+            label="Cost"
+            value={
+              <span className="sd-cost-total-line">
                 <CostIntegrityValue
                   reported={session.inclusiveReportedCost ?? reportedCost}
                   computed={cost}
                 />
-              )}
-            detail={scenarioDetail}
+                {totalMissCost !== undefined && subagents > 0 && (
+                  <span className="sd-cost-miss-inline">
+                    ({totalMissCost} misses)
+                  </span>
+                )}
+              </span>
+            }
+            detail={costDetail}
           />
         </div>
 
@@ -2831,7 +2912,7 @@ export function SessionDetailPage() {
           value={{
             collapsedTurnIDs,
             turnColors,
-            model: selectedModel,
+            model: "recorded",
             thinking,
             focusedCallAnchor,
             toggleTurn: (id) =>
@@ -2847,7 +2928,7 @@ export function SessionDetailPage() {
             <SessionNavigator
               session={session}
               metric={color}
-              model={selectedModel}
+              model="recorded"
               thinking={thinking}
             />
             <SessionTranscript
@@ -2862,10 +2943,10 @@ export function SessionDetailPage() {
               pathMode={paths}
               colorMetric={color}
               model={selectedModel}
-              thinking={thinking}
-              estimatedCost={estimatedCost}
-              estimateIncomplete={scenarioChanged && estimate.hasUnpricedCost}
-              actualCost={cost}
+              scenario={costScenario}
+              scenarioLoading={scenarioLoading}
+              cacheTtl={selectedCacheTtl}
+              actualCost={rootCost}
               workTime={workTime}
               turnsExpanded={turnsExpanded}
               onToggleAllTurns={() =>
@@ -2890,9 +2971,9 @@ export function SessionDetailPage() {
                   replace: true,
                   resetScroll: false,
                 })}
-              onThinkingChange={(value) =>
+              onCacheTtlChange={(value) =>
                 navigate({
-                  search: (current) => ({ ...current, thinking: value }),
+                  search: (current) => ({ ...current, cacheTtl: value }),
                   replace: true,
                   resetScroll: false,
                 })}

@@ -153,6 +153,10 @@ export const sessionSummarySchema = z.object({
   inclusiveModelCalls: z.number().int().nonnegative().optional(),
   inclusiveReportedCost: z.number().nonnegative().optional(),
   inclusiveComputedCost: z.number().nonnegative().optional(),
+  cacheMissCost: z.number().nonnegative().optional(),
+  inclusiveCacheMissCost: z.number().nonnegative().optional(),
+  hasUnpricedCacheMissCost: z.boolean().optional(),
+  inclusiveHasUnpricedCacheMissCost: z.boolean().optional(),
   inclusiveImageInputs: z.number().int().nonnegative().optional(),
   inclusiveTokens: tokenUsageSchema.optional(),
   reportedCost: z.number().nonnegative().optional(),
@@ -258,6 +262,7 @@ export const modelCallSchema = z.object({
   reasoningSetting: reasoningSettingSchema.optional(),
   contextEventsBefore: z.array(contextEventSchema).optional(),
   cacheAssessment: cacheAssessmentSchema.optional(),
+  cacheMissCost: z.number().nonnegative().optional(),
 });
 
 export const turnInputSchema = z.object({
@@ -306,6 +311,20 @@ export const sessionDetailSchema: z.ZodType<SessionDetail> =
   sessionDetailBaseSchema.extend({
     subagents: z.lazy(() => z.array(sessionDetailSchema)),
   });
+
+export const costScenarioResponseSchema = z.object({
+  model: z.string(),
+  cacheTtl: z.enum(["5m", "1h"]).optional(),
+  cost: z.number().nonnegative(),
+  hasUnpricedCost: z.boolean(),
+  breakdown: z.object({
+    input: z.number().nonnegative(),
+    cacheRead: z.number().nonnegative(),
+    cacheWrite: z.number().nonnegative(),
+    output: z.number().nonnegative(),
+  }),
+});
+export type CostScenarioResponse = z.infer<typeof costScenarioResponseSchema>;
 
 export const sessionListResponseSchema = z.object({
   items: z.array(sessionListItemSchema),

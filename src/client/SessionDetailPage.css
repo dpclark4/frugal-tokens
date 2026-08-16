@@ -511,11 +511,21 @@
   white-space: nowrap;
 }
 
+.sd-cost-total-line,
 .sd-cost-value {
   display: inline-flex;
   max-width: 100%;
-  align-items: center;
+  align-items: baseline;
   gap: 5px;
+}
+
+.sd-cost-miss-inline {
+  overflow: hidden;
+  color: var(--sd-ink-3);
+  font-size: 10.5px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sd-cost-value.is-warning {
@@ -1931,8 +1941,25 @@
 }
 
 .sd-cost-scenario-result strong {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
   color: var(--sd-ink);
   font: 600 15px var(--mono);
+}
+
+.sd-cost-scenario-delta {
+  font-size: 10.5px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.sd-cost-scenario-delta.is-higher {
+  color: #f37b80;
+}
+
+.sd-cost-scenario-delta.is-lower {
+  color: #72d89c;
 }
 
 .sd-cost-scenario-result small {
@@ -1940,12 +1967,25 @@
   font: 10px/1.45 var(--mono);
 }
 
-.sd-cost-scenario-result small.is-higher {
-  color: #f3a86a;
+.sd-cost-breakdown {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 10px;
+  margin: 5px 0 3px;
+  padding-top: 7px;
+  border-top: 1px solid var(--sd-line);
+  color: var(--sd-ink-3);
+  font: 10px/1.35 var(--mono);
 }
 
-.sd-cost-scenario-result small.is-lower {
-  color: #72d89c;
+.sd-cost-breakdown span {
+  display: contents;
+}
+
+.sd-cost-breakdown b {
+  color: var(--sd-ink-2);
+  font-weight: 500;
+  text-align: right;
 }
 
 .sd-scenario-note {
@@ -2002,9 +2042,12 @@
 }
 
 .session-detail-page.is-light .sd-cache-issue,
-.session-detail-page.is-light .sd-context-event > span,
-.session-detail-page.is-light .sd-cost-scenario-result small.is-higher {
+.session-detail-page.is-light .sd-context-event > span {
   color: #a34e30;
+}
+
+.session-detail-page.is-light .sd-cost-scenario-delta.is-higher {
+  color: #a33b36;
 }
 
 .session-detail-page.is-light .sd-cache-issue,
@@ -2012,7 +2055,7 @@
   background: #b85a3714;
 }
 
-.session-detail-page.is-light .sd-cost-scenario-result small.is-lower {
+.session-detail-page.is-light .sd-cost-scenario-delta.is-lower {
   color: #2e7959;
 }
 

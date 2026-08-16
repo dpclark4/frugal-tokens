@@ -7,6 +7,8 @@ import { createResponseCache } from "./responseCache.ts";
 import { formatTiming } from "./timing.ts";
 import { getRequestIp } from "./requestIp.ts";
 import { priceSessionDetail } from "./pricing.ts";
+import { counterfactualModelIDs } from "../shared/modelPricing.ts";
+import { estimateSessionCostScenario } from "./costScenario.ts";
 import { analyzeSessionCache, CACHE_TTL_1H_MS } from "./cacheAnalysis.ts";
 import type { SessionSummary } from "../shared/sessionSchemas.ts";
 import {
@@ -877,6 +879,34 @@ app.get("/api/sessions", (context) => {
     }`,
   );
   return context.json({ ...result, items });
+});
+
+app.get("/api/sessions/:id/cost-scenario", (context) => {
+  const harness = context.req.query("harness") ?? "opencode";
+  const model = context.req.query("model");
+  const cacheTtl = context.req.query("cacheTtl") ?? "5m";
+  if (!isHarness(harness)) {
+    return context.json({ error: "Invalid harness" }, 400);
+  }
+  if (
+    !model || !(counterfactualModelIDs as readonly string[]).includes(model)
+  ) {
+    return context.json({ error: "Invalid model" }, 400);
+  }
+  if (cacheTtl !== "5m" && cacheTtl !== "1h") {
+    return context.json({ error: "Invalid cache TTL" }, 400);
+  }
+  const session = readRepository.getSession(
+    harness as SessionSummary["harness"],
+    context.req.param("id"),
+  );
+  return session
+    ? context.json(estimateSessionCostScenario(
+      analyzeSessionCache(priceSessionDetail(session)),
+      model,
+      cacheTtl,
+    ))
+    : context.json({ error: "Session not found" }, 404);
 });
 
 app.get("/api/sessions/:id", (context) => {

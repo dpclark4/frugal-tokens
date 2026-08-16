@@ -1,5 +1,6 @@
 import {
   activityOverviewResponseSchema,
+  costScenarioResponseSchema,
   harnessesResponseSchema,
   overviewResponseSchema,
   performanceResponseSchema,
@@ -172,6 +173,20 @@ export async function getSessions(
 export async function getSession(id: string, harness: string) {
   return sessionDetailSchema.parse(
     await getJson(`/api/sessions/${encodeURIComponent(id)}?harness=${harness}`),
+  );
+}
+
+export async function getSessionCostScenario(
+  id: string,
+  harness: string,
+  model: string,
+  cacheTtl: "5m" | "1h",
+) {
+  const query = new URLSearchParams({ harness, model, cacheTtl });
+  return costScenarioResponseSchema.parse(
+    await getJson(
+      `/api/sessions/${encodeURIComponent(id)}/cost-scenario?${query}`,
+    ),
   );
 }
 

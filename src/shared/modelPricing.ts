@@ -411,12 +411,19 @@ export function modelRateCard(
   return standard[normalized];
 }
 
-export function computeModelCallCost(
+export type ModelCallCostBreakdown = {
+  input: number;
+  cacheRead: number;
+  cacheWrite: number;
+  output: number;
+};
+
+export function computeModelCallCostBreakdown(
   tokens: TokenUsage,
   model: string,
   timestamp: number,
   provider?: string,
-) {
+): ModelCallCostBreakdown | undefined {
   const categorizedTokens = tokens.uncachedInput + tokens.cacheRead +
     (tokens.cacheWrite ?? 0) + tokens.output + tokens.reasoning;
   if (tokens.processed > 0 && categorizedTokens === 0) return undefined;
@@ -429,31 +436,49 @@ export function computeModelCallCost(
   );
   if (!rates) return undefined;
 
-  let cacheWriteCost = 0;
+  let cacheWrite = 0;
   if (tokens.cacheWrite !== undefined) {
     if (
       tokens.cacheWrite5m !== undefined && tokens.cacheWrite1h !== undefined &&
       tokens.cacheWrite5m + tokens.cacheWrite1h === tokens.cacheWrite &&
       rates.cacheWrite5m !== undefined && rates.cacheWrite1h !== undefined
     ) {
-      cacheWriteCost = tokens.cacheWrite5m * rates.cacheWrite5m +
+      cacheWrite = tokens.cacheWrite5m * rates.cacheWrite5m +
         tokens.cacheWrite1h * rates.cacheWrite1h;
     } else if (rates.cacheWrite !== undefined) {
-      cacheWriteCost = tokens.cacheWrite * rates.cacheWrite;
+      cacheWrite = tokens.cacheWrite * rates.cacheWrite;
     } else if (
       tokens.cacheWrite5m === undefined && tokens.cacheWrite1h === undefined &&
       rates.cacheWrite5m !== undefined
     ) {
       // Sources with only a total cache-write count use the default 5-minute TTL.
-      cacheWriteCost = tokens.cacheWrite * rates.cacheWrite5m;
+      cacheWrite = tokens.cacheWrite * rates.cacheWrite5m;
     } else {
       return undefined;
     }
   }
-  return (
-    tokens.uncachedInput * rates.input +
-    tokens.cacheRead * rates.cacheRead +
-    cacheWriteCost +
-    (tokens.output + tokens.reasoning) * rates.output
-  ) / 1_000_000;
+  return {
+    input: tokens.uncachedInput * rates.input / 1_000_000,
+    cacheRead: tokens.cacheRead * rates.cacheRead / 1_000_000,
+    cacheWrite: cacheWrite / 1_000_000,
+    output: (tokens.output + tokens.reasoning) * rates.output / 1_000_000,
+  };
+}
+
+export function computeModelCallCost(
+  tokens: TokenUsage,
+  model: string,
+  timestamp: number,
+  provider?: string,
+) {
+  const breakdown = computeModelCallCostBreakdown(
+    tokens,
+    model,
+    timestamp,
+    provider,
+  );
+  return breakdown === undefined
+    ? undefined
+    : breakdown.input + breakdown.cacheRead + breakdown.cacheWrite +
+      breakdown.output;
 }
