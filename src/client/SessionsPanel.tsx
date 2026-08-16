@@ -2369,6 +2369,9 @@ export function SessionsPanel({
                               <span>
                                 {session.inclusiveModelCalls ??
                                   session.modelCalls} calls
+                                {session.forkCount !== undefined && (
+                                  <>· {session.forkCount + 1} branches</>
+                                )}
                               </span>
                               {(session.subagentCount ?? 0) > 0 && (
                                 <small>
@@ -2379,20 +2382,6 @@ export function SessionsPanel({
                                 </small>
                               )}
                             </span>
-                            {session.forkCount !== undefined && (
-                              <span
-                                className="session-branch-indicator"
-                                aria-label={`${session.forkCount} ${
-                                  session.forkCount === 1 ? "fork" : "forks"
-                                }`}
-                                title={`${session.forkCount} ${
-                                  session.forkCount === 1 ? "fork" : "forks"
-                                }`}
-                              >
-                                <Split size={13} aria-hidden="true" />
-                                {session.forkCount}
-                              </span>
-                            )}
                           </span>
                         </td>
                         <td>

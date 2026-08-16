@@ -1,6 +1,7 @@
 import {
   createContext,
   type CSSProperties,
+  Fragment,
   type ReactNode,
   useContext,
   useEffect,
@@ -31,6 +32,7 @@ import {
   X,
 } from "lucide-react";
 import type {
+  ConversationBranch,
   ModelCall,
   SessionDetail,
   TokenUsage,
@@ -1619,16 +1621,246 @@ function SubagentDisclosure({
   );
 }
 
+function branchDepth(
+  branch: ConversationBranch,
+  branches: Map<string, ConversationBranch>,
+) {
+  let depth = 0;
+  let parentID = branch.parentID;
+  const visited = new Set<string>();
+  while (parentID && !visited.has(parentID)) {
+    visited.add(parentID);
+    const parent = branches.get(parentID);
+    if (!parent) break;
+    depth++;
+    parentID = parent.parentID;
+  }
+  return depth;
+}
+
+function branchPathTurns(
+  branch: ConversationBranch,
+  branches: Map<string, ConversationBranch>,
+  visited = new Set<string>(),
+): number[] {
+  if (visited.has(branch.id)) return branch.turnNumbers;
+  visited.add(branch.id);
+  const parent = branch.parentID ? branches.get(branch.parentID) : undefined;
+  const ancestors = parent
+    ? branchPathTurns(parent, branches, visited).filter((turn) =>
+      branch.forkedFromTurn === undefined || turn <= branch.forkedFromTurn
+    )
+    : [];
+  return [...new Set([...ancestors, ...branch.turnNumbers])].sort((a, b) =>
+    a - b
+  );
+}
+
+function orderedBranches(branches: ConversationBranch[]) {
+  const children = Map.groupBy(branches, (branch) => branch.parentID ?? "");
+  const ordered: ConversationBranch[] = [];
+  const append = (branch: ConversationBranch) => {
+    ordered.push(branch);
+    for (const child of children.get(branch.id) ?? []) append(child);
+  };
+  for (const root of children.get("") ?? []) append(root);
+  for (const branch of branches) {
+    if (!ordered.some((item) => item.id === branch.id)) append(branch);
+  }
+  return ordered;
+}
+
+function branchCostForTurns(
+  session: SessionDetail,
+  turnNumbers: number[],
+  model: CostScenario,
+  thinking: string,
+) {
+  const selected = new Set(turnNumbers);
+  const calls = session.turns.filter((turn) => selected.has(turn.number))
+    .flatMap((turn) => callsForTurn(turn, session).calls);
+  return model === "recorded" && thinking === "recorded"
+    ? rollupCosts(calls.map((call) => call.computedCost))
+    : scenarioCost(calls, model, thinking);
+}
+
+function branchCostText(cost: ReturnType<typeof rollupCosts>) {
+  if (cost.cost === undefined) return "Unpriced";
+  return `${money.format(cost.cost)}${cost.hasUnpricedCost ? "+" : ""}`;
+}
+
+function BranchControl({
+  branches,
+  session,
+  model,
+  thinking,
+  selected,
+  onSelect,
+}: {
+  branches: ConversationBranch[];
+  session: SessionDetail;
+  model: CostScenario;
+  thinking: string;
+  selected?: ConversationBranch;
+  onSelect: (branchID?: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const container = useRef<HTMLDivElement>(null);
+  const byID = new Map(branches.map((branch) => [branch.id, branch]));
+  const ordered = orderedBranches(branches);
+  const latestID = [...branches].sort((a, b) => b.updatedAt - a.updatedAt)[0]
+    ?.id;
+  const allTurnNumbers = session.turns.map((turn) => turn.number);
+  const allCost = branchCostForTurns(session, allTurnNumbers, model, thinking);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent) => {
+      if (!container.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", escape);
+    };
+  }, [open]);
+
+  return (
+    <div className="sd-branch-control" ref={container}>
+      <button
+        type="button"
+        className="sd-branch-trigger"
+        aria-expanded={open}
+        aria-haspopup="dialog"
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span>{selected?.label ?? "All events"}</span>
+        <ChevronDown size={13} aria-hidden="true" />
+        <strong>{branches.length} branches</strong>
+      </button>
+      {open && (
+        <div
+          className="sd-branch-panel"
+          role="dialog"
+          aria-label="Conversation branches"
+        >
+          <div className="sd-branch-panel-heading">
+            <strong>Conversation branches</strong>
+            <button
+              type="button"
+              aria-label="Close"
+              onClick={() => setOpen(false)}
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <button
+            type="button"
+            className={`sd-branch-all${selected ? "" : " is-selected"}`}
+            onClick={() => {
+              onSelect(undefined);
+              setOpen(false);
+            }}
+          >
+            <span>
+              <Check size={13} /> All events
+            </span>
+            <span className="sd-branch-all-metrics">
+              <small>{allTurnNumbers.length} turns</small>
+              <strong>{branchCostText(allCost)}</strong>
+            </span>
+          </button>
+          <div className="sd-branch-map">
+            {ordered.map((branch) => {
+              const pathTurns = branchPathTurns(branch, byID);
+              const segmentTurns = branch.turnNumbers;
+              const depth = branchDepth(branch, byID);
+              const siblings = branches.filter((item) =>
+                item.parentID === branch.parentID
+              );
+              const isLastSibling = siblings.at(-1)?.id === branch.id;
+              const segmentCost = branchCostForTurns(
+                session,
+                segmentTurns,
+                model,
+                thinking,
+              );
+              const pathCost = branchCostForTurns(
+                session,
+                pathTurns,
+                model,
+                thinking,
+              );
+              return (
+                <button
+                  type="button"
+                  key={branch.id}
+                  className={`sd-branch-path${
+                    selected?.id === branch.id ? " is-selected" : ""
+                  }`}
+                  style={{
+                    "--sd-branch-offset": `${depth * 12}px`,
+                  } as CSSProperties}
+                  onClick={() => {
+                    onSelect(branch.id);
+                    setOpen(false);
+                  }}
+                >
+                  <span className="sd-branch-topology" aria-hidden="true">
+                    {depth > 0 && <i>{isLastSibling ? "└" : "├"}─</i>}
+                    {segmentTurns.map((turn, index) => (
+                      <Fragment key={turn}>
+                        {index > 0 && <b>—</b>}
+                        <em>T{turn}</em>
+                      </Fragment>
+                    ))}
+                  </span>
+                  <span className="sd-branch-label" title={branch.label}>
+                    {branch.label}
+                    {branch.id === latestID && <small>Latest</small>}
+                  </span>
+                  <span className="sd-branch-stats">
+                    <span>
+                      {depth === 0
+                        ? `${segmentTurns.length} turns`
+                        : `${segmentTurns.length} new`}
+                    </span>
+                    {depth > 0 && <small>{pathTurns.length} total</small>}
+                  </span>
+                  <span className="sd-branch-cost">
+                    <strong>{branchCostText(segmentCost)}</strong>
+                    {depth > 0 && (
+                      <small>{branchCostText(pathCost)} path</small>
+                    )}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SessionTranscript({
   session,
   depth = 0,
   pathMode,
   rootDirectory,
+  visibleTurnNumbers,
+  focusedBranch,
 }: {
   session: SessionDetail;
   depth?: number;
   pathMode: PathMode;
   rootDirectory?: string;
+  visibleTurnNumbers?: Set<number>;
+  focusedBranch?: ConversationBranch;
 }) {
   const launched = new Set(
     session.turns.flatMap((turn) =>
@@ -1642,27 +1874,39 @@ function SessionTranscript({
   const unlinkedSubagents = session.subagents.filter((child) =>
     !launched.has(child.id)
   );
+  const shownTurns = visibleTurnNumbers
+    ? session.turns.filter((turn) => visibleTurnNumbers.has(turn.number))
+    : session.turns;
+  const firstDivergentTurn = focusedBranch?.turnNumbers[0];
   return (
     <div className={`sd-transcript${depth > 0 ? " is-nested" : ""}`}>
-      {session.turns.map((turn) => (
-        <TurnBlock
-          key={turn.number}
-          turn={turn}
-          session={session}
-          depth={depth}
-          pathMode={pathMode}
-          rootDirectory={rootDirectory}
-        />
+      {shownTurns.map((turn) => (
+        <Fragment key={turn.number}>
+          {turn.number === firstDivergentTurn &&
+            focusedBranch?.forkedFromTurn !== undefined && (
+            <div className="sd-fork-divider">
+              <span>Forked from Turn {focusedBranch.forkedFromTurn}</span>
+            </div>
+          )}
+          <TurnBlock
+            turn={turn}
+            session={session}
+            depth={depth}
+            pathMode={pathMode}
+            rootDirectory={rootDirectory}
+          />
+        </Fragment>
       ))}
-      {unlinkedSubagents.map((child) => (
-        <SubagentDisclosure
-          key={child.id}
-          session={child}
-          depth={depth + 1}
-          pathMode={pathMode}
-          rootDirectory={rootDirectory}
-        />
-      ))}
+      {!visibleTurnNumbers &&
+        unlinkedSubagents.map((child) => (
+          <SubagentDisclosure
+            key={child.id}
+            session={child}
+            depth={depth + 1}
+            pathMode={pathMode}
+            rootDirectory={rootDirectory}
+          />
+        ))}
     </div>
   );
 }
@@ -2132,7 +2376,7 @@ function Metadata({
           </button>
         </div>
         <label className="sd-setting">
-          <span>Paths</span>
+          <span>File paths</span>
           <span className="sd-setting-segmented">
             {(["absolute", "relative"] as const).map((value) => (
               <button
@@ -2299,7 +2543,7 @@ function DetailNavigation({
 
 export function SessionDetailPage() {
   const { harness, sessionId } = route.useParams();
-  const { misses, paths, color, model, thinking } = route.useSearch();
+  const { misses, paths, color, model, thinking, branch } = route.useSearch();
   const navigate = route.useNavigate();
   const [session, setSession] = useState<SessionDetail>();
   const [error, setError] = useState<string>();
@@ -2381,6 +2625,12 @@ export function SessionDetailPage() {
   }
 
   const tree = sessionTree(session);
+  const branches = session.branches ?? [];
+  const branchesByID = new Map(branches.map((item) => [item.id, item]));
+  const selectedBranch = branch ? branchesByID.get(branch) : undefined;
+  const visibleTurnNumbers = selectedBranch
+    ? new Set(branchPathTurns(selectedBranch, branchesByID))
+    : undefined;
   const turnIDs = sessionTurnIDs(session);
   const turnsExpanded = turnIDs.every((id) => !collapsedTurnIDs.has(id));
   const calls = callsInTree(session);
@@ -2455,7 +2705,11 @@ export function SessionDetailPage() {
       ? turnAnchor(occurrence.session.id, occurrence.turn.number)
       : callID;
     setFocusedCallAnchor(callID);
-    setCollapsedTurnIDs(new Set());
+    setCollapsedTurnIDs((current) => {
+      const next = new Set(current);
+      next.delete(turnAnchor(occurrence.session.id, occurrence.turn.number));
+      return next;
+    });
     let attempts = 0;
     const focusTarget = () => {
       const target = document.getElementById(targetID);
@@ -2503,6 +2757,21 @@ export function SessionDetailPage() {
             </span>
             <h1>{session.title}</h1>
           </div>
+          {branches.length > 1 && (
+            <BranchControl
+              branches={branches}
+              session={session}
+              model={selectedModel}
+              thinking={thinking}
+              selected={selectedBranch}
+              onSelect={(branchID) =>
+                navigate({
+                  search: (current) => ({ ...current, branch: branchID }),
+                  replace: true,
+                  resetScroll: false,
+                })}
+            />
+          )}
         </header>
 
         <div className="sd-metrics">
@@ -2585,6 +2854,8 @@ export function SessionDetailPage() {
               session={session}
               pathMode={paths}
               rootDirectory={session.workingDirectory}
+              visibleTurnNumbers={visibleTurnNumbers}
+              focusedBranch={selectedBranch}
             />
             <Metadata
               session={session}

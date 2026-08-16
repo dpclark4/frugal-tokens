@@ -271,6 +271,7 @@ export const turnInputSchema = z.object({
 export const userTurnSchema = z.object({
   number: z.number().int().positive(),
   branchNumber: z.number().int().positive().optional(),
+  branchID: z.string().optional(),
   startedAt: z.number(),
   inputs: z.array(turnInputSchema).optional(),
   reasoningSetting: reasoningSettingSchema.optional(),
@@ -279,10 +280,21 @@ export const userTurnSchema = z.object({
   cacheSummary: turnCacheSummarySchema.optional(),
 });
 
+export const conversationBranchSchema = z.object({
+  id: z.string(),
+  parentID: z.string().optional(),
+  forkedFromTurn: z.number().int().positive().optional(),
+  turnNumbers: z.array(z.number().int().positive()),
+  label: z.string(),
+  updatedAt: z.number(),
+});
+export type ConversationBranch = z.infer<typeof conversationBranchSchema>;
+
 const sessionDetailBaseSchema = sessionSummarySchema.extend({
   parentID: z.string().optional(),
   agent: z.string().optional(),
   turns: z.array(userTurnSchema),
+  branches: z.array(conversationBranchSchema).optional(),
   contextEvents: z.array(contextEventSchema).optional(),
 });
 

@@ -164,6 +164,7 @@ const sessionDetailRoute = createRoute({
     color: z.enum(["none", "time", "cost"]).catch("time"),
     model: z.string().catch("recorded"),
     thinking: z.string().catch("recorded"),
+    branch: z.string().optional(),
   }),
   parseParams: (params) => ({
     harness: z.enum(["opencode", "claude-code", "pi", "codex", "cursor"]).parse(

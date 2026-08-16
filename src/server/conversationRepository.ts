@@ -1523,7 +1523,13 @@ export class ConversationRepository {
       call.id,
       call.source_call_id ?? String(call.id),
     ]));
-    const branchNumbers = this.#branchNumbers(row.id);
+    const branchRows = this.#conversationBranches(row.id);
+    const publicBranchIDs = new Map(
+      branchRows.map((branch) => [branch.id, branch.external_id]),
+    );
+    const branchNumbers = new Map(
+      branchRows.slice(1).map((branch, index) => [branch.id, index + 1]),
+    );
     const hydratedByCallID = new Map<number, ModelCall>();
     const turnOrder = [...groupedCalls.entries()].sort(([, a], [, b]) =>
       a[0].turn_started_at - b[0].turn_started_at ||
@@ -1531,6 +1537,9 @@ export class ConversationRepository {
       a[0].branch_id - b[0].branch_id ||
       (a[0].source_order_start ?? a[0].turn_ordinal) -
         (b[0].source_order_start ?? b[0].turn_ordinal)
+    );
+    const turnNumbersByID = new Map(
+      turnOrder.map(([turnID], turnIndex) => [turnID, turnIndex + 1]),
     );
     const turns = turnOrder.map(([turnID, turnCalls], turnIndex) => {
       const first = turnCalls[0];
@@ -1600,6 +1609,9 @@ export class ConversationRepository {
         number: turnIndex + 1,
         ...(branchNumbers.has(first.branch_id)
           ? { branchNumber: branchNumbers.get(first.branch_id)! }
+          : {}),
+        ...(publicBranchIDs.has(first.branch_id)
+          ? { branchID: publicBranchIDs.get(first.branch_id)! }
           : {}),
         startedAt: first.turn_started_at,
         inputs: inputs.filter((input) => input.turn_id === turnID).map((
@@ -1678,6 +1690,27 @@ export class ConversationRepository {
       ORDER BY c.updated_at, c.id
     `).all(row.id) as ConversationRow[];
     const summary = this.#baseSummary(row, this.#storedThinking(row));
+    const branches = branchRows.map((branch, index) => {
+      const branchTurns = turns.filter((turn) =>
+        turn.branchID === branch.external_id
+      );
+      const firstText = branchTurns.flatMap((turn) => turn.inputs ?? [])
+        .find((input) => input.kind === "text" && input.preview)?.preview;
+      return {
+        id: branch.external_id,
+        ...(branch.parent_external_id === null
+          ? {}
+          : { parentID: branch.parent_external_id }),
+        ...(branch.fork_turn_id === null
+          ? {}
+          : { forkedFromTurn: turnNumbersByID.get(branch.fork_turn_id) }),
+        turnNumbers: branchTurns.map((turn) => turn.number),
+        label: index === 0
+          ? "Original path"
+          : conciseSessionPreview(firstText) ?? `Path ${index + 1}`,
+        updatedAt: branch.updated_at,
+      };
+    });
     return {
       ...summary,
       sourcePath: this.#sourcePath(row.id),
@@ -1686,33 +1719,40 @@ export class ConversationRepository {
       userTurns: turns.length,
       modelCalls: turns.reduce((sum, turn) => sum + turn.calls.length, 0),
       turns,
+      ...(branches.length > 1 ? { branches } : {}),
       contextEvents: sessionContextEvents,
       subagents: children.map((child) => this.#detail(child, nextVisited)),
     };
   }
 
-  #branchNumbers(conversationID: number) {
-    const rows = this.db.prepare(`
-      SELECT branch.id
+  #conversationBranches(conversationID: number) {
+    return this.db.prepare(`
+      SELECT branch.id, branch.external_id, branch.updated_at,
+        parent.external_id AS parent_external_id,
+        fork_entry.turn_id AS fork_turn_id
       FROM conversation_branches branch
       JOIN conversations conversation ON conversation.id = branch.conversation_id
+      LEFT JOIN conversation_branches parent
+        ON parent.id = branch.forked_from_branch_id
+      LEFT JOIN conversation_entries fork_entry
+        ON fork_entry.id = branch.fork_point_entry_id
       WHERE branch.conversation_id = ?
       ORDER BY CASE
         WHEN branch.external_id = conversation.external_id THEN 0
         WHEN branch.forked_from_branch_id IS NULL THEN 1
         ELSE 2
       END, branch.external_id
-    `).all(conversationID) as Array<{ id: number }>;
-    return new Map(
-      rows.slice(1).map((branch, index) => [
-        branch.id,
-        index + 1,
-      ]),
-    );
+    `).all(conversationID) as Array<{
+      id: number;
+      external_id: string;
+      updated_at: number;
+      parent_external_id: string | null;
+      fork_turn_id: number | null;
+    }>;
   }
 
-  // TODO: Expose branch topology in the public detail contract instead of
-  // presenting sibling continuations as a chronological activity feed.
+  // The transcript remains chronological by default; branch topology lets the
+  // client focus one conversational path without duplicating stored usage.
   #conversationCalls(conversationID: number): CallRow[] {
     return this.db.prepare(`
       WITH ordered_path_calls AS (
