@@ -11,13 +11,13 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import type { ActivityOverviewResponse } from "../../shared/sessionSchemas.ts";
+import type { WorkRhythmOverviewResponse } from "../../shared/sessionSchemas.ts";
 import { harnessName } from "../harness.ts";
 import { compact, currency } from "./formatters.ts";
 import { saveOverviewReturnScroll } from "./overviewReturnScroll.ts";
 import "./SessionDiagnostics.css";
 
-type SessionDiagnosticsData = ActivityOverviewResponse["sessionDiagnostics"];
+type SessionDiagnosticsData = WorkRhythmOverviewResponse["sessionDiagnostics"];
 type SessionPoint = SessionDiagnosticsData["sessions"][number];
 type Metric = "spend" | "input";
 type ChartPoint = SessionPoint & {

@@ -1,4 +1,7 @@
-import type { ActivityOverviewResponse } from "../shared/sessionSchemas.ts";
+import type {
+  ActivityOverviewResponse,
+  WorkRhythmOverviewResponse,
+} from "../shared/sessionSchemas.ts";
 import type { StoredOverviewRollup } from "./overviewAnalytics.ts";
 import { aggregateWorkRhythm } from "./workRhythm.ts";
 import { modelMetadata } from "../shared/modelMetadata.ts";
@@ -191,7 +194,7 @@ function sessionDiagnostics(
   roots: StoredOverviewRollup[],
   start: number,
   end: number,
-): ActivityOverviewResponse["sessionDiagnostics"] {
+): WorkRhythmOverviewResponse["sessionDiagnostics"] {
   const sessions = roots.flatMap((root) => {
     const days = root.overview.days.filter((day) =>
       day.firstTurnAt >= start && day.firstTurnAt <= end
@@ -258,9 +261,16 @@ export function aggregateActivityOverview(
   roots: StoredOverviewRollup[],
   start: number,
   end: number,
-  timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone,
   spendAtMissCalls = 0,
+  recordTiming?: (name: string, duration: number) => void,
 ): ActivityOverviewResponse {
+  const aggregationStartedAt = performance.now();
+  const measured = <T>(name: string, operation: () => T): T => {
+    const startedAt = performance.now();
+    const result = operation();
+    recordTiming?.(name, performance.now() - startedAt);
+    return result;
+  };
   const days = new Map<string, DayBucket>();
   const activityIntervals: Interval[] = [];
   const inactivityBuffer = ACTIVITY_INACTIVITY_MINUTES * 60_000;
@@ -359,6 +369,37 @@ export function aggregateActivityOverview(
   const topDecileSpend = rootSessionSpend.toSorted((a, b) => b - a)
     .slice(0, topSessionCount)
     .reduce((sum, spend) => sum + spend, 0);
+  recordTiming?.(
+    "activity-buckets",
+    performance.now() - aggregationStartedAt,
+  );
+  const composition = measured(
+    "spend-composition",
+    () => spendComposition(days, start, end),
+  );
+  const responseDays = measured(
+    "daily-response",
+    () =>
+      [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(
+        ([date, day]) => ({
+          date,
+          processedInput: day.processedInput,
+          spend: day.spend,
+          hasUnpricedCost: day.hasUnpricedCost,
+          sessions: day.sessions,
+          turns: day.turns,
+          estimatedActiveMs: estimatedActiveMs(date, activityIntervals),
+          models: [...day.models.values()].toSorted((a, b) =>
+            b.spend - a.spend || b.input - a.input ||
+            a.model.localeCompare(b.model)
+          ).slice(0, 3).map(({ hasUnpricedCost: _, ...model }) => model),
+          topSessions: day.topSessions.toSorted((a, b) =>
+            b.spend - a.spend || b.processedInput - a.processedInput ||
+            a.id - b.id
+          ).slice(0, 3),
+        }),
+      ),
+  );
 
   return {
     startDate: dateKey(start),
@@ -375,27 +416,32 @@ export function aggregateActivityOverview(
         ? 0
         : topDecileSpend / pricedSessionSpend,
     },
-    sessionDiagnostics: sessionDiagnostics(roots, start, end),
-    workRhythm: aggregateWorkRhythm(roots, start, end, timeZone),
-    spendComposition: spendComposition(days, start, end),
-    days: [...days.entries()].sort(([a], [b]) => a.localeCompare(b)).map(
-      ([date, day]) => ({
-        date,
-        processedInput: day.processedInput,
-        spend: day.spend,
-        hasUnpricedCost: day.hasUnpricedCost,
-        sessions: day.sessions,
-        turns: day.turns,
-        estimatedActiveMs: estimatedActiveMs(date, activityIntervals),
-        models: [...day.models.values()].toSorted((a, b) =>
-          b.spend - a.spend || b.input - a.input ||
-          a.model.localeCompare(b.model)
-        ).slice(0, 3).map(({ hasUnpricedCost: _, ...model }) => model),
-        topSessions: day.topSessions.toSorted((a, b) =>
-          b.spend - a.spend || b.processedInput - a.processedInput ||
-          a.id - b.id
-        ).slice(0, 3),
-      }),
+    spendComposition: composition,
+    days: responseDays,
+  };
+}
+
+export function aggregateWorkRhythmOverview(
+  roots: StoredOverviewRollup[],
+  start: number,
+  end: number,
+  timeZone: string,
+  recordTiming?: (name: string, duration: number) => void,
+): WorkRhythmOverviewResponse {
+  const measured = <T>(name: string, operation: () => T): T => {
+    const startedAt = performance.now();
+    const result = operation();
+    recordTiming?.(name, performance.now() - startedAt);
+    return result;
+  };
+  return {
+    workRhythm: measured(
+      "work-rhythm",
+      () => aggregateWorkRhythm(roots, start, end, timeZone),
+    ),
+    sessionDiagnostics: measured(
+      "session-diagnostics",
+      () => sessionDiagnostics(roots, start, end),
     ),
   };
 }

@@ -3,6 +3,7 @@ import type {
   ActivityOverviewResponse,
   SessionShapeResponse,
   TtlMissMetrics,
+  WorkRhythmOverviewResponse,
 } from "../shared/sessionSchemas.ts";
 
 const integer = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
@@ -117,16 +118,19 @@ function cacheRows(metrics: TtlMissMetrics) {
 
 export function buildOverviewReport({
   overview,
+  workRhythmOverview,
   sessionShape,
   cacheMisses,
   harness,
 }: {
   overview: ActivityOverviewResponse;
+  workRhythmOverview: WorkRhythmOverviewResponse;
   sessionShape: SessionShapeResponse;
   cacheMisses: TtlMissMetrics;
   harness: string;
 }) {
-  const { summary, workRhythm, spendComposition } = overview;
+  const { summary, spendComposition } = overview;
+  const { workRhythm } = workRhythmOverview;
   const sections = [
     '<!-- frugal-tokens-report version="1" -->',
     "# Frugal Tokens Report",

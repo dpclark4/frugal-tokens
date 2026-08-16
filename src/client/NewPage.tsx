@@ -5,8 +5,9 @@ import type {
   SessionShapeResponse,
   SessionSummary,
   TtlMissMetrics,
+  WorkRhythmOverviewResponse,
 } from "../shared/sessionSchemas.ts";
-import { getActivityOverview, getHarnesses } from "./api.ts";
+import { getActivityOverview, getHarnesses, getWorkRhythm } from "./api.ts";
 import { SiteHeader } from "./SiteHeader.tsx";
 import "./NewPage.css";
 import {
@@ -61,6 +62,18 @@ function calendarDate(
   return date && date >= range.start && date <= range.end ? date : range.end;
 }
 
+function WorkRhythmLoading() {
+  return (
+    <div
+      className="work-rhythm-loading"
+      role="status"
+      aria-label="Loading estimated work"
+    >
+      <span aria-hidden="true" />
+    </div>
+  );
+}
+
 export function NewPage() {
   const search = route.useSearch();
   const navigate = route.useNavigate();
@@ -69,7 +82,13 @@ export function NewPage() {
     harness: string;
     data: ActivityOverviewResponse;
   }>();
+  const [loadedWorkRhythm, setLoadedWorkRhythm] = useState<{
+    range: 30 | 90;
+    harness: string;
+    data: WorkRhythmOverviewResponse;
+  }>();
   const [error, setError] = useState<string>();
+  const [workRhythmError, setWorkRhythmError] = useState<string>();
   const [harnesses, setHarnesses] = useState<SessionSummary["harness"][]>([]);
   const [screenshotState, setScreenshotState] = useState<ScreenshotState>(
     "idle",
@@ -92,12 +111,16 @@ export function NewPage() {
       loadedOverview.harness === search.harness
     ? loadedOverview.data
     : undefined;
+  const workRhythmData = loadedWorkRhythm?.range === search.range &&
+      loadedWorkRhythm.harness === search.harness
+    ? loadedWorkRhythm.data
+    : undefined;
   const sessionShapeIsCurrent = loadedSessionShape?.range === search.range &&
     loadedSessionShape.harness === search.harness;
   const cacheMissesAreCurrent = loadedCacheMisses?.range === search.range &&
     loadedCacheMisses.harness === search.harness;
   const reportReady = Boolean(
-    data && sessionShapeIsCurrent && cacheMissesAreCurrent,
+    data && workRhythmData && sessionShapeIsCurrent && cacheMissesAreCurrent,
   );
 
   useEffect(() => {
@@ -115,15 +138,32 @@ export function NewPage() {
   useEffect(() => {
     let active = true;
     setError(undefined);
+    setWorkRhythmError(undefined);
+    setLoadedWorkRhythm(undefined);
     getActivityOverview(search.range, search.harness).then((result) => {
-      if (active) {
-        setLoadedOverview({
+      if (!active) return;
+      setLoadedOverview({
+        range: search.range,
+        harness: search.harness,
+        data: result,
+      });
+      setError(undefined);
+      return getWorkRhythm(search.range, search.harness).then((workRhythm) => {
+        if (!active) return;
+        setLoadedWorkRhythm({
           range: search.range,
           harness: search.harness,
-          data: result,
+          data: workRhythm,
         });
-        setError(undefined);
-      }
+      }).catch((reason) => {
+        if (active) {
+          setWorkRhythmError(
+            reason instanceof Error
+              ? reason.message
+              : "Unable to load estimated work",
+          );
+        }
+      });
     }).catch((reason) => {
       if (active) {
         setError(
@@ -146,12 +186,13 @@ export function NewPage() {
 
   async function copyReport() {
     if (
-      !data || !loadedSessionShape || !sessionShapeIsCurrent ||
-      !loadedCacheMisses || !cacheMissesAreCurrent
+      !data || !workRhythmData || !loadedSessionShape ||
+      !sessionShapeIsCurrent || !loadedCacheMisses || !cacheMissesAreCurrent
     ) return;
     try {
       await copyText(buildOverviewReport({
         overview: data,
+        workRhythmOverview: workRhythmData,
         sessionShape: loadedSessionShape.data,
         cacheMisses: loadedCacheMisses.data,
         harness: search.harness,
@@ -178,8 +219,8 @@ export function NewPage() {
     }
   }
 
-  const selectedDate = data
-    ? calendarDate(search.date, data.workRhythm.range)
+  const selectedDate = workRhythmData
+    ? calendarDate(search.date, workRhythmData.workRhythm.range)
     : undefined;
 
   useEffect(() => {
@@ -211,6 +252,9 @@ export function NewPage() {
       <div className="new-overview-screenshot" ref={screenshotRef}>
         <section className="new-overview-panel">
           {error && <div className="new-overview-error">{error}</div>}
+          {workRhythmError && (
+            <div className="new-overview-error">{workRhythmError}</div>
+          )}
 
           <div className="new-overview-grid">
             <div className="new-overview-left">
@@ -230,15 +274,17 @@ export function NewPage() {
                   )}
               />
             </div>
-            {data && (
-              <Suspense fallback={null}>
-                <WorkRhythm
-                  data={data.workRhythm}
-                  selectedDate={selectedDate!}
-                  onSelect={(date) => update({ date })}
-                />
-              </Suspense>
-            )}
+            {workRhythmData
+              ? (
+                <Suspense fallback={<WorkRhythmLoading />}>
+                  <WorkRhythm
+                    data={workRhythmData.workRhythm}
+                    selectedDate={selectedDate!}
+                    onSelect={(date) => update({ date })}
+                  />
+                </Suspense>
+              )
+              : data && !workRhythmError && <WorkRhythmLoading />}
           </div>
 
           {data && (
@@ -264,9 +310,13 @@ export function NewPage() {
                         : undefined,
                     )}
                 />
-                <Suspense fallback={null}>
-                  <SessionDiagnostics data={data.sessionDiagnostics} />
-                </Suspense>
+                {workRhythmData && (
+                  <Suspense fallback={null}>
+                    <SessionDiagnostics
+                      data={workRhythmData.sessionDiagnostics}
+                    />
+                  </Suspense>
+                )}
               </div>
 
               <RecentSessions

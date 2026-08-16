@@ -1,7 +1,13 @@
 import { deepStrictEqual, strictEqual } from "node:assert";
-import { activityOverviewResponseSchema } from "../shared/sessionSchemas.ts";
+import {
+  activityOverviewResponseSchema,
+  workRhythmOverviewResponseSchema,
+} from "../shared/sessionSchemas.ts";
 import type { StoredOverviewRollup } from "./overviewAnalytics.ts";
-import { aggregateActivityOverview } from "./activityOverview.ts";
+import {
+  aggregateActivityOverview,
+  aggregateWorkRhythmOverview,
+} from "./activityOverview.ts";
 import type { OverviewDayRollup } from "./sessionRollups.ts";
 
 function day(
@@ -57,11 +63,17 @@ Deno.test("activity overview returns period totals and daily drill-down data", (
     roots,
     new Date(2026, 6, 1).getTime(),
     new Date(2026, 6, 2, 23, 59).getTime(),
-    undefined,
     1.5,
   );
 
   activityOverviewResponseSchema.parse(result);
+  const workRhythm = aggregateWorkRhythmOverview(
+    roots,
+    new Date(2026, 6, 1).getTime(),
+    new Date(2026, 6, 2, 23, 59).getTime(),
+    Intl.DateTimeFormat().resolvedOptions().timeZone,
+  );
+  workRhythmOverviewResponseSchema.parse(workRhythm);
   strictEqual(result.summary.sessions, 2);
   strictEqual(result.summary.processedInput, 6_000_000);
   strictEqual(result.summary.tokenReuse, 4_300_000 / 6_000_000);
@@ -70,7 +82,7 @@ Deno.test("activity overview returns period totals and daily drill-down data", (
   strictEqual(result.summary.spendAtMissCalls, 1.5);
   strictEqual(result.summary.subagentSpend, 2);
   strictEqual(result.summary.topDecileSpendShare, 5 / 9);
-  deepStrictEqual(result.sessionDiagnostics.sessions, [{
+  deepStrictEqual(workRhythm.sessionDiagnostics.sessions, [{
     id: "2",
     title: "Session 2",
     primaryModel: null,

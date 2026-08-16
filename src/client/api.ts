@@ -10,6 +10,7 @@ import {
   toolCallsResponseSchema,
   ttlMissMetricsSchema,
   usageResponseSchema,
+  workRhythmOverviewResponseSchema,
 } from "../shared/sessionSchemas.ts";
 
 const apiBaseUrl = (import.meta as ImportMeta & {
@@ -34,7 +35,8 @@ export async function syncSessions() {
 }
 
 export async function getHarnesses() {
-  return harnessesResponseSchema.parse(await getJson("/api/harnesses")).harnesses;
+  return harnessesResponseSchema.parse(await getJson("/api/harnesses"))
+    .harnesses;
 }
 
 export async function getTitleGenerationSetting() {
@@ -73,6 +75,20 @@ export async function getActivityOverview(
   });
   return activityOverviewResponseSchema.parse(
     await getJson(`/api/activity-overview?${query}`),
+  );
+}
+
+export async function getWorkRhythm(
+  range: 30 | 90,
+  harness: string,
+) {
+  const query = new URLSearchParams({
+    range: String(range),
+    harness,
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  });
+  return workRhythmOverviewResponseSchema.parse(
+    await getJson(`/api/work-rhythm?${query}`),
   );
 }
 
