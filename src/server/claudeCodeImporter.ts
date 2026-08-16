@@ -13,7 +13,7 @@ import {
 import type { LinearConversationImport } from "./conversationImportTypes.ts";
 import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
 
-const parserVersion = "claude-code-conversation-family-2";
+const parserVersion = "claude-code-conversation-family-4";
 const projectionName = "conversation";
 const sourceIdentityNamespace = "session";
 const forkRelationship = "fork";

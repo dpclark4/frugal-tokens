@@ -41,10 +41,15 @@ export type CacheMissCostEstimate = CacheMissTokenEstimate & {
 export function estimateCacheMissTokens(
   before: CacheMissTokens,
   after: CacheMissTokens,
+  previousReusableTokens = contextSize(before),
 ): CacheMissTokenEstimate {
   const previousContext = contextSize(before);
   const currentContext = contextSize(after);
-  const expectedReusable = Math.min(previousContext, currentContext);
+  const expectedReusable = Math.min(
+    previousReusableTokens,
+    previousContext,
+    currentContext,
+  );
   const actualCacheRead = Math.min(after.cacheRead, expectedReusable);
   const missedTokens = Math.max(expectedReusable - actualCacheRead, 0);
   const hasDetailedWrites = after.cacheWrite !== undefined &&
@@ -107,6 +112,10 @@ export function estimateCacheMissCost(
   billing: InputBillingRates,
   before: CacheMissTokens,
   after: CacheMissTokens,
+  previousReusableTokens?: number,
 ) {
-  return computeCacheMissCost(billing, estimateCacheMissTokens(before, after));
+  return computeCacheMissCost(
+    billing,
+    estimateCacheMissTokens(before, after, previousReusableTokens),
+  );
 }

@@ -23,9 +23,11 @@ export function assessCache(
     return { status: "not-comparable", reason: "no-input-context" };
   }
   if (!previous) return { status: "baseline", reason: "no-predecessor" };
+  // Treat only cache reads and explicit writes as established reusable state.
+  // Uncached input may include fresh prompt tokens or provider block rounding;
+  // assuming it will be cached on the next request creates false misses.
   const previousReusableTokens = previous.tokens.cacheRead +
-    (previous.tokens.cacheWrite ??
-      (previous.provider === "openai" ? previous.tokens.uncachedInput : 0));
+    (previous.tokens.cacheWrite ?? 0);
   if (previousReusableTokens === 0) {
     return { status: "not-comparable", reason: "no-reusable-cache" };
   }
@@ -180,6 +182,7 @@ function cacheMissRecord(
   const tokenEstimate = estimateCacheMissTokens(
     previous.tokens,
     current.tokens,
+    assessment.previousReusableTokens,
   );
   const costEstimate = estimateModelCacheMissCost(
     previous.tokens,
@@ -187,6 +190,7 @@ function cacheMissRecord(
     current.model,
     current.startedAt,
     current.provider,
+    assessment.previousReusableTokens,
   );
   const modelCallCost = computeModelCallCost(
     current.tokens,
@@ -220,6 +224,8 @@ function cacheMissRecord(
 
 export type CacheAnalysisCall = CacheComparableCall & {
   id: string;
+  previousCallID?: string;
+  predecessorResolved?: boolean;
   followsCompaction?: boolean;
 };
 
@@ -239,8 +245,14 @@ export function analyzeCacheMisses(
 ): CacheMissAnalysis[] {
   const misses: CacheMissAnalysis[] = [];
   const initialCacheReads = new Map<string, number>();
-  let previous: CacheAnalysisCall | undefined;
+  const callsByID = new Map(calls.map((call) => [call.id, call]));
+  let sequentialPrevious: CacheAnalysisCall | undefined;
   for (const current of calls) {
+    const previous = current.predecessorResolved
+      ? current.previousCallID === undefined
+        ? undefined
+        : callsByID.get(current.previousCallID)
+      : sequentialPrevious;
     const baselineKey = cacheBaselineKey(current);
     const rawAssessment = assessCache(previous, current);
     const assessment = classifyCacheMiss(
@@ -261,7 +273,7 @@ export function analyzeCacheMisses(
       if (!initialCacheReads.has(baselineKey)) {
         initialCacheReads.set(baselineKey, current.tokens.cacheRead);
       }
-      previous = current;
+      sequentialPrevious = current;
     }
   }
   return misses;
@@ -385,7 +397,10 @@ export function summarizeTurnCache(calls: ModelCall[]): TurnCacheSummary {
 
 export function analyzeSessionCache(session: SessionDetail): SessionDetail {
   const initialCacheReads = new Map<string, number>();
-  let previous: ModelCall | undefined;
+  const callsByID = new Map(
+    session.turns.flatMap((turn) => turn.calls.map((call) => [call.id, call])),
+  );
+  let sequentialPrevious: ModelCall | undefined;
   const turns = session.turns.map((turn) => {
     const calls = turn.calls.map((call) => {
       // Some importers expose a setting at turn scope only. Treat it as the
@@ -394,6 +409,11 @@ export function analyzeSessionCache(session: SessionDetail): SessionDetail {
           turn.reasoningSetting !== undefined
         ? { ...call, reasoningSetting: turn.reasoningSetting }
         : call;
+      const previous = effectiveCall.predecessorResolved
+        ? effectiveCall.previousCallID === undefined
+          ? undefined
+          : callsByID.get(effectiveCall.previousCallID)
+        : sequentialPrevious;
       const baselineKey = cacheBaselineKey(effectiveCall);
       const rawAssessment = assessCache(previous, effectiveCall);
       const followsCompaction = (call.contextEventsBefore ?? []).some((event) =>
@@ -412,7 +432,7 @@ export function analyzeSessionCache(session: SessionDetail): SessionDetail {
         if (!initialCacheReads.has(baselineKey)) {
           initialCacheReads.set(baselineKey, call.tokens.cacheRead);
         }
-        previous = effectiveCall;
+        sequentialPrevious = effectiveCall;
       }
       return { ...call, cacheAssessment };
     });

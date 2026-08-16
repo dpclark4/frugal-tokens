@@ -606,6 +606,7 @@ export class ConversationWriteRepository {
       const artifactCallKeys = new Map<string, Set<string>>();
       const artifactEntryKeys = new Map<string, Set<string>>();
       const artifactPaths = new Map<string, number[]>();
+      const branchCallPredecessors = new Map<number, number | undefined>();
 
       const occurrenceKind = (
         artifact: SourceArtifactFamilyMemberImport,
@@ -710,6 +711,7 @@ export class ConversationWriteRepository {
         let previousTurnID: number | null = null;
         let previousEntryID: number | null = null;
         const pathEntryIDs: number[] = [];
+        const pathCallIDs: number[] = [];
         const callKeys = new Set<string>();
         const turnKeys = new Set<string>();
         const entryKeys = new Set<string>();
@@ -1024,6 +1026,12 @@ export class ConversationWriteRepository {
                 `Conflicting canonical call shape: ${turn.sourceID ?? turnKey}`,
               );
             }
+            const callKind = occurrenceKind(
+              artifact,
+              callKey,
+              artifactCallKeys,
+              callBasis,
+            );
             this.#prepare(`
               INSERT INTO artifact_model_call_occurrences (
                 source_session_id, branch_id, model_call_id, source_turn_id,
@@ -1038,10 +1046,14 @@ export class ConversationWriteRepository {
               call.sourceID ?? call.id,
               call.sourceOrderStart ?? turn.sourceOrderStart ?? null,
               call.sourceOrderEnd ?? turn.sourceOrderEnd ?? null,
-              occurrenceKind(artifact, callKey, artifactCallKeys, callBasis),
+              callKind,
               callBasis,
               evidence(artifact),
             );
+            if (callKind === "executed") {
+              branchCallPredecessors.set(callID, pathCallIDs.at(-1));
+            }
+            pathCallIDs.push(callID);
             callKeys.add(callKey);
           }
           previousTurnID = canonicalTurn.id;
@@ -1216,7 +1228,13 @@ export class ConversationWriteRepository {
         ...tokenValues(totalTokens),
         ...analyticsRollupValues(analyticsRollup).slice(1),
       );
-      this.#insertCacheMisses(conversationID, canonicalSession.session);
+      this.#insertCacheMisses(
+        conversationID,
+        canonicalSession.session,
+        undefined,
+        undefined,
+        branchCallPredecessors,
+      );
       this.#materializeSummary(
         conversationID,
         sessionDetailFromConversationImports(
@@ -1545,6 +1563,7 @@ export class ConversationWriteRepository {
     >,
     knownCallIDs?: Map<string, number>,
     knownTurnIDs?: Map<number, number>,
+    knownPredecessors?: Map<number, number | undefined>,
   ) {
     const callRows = knownCallIDs === undefined
       ? this.#prepare(`
@@ -1569,6 +1588,9 @@ export class ConversationWriteRepository {
       row.turn_ordinal,
       row.turn_id,
     ]));
+    const callKeysByID = new Map(
+      [...callIDs].map(([key, id]) => [id, key]),
+    );
     const compactionCallKeys = new Set(
       (session.contextEvents ?? []).filter((event) =>
         event.type === "compaction" && event.affectedCall !== undefined
@@ -1579,6 +1601,14 @@ export class ConversationWriteRepository {
     const cacheCalls: CacheAnalysisCall[] = session.turns.flatMap((turn) =>
       turn.calls.map((call) => ({
         id: `${turn.number}:${call.callWithinTurn}`,
+        ...(knownPredecessors === undefined ? {} : {
+          previousCallID: callKeysByID.get(
+            knownPredecessors.get(
+              callIDs.get(`${turn.number}:${call.callWithinTurn}`)!,
+            )!,
+          ),
+          predecessorResolved: true,
+        }),
         provider: call.provider,
         model: call.model,
         startedAt: call.startedAt,

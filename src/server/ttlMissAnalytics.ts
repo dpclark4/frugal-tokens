@@ -95,6 +95,7 @@ function cacheMisses(calls: UsageCall[]) {
       call.model,
       call.startedAt,
       call.provider,
+      assessment.previousReusableTokens,
     );
     misses.push({
       gap: call.startedAt - previous.startedAt,

@@ -14,6 +14,7 @@ export function estimateModelCacheMissCost(
   model: string,
   timestamp: number,
   provider?: string,
+  previousReusableTokens?: number,
 ) {
   // Cursor uses the underlying public model card as an estimate when a
   // model-specific card is available; reported Cursor cost remains separate.
@@ -25,7 +26,8 @@ export function estimateModelCacheMissCost(
     contextSize(after),
     provider,
   );
-  return rates && estimateCacheMissCost(rates, before, after);
+  return rates &&
+    estimateCacheMissCost(rates, before, after, previousReusableTokens);
 }
 
 export function priceSessionDetail(session: SessionDetail): SessionDetail {

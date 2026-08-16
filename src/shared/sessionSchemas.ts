@@ -240,6 +240,8 @@ export const reasoningSettingSchema = z.object({
 
 export const modelCallSchema = z.object({
   id: z.string(),
+  previousCallID: z.string().optional(),
+  predecessorResolved: z.boolean().optional(),
   callWithinTurn: z.number().int().positive(),
   preview: z.string().optional(),
   responsePreview: z.string().optional(),

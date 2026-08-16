@@ -158,6 +158,8 @@ type CallRow = {
   reasoning_provenance: ReasoningSettingImport["provenance"] | null;
   source_order_start: number | null;
   branch_id: number;
+  previous_model_call_id: number | null;
+  predecessor_resolved: number;
 };
 
 const effectiveConversationTitle = `
@@ -1517,6 +1519,10 @@ export class ConversationRepository {
     }>;
 
     const groupedCalls = Map.groupBy(calls, (call) => call.turn_id);
+    const publicCallIDs = new Map(calls.map((call) => [
+      call.id,
+      call.source_call_id ?? String(call.id),
+    ]));
     const branchNumbers = this.#branchNumbers(row.id);
     const hydratedByCallID = new Map<number, ModelCall>();
     const turnOrder = [...groupedCalls.entries()].sort(([, a], [, b]) =>
@@ -1547,6 +1553,10 @@ export class ConversationRepository {
         );
         const hydrated: ModelCall = {
           id: call.source_call_id ?? String(call.id),
+          ...(call.previous_model_call_id === null ? {} : {
+            previousCallID: publicCallIDs.get(call.previous_model_call_id),
+          }),
+          predecessorResolved: Boolean(call.predecessor_resolved),
           callWithinTurn: call.call_within_turn ?? 1,
           preview: textPreview ??
             (previewTool !== undefined && toolTarget !== undefined
@@ -1705,6 +1715,20 @@ export class ConversationRepository {
   // presenting sibling continuations as a chronological activity feed.
   #conversationCalls(conversationID: number): CallRow[] {
     return this.db.prepare(`
+      WITH path_calls AS (
+        SELECT occurrence.*,
+          LAG(occurrence.model_call_id) OVER (
+            PARTITION BY occurrence.branch_id
+            ORDER BY occurrence.source_order_start, call.ordinal
+          ) AS previous_model_call_id
+        FROM artifact_model_call_occurrences occurrence
+        JOIN conversation_branches branch ON branch.id = occurrence.branch_id
+        JOIN conversation_model_calls call
+          ON call.id = occurrence.model_call_id
+        WHERE branch.conversation_id = ?
+          AND COALESCE(call.source_call_id, '')
+            NOT LIKE 'context-operation:%'
+      )
       SELECT call.id, call.turn_id, call.source_call_id, turn.source_turn_id,
         turn.ordinal AS turn_ordinal, turn.started_at AS turn_started_at,
         turn.reasoning_setting_name AS turn_reasoning_setting_name,
@@ -1723,14 +1747,15 @@ export class ConversationRepository {
         call.reasoning_setting_value, call.reasoning_source_field_path,
         call.reasoning_source_order, call.reasoning_observed_at,
         call.reasoning_provenance, occurrence.source_order_start,
-        occurrence.branch_id
-      FROM artifact_model_call_occurrences occurrence
-      JOIN conversation_branches branch ON branch.id = occurrence.branch_id
+        occurrence.branch_id,
+        CASE WHEN occurrence.occurrence_kind = 'executed'
+          THEN occurrence.previous_model_call_id ELSE NULL
+        END AS previous_model_call_id,
+        occurrence.occurrence_kind = 'executed' AS predecessor_resolved
+      FROM path_calls occurrence
       JOIN conversation_model_calls call ON call.id = occurrence.model_call_id
       JOIN conversation_turns turn ON turn.id = call.turn_id
-      WHERE branch.conversation_id = ?
-        AND occurrence.occurrence_kind <> 'copied'
-        AND COALESCE(call.source_call_id, '') NOT LIKE 'context-operation:%'
+      WHERE occurrence.occurrence_kind <> 'copied'
       ORDER BY call.started_at, occurrence.branch_id,
         occurrence.source_order_start, call.ordinal
     `).all(conversationID) as CallRow[];

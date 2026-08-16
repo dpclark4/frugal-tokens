@@ -192,8 +192,13 @@ Deno.test("conversation repository linearizes Codex branches without duplicating
     );
     const analyzed = analyzeSessionCache(detail);
     strictEqual(
+      analyzed.turns.find((turn) => turn.calls[0].id === "response-fork-a-3")
+        ?.calls[0].cacheAssessment?.status,
+      "hit",
+    );
+    strictEqual(
       analyzed.turns.at(-1)!.calls[0].cacheAssessment?.status,
-      "partial-hit",
+      "hit",
     );
     strictEqual(
       analyzed.turns[3].calls[0].contextEventsBefore?.[0]?.type,
@@ -221,6 +226,24 @@ Deno.test("conversation repository linearizes Codex branches without duplicating
         call.modelCallID === callIDs.get("response-fork-b-5")
       )?.previousComparableCall?.modelCallID,
       callIDs.get("response-original-4"),
+    );
+
+    const storedPredecessors = new Map(
+      (db.prepare(`
+        SELECT model_call_id, previous_model_call_id
+        FROM conversation_cache_misses
+      `).all() as Array<{
+        model_call_id: number;
+        previous_model_call_id: number | null;
+      }>).map((row) => [row.model_call_id, row.previous_model_call_id]),
+    );
+    strictEqual(
+      storedPredecessors.has(callIDs.get("response-fork-a-3")!),
+      false,
+    );
+    strictEqual(
+      storedPredecessors.has(callIDs.get("response-fork-b-5")!),
+      false,
     );
   } finally {
     db.close();

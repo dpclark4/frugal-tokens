@@ -145,6 +145,73 @@ Deno.test("detects exact linear cache losses without treating shrinkage as a mis
   );
 });
 
+Deno.test("uses observed cache state instead of assuming uncached input becomes reusable", () => {
+  function openAICall(
+    id: string,
+    startedAt: number,
+    cacheRead: number,
+    uncachedInput: number,
+  ) {
+    const value = call(id, cacheRead, undefined, "gpt-5.6", "openai");
+    value.startedAt = startedAt;
+    value.tokens = {
+      ...value.tokens,
+      uncachedInput,
+      freshPrompt: uncachedInput,
+      processed: cacheRead + uncachedInput + value.tokens.output,
+    };
+    return value;
+  }
+
+  const baseline = openAICall("baseline", 1, 9_984, 5_535);
+  const grown = openAICall("grown", 2, 15_104, 466);
+  const stable = openAICall("stable", 3, 15_104, 496);
+  strictEqual(assessCache(baseline, grown).status, "hit");
+  strictEqual(assessCache(grown, stable).status, "hit");
+  strictEqual(
+    analyzeCacheMisses([baseline, grown, stable]).length,
+    0,
+  );
+
+  const dropped = openAICall("dropped", 4, 9_984, 5_617);
+  const misses = analyzeCacheMisses([baseline, grown, dropped]);
+  strictEqual(misses.length, 1);
+  strictEqual(misses[0].previousCallID, "grown");
+  strictEqual(misses[0].status, "full-miss");
+  strictEqual(misses[0].missedTokens, 5_120);
+});
+
+Deno.test("uses explicit branch predecessors instead of flattened order", () => {
+  const root = call("root", 90_000, undefined, "gpt-5.6", "openai");
+  root.startedAt = 1;
+  const originalTail = call(
+    "original-tail",
+    20_000,
+    undefined,
+    "gpt-5.6",
+    "openai",
+  );
+  originalTail.startedAt = 2;
+  originalTail.previousCallID = "root";
+  originalTail.predecessorResolved = true;
+  const sibling = call("sibling", 80_000, undefined, "gpt-5.6", "openai");
+  sibling.startedAt = 3;
+  sibling.tokens = {
+    ...sibling.tokens,
+    uncachedInput: 10_000,
+    freshPrompt: 10_000,
+    processed: 90_010,
+  };
+  sibling.previousCallID = "root";
+  sibling.predecessorResolved = true;
+
+  const misses = analyzeCacheMisses([root, originalTail, sibling]);
+  strictEqual(misses.length, 2);
+  strictEqual(misses[1].callID, "sibling");
+  strictEqual(misses[1].previousCallID, "root");
+  strictEqual(misses[1].missedTokens, 10_000);
+});
+
 Deno.test("treats a return to the initial cache-read floor as a full miss", () => {
   const first = call("first", 10_000);
   const grown = call("grown", 15_000);
@@ -367,7 +434,7 @@ Deno.test("does not count opaque zero-context usage as a cache miss", () => {
   strictEqual(actual.turns[0].cacheSummary?.notComparable, 1);
 });
 
-Deno.test("tracks exact OpenAI cache losses across turns", () => {
+Deno.test("tracks an OpenAI full miss and observed cache recovery", () => {
   function openAICall(id: string, uncachedInput: number, cacheRead: number) {
     const value = call(id, cacheRead, undefined, "gpt-5.5", "openai");
     value.tokens = {
@@ -398,19 +465,19 @@ Deno.test("tracks exact OpenAI cache losses across turns", () => {
     actual.turns.flatMap((turn) =>
       turn.calls.map((item) => item.cacheAssessment?.status)
     ),
-    ["baseline", "full-miss", "partial-hit", "partial-hit"],
+    ["baseline", "full-miss", "not-comparable", "hit"],
   );
   deepStrictEqual(actual.turns[1].cacheSummary, {
     baseline: 0,
-    hits: 0,
-    partialHits: 2,
+    hits: 1,
+    partialHits: 0,
     fullMisses: 1,
-    notComparable: 0,
+    notComparable: 1,
     unknown: 0,
     compactionRelatedMisses: 0,
     ttlRelatedMisses: 0,
     thinkingChangeRelatedMisses: 0,
-    unexpectedMisses: 3,
+    unexpectedMisses: 1,
     totalCacheRead: 107_520,
     peakCacheRead: 54_272,
     totalNewInput: 55_906,
@@ -651,7 +718,7 @@ Deno.test("records a recent model switch as a non-unexpected full miss", () => {
     status: "full-miss",
     reason: "model-change",
     retainedRatio: 0,
-    previousReusableTokens: 80_100,
+    previousReusableTokens: 80_000,
   });
   strictEqual(actual.turns[1].cacheSummary?.fullMisses, 1);
   strictEqual(actual.turns[1].cacheSummary?.unexpectedMisses, 0);
@@ -724,7 +791,7 @@ Deno.test("attributes an expired model switch to TTL", () => {
     status: "full-miss",
     reason: "model-change",
     retainedRatio: 0,
-    previousReusableTokens: 80_100,
+    previousReusableTokens: 80_000,
     cause: "ttl",
   });
   strictEqual(actual.turns[1].cacheSummary?.fullMisses, 0);

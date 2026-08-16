@@ -12,7 +12,7 @@ import {
 } from "./sourceArtifactRepository.ts";
 import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
 
-const parserVersion = "opencode-conversation-5";
+const parserVersion = "opencode-conversation-7";
 const projectionName = "conversation";
 
 type AggregateRow = {
