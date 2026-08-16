@@ -24,14 +24,26 @@
   color: #fff;
 }
 
+.new-range-control select,
 .new-harness-control select {
-  min-width: 136px;
+  height: 34px;
   padding: 6px 28px 6px 8px;
   border: 1px solid #bdcac6;
   border-radius: 5px;
   background: transparent;
   color: var(--dashboard-muted);
   font: 10px var(--mono);
+}
+
+.new-range-control select {
+  width: 60px;
+  min-width: 60px;
+  padding-right: 20px;
+}
+
+.new-harness-control select {
+  width: 120px;
+  min-width: 120px;
 }
 
 .overview-action-button {
@@ -46,6 +58,52 @@
   background: transparent;
   color: var(--dashboard-muted);
   cursor: pointer;
+  text-decoration: none;
+}
+
+.overview-share {
+  position: relative;
+  flex: 0 0 34px;
+}
+
+.overview-share-menu {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 6px);
+  right: 0;
+  width: max-content;
+  min-width: 176px;
+  padding: 4px;
+  border: 1px solid #bdcac6;
+  border-radius: 5px;
+  background: var(--dashboard-panel);
+  box-shadow: 0 8px 24px rgba(31, 45, 42, .14);
+}
+
+.overview-share-menu button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--dashboard-ink);
+  cursor: pointer;
+  font: 11px var(--mono);
+  text-align: left;
+}
+
+.overview-share-menu button:hover:not(:disabled),
+.overview-share-menu button:focus-visible {
+  background: #e4e9e6;
+  outline: none;
+}
+
+.overview-share-menu button:disabled {
+  cursor: wait;
+  opacity: .5;
 }
 
 .overview-action-button:hover:not(:disabled),
