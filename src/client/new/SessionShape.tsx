@@ -57,6 +57,20 @@ function position(value: number, minimum: number, maximum: number) {
     90 * Math.max(0, Math.min(1, (value - minimum) / (maximum - minimum)));
 }
 
+function ShapeLoadingRows() {
+  return Object.values(metricLabels).map((label) => (
+    <tr className="shape-loading-row" key={label}>
+      <th scope="row">{label}</th>
+      <td className="shape-p50">
+        <span className="dashboard-loading-bar" />
+      </td>
+      <td className="shape-distribution-cell">
+        <span className="dashboard-loading-bar shape-loading-distribution" />
+      </td>
+    </tr>
+  ));
+}
+
 function DistributionStrip({
   metric,
   multiDaySessionRate,
@@ -291,16 +305,18 @@ export function SessionShape({
               <th scope="col">Distribution</th>
             </tr>
           </thead>
-          <tbody>
-            {data?.metrics.map((metric) => (
-              <DistributionStrip
-                metric={metric}
-                multiDaySessionRate={data.multiDaySessionRate}
-                initialInputUsage={initialInputUsage}
-                initialInputError={initialInputError}
-                key={metric.key}
-              />
-            ))}
+          <tbody aria-busy={!data && !error}>
+            {data
+              ? data.metrics.map((metric) => (
+                <DistributionStrip
+                  metric={metric}
+                  multiDaySessionRate={data.multiDaySessionRate}
+                  initialInputUsage={initialInputUsage}
+                  initialInputError={initialInputError}
+                  key={metric.key}
+                />
+              ))
+              : !error && <ShapeLoadingRows />}
           </tbody>
         </table>
       </div>

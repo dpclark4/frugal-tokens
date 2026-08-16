@@ -309,14 +309,31 @@ export function CacheOverview({
             <CacheMissTable metrics={metrics} />
           </>
         )
+        : error
+        ? <p className="cache-overview-message error">{error}</p>
         : (
-          <p
-            className={error
-              ? "cache-overview-message error"
-              : "cache-overview-message"}
+          <div
+            className="cache-overview-loading"
+            role="status"
+            aria-label="Loading cache misses"
           >
-            {error ?? "Loading…"}
-          </p>
+            <div className="cache-loading-summary" aria-hidden="true">
+              {Array.from(
+                { length: 4 },
+                (_, index) => (
+                  <span className="dashboard-loading-bar" key={index} />
+                ),
+              )}
+            </div>
+            <div className="cache-loading-table" aria-hidden="true">
+              {Array.from(
+                { length: 8 },
+                (_, index) => (
+                  <span className="dashboard-loading-bar" key={index} />
+                ),
+              )}
+            </div>
+          </div>
         )}
     </section>
   );

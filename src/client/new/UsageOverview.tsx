@@ -28,10 +28,12 @@ export function UsageOverview({ data }: { data?: ActivityOverviewResponse }) {
   const costPerMillion = summary && summary.processedInput > 0
     ? summary.spend / (summary.processedInput / 1_000_000)
     : undefined;
-  const loading = data ? "—" : "Loading…";
-
   return (
-    <section className="signal-summary" aria-labelledby="signal-summary-title">
+    <section
+      className={`signal-summary${data ? "" : " is-loading"}`}
+      aria-labelledby="signal-summary-title"
+      aria-busy={!data}
+    >
       <header className="usage-overview-header">
         <h2 id="signal-summary-title">Usage</h2>
       </header>
@@ -69,9 +71,7 @@ export function UsageOverview({ data }: { data?: ActivityOverviewResponse }) {
           label="Cache-miss cost"
           value={summary ? currency.format(summary.spendAtMissCalls) : "—"}
           secondary={summary
-            ? `${
-              share(summary.spendAtMissCalls, summary.spend)
-            } of spend`
+            ? `${share(summary.spendAtMissCalls, summary.spend)} of spend`
             : "Loading…"}
           tier="secondary"
         />

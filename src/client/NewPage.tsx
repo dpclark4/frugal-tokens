@@ -62,15 +62,44 @@ function calendarDate(
   return date && date >= range.start && date <= range.end ? date : range.end;
 }
 
-function WorkRhythmLoading() {
+function WorkRhythmLoading({ failed = false }: { failed?: boolean }) {
   return (
-    <div
+    <DashboardSectionLoading
+      title="Estimated work"
       className="work-rhythm-loading"
+      failed={failed}
+    />
+  );
+}
+
+function DashboardSectionLoading({
+  title,
+  className,
+  failed = false,
+}: {
+  title: string;
+  className: string;
+  failed?: boolean;
+}) {
+  return (
+    <section
+      className={`dashboard-section-loading ${className}${
+        failed ? " is-error" : ""
+      }`}
       role="status"
-      aria-label="Loading estimated work"
+      aria-label={failed
+        ? `${title} unavailable`
+        : `Loading ${title.toLowerCase()}`}
     >
-      <span aria-hidden="true" />
-    </div>
+      <header>
+        <h2>{title}</h2>
+      </header>
+      <div className="dashboard-loading-canvas" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </div>
+    </section>
   );
 }
 
@@ -308,51 +337,77 @@ export function NewPage() {
                   />
                 </Suspense>
               )
-              : data && !workRhythmError && <WorkRhythmLoading />}
+              : <WorkRhythmLoading failed={Boolean(workRhythmError)} />}
           </div>
 
-          {data && (
-            <Suspense fallback={null}>
-              <SpendComposition data={data.spendComposition} />
-            </Suspense>
-          )}
-
-          {data && (
-            <>
-              <div className="new-placeholder-grid">
-                <CacheOverview
-                  range={search.range}
-                  harness={search.harness}
-                  onDataChange={(cacheMisses) =>
-                    setLoadedCacheMisses(
-                      cacheMisses
-                        ? {
-                          range: search.range,
-                          harness: search.harness,
-                          data: cacheMisses,
-                        }
-                        : undefined,
-                    )}
-                />
-                {workRhythmData && (
-                  <Suspense fallback={null}>
-                    <SessionDiagnostics
-                      data={workRhythmData.sessionDiagnostics}
-                    />
-                  </Suspense>
-                )}
-              </div>
-
-              <RecentSessions
-                harness={search.harness}
-                harnesses={harnesses}
-                misses={search.misses}
-                onHarnessChange={(harness) => update({ harness })}
-                onMissesChange={(misses) => update({ misses })}
-                onLoadSettled={finishOverviewFilterTransition}
+          {data
+            ? (
+              <Suspense
+                fallback={
+                  <DashboardSectionLoading
+                    title="Spend"
+                    className="spend-composition-loading"
+                  />
+                }
+              >
+                <SpendComposition data={data.spendComposition} />
+              </Suspense>
+            )
+            : (
+              <DashboardSectionLoading
+                title="Spend"
+                className="spend-composition-loading"
+                failed={Boolean(error)}
               />
-            </>
-          )}
+            )}
+
+          <div className="new-placeholder-grid">
+            <CacheOverview
+              range={search.range}
+              harness={search.harness}
+              onDataChange={(cacheMisses) =>
+                setLoadedCacheMisses(
+                  cacheMisses
+                    ? {
+                      range: search.range,
+                      harness: search.harness,
+                      data: cacheMisses,
+                    }
+                    : undefined,
+                )}
+            />
+            {workRhythmData
+              ? (
+                <Suspense
+                  fallback={
+                    <DashboardSectionLoading
+                      title="Session cost vs. active time"
+                      className="new-placeholder-section diagnostics-loading"
+                    />
+                  }
+                >
+                  <SessionDiagnostics
+                    data={workRhythmData.sessionDiagnostics}
+                  />
+                </Suspense>
+              )
+              : (
+                <DashboardSectionLoading
+                  title="Session cost vs. active time"
+                  className="new-placeholder-section diagnostics-loading"
+                  failed={Boolean(workRhythmError)}
+                />
+              )}
+          </div>
+
+          <RecentSessions
+            harness={search.harness}
+            harnesses={harnesses}
+            misses={search.misses}
+            onHarnessChange={(harness) => update({ harness })}
+            onMissesChange={(misses) => update({ misses })}
+            onLoadSettled={finishOverviewFilterTransition}
+          />
         </section>
       </div>
     </main>

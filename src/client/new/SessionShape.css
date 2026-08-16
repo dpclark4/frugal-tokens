@@ -180,6 +180,20 @@
   text-align: left;
 }
 
+.shape-loading-row .dashboard-loading-bar {
+  height: 12px;
+}
+
+.shape-loading-row .shape-p50 .dashboard-loading-bar {
+  width: 58%;
+  margin-left: auto;
+}
+
+.shape-loading-distribution {
+  width: 90%;
+  margin-inline: auto;
+}
+
 .shape-metric-label {
   display: grid;
   min-width: 0;
