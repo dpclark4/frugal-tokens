@@ -11,14 +11,6 @@ Session listing is database-paginated over root conversations. Conversation
 rollups and cache-miss materializations serve list enrichment, overview, usage,
 cost, shape, and cache analytics without reading the removed session schema.
 
-## Measured checkpoint
-
-The conversation migration recorded representative warm timings of roughly
-6–12 ms for overview, 63–123 ms for 30-day usage, 61–118 ms for 30-day cache
-misses, and 27–45 ms for the first 25 sessions. A synchronized unchanged pass
-completed in about 0.58 seconds on that development corpus. These measurements
-are historical reference points, not performance guarantees.
-
 ## Query risks
 
 - `ConversationRepository.listUsageCalls` constructs conversation/subagent and

@@ -46,6 +46,11 @@ last successfully materialized conversation when parsing or writing fails.
 Content storage remains privacy-bounded: entries and tool events store metadata
 and bounded previews rather than complete raw harness records.
 
+Generated titles are stored on source artifacts in
+`source_sessions.generated_title`. `title_generation_runs` records generation
+attempts and usage, while `app_settings` stores the associated application
+configuration.
+
 ## Historical schema
 
 The initial `sessions`, `turns`, `model_calls`, `models`, content, context,
