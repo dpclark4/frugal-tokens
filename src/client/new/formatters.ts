@@ -1,5 +1,10 @@
+export const dashboardChartFont = '"SFMono-Regular", Consolas, monospace';
+export const dashboardChartLabelSize = 10;
+
 export const integer = new Intl.NumberFormat("en-US");
-export const decimal = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
+export const decimal = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 1,
+});
 export const oneDecimal = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 1,
   maximumFractionDigits: 1,

@@ -13,7 +13,7 @@ import {
 } from "recharts";
 import type { WorkRhythmOverviewResponse } from "../../shared/sessionSchemas.ts";
 import { harnessName } from "../harness.ts";
-import { compact, currency } from "./formatters.ts";
+import { compact, currency, dashboardChartLabelSize } from "./formatters.ts";
 import { saveOverviewReturnScroll } from "./overviewReturnScroll.ts";
 import "./SessionDiagnostics.css";
 
@@ -291,7 +291,11 @@ export function SessionDiagnostics({ data }: { data: SessionDiagnosticsData }) {
                   tickLine={false}
                   axisLine={false}
                   minTickGap={24}
-                  tick={{ fill: "#697572", fontFamily: chartMono, fontSize: 9 }}
+                  tick={{
+                    fill: "#697572",
+                    fontFamily: chartMono,
+                    fontSize: dashboardChartLabelSize,
+                  }}
                 >
                   <Label
                     value="Estimated active time"
@@ -300,7 +304,7 @@ export function SessionDiagnostics({ data }: { data: SessionDiagnosticsData }) {
                     style={{
                       fill: "#697572",
                       fontFamily: chartMono,
-                      fontSize: 9,
+                      fontSize: dashboardChartLabelSize,
                     }}
                   />
                 </XAxis>
@@ -314,7 +318,11 @@ export function SessionDiagnostics({ data }: { data: SessionDiagnosticsData }) {
                   tickLine={false}
                   axisLine={false}
                   width={58}
-                  tick={{ fill: "#697572", fontFamily: chartMono, fontSize: 9 }}
+                  tick={{
+                    fill: "#697572",
+                    fontFamily: chartMono,
+                    fontSize: dashboardChartLabelSize,
+                  }}
                 >
                   <Label
                     value={`${metricLabel} · log scale`}
@@ -324,7 +332,7 @@ export function SessionDiagnostics({ data }: { data: SessionDiagnosticsData }) {
                     style={{
                       fill: "#697572",
                       fontFamily: chartMono,
-                      fontSize: 9,
+                      fontSize: dashboardChartLabelSize,
                     }}
                   />
                 </YAxis>

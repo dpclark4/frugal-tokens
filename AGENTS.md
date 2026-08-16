@@ -58,6 +58,49 @@ Conserve tool calls and tokens during implementation.
 - Preserve information density by removing redundancy before reducing type
   size, and do not truncate primary labels or values.
 
+## Dashboard Typography And Tooltips
+
+Treat the homepage dashboard typography as a small role-based design system.
+Use the semantic custom properties defined on `.new-page` in
+`src/client/NewPage.css` rather than introducing one-off sizes.
+
+- Use the sans-serif application face for page and section headings. Use
+  `var(--mono)` for metrics, tables, controls, chart labels, annotations, and
+  tooltips. Use tabular numerals for aligned numeric data.
+- Apply `--dashboard-type-section-title` (`23px`) to every primary dashboard
+  section heading, including sections that reuse older shared components.
+- Apply `--dashboard-type-summary` (`21px`) to compact section totals. Reserve
+  `--dashboard-type-metric-primary` (`32px`) and
+  `--dashboard-type-metric-secondary` (`24px`) for the Usage hierarchy; do not
+  turn ordinary values into hero metrics.
+- Apply `--dashboard-type-detail` (`16px`) to selected-day or similarly scoped
+  detail metrics, `--dashboard-type-table` (`12px`) to table values and metric
+  names, and `--dashboard-type-tooltip-value` (`11px`) to emphasized tooltip
+  values.
+- Apply `--dashboard-type-label` (`10px`) to controls, table headings,
+  subsection headings, chart axes, tooltip body text, and supporting metadata.
+  Apply `--dashboard-type-micro` (`9px`) only to dense annotations such as
+  chart callouts, calendar weekdays, and tertiary paths. Do not use dashboard
+  text smaller than `9px`.
+- Keep uppercase mono labels concise, semibold, and lightly tracked. Do not use
+  uppercase treatment for prose, values, session names, or tooltip content.
+- Use `dashboardChartFont` and `dashboardChartLabelSize` from
+  `src/client/new/formatters.ts` for Recharts axes. Keep exceptional chart
+  annotations at the micro size instead of defining another axis size.
+- Dashboard tooltips should use the established dark treatment: dashboard ink
+  background, subtle light border, `5px` radius, compact shadow and padding,
+  `10px` body text, and `11px` white titles or emphasized values. Use muted
+  blue-green text for labels and secondary metadata, and a low-contrast divider
+  when separating the header from rows.
+- Match tooltip structure and typography across charts before adding a local
+  variant. A variant may change width or layout to fit its data, but not the
+  core color, type scale, border, radius, or emphasis hierarchy.
+- Expose custom hover information on keyboard focus when the underlying element
+  is focusable. Tooltips must clarify data rather than carry actions or repeat
+  visible labels unnecessarily.
+- Responsive rules may reduce hero metrics or rearrange content, but should not
+  create new typography roles or reduce labels below the micro size.
+
 ## Commit Messages
 
 When asked to commit, use a concise imperative title followed by a factual

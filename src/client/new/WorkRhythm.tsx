@@ -22,11 +22,16 @@ import type {
 } from "./workRhythmTypes.ts";
 import { displayModelName } from "../../shared/modelNames.ts";
 import { harnessIcon } from "../harness.ts";
-import { compact, currency, integer } from "./formatters.ts";
+import {
+  compact,
+  currency,
+  dashboardChartFont,
+  dashboardChartLabelSize,
+  integer,
+} from "./formatters.ts";
 import { saveOverviewReturnScroll } from "./overviewReturnScroll.ts";
 import "./WorkRhythm.css";
 
-const chartMono = '"SFMono-Regular", Consolas, monospace';
 const readableDate = new Intl.DateTimeFormat(undefined, {
   weekday: "long",
   month: "long",
@@ -151,7 +156,11 @@ function WeekdayChart({ data }: { data: WorkRhythmData["weekdayActivity"] }) {
             width={40}
             axisLine={false}
             tickLine={false}
-            tick={{ fill: "#52615d", fontSize: 11, fontFamily: chartMono }}
+            tick={{
+              fill: "#52615d",
+              fontSize: dashboardChartLabelSize,
+              fontFamily: dashboardChartFont,
+            }}
           />
           <Tooltip
             cursor={{ fill: "rgba(15, 113, 105, .045)" }}
@@ -212,7 +221,11 @@ function HourlyChart({ data }: { data: WorkRhythmData["hourlyActivity"] }) {
             tickFormatter={formatHourTick}
             axisLine={false}
             tickLine={false}
-            tick={{ fill: "#6f7d78", fontSize: 11, fontFamily: chartMono }}
+            tick={{
+              fill: "#6f7d78",
+              fontSize: dashboardChartLabelSize,
+              fontFamily: dashboardChartFont,
+            }}
           />
           <YAxis hide domain={[0, "dataMax"]} />
           <Tooltip

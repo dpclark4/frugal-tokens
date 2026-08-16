@@ -9,9 +9,13 @@
   box-shadow: none;
 }
 
+.new-recent-sessions .panel-heading h2 {
+  font-size: var(--dashboard-type-section-title);
+}
+
 .new-recent-sessions .session-control-label {
   color: var(--dashboard-muted);
-  font-size: 9px;
+  font-size: var(--dashboard-type-label);
   letter-spacing: .09em;
 }
 

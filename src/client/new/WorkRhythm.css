@@ -36,14 +36,14 @@
 
 .work-rhythm-header h2 {
   margin: 0;
-  font-size: 23px;
+  font-size: var(--dashboard-type-section-title);
   letter-spacing: -.035em;
 }
 
 .work-rhythm-header > strong {
   padding-top: 3px;
   color: var(--dashboard-signal);
-  font: 650 21px/1 var(--mono);
+  font: 650 var(--dashboard-type-summary)/1 var(--mono);
   font-variant-numeric: tabular-nums;
   letter-spacing: -.04em;
   white-space: nowrap;
@@ -72,7 +72,7 @@
 .expensive-sessions h4 {
   margin: 0;
   color: var(--dashboard-signal);
-  font: 650 10px var(--mono);
+  font: 650 var(--dashboard-type-label) var(--mono);
   letter-spacing: .09em;
   text-transform: uppercase;
 }
@@ -103,7 +103,7 @@
   width: 68px;
   grid-template-rows: repeat(7, 1fr);
   color: #35433f;
-  font: 600 11px var(--mono);
+  font: 600 var(--dashboard-type-tooltip-value) var(--mono);
   font-variant-numeric: tabular-nums;
   pointer-events: none;
   text-align: right;
@@ -125,18 +125,18 @@
   background: var(--dashboard-ink);
   box-shadow: 0 8px 20px rgba(32, 53, 48, .16);
   color: #dce8e4;
-  font: 10px/1.4 var(--mono);
+  font: var(--dashboard-type-label)/1.4 var(--mono);
 }
 
 .rhythm-tooltip strong {
   margin-bottom: 2px;
   color: #fff;
-  font-size: 11px;
+  font-size: var(--dashboard-type-tooltip-value);
 }
 
 .hourly-peak {
   color: #3d514d;
-  font: 9px var(--mono);
+  font: var(--dashboard-type-micro) var(--mono);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -163,7 +163,7 @@
 
 .day-explorer-header time {
   color: #35433f;
-  font: 600 11px var(--mono);
+  font: 600 var(--dashboard-type-tooltip-value) var(--mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -189,7 +189,7 @@
 
 .rhythm-calendar-nav strong {
   color: #35433f;
-  font-size: 11px;
+  font-size: var(--dashboard-type-tooltip-value);
   text-align: center;
 }
 
@@ -225,7 +225,7 @@
 .rhythm-calendar-weekdays {
   margin-bottom: 3px;
   color: #788580;
-  font-size: 9px;
+  font-size: var(--dashboard-type-micro);
   text-align: center;
 }
 
@@ -248,7 +248,7 @@
   background: transparent;
   color: #394641;
   cursor: pointer;
-  font: 11px var(--mono);
+  font: var(--dashboard-type-tooltip-value) var(--mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -325,7 +325,7 @@
 
 .rhythm-day-metrics strong {
   color: var(--dashboard-ink);
-  font: 650 16px/1 var(--mono);
+  font: 650 var(--dashboard-type-detail)/1 var(--mono);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -333,7 +333,7 @@
 .rhythm-day-metrics span {
   overflow: hidden;
   color: #65736e;
-  font: 9px/1.1 var(--mono);
+  font: var(--dashboard-type-micro)/1.1 var(--mono);
   letter-spacing: .035em;
   text-overflow: ellipsis;
   text-transform: uppercase;
@@ -351,7 +351,7 @@
 
 .expensive-sessions-heading > span {
   color: #74817c;
-  font: 9px var(--mono);
+  font: var(--dashboard-type-micro) var(--mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -402,14 +402,14 @@
 .session-row-copy strong {
   overflow: hidden;
   color: #34413d;
-  font: 600 11px var(--mono);
+  font: 600 var(--dashboard-type-tooltip-value) var(--mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .session-row-copy small {
   color: #74817c;
-  font: 10px var(--mono);
+  font: var(--dashboard-type-label) var(--mono);
   white-space: nowrap;
 }
 
@@ -450,7 +450,7 @@
   background: var(--dashboard-ink);
   box-shadow: 0 8px 20px rgba(32, 53, 48, .16);
   color: #dce8e4;
-  font: 10px/1.35 var(--mono);
+  font: var(--dashboard-type-label)/1.35 var(--mono);
   opacity: 0;
   pointer-events: none;
   white-space: normal;
@@ -465,7 +465,7 @@
 .session-spend-tooltip strong {
   flex: none;
   color: #fff;
-  font: 650 10px var(--mono);
+  font: 650 var(--dashboard-type-label) var(--mono);
 }
 
 .session-spend-tooltip em {
@@ -485,7 +485,7 @@
   display: grid;
   gap: 2px;
   color: var(--dashboard-ink);
-  font: 650 11px var(--mono);
+  font: 650 var(--dashboard-type-tooltip-value) var(--mono);
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
@@ -497,7 +497,7 @@
 .expensive-sessions > p {
   margin: 12px 0 0;
   color: var(--dashboard-muted);
-  font: 10px var(--mono);
+  font: var(--dashboard-type-label) var(--mono);
 }
 
 .range-structure-summary {
@@ -508,7 +508,7 @@
   padding-top: 8px;
   border-top: 1px solid #e4ebe8;
   color: #596762;
-  font: 10px/1.25 var(--mono);
+  font: var(--dashboard-type-label)/1.25 var(--mono);
   font-variant-numeric: tabular-nums;
 }
 
@@ -521,7 +521,7 @@
 .range-structure-summary h4 {
   margin: 0;
   color: var(--dashboard-signal);
-  font: 650 9px var(--mono);
+  font: 650 var(--dashboard-type-label) var(--mono);
   letter-spacing: .08em;
   text-transform: uppercase;
 }
@@ -601,7 +601,7 @@
   position: absolute;
   bottom: 5px;
   color: #73807c;
-  font: 8px var(--mono);
+  font: var(--dashboard-type-micro) var(--mono);
   transform: translateX(-50%);
   white-space: nowrap;
 }
@@ -750,7 +750,7 @@
   background: var(--dashboard-ink, #14201e);
   box-shadow: 0 8px 20px rgba(32, 53, 48, .22);
   color: #dce8e4;
-  font: 10px/1.4 var(--mono);
+  font: var(--dashboard-type-label, 10px)/1.4 var(--mono);
   opacity: 0;
   pointer-events: none;
   transform: translateY(-50%);
@@ -759,7 +759,7 @@
 .timeline-session-tooltip strong {
   overflow: hidden;
   color: #fff;
-  font: 600 11px var(--mono);
+  font: 600 var(--dashboard-type-tooltip-value, 11px) var(--mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -779,7 +779,7 @@
 .timeline-empty {
   margin: 8px 0 0 28px;
   color: var(--dashboard-muted);
-  font: 9px var(--mono);
+  font: var(--dashboard-type-micro) var(--mono);
 }
 
 .timeline-summary {

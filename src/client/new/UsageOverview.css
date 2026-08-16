@@ -10,7 +10,7 @@
 .usage-overview-header h2 {
   margin: 0;
   color: var(--dashboard-ink);
-  font-size: 23px;
+  font-size: var(--dashboard-type-section-title);
   line-height: normal;
   letter-spacing: -.035em;
 }
@@ -44,7 +44,7 @@
 .usage-metric-label {
   min-height: 2.4em;
   color: var(--dashboard-signal);
-  font: 650 10px/1.2 var(--mono);
+  font: 650 var(--dashboard-type-label)/1.2 var(--mono);
   letter-spacing: .09em;
   text-transform: uppercase;
 }
@@ -58,13 +58,13 @@
 }
 
 .usage-metric-primary > strong {
-  font-size: 32px;
+  font-size: var(--dashboard-type-metric-primary);
   font-weight: 650;
   line-height: 1.05;
 }
 
 .usage-metric-secondary > strong {
-  font-size: 24px;
+  font-size: var(--dashboard-type-metric-secondary);
   font-weight: 620;
   line-height: 1.08;
 }
@@ -72,7 +72,7 @@
 .usage-metric > small {
   overflow: hidden;
   color: #74817c;
-  font: 10px/1.4 var(--mono);
+  font: var(--dashboard-type-label)/1.4 var(--mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }

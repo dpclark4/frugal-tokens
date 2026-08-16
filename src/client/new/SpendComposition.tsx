@@ -11,11 +11,14 @@ import {
 } from "recharts";
 import type { SpendCompositionData } from "../../shared/sessionSchemas.ts";
 import { displayModelName } from "../../shared/modelNames.ts";
-import { compact, currency } from "./formatters.ts";
+import {
+  compact,
+  currency,
+  dashboardChartFont,
+  dashboardChartLabelSize,
+} from "./formatters.ts";
 import { minorModelColor, modelColor, otherModelColor } from "./modelColors.ts";
 import "./SpendComposition.css";
-
-const chartMono = '"SFMono-Regular", Consolas, monospace';
 
 type Metric = "spend" | "tokens";
 type CompositionModel = SpendCompositionData["models"][number];
@@ -317,7 +320,11 @@ function CompositionChart(
             minTickGap={42}
             axisLine={false}
             tickLine={false}
-            tick={{ fill: "#73807c", fontSize: 9, fontFamily: chartMono }}
+            tick={{
+              fill: "#73807c",
+              fontSize: dashboardChartLabelSize,
+              fontFamily: dashboardChartFont,
+            }}
           />
           <YAxis
             yAxisId="volume"
@@ -327,7 +334,11 @@ function CompositionChart(
               : compact.format(Number(value))}
             axisLine={false}
             tickLine={false}
-            tick={{ fill: "#73807c", fontSize: 9, fontFamily: chartMono }}
+            tick={{
+              fill: "#73807c",
+              fontSize: dashboardChartLabelSize,
+              fontFamily: dashboardChartFont,
+            }}
           />
           <YAxis
             yAxisId="rate"
@@ -339,8 +350,8 @@ function CompositionChart(
             tick={showRate
               ? {
                 fill: "#35433f",
-                fontSize: 9,
-                fontFamily: chartMono,
+                fontSize: dashboardChartLabelSize,
+                fontFamily: dashboardChartFont,
               }
               : false}
           />

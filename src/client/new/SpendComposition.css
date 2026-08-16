@@ -31,7 +31,7 @@
 
 .composition-header h2 {
   margin: 0;
-  font-size: 23px;
+  font-size: var(--dashboard-type-section-title);
   letter-spacing: -.035em;
 }
 
@@ -46,7 +46,7 @@
   align-items: center;
   gap: 6px;
   color: #566560;
-  font: 10px var(--mono);
+  font: var(--dashboard-type-label) var(--mono);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -68,7 +68,7 @@
 
 .composition-summary strong {
   color: var(--dashboard-ink);
-  font-size: 21px;
+  font-size: var(--dashboard-type-summary);
   line-height: 1;
   letter-spacing: -.04em;
 }
@@ -104,7 +104,7 @@
   padding: 0 6px 5px;
   border-bottom: 1px solid #e4ebe8;
   color: #73807c;
-  font: 10px var(--mono);
+  font: var(--dashboard-type-label) var(--mono);
   letter-spacing: .07em;
   text-transform: uppercase;
 }
@@ -147,7 +147,7 @@
 .composition-model-name strong {
   overflow: hidden;
   color: #34413d;
-  font-size: 12px;
+  font-size: var(--dashboard-type-table);
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -174,14 +174,14 @@
   z-index: 1;
   padding-left: 6px;
   color: #2d3a36;
-  font-size: 12px;
+  font-size: var(--dashboard-type-table);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
 .composition-rate {
   color: #34413d;
-  font: 650 12px var(--mono);
+  font: 650 var(--dashboard-type-table) var(--mono);
   font-variant-numeric: tabular-nums;
   text-align: right;
   white-space: nowrap;
@@ -210,7 +210,7 @@
   border: 0;
   background: transparent;
   color: #697672;
-  font: 10px var(--mono);
+  font: var(--dashboard-type-label) var(--mono);
   cursor: pointer;
 }
 
@@ -245,7 +245,7 @@
   background: var(--dashboard-ink);
   box-shadow: 0 8px 20px rgba(32, 53, 48, .16);
   color: #dce8e4;
-  font: 10px/1.35 var(--mono);
+  font: var(--dashboard-type-label)/1.35 var(--mono);
 }
 
 .composition-tooltip header,
@@ -265,7 +265,7 @@
 
 .composition-tooltip header strong {
   color: #fff;
-  font-size: 11px;
+  font-size: var(--dashboard-type-tooltip-value);
 }
 
 .composition-tooltip > div > span {
@@ -276,14 +276,14 @@
 
 .composition-tooltip > div > strong {
   color: #fff;
-  font-size: 11px;
+  font-size: var(--dashboard-type-tooltip-value);
   font-variant-numeric: tabular-nums;
 }
 
 .composition-tooltip small {
   min-width: 55px;
   color: #aebfba;
-  font-size: 10px;
+  font-size: var(--dashboard-type-label);
   text-align: right;
 }
 
@@ -291,7 +291,7 @@
   margin: 0;
   padding: 32px 22px;
   color: var(--dashboard-muted);
-  font: 10px var(--mono);
+  font: var(--dashboard-type-label) var(--mono);
 }
 
 @media (max-width: 1120px) {

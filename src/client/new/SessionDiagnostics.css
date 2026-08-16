@@ -24,7 +24,7 @@
   border: 0;
   background: transparent;
   color: #697672;
-  font: 10px var(--mono);
+  font: var(--dashboard-type-label) var(--mono);
   white-space: nowrap;
   cursor: pointer;
 }
@@ -47,13 +47,13 @@
   margin: 0;
   padding: 24px 22px;
   color: var(--dashboard-muted);
-  font: 10px var(--mono);
+  font: var(--dashboard-type-label) var(--mono);
 }
 
 .session-diagnostics-chart .recharts-cartesian-axis-tick-value,
 .session-diagnostics-chart .recharts-label {
   fill: #697572;
-  font: 9px var(--mono);
+  font: var(--dashboard-type-label) var(--mono);
 }
 
 .session-diagnostics-point {
@@ -90,7 +90,7 @@
 
 .session-diagnostics-point text {
   fill: #29433f;
-  font: 9px var(--mono);
+  font: var(--dashboard-type-micro) var(--mono);
   font-weight: 700;
   paint-order: stroke;
   pointer-events: none;
@@ -100,15 +100,23 @@
 }
 
 .session-diagnostics-tooltip {
-  min-width: 205px;
-  max-width: 280px;
+  min-width: 245px;
+  max-width: 300px;
+  padding: 10px 12px;
+  border: 1px solid #b7c7c2;
+  border-radius: 5px;
+  background: var(--dashboard-ink);
+  box-shadow: 0 8px 20px rgba(32, 53, 48, .16);
+  color: #dce8e4;
+  font: var(--dashboard-type-label)/1.35 var(--mono);
 }
 
 .session-diagnostics-tooltip > p {
   overflow: hidden;
   margin-bottom: 3px;
-  color: var(--dashboard-ink);
-  font-weight: 600;
+  color: #fff;
+  font-size: var(--dashboard-type-tooltip-value);
+  font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -116,7 +124,7 @@
 .session-diagnostics-tooltip-model {
   display: block;
   overflow: hidden;
-  color: var(--dashboard-muted);
+  color: #aebfba;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -124,7 +132,9 @@
 .session-diagnostics-tooltip dl {
   display: grid;
   gap: 5px;
-  margin: 14px 0 0;
+  margin: 12px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, .16);
 }
 
 .session-diagnostics-tooltip dl div {
@@ -134,12 +144,13 @@
 }
 
 .session-diagnostics-tooltip dt {
-  color: #596762;
+  color: #b7cbc5;
 }
 
 .session-diagnostics-tooltip dd {
   margin: 0;
-  color: var(--dashboard-ink);
+  color: #fff;
+  font-size: var(--dashboard-type-tooltip-value);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }

@@ -32,7 +32,7 @@
   border-radius: 5px;
   background: transparent;
   color: var(--dashboard-muted);
-  font: 10px var(--mono);
+  font: var(--dashboard-type-label) var(--mono);
 }
 
 .new-range-control select {
@@ -91,7 +91,7 @@
   background: transparent;
   color: var(--dashboard-ink);
   cursor: pointer;
-  font: 11px var(--mono);
+  font: var(--dashboard-type-tooltip-value) var(--mono);
   text-align: left;
 }
 

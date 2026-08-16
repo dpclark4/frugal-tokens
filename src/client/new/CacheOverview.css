@@ -28,7 +28,7 @@
 .cache-summary-metric > span {
   min-height: 1.2em;
   color: var(--dashboard-signal);
-  font: 650 9px/1.2 var(--mono);
+  font: 650 var(--dashboard-type-micro)/1.2 var(--mono);
   letter-spacing: .09em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -36,7 +36,7 @@
 
 .cache-summary-metric > strong {
   color: var(--dashboard-ink);
-  font: 650 20px/1.05 var(--mono);
+  font: 650 var(--dashboard-type-summary)/1.05 var(--mono);
   font-variant-numeric: tabular-nums;
   letter-spacing: -.045em;
   white-space: nowrap;
@@ -64,7 +64,7 @@
 .cache-overview-table thead th {
   height: 28px;
   color: #73807c;
-  font: 11px var(--mono);
+  font: var(--dashboard-type-label) var(--mono);
   font-weight: 500;
   letter-spacing: .07em;
   text-transform: uppercase;
@@ -82,12 +82,12 @@
 
 .cache-overview-table tbody th {
   color: #34413d;
-  font: 650 12px var(--mono);
+  font: 650 var(--dashboard-type-table) var(--mono);
 }
 
 .cache-overview-table tbody td {
   color: #35433f;
-  font: 650 12px var(--mono);
+  font: 650 var(--dashboard-type-table) var(--mono);
 }
 
 .cache-overview-table .cache-scope-row th,
@@ -118,7 +118,7 @@
 
 .cache-overview-table .cache-cause-child th {
   color: #74817c;
-  font-size: 11px;
+  font-size: var(--dashboard-type-tooltip-value);
   font-weight: 500;
 }
 
@@ -132,7 +132,7 @@
 
 .cache-overview-table .cache-cause-child td {
   color: #65736e;
-  font-size: 11px;
+  font-size: var(--dashboard-type-tooltip-value);
   font-weight: 500;
 }
 
@@ -144,7 +144,7 @@
   margin: 0;
   padding: 24px 22px;
   color: var(--dashboard-muted);
-  font: 10px var(--mono);
+  font: var(--dashboard-type-label) var(--mono);
 }
 
 .cache-overview-message.error {

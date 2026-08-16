@@ -7,6 +7,15 @@
   --dashboard-rule: #d4ddda;
   --dashboard-signal: #0f7169;
   --dashboard-spend: #d15b38;
+  --dashboard-type-section-title: 23px;
+  --dashboard-type-summary: 21px;
+  --dashboard-type-metric-primary: 32px;
+  --dashboard-type-metric-secondary: 24px;
+  --dashboard-type-detail: 16px;
+  --dashboard-type-table: 12px;
+  --dashboard-type-tooltip-value: 11px;
+  --dashboard-type-label: 10px;
+  --dashboard-type-micro: 9px;
 }
 
 .new-overview-panel,
@@ -23,7 +32,7 @@
   border-bottom: 1px solid #d9a99b;
   background: #fff5f1;
   color: var(--danger);
-  font: 10px var(--mono);
+  font: var(--dashboard-type-label) var(--mono);
 }
 
 .new-overview-grid {
@@ -64,7 +73,7 @@
 
 .dashboard-section-loading h2 {
   margin: 0;
-  font-size: 23px;
+  font-size: var(--dashboard-type-section-title);
   letter-spacing: -.035em;
 }
 
@@ -157,7 +166,7 @@
 .dashboard-kicker {
   margin: 0 0 4px;
   color: var(--dashboard-signal);
-  font: 8px var(--mono);
+  font: var(--dashboard-type-micro) var(--mono);
   letter-spacing: .1em;
   text-transform: uppercase;
 }
@@ -165,7 +174,7 @@
 .dashboard-section-heading h2 {
   margin: 0;
   color: var(--dashboard-ink);
-  font-size: 21px;
+  font-size: var(--dashboard-type-section-title);
   letter-spacing: -.035em;
 }
 
@@ -174,7 +183,7 @@
   border-radius: 999px;
   color: #8a4a32;
   background: #f5e4dc;
-  font: 7px var(--mono);
+  font: var(--dashboard-type-micro) var(--mono);
   letter-spacing: .08em;
   text-transform: uppercase;
 }
@@ -206,7 +215,7 @@
 .new-placeholder-section h2 {
   margin: 0;
   color: var(--dashboard-ink);
-  font-size: 23px;
+  font-size: var(--dashboard-type-section-title);
   letter-spacing: -.035em;
 }
 
@@ -243,6 +252,6 @@
     gap: 12px;
   }
   .new-page .page-tabs a {
-    font-size: 10px;
+    font-size: var(--dashboard-type-label);
   }
 }

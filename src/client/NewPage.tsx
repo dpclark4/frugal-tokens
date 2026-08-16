@@ -137,17 +137,21 @@ export function NewPage() {
   }>();
   const screenshotRef = useRef<HTMLDivElement>(null);
   const pendingScrollYRef = useRef<number | undefined>(undefined);
-  const data = loadedOverview?.range === search.range &&
+  const data = loadedOverview !== undefined &&
+      loadedOverview.range === search.range &&
       loadedOverview.harness === search.harness
     ? loadedOverview.data
     : undefined;
-  const workRhythmData = loadedWorkRhythm?.range === search.range &&
+  const workRhythmData = loadedWorkRhythm !== undefined &&
+      loadedWorkRhythm.range === search.range &&
       loadedWorkRhythm.harness === search.harness
     ? loadedWorkRhythm.data
     : undefined;
-  const sessionShapeIsCurrent = loadedSessionShape?.range === search.range &&
+  const sessionShapeIsCurrent = loadedSessionShape !== undefined &&
+    loadedSessionShape.range === search.range &&
     loadedSessionShape.harness === search.harness;
-  const cacheMissesAreCurrent = loadedCacheMisses?.range === search.range &&
+  const cacheMissesAreCurrent = loadedCacheMisses !== undefined &&
+    loadedCacheMisses.range === search.range &&
     loadedCacheMisses.harness === search.harness;
   const reportReady = Boolean(
     data && workRhythmData && sessionShapeIsCurrent && cacheMissesAreCurrent,

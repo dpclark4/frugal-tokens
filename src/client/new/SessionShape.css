@@ -10,7 +10,7 @@
 
 .session-shape .dashboard-section-heading h2 {
   margin: 0;
-  font-size: 23px;
+  font-size: var(--dashboard-type-section-title);
   line-height: normal;
   letter-spacing: -.035em;
 }
@@ -90,7 +90,7 @@
 }
 
 .shape-key-label {
-  font: 600 9px/1 var(--mono);
+  font: 600 var(--dashboard-type-micro)/1 var(--mono);
   letter-spacing: .02em;
   white-space: nowrap;
 }
@@ -147,7 +147,7 @@
   padding: 8px 12px;
   border-bottom: 1px solid #e4ebe8;
   color: var(--dashboard-muted);
-  font: 650 10px var(--mono);
+  font: 650 var(--dashboard-type-label) var(--mono);
   letter-spacing: .09em;
   text-align: left;
   text-transform: uppercase;
@@ -174,7 +174,7 @@
 
 .session-shape-table tbody th {
   color: var(--dashboard-ink);
-  font-size: 12px;
+  font-size: var(--dashboard-type-table);
   font-weight: 650;
   line-height: 1.2;
   text-align: left;
@@ -210,7 +210,7 @@
 
 .shape-metric-label small {
   color: #7d8885;
-  font: 9px var(--mono);
+  font: var(--dashboard-type-micro) var(--mono);
   font-weight: 400;
   white-space: nowrap;
 }
@@ -230,7 +230,7 @@
   border-radius: 50%;
   background: transparent;
   color: #65736e;
-  font: 600 9px/1 var(--mono);
+  font: 600 var(--dashboard-type-micro)/1 var(--mono);
   cursor: help;
 }
 
@@ -270,7 +270,7 @@
   display: block;
   padding: 0 8px 4px;
   color: var(--dashboard-ink);
-  font: 650 12px var(--mono);
+  font: 650 var(--dashboard-type-table) var(--mono);
 }
 
 .shape-context-popover .usage-chart-body {
@@ -314,7 +314,7 @@
   height: 120px;
   place-items: center;
   color: var(--dashboard-muted);
-  font: 10px var(--mono);
+  font: var(--dashboard-type-label) var(--mono);
 }
 
 .shape-p50 {
@@ -323,7 +323,7 @@
 
 .shape-p50 strong {
   color: var(--dashboard-ink);
-  font: 600 12px/1 var(--mono);
+  font: 600 var(--dashboard-type-table)/1 var(--mono);
   font-variant-numeric: tabular-nums;
   letter-spacing: -.04em;
   white-space: nowrap;
@@ -425,13 +425,13 @@
 
 .shape-distribution-tooltip small {
   color: #b7cbc5;
-  font: 10px var(--mono);
+  font: var(--dashboard-type-label) var(--mono);
   letter-spacing: .04em;
 }
 
 .shape-distribution-tooltip strong {
   color: #fff;
-  font: 11px var(--mono);
+  font: var(--dashboard-type-tooltip-value) var(--mono);
   white-space: nowrap;
 }
 
@@ -458,7 +458,7 @@
   gap: 12px;
   margin: 4px 3px 0;
   color: #65736e;
-  font: 11px var(--mono);
+  font: var(--dashboard-type-tooltip-value) var(--mono);
   white-space: nowrap;
 }
 
