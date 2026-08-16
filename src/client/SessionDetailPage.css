@@ -16,7 +16,6 @@
   --sd-green: #3dbb72;
   --sd-red: #ee5c61;
   --sd-orange: #f68f3c;
-  --sd-page-grid: none;
   isolation: isolate;
   display: flex;
   height: 100dvh;
@@ -48,14 +47,6 @@
   --sd-green: #2e7959;
   --sd-red: #b84b3c;
   --sd-orange: #b85a37;
-  --sd-page-grid: linear-gradient(
-      rgba(49, 61, 47, .04) 1px,
-      transparent 1px
-    ), linear-gradient(
-      90deg,
-      rgba(49, 61, 47, .04) 1px,
-      transparent 1px
-    );
   font-family: "Avenir Next", "Segoe UI", sans-serif;
   letter-spacing: normal;
 }
@@ -66,8 +57,6 @@
   z-index: -1;
   inset: 0;
   background-color: var(--sd-page);
-  background-image: var(--sd-page-grid);
-  background-size: 24px 24px;
 }
 
 .sd-detail-nav {

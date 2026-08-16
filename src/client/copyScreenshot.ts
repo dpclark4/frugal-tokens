@@ -1,9 +1,6 @@
 import { toBlob } from "html-to-image";
 
 const pageBackground = "#f4f0e8";
-const pageGrid =
-  "linear-gradient(rgba(49, 61, 47, .035) 1px, transparent 1px), " +
-  "linear-gradient(90deg, rgba(49, 61, 47, .035) 1px, transparent 1px)";
 
 function inheritedCustomProperties(element: HTMLElement) {
   const properties: Record<string, string> = {};
@@ -60,8 +57,6 @@ export async function copyElementScreenshot(element: HTMLElement) {
     style: {
       ...inheritedCustomProperties(element),
       backgroundColor: pageBackground,
-      backgroundImage: pageGrid,
-      backgroundSize: "24px 24px",
     } as Partial<CSSStyleDeclaration>,
     width,
   }).then((result) => {
