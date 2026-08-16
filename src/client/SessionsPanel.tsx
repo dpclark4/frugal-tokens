@@ -2149,7 +2149,7 @@ export function SessionsPanel({
               onChange={(event) =>
                 onHarnessChange(event.target.value as typeof harness)}
             >
-              <HarnessOptions harnesses={harnesses} allLabel="All" />
+              <HarnessOptions harnesses={harnesses} />
             </select>
           </label>
         </div>

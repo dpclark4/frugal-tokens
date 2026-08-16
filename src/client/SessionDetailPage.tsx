@@ -317,6 +317,26 @@ function callAnchor(sessionID: string, turn: number, callID: string) {
   return `${turnAnchor(sessionID, turn)}-call-${encodeURIComponent(callID)}`;
 }
 
+function subagentLaunchTurnPath(
+  session: SessionDetail,
+  targetSessionID: string,
+): string[] | undefined {
+  if (session.id === targetSessionID) return [];
+  for (const child of session.subagents) {
+    const childPath = subagentLaunchTurnPath(child, targetSessionID);
+    if (childPath === undefined) continue;
+    const launchTurn = session.turns.find((turn) =>
+      turn.calls.some((call) =>
+        call.activity.tools.some((tool) => tool.childSessionID === child.id)
+      )
+    );
+    return launchTurn
+      ? [turnAnchor(session.id, launchTurn.number), ...childPath]
+      : childPath;
+  }
+  return undefined;
+}
+
 function sessionTurnIDs(session: SessionDetail) {
   return sessionTree(session).flatMap((item) =>
     item.turns.map((turn) => turnAnchor(item.id, turn.number))
@@ -989,12 +1009,12 @@ function CacheMissBadges({
                     {reuse === undefined
                       ? ""
                       : ` · ${(reuse * 100).toFixed(1)}% reused`}
-                    {occurrence.call.cacheMissCost === undefined
-                      ? ""
-                      : ` · ${
-                        money.format(occurrence.call.cacheMissCost)
-                      } miss`}
                   </small>
+                  {occurrence.call.cacheMissCost !== undefined && (
+                    <small className="sd-cache-miss-cost">
+                      {money.format(occurrence.call.cacheMissCost)}
+                    </small>
+                  )}
                   <ChevronRight size={14} aria-hidden="true" />
                 </button>
               );
@@ -1934,20 +1954,34 @@ function MetadataRow({ label, children, mono = false }: {
   );
 }
 
+function workBlockTimeRange(start: number, end: number) {
+  const startParts = workBlockTime.formatToParts(start);
+  const endParts = workBlockTime.formatToParts(end);
+  const startPeriod = startParts.find((part) => part.type === "dayPeriod")
+    ?.value;
+  const endPeriod = endParts.find((part) => part.type === "dayPeriod")?.value;
+  const formattedStart = startPeriod !== undefined && startPeriod === endPeriod
+    ? startParts.filter((part) => part.type !== "dayPeriod").map((part) =>
+      part.value
+    ).join("").trim()
+    : workBlockTime.format(start);
+  return `${formattedStart}–${workBlockTime.format(end)}`;
+}
+
 function workBlockRange(start: number, end: number) {
   const startDate = new Date(start);
   const endDate = new Date(end);
   const sameDate = startDate.getFullYear() === endDate.getFullYear() &&
     startDate.getMonth() === endDate.getMonth() &&
     startDate.getDate() === endDate.getDate();
-  if (sameDate) {
-    return `${workBlockDate.format(start)} · ${workBlockTime.format(start)}–${
-      workBlockTime.format(end)
-    }`;
-  }
-  return `${workBlockDate.format(start)}, ${workBlockTime.format(start)}–${
-    workBlockDate.format(end)
-  }, ${workBlockTime.format(end)}`;
+  const timeRange = workBlockTimeRange(start, end);
+  if (sameDate) return `${workBlockDate.format(start)} · ${timeRange}`;
+  return `${workBlockDate.format(start)}, ${
+    timeRange.replace(
+      "–",
+      `–${workBlockDate.format(end)}, `,
+    )
+  }`;
 }
 
 function WorkBlocks({ workTime }: { workTime: WorkTimeSummary }) {
@@ -2691,6 +2725,7 @@ export function SessionDetailPage() {
     );
   }
 
+  const rootSession = session;
   const tree = sessionTree(session);
   const branches = session.branches ?? [];
   const branchesByID = new Map(branches.map((item) => [item.id, item]));
@@ -2783,9 +2818,13 @@ export function SessionDetailPage() {
       ? turnAnchor(occurrence.session.id, occurrence.turn.number)
       : callID;
     setFocusedCallAnchor(callID);
+    const turnsToExpand = [
+      ...(subagentLaunchTurnPath(rootSession, occurrence.session.id) ?? []),
+      turnAnchor(occurrence.session.id, occurrence.turn.number),
+    ];
     setCollapsedTurnIDs((current) => {
       const next = new Set(current);
-      next.delete(turnAnchor(occurrence.session.id, occurrence.turn.number));
+      turnsToExpand.forEach((id) => next.delete(id));
       return next;
     });
     let attempts = 0;
@@ -2873,7 +2912,9 @@ export function SessionDetailPage() {
             label="Cumulative input"
             value={compact.format(input)}
             detail={[
-              `${compact.format(tokens.uncachedInput)} uncached`,
+              session.harness === "claude-code"
+                ? undefined
+                : `${compact.format(tokens.uncachedInput)} uncached`,
               reuse === undefined
                 ? "Reuse unavailable"
                 : `${(reuse * 100).toFixed(1)}% reused`,

@@ -11,9 +11,11 @@ export function HarnessOptions({
   return (
     <>
       <option value="all">{allLabel}</option>
-      {harnesses.map((harness) => (
-        <option value={harness} key={harness}>{harnessName(harness)}</option>
-      ))}
+      {[...harnesses]
+        .sort((a, b) => harnessName(b).localeCompare(harnessName(a)))
+        .map((harness) => (
+          <option value={harness} key={harness}>{harnessName(harness)}</option>
+        ))}
     </>
   );
 }
