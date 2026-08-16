@@ -75,6 +75,13 @@ const standard: Record<string, ModelRateCard> = {
     cacheRead: 1.5,
     output: 75,
   },
+  "claude-sonnet-5": {
+    input: 2,
+    cacheWrite5m: 2.5,
+    cacheWrite1h: 4,
+    cacheRead: 0.2,
+    output: 10,
+  },
   "claude-sonnet-4-6": {
     input: 3,
     cacheWrite5m: 3.75,
@@ -110,22 +117,68 @@ const standard: Record<string, ModelRateCard> = {
     cacheRead: 0.08,
     output: 4,
   },
-  "grok-4-5": {
+  "grok-4-6": {
     input: 2,
     cacheWrite5m: 0,
     cacheWrite1h: 0,
     cacheRead: 0.5,
+    output: 6,
+  },
+  "grok-4.6": {
+    input: 2,
+    cacheWrite5m: 0,
+    cacheWrite1h: 0,
+    cacheRead: 0.5,
+    output: 6,
+  },
+  "grok-4-5": {
+    input: 2,
+    cacheWrite5m: 0,
+    cacheWrite1h: 0,
+    cacheRead: 0.3,
     output: 6,
   },
   "grok-4.5": {
     input: 2,
     cacheWrite5m: 0,
     cacheWrite1h: 0,
-    cacheRead: 0.5,
+    cacheRead: 0.3,
     output: 6,
   },
   "kimi-k3": { input: 3, cacheRead: 0.3, cacheWrite: 3, output: 15 },
+  "kimi-k2.7-code": {
+    input: 0.95,
+    cacheRead: 0.19,
+    cacheWrite: 0.95,
+    output: 4,
+  },
+  "kimi-k2.6": { input: 0.95, cacheRead: 0.16, cacheWrite: 0.95, output: 4 },
+  "kimi-k2.5": { input: 0.6, cacheRead: 0.1, cacheWrite: 0.6, output: 3 },
+  "glm-5.3": { input: 1.4, cacheRead: 0.26, output: 4.4 },
   "glm-5.2": { input: 1.4, cacheRead: 0.26, output: 4.4 },
+  "glm-5.1": { input: 1.4, cacheRead: 0.26, output: 4.4 },
+  "glm-5": { input: 1, cacheRead: 0.2, output: 3.2 },
+  "minimax-m3": { input: 0.3, cacheRead: 0.06, cacheWrite: 0.3, output: 1.2 },
+  "minimax-m2.7": {
+    input: 0.3,
+    cacheRead: 0.06,
+    cacheWrite: 0.375,
+    output: 1.2,
+  },
+  "minimax-m2.5": {
+    input: 0.3,
+    cacheRead: 0.03,
+    cacheWrite: 0.375,
+    output: 1.2,
+  },
+  "grok-build-0.1": {
+    input: 1,
+    cacheWrite5m: 0,
+    cacheWrite1h: 0,
+    cacheRead: 0.2,
+    output: 2,
+  },
+  "muse-spark-1.2": { input: 1.25, cacheRead: 0.15, output: 4.25 },
   "gpt-5.6-sol": {
     input: 5,
     cacheRead: 0.5,
@@ -145,11 +198,16 @@ const standard: Record<string, ModelRateCard> = {
     output: 6,
   },
   "gpt-5.3-codex": { input: 1.75, cacheRead: 0.175, output: 14 },
+  "gpt-5.2": { input: 1.75, cacheRead: 0.175, output: 14 },
   "gpt-5.2-codex": { input: 1.75, cacheRead: 0.175, output: 14 },
+  "gpt-5.1": { input: 1.25, cacheRead: 0.125, output: 10 },
   "gpt-5.1-codex-max": { input: 1.25, cacheRead: 0.125, output: 10 },
   "gpt-5.1-codex": { input: 1.25, cacheRead: 0.13, output: 10 },
   "gpt-5.1-codex-mini": { input: 0.25, cacheRead: 0.025, output: 2 },
+  "gpt-5": { input: 1.25, cacheRead: 0.125, output: 10 },
   "gpt-5-codex": { input: 1.25, cacheRead: 0.125, output: 10 },
+  "gpt-5-mini": { input: 0.25, cacheRead: 0.025, output: 2 },
+  "gpt-5-nano": { input: 0.05, cacheRead: 0.005, output: 0.4 },
   "gpt-5.5": { input: 5, cacheRead: 0.5, output: 30 },
   "gpt-5.5-pro": { input: 30, cacheRead: 0, output: 180 },
   "gpt-5.4": { input: 2.5, cacheRead: 0.25, output: 15 },
@@ -187,6 +245,42 @@ const longContext: Record<string, ModelRateCard> = {
   "gpt-5.5-pro": { input: 60, cacheRead: 0, output: 270 },
   "gpt-5.4": { input: 5, cacheRead: 0.5, output: 22.5 },
   "gpt-5.4-pro": { input: 60, cacheRead: 0, output: 270 },
+  "grok-4-6": {
+    input: 4,
+    cacheWrite5m: 0,
+    cacheWrite1h: 0,
+    cacheRead: 1,
+    output: 12,
+  },
+  "grok-4.6": {
+    input: 4,
+    cacheWrite5m: 0,
+    cacheWrite1h: 0,
+    cacheRead: 1,
+    output: 12,
+  },
+  "grok-4-5": {
+    input: 4,
+    cacheWrite5m: 0,
+    cacheWrite1h: 0,
+    cacheRead: 0.6,
+    output: 12,
+  },
+  "grok-4.5": {
+    input: 4,
+    cacheWrite5m: 0,
+    cacheWrite1h: 0,
+    cacheRead: 0.6,
+    output: 12,
+  },
+  "grok-build-0.1": {
+    input: 2,
+    cacheWrite5m: 0,
+    cacheWrite1h: 0,
+    cacheRead: 0.4,
+    output: 4,
+  },
+  "minimax-m3": { input: 0.6, cacheRead: 0.12, cacheWrite: 0.6, output: 2.4 },
 };
 
 const reducedLunaTerraRates: Record<string, ModelRateCard> = {
@@ -220,6 +314,8 @@ const reducedLunaTerraLongContextRates: Record<string, ModelRateCard> = {
 };
 
 const LONG_CONTEXT_THRESHOLD = 272_000;
+const GROK_LONG_CONTEXT_THRESHOLD = 200_000;
+const MINIMAX_M3_LONG_CONTEXT_THRESHOLD = 512_000;
 const OPENAI_LUNA_TERRA_PRICE_CUT = Date.parse("2026-07-30T20:00:00Z");
 
 export const counterfactualModelIDs = [
@@ -233,11 +329,16 @@ export const counterfactualModelIDs = [
   "gpt-5.4-nano",
   "gpt-5.4-pro",
   "gpt-5.3-codex",
+  "gpt-5.2",
   "gpt-5.2-codex",
+  "gpt-5.1",
   "gpt-5.1-codex-max",
   "gpt-5.1-codex",
   "gpt-5.1-codex-mini",
+  "gpt-5",
   "gpt-5-codex",
+  "gpt-5-mini",
+  "gpt-5-nano",
   "claude-fable-5",
   "claude-mythos-5",
   "claude-opus-5",
@@ -251,10 +352,35 @@ export const counterfactualModelIDs = [
   "claude-sonnet-4-5",
   "claude-haiku-4-5",
   "claude-haiku-3-5",
+  "grok-4-6",
   "grok-4-5",
+  "grok-build-0.1",
   "kimi-k3",
+  "kimi-k2.7-code",
+  "kimi-k2.6",
+  "kimi-k2.5",
+  "glm-5.3",
   "glm-5.2",
+  "glm-5.1",
+  "glm-5",
+  "minimax-m3",
+  "minimax-m2.7",
+  "minimax-m2.5",
+  "muse-spark-1.2",
 ] as const;
+
+function usesLongContextRates(model: string, inputTokens: number) {
+  if (
+    (model.startsWith("gpt-5.") || model === "gpt-5" ||
+      model.startsWith("gpt-5-")) &&
+    inputTokens >= LONG_CONTEXT_THRESHOLD
+  ) return true;
+  if (model.startsWith("grok-") && inputTokens >= GROK_LONG_CONTEXT_THRESHOLD) {
+    return true;
+  }
+  return model === "minimax-m3" &&
+    inputTokens >= MINIMAX_M3_LONG_CONTEXT_THRESHOLD;
+}
 
 function cursorPricingModel(model: string) {
   // Cursor sometimes decorates the underlying model with a routing/quality
@@ -274,8 +400,7 @@ export function modelRateCard(
   const normalized = canonicalModelId(
     provider?.toLowerCase() === "cursor" ? cursorPricingModel(model) : model,
   );
-  const long = normalized.startsWith("gpt-5.") &&
-    inputTokens >= LONG_CONTEXT_THRESHOLD;
+  const long = usesLongContextRates(normalized, inputTokens);
   if (timestamp >= OPENAI_LUNA_TERRA_PRICE_CUT) {
     const reducedRates = long
       ? reducedLunaTerraLongContextRates[normalized]
@@ -283,23 +408,6 @@ export function modelRateCard(
     if (reducedRates) return reducedRates;
   }
   if (long) return longContext[normalized];
-  if (normalized === "claude-sonnet-5") {
-    return timestamp < Date.parse("2026-09-01T00:00:00Z")
-      ? {
-        input: 2,
-        cacheWrite5m: 2.5,
-        cacheWrite1h: 4,
-        cacheRead: 0.2,
-        output: 10,
-      }
-      : {
-        input: 3,
-        cacheWrite5m: 3.75,
-        cacheWrite1h: 6,
-        cacheRead: 0.3,
-        output: 15,
-      };
-  }
   return standard[normalized];
 }
 

@@ -15,8 +15,12 @@ const modelDisplayNames: Record<string, string> = {
   "gpt-5.6-terra": "GPT 5.6 Terra",
   "gpt-5.6-sol": "GPT 5.6 Sol",
   "gpt-5.6-luna": "GPT 5.6 Luna",
+  "grok-4-6": "Grok 4.6",
   "grok-4-5": "Grok 4.5",
   "kimi-k3": "Kimi K3",
+  "kimi-k2.7-code": "Kimi K2.7 Code",
+  "grok-build-0.1": "Grok Build 0.1",
+  "muse-spark-1.2": "Muse Spark 1.2",
 };
 
 const genericNames: Record<string, string> = {
@@ -52,7 +56,10 @@ function withoutProviderPrefix(model: string) {
   // Bedrock IDs can be routed through a region or inference profile, e.g.
   // "us.anthropic.claude-opus-4-7". Keep the model portion for display and
   // grouping without changing the persisted ID.
-  return normalized.replace(/^.*?(?=(?:claude|gpt|grok|kimi|glm)-)/, "");
+  return normalized.replace(
+    /^.*?(?=(?:claude|gpt|grok|kimi|glm|minimax|muse)-)/,
+    "",
+  );
 }
 
 function withoutReleaseSuffix(model: string) {

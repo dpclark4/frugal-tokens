@@ -9,14 +9,22 @@ Deno.test("formats known model IDs consistently", () => {
     "claude-haiku-4-5-20251201": "Claude Haiku 4.5",
     "gpt-5.6-terra": "GPT 5.6 Terra",
     "grok-4-5": "Grok 4.5",
+    "grok-4-6": "Grok 4.6",
+    "grok-4.6": "Grok 4.6",
     "kimi-k3": "Kimi K3",
     "moonshotai/kimi-k3": "Kimi K3",
+    "kimi-k2.7-code": "Kimi K2.7 Code",
+    "minimax/minimax-m3": "MiniMax M3",
+    "grok-build-0.1": "Grok Build 0.1",
+    "muse-spark-1.2": "Muse Spark 1.2",
   };
 
   for (const [model, expected] of Object.entries(cases)) {
     if (displayModelName(model) !== expected) {
       throw new Error(
-        `${model} formatted as ${displayModelName(model)}, expected ${expected}`,
+        `${model} formatted as ${
+          displayModelName(model)
+        }, expected ${expected}`,
       );
     }
   }
@@ -39,7 +47,9 @@ Deno.test("formats Bedrock Anthropic IDs as their base model", () => {
   for (const [model, expected] of Object.entries(cases)) {
     if (displayModelName(model) !== expected) {
       throw new Error(
-        `${model} formatted as ${displayModelName(model)}, expected ${expected}`,
+        `${model} formatted as ${
+          displayModelName(model)
+        }, expected ${expected}`,
       );
     }
   }

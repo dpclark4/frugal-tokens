@@ -95,7 +95,11 @@ Deno.test("uses Luna and Terra prices effective July 30 at 4 PM Eastern", () => 
       oldShort / 10,
     );
     closeTo(
-      computeModelCallCost(tokens({ uncachedInput: 100_000 }), model, effectiveAt),
+      computeModelCallCost(
+        tokens({ uncachedInput: 100_000 }),
+        model,
+        effectiveAt,
+      ),
       newShort / 10,
     );
     closeTo(
@@ -186,19 +190,245 @@ Deno.test("prices GLM 5.2 through provider aliases", () => {
   }
 });
 
-Deno.test("prices Claude Sonnet 5 at its promotional and standard rates", () => {
-  const before = Date.parse("2026-08-31T23:59:59.999Z");
-  const effectiveAt = Date.parse("2026-09-01T00:00:00Z");
-  for (const [at, expected] of [[before, 2], [effectiveAt, 3]] as const) {
+Deno.test("prices GLM 5, 5.1, and 5.3 at published rates", () => {
+  closeTo(
+    computeModelCallCost(
+      tokens({
+        uncachedInput: 1_000_000,
+        cacheRead: 1_000_000,
+        output: 1_000_000,
+      }),
+      "glm-5",
+      timestamp,
+    ),
+    4.4,
+  );
+  closeTo(
+    computeModelCallCost(
+      tokens({
+        uncachedInput: 1_000_000,
+        cacheRead: 1_000_000,
+        output: 1_000_000,
+      }),
+      "z-ai/glm-5.1",
+      timestamp,
+    ),
+    6.06,
+  );
+  closeTo(
+    computeModelCallCost(
+      tokens({
+        uncachedInput: 1_000_000,
+        cacheRead: 1_000_000,
+        output: 1_000_000,
+      }),
+      "glm-5.3",
+      timestamp,
+    ),
+    6.06,
+  );
+});
+
+Deno.test("prices missing GPT 5 family models at OpenAI rates", () => {
+  const expected = new Map([
+    ["gpt-5.2", 1.5925],
+    ["gpt-5.1", 1.1375],
+    ["gpt-5", 1.1375],
+    ["gpt-5-mini", 0.2275],
+    ["gpt-5-nano", 0.0455],
+  ]);
+  for (const [model, cost] of expected) {
+    closeTo(
+      computeModelCallCost(
+        tokens({ uncachedInput: 100_000, cacheRead: 100_000, output: 100_000 }),
+        model,
+        timestamp,
+      ),
+      cost,
+    );
+  }
+});
+
+Deno.test("prices Kimi K2 and MiniMax models at published rates", () => {
+  closeTo(
+    computeModelCallCost(
+      tokens({
+        uncachedInput: 1_000_000,
+        cacheRead: 1_000_000,
+        cacheWrite: 1_000_000,
+        output: 1_000_000,
+      }),
+      "moonshotai/kimi-k2.7-code",
+      timestamp,
+    ),
+    6.09,
+  );
+  closeTo(
+    computeModelCallCost(
+      tokens({
+        uncachedInput: 1_000_000,
+        cacheRead: 1_000_000,
+        output: 1_000_000,
+      }),
+      "kimi-k2.6",
+      timestamp,
+    ),
+    5.11,
+  );
+  closeTo(
+    computeModelCallCost(
+      tokens({
+        uncachedInput: 1_000_000,
+        cacheRead: 1_000_000,
+        output: 1_000_000,
+      }),
+      "kimi-k2.5",
+      timestamp,
+    ),
+    3.7,
+  );
+  closeTo(
+    computeModelCallCost(
+      tokens({ uncachedInput: 511_999 }),
+      "minimax-m3",
+      timestamp,
+    ),
+    511_999 * 0.3 / 1_000_000,
+  );
+  closeTo(
+    computeModelCallCost(
+      tokens({ uncachedInput: 512_000 }),
+      "minimax/minimax-m3",
+      timestamp,
+    ),
+    512_000 * 0.6 / 1_000_000,
+  );
+  closeTo(
+    computeModelCallCost(
+      tokens({
+        uncachedInput: 1_000_000,
+        cacheRead: 1_000_000,
+        cacheWrite: 1_000_000,
+        output: 1_000_000,
+      }),
+      "minimax-m2.7",
+      timestamp,
+    ),
+    1.935,
+  );
+  closeTo(
+    computeModelCallCost(
+      tokens({
+        uncachedInput: 1_000_000,
+        cacheRead: 1_000_000,
+        cacheWrite: 1_000_000,
+        output: 1_000_000,
+      }),
+      "minimax-m2.5",
+      timestamp,
+    ),
+    1.905,
+  );
+});
+
+Deno.test("prices Grok Build and Muse Spark at published rates", () => {
+  closeTo(
+    computeModelCallCost(
+      tokens({ uncachedInput: 199_999 }),
+      "grok-build-0.1",
+      timestamp,
+    ),
+    199_999 / 1_000_000,
+  );
+  closeTo(
+    computeModelCallCost(
+      tokens({ uncachedInput: 200_000 }),
+      "xai/grok-build-0.1",
+      timestamp,
+    ),
+    0.4,
+  );
+  closeTo(
+    computeModelCallCost(
+      tokens({
+        uncachedInput: 1_000_000,
+        cacheRead: 1_000_000,
+        output: 1_000_000,
+      }),
+      "muse-spark-1.2",
+      timestamp,
+    ),
+    5.65,
+  );
+});
+
+Deno.test("keeps Claude Sonnet 5 at its published $2/$10 rates", () => {
+  for (
+    const at of [
+      Date.parse("2026-08-31T23:59:59.999Z"),
+      Date.parse("2026-09-01T00:00:00Z"),
+    ]
+  ) {
     closeTo(
       computeModelCallCost(
         tokens({ uncachedInput: 1_000_000 }),
         "openrouter/anthropic/claude-sonnet-5",
         at,
       ),
-      expected,
+      2,
     );
   }
+});
+
+Deno.test("prices Grok 4.5 and 4.6 at the 200k long-context boundary", () => {
+  closeTo(
+    computeModelCallCost(
+      tokens({ uncachedInput: 199_999 }),
+      "grok-4.5",
+      timestamp,
+    ),
+    199_999 * 2 / 1_000_000,
+  );
+  closeTo(
+    computeModelCallCost(
+      tokens({ uncachedInput: 200_000 }),
+      "xai/grok-4-5",
+      timestamp,
+    ),
+    0.8,
+  );
+  closeTo(
+    computeModelCallCost(
+      tokens({
+        uncachedInput: 50_000,
+        cacheRead: 1_000_000,
+        output: 1_000_000,
+      }),
+      "grok-4.5",
+      timestamp,
+    ),
+    12.8,
+  );
+  closeTo(
+    computeModelCallCost(
+      tokens({ uncachedInput: 100_000 }),
+      "grok-4-6",
+      timestamp,
+    ),
+    0.2,
+  );
+  closeTo(
+    computeModelCallCost(
+      tokens({
+        uncachedInput: 1_000_000,
+        cacheRead: 1_000_000,
+        output: 1_000_000,
+      }),
+      "grok-4.6",
+      timestamp,
+    ),
+    17,
+  );
 });
 
 Deno.test("prices Kimi K3 cache hits, misses, writes, and output", () => {
@@ -229,7 +459,11 @@ Deno.test("prices Codex models at their published rates", () => {
   for (const [model, cost] of expected) {
     closeTo(
       computeModelCallCost(
-        tokens({ uncachedInput: 1_000_000, cacheRead: 1_000_000, output: 1_000_000 }),
+        tokens({
+          uncachedInput: 1_000_000,
+          cacheRead: 1_000_000,
+          output: 1_000_000,
+        }),
         model,
         timestamp,
       ),
@@ -250,22 +484,18 @@ Deno.test("uses the published Codex rates for long contexts", () => {
 });
 
 Deno.test("leaves models without long-context rates unpriced", () => {
-  strictEqual(
-    computeModelCallCost(
-      tokens({ uncachedInput: 272_000 }),
-      "gpt-5.4-mini",
-      timestamp,
-    ),
-    undefined,
-  );
-  strictEqual(
-    computeModelCallCost(
-      tokens({ uncachedInput: 272_000 }),
-      "gpt-5.4-nano",
-      timestamp,
-    ),
-    undefined,
-  );
+  for (
+    const model of ["gpt-5.4-mini", "gpt-5.4-nano", "gpt-5.2", "gpt-5-nano"]
+  ) {
+    strictEqual(
+      computeModelCallCost(
+        tokens({ uncachedInput: 272_000 }),
+        model,
+        timestamp,
+      ),
+      undefined,
+    );
+  }
 });
 
 Deno.test("leaves aggregate-only usage unpriced", () => {

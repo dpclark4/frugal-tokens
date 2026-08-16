@@ -48,9 +48,6 @@ Core tables and relationships:
 | `part` | Text, reasoning, tools, and step boundaries | `part.message_id -> message.id` |
 | `workspace` | Optional branch/workspace metadata | `session.workspace_id -> workspace.id` |
 
-The current local database has no `workspace` rows, so historical Git branches
-are not available for the sessions inspected.
-
 ### Canonical Mapping
 
 | OpenCode data | Frugal Tokens concept |
@@ -165,9 +162,6 @@ Provider semantics differ:
 - Reasoning and total-token fields do not always reconcile exactly for every
   provider. Preserve raw values where practical.
 
-OpenCode-reported cost, reconstructed cost, invoice cost, and counterfactual
-cost are separate concepts.
-
 ### Tools And Subagents
 
 Tool parts expose privacy-safe metadata including tool name, status, and start
@@ -205,9 +199,6 @@ commands, and tool outputs should be treated as sensitive user data.
 - SQLite adapter and raw decoders: `src/server/opencodeRepository.ts`
 - API routes: `src/server/main.ts`
 - Session UI: `src/client/SessionsPage.tsx`
-- Reference fixture: `ses_0b8d314b5ffeBwIBzZmNhmoVCi` (3 turns, 5 calls,
-  `$0.4861795` reported)
-- Subagent fixture: `ses_0b155ab5affer9adyuA3Gg2Br8`
 
 ## Cursor
 
@@ -315,21 +306,6 @@ Repositories do not compute prices. A separate pricing enrichment layer applies
 versioned model rate cards and emits `computedCost`; it leaves that field absent
 for unknown models or aggregate-only cache writes that cannot be classified by
 TTL. Reported and computed costs remain separate values.
-
-The bundled xAI Grok 4.5 rate card uses $2/M uncached input tokens, $0.50/M
-cache-read tokens, and $6/M output or reasoning tokens. OpenCode-reported cost
-remains available alongside the computed value for comparison.
-
-Bundled GPT rate cards currently cover the short-context tiers for the GPT 5.6
-Sol/Terra/Luna family, GPT 5.5 and 5.5 Pro, and GPT 5.4, Mini, Nano, and Pro.
-Calls with 272k or more input-side tokens remain unpriced until long-context
-pricing is implemented. A model without a published cache-write rate also
-remains unpriced when its source reports cache-write tokens.
-
-Pricing thresholds and model rates apply per model call. Session computed cost
-is the sum of its individually priced calls, never a price applied to aggregate
-session tokens. If any call cannot be priced, the session computed total remains
-absent rather than presenting a partial total.
 
 ## Adding A Harness
 
