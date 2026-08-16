@@ -7,6 +7,7 @@ import "./CacheOverview.css";
 type CacheOverviewProps = {
   range: 30 | 90;
   harness: string;
+  onDataChange?: (data: TtlMissMetrics | undefined) => void;
 };
 
 type CauseRow = {
@@ -260,7 +261,11 @@ function CacheMissTable({ metrics }: { metrics: TtlMissMetrics }) {
   );
 }
 
-export function CacheOverview({ range, harness }: CacheOverviewProps) {
+export function CacheOverview({
+  range,
+  harness,
+  onDataChange,
+}: CacheOverviewProps) {
   const [metrics, setMetrics] = useState<TtlMissMetrics>();
   const [error, setError] = useState<string>();
 
@@ -268,8 +273,12 @@ export function CacheOverview({ range, harness }: CacheOverviewProps) {
     let active = true;
     setMetrics(undefined);
     setError(undefined);
+    onDataChange?.(undefined);
     getCacheMissOverview(range, harness).then((result) => {
-      if (active) setMetrics(result);
+      if (active) {
+        setMetrics(result);
+        onDataChange?.(result);
+      }
     }).catch((reason) => {
       if (active) {
         setError(
@@ -277,6 +286,7 @@ export function CacheOverview({ range, harness }: CacheOverviewProps) {
             ? reason.message
             : "Unable to load cache metrics",
         );
+        onDataChange?.(undefined);
       }
     });
     return () => {

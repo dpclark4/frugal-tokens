@@ -31,6 +31,7 @@ type SessionDotShapeProps = {
   payload?: ChartPoint;
 };
 
+const chartMono = '"SFMono-Regular", Consolas, monospace';
 const decimal = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
 const SCALE_PIVOT: Record<Metric, number> = {
   spend: 0.1,
@@ -150,9 +151,31 @@ function SessionDot({
         }
       }}
     >
-      <circle cx={cx} cy={cy} r={payload.highlighted ? 4.2 : 3.1} />
+      <circle
+        cx={cx}
+        cy={cy}
+        r={payload.highlighted ? 4.2 : 3.1}
+        fill={payload.highlighted ? "#235f59" : "#657a76"}
+        fillOpacity={payload.highlighted ? 0.88 : 0.34}
+        stroke={payload.highlighted ? "#235f59" : "#657a76"}
+        strokeOpacity={payload.highlighted ? 1 : 0.5}
+        strokeWidth={0.75}
+      />
       {payload.highestValueLabel && (
-        <text x={cx} y={cy - 9} textAnchor="middle">
+        <text
+          x={cx}
+          y={cy - 9}
+          fill="#29433f"
+          fontFamily={chartMono}
+          fontSize={9}
+          fontWeight={700}
+          paintOrder="stroke"
+          pointerEvents="none"
+          stroke="#fbfcfb"
+          strokeLinejoin="round"
+          strokeWidth={3}
+          textAnchor="middle"
+        >
           {payload.highestValueLabel}
         </text>
       )}
@@ -268,11 +291,17 @@ export function SessionDiagnostics({ data }: { data: SessionDiagnosticsData }) {
                   tickLine={false}
                   axisLine={false}
                   minTickGap={24}
+                  tick={{ fill: "#697572", fontFamily: chartMono, fontSize: 9 }}
                 >
                   <Label
                     value="Estimated active time"
                     position="insideBottom"
                     offset={-16}
+                    style={{
+                      fill: "#697572",
+                      fontFamily: chartMono,
+                      fontSize: 9,
+                    }}
                   />
                 </XAxis>
                 <YAxis
@@ -285,12 +314,18 @@ export function SessionDiagnostics({ data }: { data: SessionDiagnosticsData }) {
                   tickLine={false}
                   axisLine={false}
                   width={58}
+                  tick={{ fill: "#697572", fontFamily: chartMono, fontSize: 9 }}
                 >
                   <Label
                     value={`${metricLabel} · log scale`}
                     angle={-90}
                     position="insideLeft"
                     offset={4}
+                    style={{
+                      fill: "#697572",
+                      fontFamily: chartMono,
+                      fontSize: 9,
+                    }}
                   />
                 </YAxis>
                 <ReferenceLine
@@ -302,6 +337,7 @@ export function SessionDiagnostics({ data }: { data: SessionDiagnosticsData }) {
                     value: `Median active · ${duration(medianActive)}`,
                     position: "insideTopLeft",
                     fill: "#697572",
+                    fontFamily: chartMono,
                     fontSize: 9,
                   }}
                 />
@@ -316,6 +352,7 @@ export function SessionDiagnostics({ data }: { data: SessionDiagnosticsData }) {
                     } · ${formatMetric(metric, medianY)}`,
                     position: "insideTopRight",
                     fill: "#697572",
+                    fontFamily: chartMono,
                     fontSize: 9,
                   }}
                 />
