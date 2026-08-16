@@ -606,6 +606,7 @@ export class ConversationWriteRepository {
       const artifactCallKeys = new Map<string, Set<string>>();
       const artifactEntryKeys = new Map<string, Set<string>>();
       const artifactPaths = new Map<string, number[]>();
+      const artifactCallPaths = new Map<string, number[]>();
       const branchCallPredecessors = new Map<number, number | undefined>();
 
       const occurrenceKind = (
@@ -712,6 +713,10 @@ export class ConversationWriteRepository {
         let previousEntryID: number | null = null;
         const pathEntryIDs: number[] = [];
         const pathCallIDs: number[] = [];
+        const parentCallPath = parentArtifact === undefined
+          ? undefined
+          : artifactCallPaths.get(parentArtifact.externalID);
+        let implicitParentCallPrefix: number[] = [];
         const callKeys = new Set<string>();
         const turnKeys = new Set<string>();
         const entryKeys = new Set<string>();
@@ -1051,7 +1056,20 @@ export class ConversationWriteRepository {
               evidence(artifact),
             );
             if (callKind === "executed") {
-              branchCallPredecessors.set(callID, pathCallIDs.at(-1));
+              let predecessor = pathCallIDs.at(-1);
+              if (predecessor === undefined && parentCallPath !== undefined) {
+                const predecessorIndex = parentCallPath.findLastIndex((id) =>
+                  canonicalCallValues.get(id)!.startedAt <= call.startedAt
+                );
+                if (predecessorIndex >= 0) {
+                  implicitParentCallPrefix = parentCallPath.slice(
+                    0,
+                    predecessorIndex + 1,
+                  );
+                  predecessor = parentCallPath[predecessorIndex];
+                }
+              }
+              branchCallPredecessors.set(callID, predecessor);
             }
             pathCallIDs.push(callID);
             callKeys.add(callKey);
@@ -1099,6 +1117,10 @@ export class ConversationWriteRepository {
         artifactCallKeys.set(artifact.externalID, callKeys);
         artifactEntryKeys.set(artifact.externalID, entryKeys);
         artifactPaths.set(artifact.externalID, pathEntryIDs);
+        artifactCallPaths.set(
+          artifact.externalID,
+          [...implicitParentCallPrefix, ...pathCallIDs],
+        );
       }
 
       for (const [childExternalID, launches] of launchTools) {

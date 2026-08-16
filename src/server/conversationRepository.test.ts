@@ -250,6 +250,105 @@ Deno.test("conversation repository linearizes Codex branches without duplicating
   }
 });
 
+Deno.test("attributes a cache-floor reset to an implicit Codex fork predecessor", async () => {
+  const directory = Deno.makeTempDirSync();
+  const fixture = decodeURIComponent(
+    new URL(
+      "./fixtures/codex-branching/sibling-forks/",
+      import.meta.url,
+    ).pathname,
+  );
+  const source = `${directory}/sessions`;
+  Deno.mkdirSync(source);
+  const rootPath = `${source}/rollout-original.jsonl`;
+  const childPath = `${source}/rollout-fork-a.jsonl`;
+  Deno.copyFileSync(`${fixture}rollout-original.jsonl`, rootPath);
+
+  const rootRecords = Deno.readTextFileSync(rootPath).trim().split("\n").map(
+    (line) => JSON.parse(line),
+  );
+  const firstRootUsage = rootRecords.find((record) =>
+    record.type === "event_msg" && record.payload?.type === "token_count"
+  );
+  firstRootUsage.payload.info.last_token_usage.cached_input_tokens = 10;
+  Deno.writeTextFileSync(
+    rootPath,
+    `${rootRecords.map((record) => JSON.stringify(record)).join("\n")}\n`,
+  );
+
+  const allChildRecords = Deno.readTextFileSync(
+    `${fixture}rollout-fork-a.jsonl`,
+  ).trim().split("\n").map((line) => JSON.parse(line));
+  const firstUniqueTurn = allChildRecords.findIndex((record) =>
+    record.type === "event_msg" && record.payload?.type === "task_started" &&
+    record.payload.turn_id === "turn-fork-a-3"
+  );
+  const childRecords = [
+    allChildRecords[0],
+    allChildRecords[1],
+    ...allChildRecords.slice(firstUniqueTurn),
+  ];
+  const firstChildUsage = childRecords.find((record) =>
+    record.type === "event_msg" && record.payload?.type === "token_count"
+  );
+  firstChildUsage.payload.info.last_token_usage.cached_input_tokens = 10;
+  Deno.writeTextFileSync(
+    childPath,
+    `${childRecords.map((record) => JSON.stringify(record)).join("\n")}\n`,
+  );
+
+  const db = openArchiveDatabase(`${directory}/archive.sqlite`);
+  migrateTestDatabase(db);
+  const sources = new SourceArtifactRepository(db);
+  const projection = new ConversationWriteRepository(db);
+  const conversations = new ConversationRepository(db);
+  try {
+    await syncCodexSessions(source, sources, projection);
+    strictEqual(
+      db.prepare(`
+        SELECT fork_point_provenance FROM conversation_branches
+        WHERE forked_from_branch_id IS NOT NULL
+      `).get()!.fork_point_provenance,
+      "unresolved",
+    );
+
+    const detail = conversations.getSession(
+      "codex",
+      "00000000-0000-4000-8000-000000000001",
+    )!;
+    const analyzed = analyzeSessionCache(detail);
+    const forkCall = analyzed.turns.find((turn) =>
+      turn.calls[0].id === "response-fork-a-3"
+    )!.calls[0];
+    strictEqual(forkCall.previousCallID, "response-original-4");
+    strictEqual(forkCall.cacheAssessment?.status, "full-miss");
+
+    deepStrictEqual(
+      {
+        ...db.prepare(`
+          SELECT miss.status,
+            current_call.source_call_id AS current_call,
+            previous_call.source_call_id AS previous_call
+          FROM conversation_cache_misses miss
+          JOIN conversation_model_calls current_call
+            ON current_call.id = miss.model_call_id
+          JOIN conversation_model_calls previous_call
+            ON previous_call.id = miss.previous_model_call_id
+          WHERE current_call.source_call_id = 'response-fork-a-3'
+        `).get()!,
+      },
+      {
+        status: "full-miss",
+        current_call: "response-fork-a-3",
+        previous_call: "response-original-4",
+      },
+    );
+  } finally {
+    db.close();
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
 Deno.test("session lists read cache issue reasons from normalized misses", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);

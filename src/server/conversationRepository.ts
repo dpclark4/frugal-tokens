@@ -1715,12 +1715,13 @@ export class ConversationRepository {
   // presenting sibling continuations as a chronological activity feed.
   #conversationCalls(conversationID: number): CallRow[] {
     return this.db.prepare(`
-      WITH path_calls AS (
+      WITH ordered_path_calls AS (
         SELECT occurrence.*,
+          branch.forked_from_branch_id,
           LAG(occurrence.model_call_id) OVER (
             PARTITION BY occurrence.branch_id
             ORDER BY occurrence.source_order_start, call.ordinal
-          ) AS previous_model_call_id
+          ) AS local_previous_model_call_id
         FROM artifact_model_call_occurrences occurrence
         JOIN conversation_branches branch ON branch.id = occurrence.branch_id
         JOIN conversation_model_calls call
@@ -1728,6 +1729,29 @@ export class ConversationRepository {
         WHERE branch.conversation_id = ?
           AND COALESCE(call.source_call_id, '')
             NOT LIKE 'context-operation:%'
+      ), path_calls AS (
+        SELECT occurrence.*,
+          COALESCE(
+            occurrence.local_previous_model_call_id,
+            (
+              SELECT parent_occurrence.model_call_id
+              FROM artifact_model_call_occurrences parent_occurrence
+              JOIN conversation_model_calls parent_call
+                ON parent_call.id = parent_occurrence.model_call_id
+              WHERE parent_occurrence.branch_id =
+                  occurrence.forked_from_branch_id
+                AND parent_call.started_at <= current_call.started_at
+                AND COALESCE(parent_call.source_call_id, '')
+                  NOT LIKE 'context-operation:%'
+              ORDER BY parent_call.started_at DESC,
+                parent_occurrence.source_order_start DESC,
+                parent_call.ordinal DESC
+              LIMIT 1
+            )
+          ) AS previous_model_call_id
+        FROM ordered_path_calls occurrence
+        JOIN conversation_model_calls current_call
+          ON current_call.id = occurrence.model_call_id
       )
       SELECT call.id, call.turn_id, call.source_call_id, turn.source_turn_id,
         turn.ordinal AS turn_ordinal, turn.started_at AS turn_started_at,
