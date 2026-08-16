@@ -41,15 +41,13 @@ function call(
     provider,
     model,
     startedAt: 1,
-    ...(thinking === undefined
-      ? {}
-      : {
-        reasoningSetting: {
-          settingName: "thinkingLevel",
-          settingValue: thinking,
-          provenance: "inherited" as const,
-        },
-      }),
+    ...(thinking === undefined ? {} : {
+      reasoningSetting: {
+        settingName: "thinkingLevel",
+        settingValue: thinking,
+        provenance: "inherited" as const,
+      },
+    }),
     tokens: tokens(cacheRead, cacheWrite),
     activity: { hasText: true, hasReasoning: false, tools: [] },
   };
@@ -62,7 +60,7 @@ Deno.test("assesses cache retention from the preceding comparable call", () => {
     status: "baseline",
     reason: "no-predecessor",
   });
-  strictEqual(assessCache(baseline, call("hit", 95_000)).status, "hit");
+  strictEqual(assessCache(baseline, call("hit", 100_000)).status, "hit");
   strictEqual(
     assessCache(baseline, call("partial", 50_000)).status,
     "partial-hit",
@@ -85,6 +83,66 @@ Deno.test("assesses cache retention from the preceding comparable call", () => {
     status: "not-comparable",
     reason: "no-reusable-cache",
   });
+});
+
+Deno.test("detects exact linear cache losses without treating shrinkage as a miss", () => {
+  const previous = call("previous", 90_000, undefined, "gpt-5.6", "openai");
+  previous.tokens = {
+    ...previous.tokens,
+    uncachedInput: 0,
+    freshPrompt: 0,
+    processed: 90_010,
+  };
+
+  const smallLoss = call("small-loss", 85_000, undefined, "gpt-5.6", "openai");
+  smallLoss.tokens = {
+    ...smallLoss.tokens,
+    uncachedInput: 15_000,
+    freshPrompt: 15_000,
+    processed: 100_010,
+  };
+  strictEqual(assessCache(previous, smallLoss).status, "partial-hit");
+  const smallLossMisses = analyzeCacheMisses([
+    { ...previous, id: "previous" },
+    { ...smallLoss, id: "small-loss" },
+  ]);
+  strictEqual(smallLossMisses.length, 1);
+  strictEqual(smallLossMisses[0].missedTokens, 5_000);
+
+  const fullyCachedShrink = call(
+    "fully-cached-shrink",
+    80_000,
+    undefined,
+    "gpt-5.6",
+    "openai",
+  );
+  fullyCachedShrink.tokens = {
+    ...fullyCachedShrink.tokens,
+    uncachedInput: 0,
+    freshPrompt: 0,
+    processed: 80_010,
+  };
+  strictEqual(assessCache(previous, fullyCachedShrink).status, "hit");
+  strictEqual(
+    analyzeCacheMisses([
+      { ...previous, id: "previous" },
+      { ...fullyCachedShrink, id: "fully-cached-shrink" },
+    ]).length,
+    0,
+  );
+
+  const writtenPrefix = call("written-prefix", 80_000, 20_000);
+  const partialWriteLoss = call("partial-write-loss", 90_000);
+  partialWriteLoss.tokens = {
+    ...partialWriteLoss.tokens,
+    uncachedInput: 10_000,
+    freshPrompt: 10_000,
+    processed: 100_010,
+  };
+  strictEqual(
+    assessCache(writtenPrefix, partialWriteLoss).status,
+    "partial-hit",
+  );
 });
 
 Deno.test("treats a return to the initial cache-read floor as a full miss", () => {
@@ -179,9 +237,24 @@ Deno.test("classifies mid-turn and cross-turn thinking changes", () => {
   strictEqual(actual.turns[1].cacheSummary?.fullMisses, 0);
   strictEqual(actual.turns[1].cacheSummary?.unexpectedMisses, 0);
   deepStrictEqual(sessionCacheIssues(actual), [
-    { status: "full-miss", cause: "thinking-change", turn: 1, scope: undefined },
-    { status: "partial-hit", cause: "thinking-change", turn: 1, scope: undefined },
-    { status: "full-miss", cause: "thinking-change", turn: 2, scope: undefined },
+    {
+      status: "full-miss",
+      cause: "thinking-change",
+      turn: 1,
+      scope: undefined,
+    },
+    {
+      status: "partial-hit",
+      cause: "thinking-change",
+      turn: 1,
+      scope: undefined,
+    },
+    {
+      status: "full-miss",
+      cause: "thinking-change",
+      turn: 2,
+      scope: undefined,
+    },
   ]);
 });
 
@@ -269,7 +342,7 @@ Deno.test("does not count opaque zero-context usage as a cache miss", () => {
     reasoning: 0,
     processed: 4_291,
   };
-  const resumed = call("resumed", 95_000);
+  const resumed = call("resumed", 100_000);
   resumed.startedAt = 3;
 
   const actual = analyzeSessionCache(session("opaque", [
@@ -285,7 +358,7 @@ Deno.test("does not count opaque zero-context usage as a cache miss", () => {
       { status: "not-comparable", reason: "no-input-context" },
       {
         status: "hit",
-        retainedRatio: 95_000 / 100_000,
+        retainedRatio: 1,
         previousReusableTokens: 100_000,
       },
     ],
@@ -294,7 +367,7 @@ Deno.test("does not count opaque zero-context usage as a cache miss", () => {
   strictEqual(actual.turns[0].cacheSummary?.notComparable, 1);
 });
 
-Deno.test("tracks an OpenAI miss and implicit cache recovery across turns", () => {
+Deno.test("tracks exact OpenAI cache losses across turns", () => {
   function openAICall(id: string, uncachedInput: number, cacheRead: number) {
     const value = call(id, cacheRead, undefined, "gpt-5.5", "openai");
     value.tokens = {
@@ -325,19 +398,19 @@ Deno.test("tracks an OpenAI miss and implicit cache recovery across turns", () =
     actual.turns.flatMap((turn) =>
       turn.calls.map((item) => item.cacheAssessment?.status)
     ),
-    ["baseline", "full-miss", "hit", "hit"],
+    ["baseline", "full-miss", "partial-hit", "partial-hit"],
   );
   deepStrictEqual(actual.turns[1].cacheSummary, {
     baseline: 0,
-    hits: 2,
-    partialHits: 0,
+    hits: 0,
+    partialHits: 2,
     fullMisses: 1,
     notComparable: 0,
     unknown: 0,
     compactionRelatedMisses: 0,
     ttlRelatedMisses: 0,
     thinkingChangeRelatedMisses: 0,
-    unexpectedMisses: 1,
+    unexpectedMisses: 3,
     totalCacheRead: 107_520,
     peakCacheRead: 54_272,
     totalNewInput: 55_906,

@@ -6,12 +6,11 @@ import type {
   SessionDetail,
   TurnCacheSummary,
 } from "../shared/sessionSchemas.ts";
-import { hasInputContext } from "../shared/contextMetrics.ts";
+import { contextSize, hasInputContext } from "../shared/contextMetrics.ts";
 import { computeModelCallCost, estimateModelCacheMissCost } from "./pricing.ts";
 import { estimateCacheMissTokens } from "./cacheMissPricing.ts";
 import type { UsageCall } from "./usage.ts";
 
-export const CACHE_HIT_RATIO = 0.9;
 export const CACHE_FULL_MISS_RATIO = 0.1;
 export const CACHE_TTL_5M_MS = 5 * 60 * 1000;
 export const CACHE_TTL_1H_MS = 60 * 60 * 1000;
@@ -43,8 +42,15 @@ export function assessCache(
     };
   }
 
+  // Only the overlap with the current request could have been reused. A
+  // smaller, fully cached request is therefore a hit rather than a cache miss.
+  const expectedReusable = Math.min(
+    previousReusableTokens,
+    contextSize(current.tokens),
+  );
+  const actualCacheRead = Math.min(current.tokens.cacheRead, expectedReusable);
   const retainedRatio = current.tokens.cacheRead / previousReusableTokens;
-  const status = retainedRatio >= CACHE_HIT_RATIO
+  const status = actualCacheRead === expectedReusable
     ? "hit"
     : retainedRatio <= CACHE_FULL_MISS_RATIO
     ? "full-miss"

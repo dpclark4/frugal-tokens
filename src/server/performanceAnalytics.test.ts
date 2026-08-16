@@ -53,17 +53,23 @@ function efficiencyCall(
 Deno.test("aggregates weekly session and turn cache miss rates by model", () => {
   const start = new Date(2026, 2, 2).getTime();
   const end = new Date(2026, 2, 8, 23, 59).getTime();
-  const result = aggregatePerformance([
-    call("missed", 1, start + 10, 0, 100),
-    call("missed", 2, start + 20, 0),
-    call("clean", 1, start + 30, 0, 100),
-    call("partial", 1, start + 32, 0, 100),
-    call("partial", 2, start + 34, 50),
-    call("compacted", 1, start + 40, 0, 100),
-    { ...call("compacted", 2, start + 50, 0), followsCompaction: true },
-    call("expired", 1, start + 60, 0, 100),
-    call("expired", 2, start + 2 * 60 * 60 * 1_000, 0),
-  ], start, end, "gpt-5.4", "all");
+  const result = aggregatePerformance(
+    [
+      call("missed", 1, start + 10, 0, 100),
+      call("missed", 2, start + 20, 0),
+      call("clean", 1, start + 30, 0, 100),
+      call("partial", 1, start + 32, 0, 100),
+      call("partial", 2, start + 34, 50),
+      call("compacted", 1, start + 40, 0, 100),
+      { ...call("compacted", 2, start + 50, 0), followsCompaction: true },
+      call("expired", 1, start + 60, 0, 100),
+      call("expired", 2, start + 2 * 60 * 60 * 1_000, 0),
+    ],
+    start,
+    end,
+    "gpt-5.4",
+    "all",
+  );
 
   strictEqual(result.openai.sessions, 5);
   strictEqual(result.openai.sessionsWithMiss, 2);
@@ -74,30 +80,34 @@ Deno.test("aggregates weekly session and turn cache miss rates by model", () => 
   strictEqual(result.anthropic.sessions, 0);
 });
 
-Deno.test("buckets partial and full cache misses but excludes cache hits", () => {
+Deno.test("buckets every partial and full cache loss", () => {
   const start = new Date(2026, 2, 2).getTime();
   const end = new Date(2026, 2, 8, 23, 59).getTime();
-  const result = aggregatePerformance([
-    call("retention", 1, start + 10, 0, 100),
-    call("retention", 2, start + 20, 80),
-    call("hit", 1, start + 25, 0, 100),
-    call("hit", 2, start + 26, 95),
-    call("compacted", 1, start + 30, 0, 100),
-    { ...call("compacted", 2, start + 40, 0), followsCompaction: true },
-  ], start, end);
+  const result = aggregatePerformance(
+    [
+      call("retention", 1, start + 10, 0, 100),
+      call("retention", 2, start + 20, 80),
+      call("hit", 1, start + 25, 0, 100),
+      call("hit", 2, start + 26, 95),
+      call("compacted", 1, start + 30, 0, 100),
+      { ...call("compacted", 2, start + 40, 0), followsCompaction: true },
+    ],
+    start,
+    end,
+  );
   const retention = result.openai.weeks[0].cacheRetention!;
 
   strictEqual(retention.comparableRequests, 2);
-  strictEqual(retention.requestsWithLoss, 1);
-  strictEqual(retention.partialHits, 1);
+  strictEqual(retention.requestsWithLoss, 2);
+  strictEqual(retention.partialHits, 2);
   strictEqual(retention.fullMisses, 0);
   strictEqual(retention.retainedTokens, 175);
   strictEqual(retention.unretainedTokens, 25);
   strictEqual(retention.retainedShare, 0.875);
-  strictEqual(retention.lossRequestRate, 0.5);
+  strictEqual(retention.lossRequestRate, 1);
   strictEqual(retention.p90UnretainedTokens, 18.5);
-  strictEqual(retention.lossBuckets[0].requests, 1);
-  strictEqual(retention.lossBuckets[0].unretainedTokens, 20);
+  strictEqual(retention.lossBuckets[0].requests, 2);
+  strictEqual(retention.lossBuckets[0].unretainedTokens, 25);
   strictEqual(retention.lossBuckets[1].requests, 0);
 });
 
@@ -118,14 +128,18 @@ Deno.test("groups image sessions into exclusive cohorts with miss rates", () => 
         : second,
     ];
   };
-  const result = aggregatePerformance([
-    ...cohortSession("no-image-miss", "none", true),
-    ...cohortSession("no-image-clean", "none", false),
-    ...cohortSession("first-image-miss", "first", true),
-    ...cohortSession("first-image-clean", "first", false),
-    ...cohortSession("later-image-miss", "later", true),
-    ...cohortSession("later-image-clean", "later", false),
-  ], start, end);
+  const result = aggregatePerformance(
+    [
+      ...cohortSession("no-image-miss", "none", true),
+      ...cohortSession("no-image-clean", "none", false),
+      ...cohortSession("first-image-miss", "first", true),
+      ...cohortSession("first-image-clean", "first", false),
+      ...cohortSession("later-image-miss", "later", true),
+      ...cohortSession("later-image-clean", "later", false),
+    ],
+    start,
+    end,
+  );
 
   for (const cohort of result.openai.imageCohorts) {
     strictEqual(cohort.sessions, 2);
