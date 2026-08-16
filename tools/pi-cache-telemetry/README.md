@@ -220,12 +220,47 @@ For the preceding, candidate, and following calls, compare:
 - `payload.envelopeMatchesPrevious`
 - instruction, tool, and prompt-cache-key hashes
 - image and function-output types and byte sizes
+- immediately preceding function-call names/counts and the returned output batch's names, order, and byte sizes when the wiretap is available
 - `websocketDelta.usedPreviousResponseId`
 - connection creation/reuse and delta/full-context counts
 - WebSocket failures and SSE fallbacks
 
 The extension sees Pi’s full logical payload before Pi converts it to a
 WebSocket delta. The wiretap sees the actual transport frames. Use both views.
+
+For reproduction-oriented comparisons, project tool names and result sizes
+without printing arguments or results. Match `callId` locally; do not include
+raw command text or result bodies in reports.
+
+```bash
+jq -c '
+  select(.event == "message" and .direction == "incoming"
+    and .frame.json.type == "response.output_item.done")
+  | select(.frame.json.item.type == "function_call")
+  | {
+      sequence,
+      timestamp,
+      callId: .frame.json.item.call_id,
+      name: .frame.json.item.name,
+      argumentsBytes: (.frame.json.item.arguments | length)
+    }
+' "$WIRETAP"
+
+jq -c '
+  select(.event == "message" and .direction == "outgoing"
+    and .frame.json.type == "response.create")
+  | {
+      sequence,
+      timestamp,
+      functionOutputs: [(.frame.json.input // [])[]
+        | select(.type == "function_call_output")
+        | {callId: .call_id, outputBytes: (.output | tostring | length)}]
+    }
+' "$WIRETAP"
+```
+
+A repeated tool name or output shape is a reproduction variable, not an
+established cause. Seek matching warm controls before attributing a dip to it.
 
 ### 3.6 Correlate a raw response with the Pi session
 
@@ -280,7 +315,9 @@ For a strong healthy-continuation report, establish all of the following:
    change.
 5. `previous_response_id` and delta continuation state.
 6. Connection and fallback state.
-7. The newly added input item types, counts, and approximate sizes.
+7. The newly added input item types, counts, approximate sizes, and (when a
+   wiretap is available) immediately preceding function-call names/order and
+   returned output-batch names/order.
 
 ## 5. Controlled reproductions
 
@@ -303,6 +340,7 @@ modify installed Pi packages.
 - model and reasoning level
 - initial instructions and phase-boundary wording
 - tool schema and tool ordering
+- immediately preceding function-call names/order and returned output-batch names/order
 - sequential versus parallel calls
 - fixture item count, token count, media type, and approximate encoded size
 - delay between tool completion and the next model call
@@ -363,6 +401,7 @@ provider zero when the field is present, but it is not a comparable bust.
 | 005 | Six partial dips; one zero after fallback | Healthy WebSocket continuations; one SSE fallback | Mixed-size function outputs | Six raw partial one-call busts; one transport-associated candidate |
 | 006 | `4992 -> 1536 -> 11136` | Healthy same-socket continuation | Four text function outputs, about 11 KB | Raw partial one-call bust |
 | 007 | `39552 -> 0 -> 40576` | Healthy same-socket continuation | Small user delta after one text function output | Raw full one-call bust |
+| 009 | `9728 -> 0 -> 10752`; `33280 -> 12800 -> 33280`; `47616 -> 34304 -> 53760` | First recovery followed idle timeout/reconnect; latter two healthy same-socket continuations | Two three-`bash` output batches; one small user delta | One raw full observation with reset-confounded recovery; two raw partial one-call busts |
 
 ### Case 001 — WebSocket failure and SSE retry
 
@@ -623,6 +662,63 @@ remained healthy through recovery and did not receive its unrelated
 multi-output immediate delta is not required for a raw full bust. It is
 evidence of a transient provider-reported cache-read regression on a healthy
 Pi continuation, not proof of the provider's internal cause or a Pi defect.
+
+### Case 009 — Two healthy partial busts and a reset-confounded full zero
+
+**Date:** 2026-08-16; **Model:** `gpt-5.6-sol`, medium reasoning
+**Pi session:** `01a00aef-3b1e-778a-b4d9-39ea4e08d244`
+**Archive model-call rows:** not investigated
+
+```text
+Session:
+~/.pi/agent/sessions/--Users-danclark-programming-frugal-tokens--/2026-08-16T14-17-25-534Z_01a00aef-3b1e-778a-b4d9-39ea4e08d244.jsonl
+Telemetry:
+~/.pi/agent/diagnostics/cache-telemetry/2026-08-16T14-17-25-534Z_01a00aef-3b1e-778a-b4d9-39ea4e08d244.jsonl
+Wiretap:
+~/.pi/agent/diagnostics/cache-telemetry/wiretap/codex-websocket-2026-08-16T14-17-24Z-69346.jsonl
+```
+
+The wiretap explicitly included raw `cached_tokens` on every completed
+WebSocket response. Three material dips had warm predecessors and positive
+following reads:
+
+| Telemetry call | Raw cache sequence | Immediate context | Classification |
+| --- | --- | --- | --- |
+| 6 | `9728 -> 0 -> 10752` | Three `bash` outputs, 2,207 + 4,844 + 126 bytes | Full raw zero; reset-confounded recovery |
+| 15 | `33280 -> 12800 -> 33280` | 75-byte user delta after normal assistant text | Raw partial one-call bust |
+| 27 | `47616 -> 34304 -> 53760` | Three `bash` outputs, 158 + 8,464 + 433 bytes | Raw partial one-call bust |
+
+Call 6 retained an exact 31-item logical prefix and unchanged envelope,
+instructions, tools, settings, and prompt-cache-key fingerprints. It was a
+reused WebSocket delta with `previous_response_id` and completed normally. Its
+zero-read request followed an assistant turn that issued three `bash` calls.
+The socket was only closed cleanly for `idle_timeout` about five minutes after
+the zero completed; the next request occurred about 7 minutes 46 seconds
+later on a new WebSocket with full context and no `previous_response_id`, then
+read 10,752 cached tokens. The raw zero is established, but the reset before
+recovery means this is not a strong same-socket healthy-continuation report or
+the SSE-retry transport pattern.
+
+Calls 15 and 27 retained exact 67- and 122-item prefixes, respectively, with
+unchanged envelope, instructions, tools, settings, and prompt-cache-key
+fingerprints. Both used `previous_response_id` WebSocket deltas on reused
+connection 2, which had no error, retry, reconnect, or SSE fallback near either
+dip or recovery. Call 15 followed a roughly three-minute gap and no immediate
+tool output: its logical suffix was a 910-byte assistant message and a 75-byte
+user message. Call 27 followed an assistant turn that issued three `bash`
+calls, and its immediate delta returned their approximately 9.1 KB results.
+
+A fourth small raw dip, call 18's `34304 -> 33280 -> 36352`, retained 97.0% of
+the predecessor's read after a `read`, `bash`, `bash` output batch of about
+11.4 KB. Following the Case 005 90% dashboard convention, it is not included
+in the material-bust count, but it is useful reproduction context.
+
+The two `bash`-batch examples make tool name/order and output-batch shape worth
+recording as controlled variables. They do not establish `bash` as a cause:
+this session contains other successful `bash` batches and call 15 shows an
+immediate tool result is not required. Future trials should vary the named
+three-output `bash` shape against size- and order-matched `read` or text-output
+controls, while holding transport, delay, and payload shape fixed.
 
 ### Unclassified candidates — missing wiretap
 
@@ -926,6 +1022,7 @@ Previous/current/following raw cached_tokens:
 Classification: baseline / candidate / partial bust / full bust:
 Logical prefix and envelope state:
 Current and preceding delta item types and sizes:
+Immediately preceding function-call names/order and returned output-batch names/order, or unavailable:
 Continuation and previous_response_id state:
 Connection created/reused/closed:
 Transport failures or SSE fallback:
