@@ -280,6 +280,10 @@
   white-space: nowrap;
 }
 
+.sd-metric > strong:has(.cost-warning-trigger) {
+  overflow: visible;
+}
+
 .sd-metric small {
   display: block;
   margin-top: 3px;
@@ -288,6 +292,21 @@
   font: 10.5px var(--mono);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.sd-cost-value {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 5px;
+}
+
+.sd-cost-value.is-warning {
+  color: var(--sd-red);
+}
+
+.sd-cost-value.is-warning svg {
+  flex: none;
 }
 
 .sd-layout {

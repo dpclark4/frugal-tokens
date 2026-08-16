@@ -24,6 +24,7 @@ import { rollupCosts } from "../shared/costMetrics.ts";
 import { getTitleGenerationSetting, setTitleGenerationSetting } from "./api.ts";
 import { harnessIcon, harnessName } from "./harness.ts";
 import { HarnessOptions } from "./HarnessOptions.tsx";
+import { costsMismatch, CostWarning } from "./CostWarning.tsx";
 
 const integer = new Intl.NumberFormat("en-US");
 const dollars = new Intl.NumberFormat("en-US", {
@@ -58,8 +59,6 @@ const sessionStarted = new Intl.DateTimeFormat(undefined, {
   hour: "numeric",
   minute: "2-digit",
 });
-
-const COST_EPSILON = 0.0001;
 
 function TokenValue({ value }: { value: number }) {
   return <span title={integer.format(value)}>{compact.format(value)}</span>;
@@ -954,12 +953,6 @@ function SubagentSummary({
   );
 }
 
-function costsMismatch(reported?: number, computed?: number) {
-  if (reported === undefined || reported === 0) return false;
-  if (computed === undefined) return false;
-  return Math.abs(reported - computed) > COST_EPSILON;
-}
-
 function CostCell({
   reported,
   computed,
@@ -1006,11 +999,9 @@ function CostCell({
       className={`cost-cell${session ? " session-cost" : ""}${
         mismatch ? " cost-mismatch" : ""
       }${usesReportedFallback ? " cost-reported-fallback" : ""}`}
-      title={title}
+      title={mismatch || usesReportedFallback ? undefined : title}
     >
-      {mismatch && (
-        <span className="cost-mismatch-icon" aria-label="Cost mismatch">!</span>
-      )}
+      <CostWarning reported={reported} computed={computed} />
       {subagents !== undefined && !usesReportedFallback
         ? (
           <SubagentCostBreakdown

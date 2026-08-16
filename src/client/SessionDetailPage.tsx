@@ -46,6 +46,7 @@ import {
 import { getSession, openSessionInGhostty } from "./api.ts";
 import { harnessIcon, harnessName } from "./harness.ts";
 import { modelIcon } from "./modelIcons.ts";
+import { costsMismatch, CostWarning } from "./CostWarning.tsx";
 import ghosttyIcon from "./assets/icons/ghostty.svg";
 import "./SessionDetailPage.css";
 
@@ -331,7 +332,7 @@ function defaultCollapsedTurnIDs(session: SessionDetail) {
 
 function DetailMetric({ label, value, detail }: {
   label: string;
-  value: string;
+  value: ReactNode;
   detail?: string;
 }) {
   return (
@@ -340,6 +341,29 @@ function DetailMetric({ label, value, detail }: {
       <strong>{value}</strong>
       {detail && <small>{detail}</small>}
     </div>
+  );
+}
+
+function CostIntegrityValue({
+  reported,
+  computed,
+}: {
+  reported?: number;
+  computed?: number;
+}) {
+  const missingComputed = computed === undefined && reported !== undefined;
+  const mismatch = costsMismatch(reported, computed);
+  const warning = missingComputed || mismatch;
+  const value = missingComputed
+    ? money.format(reported)
+    : computed === undefined
+    ? "Unpriced"
+    : money.format(computed);
+  return (
+    <span className={`sd-cost-value${warning ? " is-warning" : ""}`}>
+      <CostWarning reported={reported} computed={computed} />
+      <span>{value}</span>
+    </span>
   );
 }
 
@@ -1312,11 +1336,10 @@ function CallBlock({
           {call.tokens.reasoning > 0 && (
             <span>{compact.format(call.tokens.reasoning)} reasoning</span>
           )}
-          <span>
-            {call.computedCost === undefined
-              ? "Unpriced"
-              : money.format(call.computedCost)}
-          </span>
+          <CostIntegrityValue
+            reported={call.reportedCost}
+            computed={call.computedCost}
+          />
         </div>
       </div>
     </section>
@@ -2374,6 +2397,10 @@ export function SessionDetailPage() {
   );
   const computed = rollupCosts(tree.map((item) => item.computedCost)).cost;
   const cost = session.inclusiveComputedCost ?? computed;
+  const reportedCosts = tree.map((item) => item.reportedCost);
+  const reportedCost = reportedCosts.every((item) => item !== undefined)
+    ? reportedCosts.reduce((total, item) => total + item!, 0)
+    : undefined;
   const subagents = tree.length - 1;
   const subagentCost = rollupCosts(
     tree.slice(1).map((item) => item.computedCost),
@@ -2517,9 +2544,16 @@ export function SessionDetailPage() {
           />
           <DetailMetric
             label={scenarioChanged ? "Estimated cost" : "Cost"}
-            value={estimatedCost === undefined
-              ? "Unpriced"
-              : money.format(estimatedCost)}
+            value={scenarioChanged
+              ? estimatedCost === undefined
+                ? "Unpriced"
+                : money.format(estimatedCost)
+              : (
+                <CostIntegrityValue
+                  reported={session.inclusiveReportedCost ?? reportedCost}
+                  computed={cost}
+                />
+              )}
             detail={scenarioDetail}
           />
         </div>
