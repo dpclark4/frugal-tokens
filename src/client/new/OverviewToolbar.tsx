@@ -136,7 +136,7 @@ export function OverviewToolbar({
               }}
             >
               <FileText size={15} aria-hidden="true" />
-              Copy as Markdown
+              Copy as markdown
             </button>
             <button
               type="button"
