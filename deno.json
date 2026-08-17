@@ -2,6 +2,7 @@
   "nodeModulesDir": "auto",
   "minimumDependencyAge": 0,
   "imports": {
+    "@js-temporal/polyfill": "npm:@js-temporal/polyfill@0.5.1",
     "@tanstack/react-router": "npm:@tanstack/react-router@1.170.17",
     "@vitejs/plugin-react": "npm:@vitejs/plugin-react@6.0.3",
     "hono": "npm:hono@4.12.29",

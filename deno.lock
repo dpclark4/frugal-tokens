@@ -1,6 +1,7 @@
 {
   "version": "5",
   "specifiers": {
+    "npm:@js-temporal/polyfill@0.5.1": "0.5.1",
     "npm:@tanstack/react-router@1.170.17": "1.170.17_react@19.2.7_react-dom@19.2.7__react@19.2.7",
     "npm:@types/react-dom@19.2.3": "19.2.3_@types+react@19.2.17",
     "npm:@types/react@19.2.17": "19.2.17",
@@ -413,6 +414,12 @@
       "dependencies": [
         "@jridgewell/resolve-uri",
         "@jridgewell/sourcemap-codec"
+      ]
+    },
+    "@js-temporal/polyfill@0.5.1": {
+      "integrity": "sha512-hloP58zRVCRSpgDxmqCWJNlizAlUgJFqG2ypq79DCvyv9tHjRYMDOcPFjzfl/A1/YxDvRCZz8wvZvmapQnKwFQ==",
+      "dependencies": [
+        "jsbi"
       ]
     },
     "@napi-rs/wasm-runtime@1.2.2_@emnapi+core@1.11.1_@emnapi+runtime@1.11.1": {
@@ -857,6 +864,9 @@
     "isbot@5.2.1": {
       "integrity": "sha512-dJ+LpKyClQZ7NG+j3OensC/mAZkGpukE9YUrgPYvAZj2doVL0edfDgywTUh5CXa0o+nW9a1V9e5+CJTX8+SxRw=="
     },
+    "jsbi@4.3.2": {
+      "integrity": "sha512-9fqMSQbhJykSeii05nxKl4m6Eqn2P6rOlYiS+C5Dr/HPIU/7yZxu5qzbs40tgaFORiw2Amd0mirjxatXYMkIew=="
+    },
     "kleur@4.1.5": {
       "integrity": "sha512-o+NO+8WrRiQEE4/7nwRJhN1HWpVmJm511pBHUxPLtp0BUISzlBplORYSmTclCnJvQq2tKu/sgl3xVpkc7ZWuQQ=="
     },
@@ -1293,6 +1303,7 @@
   },
   "workspace": {
     "dependencies": [
+      "npm:@js-temporal/polyfill@0.5.1",
       "npm:@tanstack/react-router@1.170.17",
       "npm:@types/react-dom@19.2.3",
       "npm:@types/react@19.2.17",
