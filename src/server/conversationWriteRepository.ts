@@ -722,6 +722,7 @@ export class ConversationWriteRepository {
         const entryKeys = new Set<string>();
         const contexts = [...(artifact.value.session.contextEvents ?? [])]
           .sort((a, b) => a.sourceOrder - b.sourceOrder);
+        const contextAppearances = new Map<string, number>();
         let contextIndex = 0;
 
         const insertContextsBefore = (sourceOrder: number) => {
@@ -731,14 +732,19 @@ export class ConversationWriteRepository {
           ) {
             const event = contexts[contextIndex++];
             const stableID = event.compaction?.sourceID;
+            let appearance: number | undefined;
+            if (stableID !== undefined) {
+              appearance = (contextAppearances.get(stableID) ?? 0) + 1;
+              contextAppearances.set(stableID, appearance);
+            }
             const key = stableID === undefined
               ? `${artifact.externalID}:context:${event.sourceOrder}`
-              : `stable:${stableID}`;
+              : `stable:${stableID}:appearance:${appearance}`;
             let entryID = canonicalContexts.get(key);
             if (entryID === undefined) {
               entryID = insertEntry({
                 parentEntryID: previousEntryID,
-                stableSourceID: stableID,
+                stableSourceID: appearance === 1 ? stableID : undefined,
                 kind: "context-event",
                 occurredAt: event.occurredAt,
                 nativeMetadata: event,

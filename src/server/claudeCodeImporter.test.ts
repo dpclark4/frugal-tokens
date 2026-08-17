@@ -179,6 +179,72 @@ Deno.test("imports a Claude Code root and namespaced child tree", async () => {
   }
 });
 
+Deno.test("imports replayed Claude compaction checkpoints", async () => {
+  const directory = Deno.makeTempDirSync();
+  const sessions = `${directory}/projects`;
+  const project = `${sessions}/project`;
+  write(
+    `${project}/replayed.jsonl`,
+    `
+{"type":"user","uuid":"user-1","sessionId":"replayed","timestamp":"2026-07-14T10:00:00Z","promptSource":"typed","origin":{"kind":"human"},"message":{"content":"First"}}
+{"type":"assistant","uuid":"assistant-1","sessionId":"replayed","timestamp":"2026-07-14T10:00:01Z","message":{"id":"call-1","model":"claude-opus","content":[{"type":"text","text":"First response"}],"usage":{"input_tokens":2,"cache_read_input_tokens":1,"cache_creation_input_tokens":0,"output_tokens":1}}}
+{"type":"system","subtype":"compact_boundary","uuid":"replayed-boundary","sessionId":"replayed","timestamp":"2026-07-14T10:00:02Z","compactMetadata":{"trigger":"auto","preTokens":100,"postTokens":20}}
+{"type":"user","uuid":"replayed-summary","sessionId":"replayed","isCompactSummary":true,"timestamp":"2026-07-14T10:00:02Z","message":{"content":"Summary"}}
+{"type":"user","uuid":"user-2","sessionId":"replayed","timestamp":"2026-07-14T10:00:03Z","promptSource":"typed","origin":{"kind":"human"},"message":{"content":"Second"}}
+{"type":"assistant","uuid":"assistant-2","sessionId":"replayed","timestamp":"2026-07-14T10:00:04Z","message":{"id":"call-2","model":"claude-opus","content":[{"type":"text","text":"Second response"}],"usage":{"input_tokens":2,"cache_read_input_tokens":1,"cache_creation_input_tokens":0,"output_tokens":1}}}
+{"type":"system","subtype":"compact_boundary","uuid":"replayed-boundary","sessionId":"replayed","timestamp":"2026-07-14T10:00:02Z","compactMetadata":{"trigger":"auto","preTokens":100,"postTokens":20}}
+{"type":"user","uuid":"replayed-summary","sessionId":"replayed","isCompactSummary":true,"timestamp":"2026-07-14T10:00:02Z","message":{"content":"Summary"}}
+{"type":"user","uuid":"user-3","sessionId":"replayed","timestamp":"2026-07-14T10:00:05Z","promptSource":"typed","origin":{"kind":"human"},"message":{"content":"Third"}}
+{"type":"assistant","uuid":"assistant-3","sessionId":"replayed","timestamp":"2026-07-14T10:00:06Z","message":{"id":"call-3","model":"claude-opus","content":[{"type":"text","text":"Third response"}],"usage":{"input_tokens":2,"cache_read_input_tokens":1,"cache_creation_input_tokens":0,"output_tokens":1}}}
+    `,
+  );
+
+  const db = openArchiveDatabase(`${directory}/archive.sqlite`);
+  migrateTestDatabase(db);
+  const repository = new SourceArtifactRepository(db);
+  const conversations = new ConversationWriteRepository(db);
+  const reads = new ConversationRepository(db);
+  try {
+    const result = await syncClaudeCodeSessions(
+      sessions,
+      repository,
+      conversations,
+    );
+    strictEqual(result.imported, 1);
+    strictEqual(result.failed, 0);
+
+    const detail = reads.getSession("claude-code", "project/replayed")!;
+    deepStrictEqual(
+      detail.turns.map((turn) =>
+        turn.calls[0].contextEventsBefore?.map((event) => event.sourceOrder) ?? []
+      ),
+      [[], [3], [7]],
+    );
+    strictEqual(
+      db.prepare(`
+        SELECT COUNT(*) AS count FROM conversation_entries
+        WHERE kind = 'context-event'
+      `).get()!.count,
+      2,
+    );
+    strictEqual(
+      db.prepare(`
+        SELECT COUNT(*) AS count FROM artifact_entry_occurrences
+        WHERE source_entry_id = 'replayed-boundary'
+      `).get()!.count,
+      2,
+    );
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM artifact_entry_occurrences")
+        .get()!.count,
+      8,
+    );
+  } finally {
+    db.close();
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
 Deno.test("projects Claude fork artifacts as one canonical conversation family", async () => {
   const directory = Deno.makeTempDirSync();
   const sessions = `${directory}/projects`;
