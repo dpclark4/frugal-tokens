@@ -36,6 +36,9 @@ deno task demo:db:create -- --output contributor.sqlite
 The generator replaces source locations and conversation working directories
 with per-run random aliases such as `~/amber-finch`. The same original path
 receives the same alias everywhere in that generated database, while the
-original path is not retained. Generate a fresh snapshot rather than merging
-archives; canonical branch, occurrence, and lineage identifiers are scoped to
-the source database.
+original path is not retained. Imported and generated session titles are
+replaced, while requested reasoning settings are retained for analytics.
+Message, response, reasoning, and tool previews are replaced with typed
+placeholders that retain their original character counts. Generate a fresh
+snapshot rather than merging archives; canonical branch, occurrence, and
+lineage identifiers are scoped to the source database.

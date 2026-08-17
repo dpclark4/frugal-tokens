@@ -2,7 +2,6 @@ import { backup, DatabaseSync } from "node:sqlite";
 import { dirname, resolve } from "node:path";
 import { sqlitePath } from "../src/server/database.ts";
 
-const REDACTED = "[redacted]";
 const DEMO_START_AT = Date.parse("2026-01-01T00:00:00Z");
 
 const adjectives = [
@@ -332,7 +331,12 @@ function redact(db: DatabaseSync) {
 
       UPDATE source_sessions
       SET external_id = 'demo-artifact-' || id,
-          artifact_path = NULL;
+          artifact_path = NULL,
+          generated_title = NULL;
+
+      UPDATE title_generation_runs
+      SET output_title = NULL,
+          error = NULL;
 
       UPDATE artifact_import_projections
       SET source_checksum = 'demo-checksum-' || source_session_id,
@@ -348,34 +352,32 @@ function redact(db: DatabaseSync) {
       UPDATE conversation_turns
       SET source_turn_id = CASE
         WHEN source_turn_id IS NULL THEN NULL ELSE 'demo-turn-' || id
-      END,
-          reasoning_setting_name = NULL,
-          reasoning_setting_value = NULL,
-          reasoning_source_field_path = NULL,
-          reasoning_source_order = NULL,
-          reasoning_observed_at = NULL,
-          reasoning_provenance = NULL;
+      END;
 
       UPDATE conversation_model_calls
       SET source_call_id = CASE
         WHEN source_call_id IS NULL THEN NULL ELSE 'demo-call-' || id
-      END,
-          reasoning_setting_name = NULL,
-          reasoning_setting_value = NULL,
-          reasoning_source_field_path = NULL,
-          reasoning_source_order = NULL,
-          reasoning_observed_at = NULL,
-          reasoning_provenance = NULL;
+      END;
 
       UPDATE conversation_tool_events
       SET source_tool_id = CASE
         WHEN source_tool_id IS NULL THEN NULL ELSE 'demo-tool-' || id
       END,
           input_preview = CASE
-            WHEN input_preview IS NULL THEN NULL ELSE '${REDACTED}'
+            WHEN input_preview IS NULL THEN NULL
+            ELSE printf(
+              '[redacted %s input; %d characters]',
+              name,
+              COALESCE(input_original_length, length(input_preview))
+            )
           END,
           output_preview = CASE
-            WHEN output_preview IS NULL THEN NULL ELSE '${REDACTED}'
+            WHEN output_preview IS NULL THEN NULL
+            ELSE printf(
+              '[redacted %s output; %d characters]',
+              name,
+              COALESCE(output_original_length, length(output_preview))
+            )
           END;
 
       UPDATE conversation_entries
@@ -383,7 +385,25 @@ function redact(db: DatabaseSync) {
         WHEN stable_source_id IS NULL THEN NULL ELSE 'demo-entry-' || id
       END,
           content_preview = CASE
-            WHEN content_preview IS NULL THEN NULL ELSE '${REDACTED}'
+            WHEN content_preview IS NULL THEN NULL
+            WHEN role = 'user' THEN printf(
+              '[redacted user message; %d characters]',
+              COALESCE(original_length, length(content_preview))
+            )
+            WHEN producer_model_call_id IS NOT NULL THEN printf(
+              '[redacted model %s; %d characters]',
+              CASE WHEN COALESCE(content_kind, kind) = 'reasoning'
+                THEN 'reasoning' ELSE 'response' END,
+              COALESCE(original_length, length(content_preview))
+            )
+            WHEN producer_tool_event_id IS NOT NULL THEN printf(
+              '[redacted tool result; %d characters]',
+              COALESCE(original_length, length(content_preview))
+            )
+            ELSE printf(
+              '[redacted conversation content; %d characters]',
+              COALESCE(original_length, length(content_preview))
+            )
           END,
           content_hash = NULL,
           -- Detail hydration parses context-event metadata, so retain only a
@@ -489,7 +509,13 @@ function audit(db: DatabaseSync) {
     ["sources", `location NOT GLOB '~/*' OR label NOT GLOB 'Demo *'`],
     [
       "source_sessions",
-      `external_id NOT GLOB 'demo-artifact-*' OR artifact_path IS NOT NULL`,
+      `external_id NOT GLOB 'demo-artifact-*'
+        OR artifact_path IS NOT NULL
+        OR generated_title IS NOT NULL`,
+    ],
+    [
+      "title_generation_runs",
+      `output_title IS NOT NULL OR error IS NOT NULL`,
     ],
     [
       "artifact_import_projections",
@@ -508,34 +534,25 @@ function audit(db: DatabaseSync) {
     ],
     [
       "conversation_turns",
-      `source_turn_id IS NOT NULL AND source_turn_id NOT GLOB 'demo-turn-*'
-        OR reasoning_setting_name IS NOT NULL
-        OR reasoning_setting_value IS NOT NULL
-        OR reasoning_source_field_path IS NOT NULL
-        OR reasoning_source_order IS NOT NULL
-        OR reasoning_observed_at IS NOT NULL
-        OR reasoning_provenance IS NOT NULL`,
+      `source_turn_id IS NOT NULL AND source_turn_id NOT GLOB 'demo-turn-*'`,
     ],
     [
       "conversation_model_calls",
-      `source_call_id IS NOT NULL AND source_call_id NOT GLOB 'demo-call-*'
-        OR reasoning_setting_name IS NOT NULL
-        OR reasoning_setting_value IS NOT NULL
-        OR reasoning_source_field_path IS NOT NULL
-        OR reasoning_source_order IS NOT NULL
-        OR reasoning_observed_at IS NOT NULL
-        OR reasoning_provenance IS NOT NULL`,
+      `source_call_id IS NOT NULL AND source_call_id NOT GLOB 'demo-call-*'`,
     ],
     [
       "conversation_tool_events",
       `(source_tool_id IS NOT NULL AND source_tool_id NOT GLOB 'demo-tool-*')
-        OR (input_preview IS NOT NULL AND input_preview <> '${REDACTED}')
-        OR (output_preview IS NOT NULL AND output_preview <> '${REDACTED}')`,
+        OR (input_preview IS NOT NULL
+          AND input_preview NOT LIKE '[redacted % input; % characters]')
+        OR (output_preview IS NOT NULL
+          AND output_preview NOT LIKE '[redacted % output; % characters]')`,
     ],
     [
       "conversation_entries",
       `(stable_source_id IS NOT NULL AND stable_source_id NOT GLOB 'demo-entry-*')
-        OR (content_preview IS NOT NULL AND content_preview <> '${REDACTED}')
+        OR (content_preview IS NOT NULL
+          AND content_preview NOT LIKE '[redacted %; % characters]')
         OR content_hash IS NOT NULL
         OR (kind = 'context-event'
           AND native_metadata_json IS NOT '{"type":"redacted","sourceOrder":1}')
