@@ -305,8 +305,9 @@ const logApiRequest = createMiddleware(async (context, next) => {
     context.req.raw.headers,
     context.env.remoteAddress,
   ) ?? "unknown";
+  const cache = context.res.headers.get("X-Cache") ?? "BYPASS";
   console.info(
-    `[request] method=${context.req.method} endpoint=${url.pathname}${url.search} status=${context.res.status} duration=${
+    `[request] method=${context.req.method} endpoint=${url.pathname}${url.search} status=${context.res.status} cache=${cache} duration=${
       formatTiming(performance.now() - startedAt)
     } ip=${ip}`,
   );

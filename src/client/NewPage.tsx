@@ -19,8 +19,6 @@ import { UsageOverview } from "./new/UsageOverview.tsx";
 import { SessionShape } from "./new/SessionShape.tsx";
 import { CacheOverview } from "./new/CacheOverview.tsx";
 import { RecentSessions } from "./new/RecentSessions.tsx";
-import { copyElementScreenshot } from "./copyScreenshot.ts";
-import { buildOverviewReport } from "./overviewReport.ts";
 
 const route = getRouteApi("/");
 const WorkRhythm = lazy(() =>
@@ -182,26 +180,26 @@ export function NewPage() {
         data: result,
       });
       setError(undefined);
-      return getWorkRhythm(search.range, search.harness).then((workRhythm) => {
-        if (!active) return;
-        setLoadedWorkRhythm({
-          range: search.range,
-          harness: search.harness,
-          data: workRhythm,
-        });
-      }).catch((reason) => {
-        if (active) {
-          setWorkRhythmError(
-            reason instanceof Error
-              ? reason.message
-              : "Unable to load estimated work",
-          );
-        }
-      });
     }).catch((reason) => {
       if (active) {
         setError(
           reason instanceof Error ? reason.message : "Unable to load overview",
+        );
+      }
+    });
+    getWorkRhythm(search.range, search.harness).then((workRhythm) => {
+      if (!active) return;
+      setLoadedWorkRhythm({
+        range: search.range,
+        harness: search.harness,
+        data: workRhythm,
+      });
+    }).catch((reason) => {
+      if (active) {
+        setWorkRhythmError(
+          reason instanceof Error
+            ? reason.message
+            : "Unable to load estimated work",
         );
       }
     });
@@ -247,6 +245,7 @@ export function NewPage() {
       !sessionShapeIsCurrent || !loadedCacheMisses || !cacheMissesAreCurrent
     ) return;
     try {
+      const { buildOverviewReport } = await import("./overviewReport.ts");
       await copyText(buildOverviewReport({
         overview: data,
         workRhythmOverview: workRhythmData,
@@ -267,6 +266,7 @@ export function NewPage() {
     if (!element || screenshotState === "capturing") return;
     setScreenshotState("capturing");
     try {
+      const { copyElementScreenshot } = await import("./copyScreenshot.ts");
       await copyElementScreenshot(element);
       setScreenshotState("copied");
       globalThis.setTimeout(() => setScreenshotState("idle"), 2_000);

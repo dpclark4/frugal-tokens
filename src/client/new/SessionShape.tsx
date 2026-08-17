@@ -1,10 +1,16 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import type {
   SessionShapeResponse,
   UsageResponse,
 } from "../../shared/sessionSchemas.ts";
 import { getSessionShape, getUsage } from "../api.ts";
-import { InitialInputChart } from "../analytics/InitialInputChart.tsx";
+const InitialInputChart = lazy(() =>
+  import("../analytics/InitialInputChart.tsx").then((
+    { InitialInputChart },
+  ) => ({
+    default: InitialInputChart,
+  }))
+);
 import { compact, currency, decimal, integer } from "./formatters.ts";
 import "./SessionShape.css";
 
@@ -101,12 +107,18 @@ function DistributionStrip({
               <strong>Starting context by day</strong>
               {initialInputUsage
                 ? (
-                  <InitialInputChart
-                    usage={initialInputUsage}
-                    bare
-                    showLegend
-                    label="Starting context"
-                  />
+                  <Suspense
+                    fallback={
+                      <span className="shape-context-message">Loading…</span>
+                    }
+                  >
+                    <InitialInputChart
+                      usage={initialInputUsage}
+                      bare
+                      showLegend
+                      label="Starting context"
+                    />
+                  </Suspense>
                 )
                 : (
                   <span className="shape-context-message">
