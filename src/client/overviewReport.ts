@@ -146,7 +146,7 @@ export function buildOverviewReport({
     : summary.spend / summary.processedInput * 1_000_000;
   sections.push(
     "## Usage\n\n" + table(
-      ["Sessions", "Spend", "Processed input", "Token reuse", "Cost / 1M"],
+      ["Sessions", "Spend", "Processed input", "Token reuse", "$/1M processed"],
       [[
         integer.format(summary.sessions),
         `${money.format(summary.spend)}${summary.hasUnpricedCost ? "+" : ""}`,
@@ -157,7 +157,7 @@ export function buildOverviewReport({
     ),
   );
   sections.push(table(["Signal", "Value"], [
-    ["Spend at cache-miss calls", money.format(summary.spendAtMissCalls)],
+    ["Attributed cache-miss cost", money.format(summary.spendAtMissCalls)],
     ["Subagent spend", money.format(summary.subagentSpend)],
     ["Spend from top 10% of sessions", percent(summary.topDecileSpendShare)],
   ]));

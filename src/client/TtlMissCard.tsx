@@ -75,7 +75,7 @@ function CacheMissOverview({ metrics }: { metrics: TtlMissMetrics }) {
             {money.format(attributedCost)}{" "}
             ({share(attributedCost, metrics.totalCost)})
           </strong>
-          <span>Cache-miss cost</span>
+          <span>Attributed miss cost</span>
         </div>
       </div>
 
@@ -99,7 +99,7 @@ function CacheMissOverview({ metrics }: { metrics: TtlMissMetrics }) {
               <span role="columnheader">Time since previous session</span>
               <span role="columnheader">Misses</span>
               <span role="columnheader">Sessions</span>
-              <span role="columnheader">Cost at miss</span>
+              <span role="columnheader">Attributed cost</span>
             </div>
             {([
               [
@@ -151,7 +151,7 @@ function CacheMissOverview({ metrics }: { metrics: TtlMissMetrics }) {
               <span role="columnheader">Cause</span>
               <span role="columnheader">Misses</span>
               <span role="columnheader">Sessions</span>
-              <span role="columnheader">Cost at miss</span>
+              <span role="columnheader">Attributed cost</span>
             </div>
             {rows.map(({ label, category }) => (
               <div className="cache-miss-cost-row" role="row" key={label}>

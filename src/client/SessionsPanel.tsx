@@ -230,7 +230,7 @@ function SessionInputMetric({
   return (
     <span
       className="metric-stack session-input-metric"
-      title="Cumulative input processed by all direct and subagent model calls"
+      title="Processed input across all direct and subagent model calls"
     >
       <span>
         <TokenValue value={totalInput} /> {label}

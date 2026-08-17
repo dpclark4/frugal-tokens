@@ -7,11 +7,12 @@ type MetricProps = {
   value: string;
   secondary?: string;
   tier: "primary" | "secondary";
+  title?: string;
 };
 
-function Metric({ label, value, secondary, tier }: MetricProps) {
+function Metric({ label, value, secondary, tier, title }: MetricProps) {
   return (
-    <div className={`usage-metric usage-metric-${tier}`}>
+    <div className={`usage-metric usage-metric-${tier}`} title={title}>
       <span className="usage-metric-label">{label}</span>
       <strong>{value}</strong>
       {secondary && <small>{secondary}</small>}
@@ -61,15 +62,16 @@ export function UsageOverview({ data }: { data?: ActivityOverviewResponse }) {
           tier="primary"
         />
         <Metric
-          label="Cost / 1M processed"
+          label="$/1M processed"
           value={costPerMillion === undefined
             ? "—"
             : currency.format(costPerMillion)}
           tier="secondary"
         />
         <Metric
-          label="Cache-miss cost"
+          label="Attributed miss cost"
           value={summary ? currency.format(summary.spendAtMissCalls) : "—"}
+          title="Estimated input cost attributed to lost cache reuse at calls classified as cache misses."
           secondary={summary
             ? `${share(summary.spendAtMissCalls, summary.spend)} of spend`
             : "Loading…"}

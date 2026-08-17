@@ -84,7 +84,7 @@ function ModelTable({ data }: { data: SpendCompositionData }) {
         <span>Model</span>
         <span>Spend</span>
         <span>Tokens</span>
-        <span>Cost / 1M</span>
+        <span>$/1M processed</span>
       </div>
       <ol className="composition-models">
         {data.models.map((model) => {
@@ -449,7 +449,7 @@ export function SpendComposition({ data }: { data: SpendCompositionData }) {
                     checked={showRate}
                     onChange={(event) => setShowRate(event.target.checked)}
                   />
-                  <span>Cost / 1M</span>
+                  <span>$/1M processed</span>
                 </label>
                 <div className="composition-toggle" aria-label="Chart metric">
                   <button

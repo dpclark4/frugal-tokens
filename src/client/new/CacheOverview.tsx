@@ -25,8 +25,11 @@ function share(value: number, total: number) {
 function CacheSummary({ metrics }: { metrics: TtlMissMetrics }) {
   return (
     <div className="cache-summary-grid">
-      <div className="cache-summary-metric">
-        <span>Cost</span>
+      <div
+        className="cache-summary-metric"
+        title="Estimated input cost attributed to lost cache reuse at calls classified as cache misses."
+      >
+        <span>Attributed miss cost</span>
         <strong>{currency.format(metrics.combined.attributedCost)}</strong>
       </div>
       <div className="cache-summary-metric">
@@ -40,7 +43,7 @@ function CacheSummary({ metrics }: { metrics: TtlMissMetrics }) {
         </strong>
       </div>
       <div className="cache-summary-metric">
-        <span>Misses / session</span>
+        <span>Avg. misses / affected session</span>
         <strong>
           {metrics.combined.affectedSessions === 0 ? "0" : decimal.format(
             metrics.combined.misses / metrics.combined.affectedSessions,
@@ -227,7 +230,7 @@ function CacheMissTable({ metrics }: { metrics: TtlMissMetrics }) {
         <thead>
           <tr>
             <th scope="col">Scope / cause</th>
-            <th scope="col">Cost</th>
+            <th scope="col">Attributed cost</th>
             <th scope="col">Misses</th>
             <th scope="col">Sessions</th>
           </tr>

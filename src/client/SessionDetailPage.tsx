@@ -357,16 +357,17 @@ function defaultCollapsedTurnIDs(session: SessionDetail) {
   return collapsed;
 }
 
-function DetailMetric({ label, value, detail }: {
+function DetailMetric({ label, value, detail, detailTitle }: {
   label: string;
   value: ReactNode;
   detail?: string;
+  detailTitle?: string;
 }) {
   return (
     <div className="sd-metric">
       <span>{label}</span>
       <strong>{value}</strong>
-      {detail && <small>{detail}</small>}
+      {detail && <small title={detailTitle}>{detail}</small>}
     </div>
   );
 }
@@ -578,8 +579,12 @@ function breadcrumbEntries(
   model: CostScenario,
   thinking: string,
   collapsedTurnIDs: Set<string>,
+  visibleTurnNumbers?: Set<number>,
 ): BreadcrumbEntry[] {
-  return session.turns.flatMap((turn) => {
+  const turns = visibleTurnNumbers
+    ? session.turns.filter((turn) => visibleTurnNumbers.has(turn.number))
+    : session.turns;
+  return turns.flatMap((turn) => {
     const { calls } = callsForTurn(turn, session);
     const end = calls.reduce(
       (latest, call) => Math.max(latest, call.completedAt ?? call.startedAt),
@@ -654,11 +659,13 @@ function SessionNavigator({
   metric,
   model,
   thinking,
+  visibleTurnNumbers,
 }: {
   session: SessionDetail;
   metric: ColorMetric;
   model: CostScenario;
   thinking: string;
+  visibleTurnNumbers?: Set<number>;
 }) {
   const { collapsedTurnIDs } = useContext(TurnCollapseContext);
   const entries = breadcrumbEntries(
@@ -667,6 +674,7 @@ function SessionNavigator({
     model,
     thinking,
     collapsedTurnIDs,
+    visibleTurnNumbers,
   );
   const navRef = useRef<HTMLDivElement>(null);
   const [activeID, setActiveID] = useState(entries[0]?.id);
@@ -1505,7 +1513,7 @@ function TurnBlock({
             </span>
             <span
               className="sd-turn-metric sd-turn-input"
-              title="Cumulative input, including linked subagents"
+              title="Processed input, including linked subagents"
             >
               <strong>{compact.format(summary.input)}</strong> input
               <small>
@@ -1766,6 +1774,10 @@ function BranchControl({
         className="sd-branch-trigger"
         aria-expanded={open}
         aria-haspopup="dialog"
+        aria-label={`Transcript branch: ${
+          selected?.label ?? "All events"
+        }. Session totals remain full-session.`}
+        title="Filters the transcript to a conversation path. Session totals remain full-session."
         onClick={() => setOpen((value) => !value)}
       >
         <span>{selected?.label ?? "All events"}</span>
@@ -2395,10 +2407,12 @@ function Metadata({
         <CacheMissBadges session={session} onJumpToCall={onJumpToCall} />
       </section>
       <section>
-        <h2>Work</h2>
-        <MetadataRow label="Active time">
-          {estimatedActiveDuration(workTime.activeMilliseconds) ??
-            "Unavailable"}
+        <h2>Estimated work</h2>
+        <MetadataRow label="Total">
+          <span title="Estimated from interaction cadence. It may include up to five minutes before the first recorded turn and inferred work between nearby turns.">
+            {estimatedActiveDuration(workTime.activeMilliseconds) ??
+              "Unavailable"}
+          </span>
         </MetadataRow>
         <WorkBlocks workTime={workTime} />
       </section>
@@ -2453,7 +2467,7 @@ function Metadata({
         </div>
       </section>
       <section>
-        <h2>Approximate other model cost</h2>
+        <h2>Compare model pricing</h2>
         <label className="sd-setting">
           <span>Model</span>
           <select
@@ -2499,7 +2513,7 @@ function Metadata({
         )}
         {model !== "recorded" && (
           <div className="sd-cost-scenario-result">
-            <span>Estimated cost</span>
+            <span>Estimated root-session cost</span>
             <strong>
               <span>
                 {scenarioLoading
@@ -2536,7 +2550,7 @@ function Metadata({
                   <b>{money.format(scenario.breakdown.cacheWrite)}</b>
                 </span>
                 <span>
-                  Output* <b>{money.format(scenario.breakdown.output)}</b>
+                  Output <b>{money.format(scenario.breakdown.output)}</b>
                 </span>
               </div>
             )}
@@ -2546,9 +2560,9 @@ function Metadata({
           </div>
         )}
         <p className="sd-scenario-note">
-          Root conversation only; subagents are excluded. *Uses recorded output,
-          including reasoning. Models may make different calls or produce
-          different output, so this is not an apples-to-apples comparison.
+          Use this as a directional estimate. Another model or thinking level
+          may make different calls or produce different output. Subagents are
+          excluded.
         </p>
       </section>
     </aside>
@@ -2796,12 +2810,12 @@ export function SessionDetailPage() {
         subagentHasMisses
           ? ` (${money.format(subagentMissCost)}${
             subagentMissesUnpriced ? "+" : ""
-          } misses)`
+          } miss cost)`
           : ""
       }`
     : totalMissCost === undefined
     ? undefined
-    : `${totalMissCost} cache misses`;
+    : `${totalMissCost} miss cost`;
   const canOpenInGhostty = Boolean(
     (session.harness === "pi" || session.harness === "opencode" ||
       session.harness === "claude-code" || session.harness === "codex") &&
@@ -2809,6 +2823,13 @@ export function SessionDetailPage() {
       (session.harness !== "pi" || session.sourcePath),
   );
   function jumpToCall(occurrence: CallOccurrence) {
+    if (selectedBranch) {
+      void navigate({
+        search: (current) => ({ ...current, branch: undefined }),
+        replace: true,
+        resetScroll: false,
+      });
+    }
     const callID = callAnchor(
       occurrence.session.id,
       occurrence.turn.number,
@@ -2851,6 +2872,7 @@ export function SessionDetailPage() {
     "recorded",
     thinking,
     collapsedTurnIDs,
+    visibleTurnNumbers,
   ).filter((entry) => entry.depth === 0);
   const rootValues = rootBreadcrumbs.map((entry) => entry.value);
   const turnColors = new Map(
@@ -2897,9 +2919,10 @@ export function SessionDetailPage() {
             value={elapsed(bounds.start, bounds.end) ?? "Unavailable"}
             detail={activeDuration === undefined
               ? undefined
-              : `${activeDuration} active · ${
+              : `${activeDuration} estimated work · ${
                 integer.format(workTime.blocks)
-              } work block${workTime.blocks === 1 ? "" : "s"}`}
+              } block${workTime.blocks === 1 ? "" : "s"}`}
+            detailTitle="Estimated from interaction cadence. It may include up to five minutes before the first recorded turn and inferred work between nearby turns."
           />
           <DetailMetric
             label="Activity"
@@ -2909,7 +2932,7 @@ export function SessionDetailPage() {
             } tools`}
           />
           <DetailMetric
-            label="Cumulative input"
+            label="Processed input"
             value={compact.format(input)}
             detail={[
               session.harness === "claude-code"
@@ -2940,7 +2963,7 @@ export function SessionDetailPage() {
                 />
                 {totalMissCost !== undefined && subagents > 0 && (
                   <span className="sd-cost-miss-inline">
-                    ({totalMissCost} misses)
+                    ({totalMissCost} miss cost)
                   </span>
                 )}
               </span>
@@ -2971,6 +2994,7 @@ export function SessionDetailPage() {
               metric={color}
               model="recorded"
               thinking={thinking}
+              visibleTurnNumbers={visibleTurnNumbers}
             />
             <SessionTranscript
               session={session}

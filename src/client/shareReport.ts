@@ -285,7 +285,7 @@ export function buildHomepageReport({
           })`,
         ],
         [
-          "Cache-miss cost",
+          "Attributed miss cost",
           `${money.format(cacheMissCost)} (${
             share(cacheMissCost, cacheMisses.totalCost)
           })`,
@@ -296,7 +296,7 @@ export function buildHomepageReport({
 
   sections.push(
     "### TTL Misses\n\n" + table(
-      ["Time since previous session", "Misses", "Sessions", "Cost at miss"],
+      ["Time since previous session", "Misses", "Sessions", "Attributed cost"],
       [
         [
           "< 2h",
@@ -329,7 +329,7 @@ export function buildHomepageReport({
   ] as const;
   sections.push(
     "### Other Cache Misses\n\n" + table(
-      ["Cause", "Misses", "Sessions", "Cost at miss"],
+      ["Cause", "Misses", "Sessions", "Attributed cost"],
       otherMissRows.map(([label, category]) => [
         label,
         integer.format(category.misses),

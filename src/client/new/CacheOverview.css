@@ -26,12 +26,11 @@
 }
 
 .cache-summary-metric > span {
-  min-height: 1.2em;
+  min-height: 2.4em;
   color: var(--dashboard-signal);
   font: 650 var(--dashboard-type-micro)/1.2 var(--mono);
   letter-spacing: .09em;
   text-transform: uppercase;
-  white-space: nowrap;
 }
 
 .cache-summary-metric > strong {
