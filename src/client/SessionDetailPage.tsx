@@ -54,7 +54,7 @@ import {
 import { harnessIcon, harnessName } from "./harness.ts";
 import { modelIcon } from "./modelIcons.ts";
 import { costsMismatch, CostWarning } from "./CostWarning.tsx";
-import ghosttyIcon from "./assets/icons/ghostty.svg";
+import ghosttyIcon from "./assets/icons/ghostty.png";
 import "./SessionDetailPage.css";
 
 const route = getRouteApi("/sessions/$harness/$sessionId");
