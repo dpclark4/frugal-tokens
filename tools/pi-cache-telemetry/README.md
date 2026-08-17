@@ -401,6 +401,8 @@ provider zero when the field is present, but it is not a comparable bust.
 | 005 | Six partial dips; one zero after fallback | Healthy WebSocket continuations; one SSE fallback | Mixed-size function outputs | Six raw partial one-call busts; one transport-associated candidate |
 | 006 | `4992 -> 1536 -> 11136` | Healthy same-socket continuation | Four text function outputs, about 11 KB | Raw partial one-call bust |
 | 007 | `39552 -> 0 -> 40576` | Healthy same-socket continuation | Small user delta after one text function output | Raw full one-call bust |
+| 008A | `2560 -> 0 -> 10752` | Healthy same-socket continuation | Three successful `bash` outputs, about 24.8 KB total | Raw full one-call bust |
+| 008B | `59904 -> normalized 0 -> normalized 61952` | WebSocket idle timeout; full-context SSE fallback | A pending `edit` tool call | Transport-associated candidate; raw SSE usage unavailable |
 | 009 | `9728 -> 0 -> 10752`; `33280 -> 12800 -> 33280`; `47616 -> 34304 -> 53760` | First recovery followed idle timeout/reconnect; latter two healthy same-socket continuations | Two three-`bash` output batches; one small user delta | One raw full observation with reset-confounded recovery; two raw partial one-call busts |
 
 ### Case 001 — WebSocket failure and SSE retry
@@ -662,6 +664,69 @@ remained healthy through recovery and did not receive its unrelated
 multi-output immediate delta is not required for a raw full bust. It is
 evidence of a transient provider-reported cache-read regression on a healthy
 Pi continuation, not proof of the provider's internal cause or a Pi defect.
+
+### Case 008 — Healthy full bust followed by a separate SSE fallback candidate
+
+**Date:** 2026-08-11; **Model:** `gpt-5.6-sol`, high reasoning
+**Pi session:** `019ff0e2-7aa5-7774-ae12-aadb8ab3fb8e`
+
+```text
+Session:
+~/.pi/agent/sessions/--Users-danclark-programming-frugal-tokens--/2026-08-11T12-53-22-213Z_019ff0e2-7aa5-7774-ae12-aadb8ab3fb8e.jsonl
+Telemetry:
+~/.pi/agent/diagnostics/cache-telemetry/2026-08-11T12-53-22-213Z_019ff0e2-7aa5-7774-ae12-aadb8ab3fb8e.jsonl
+Wiretap:
+~/.pi/agent/diagnostics/cache-telemetry/wiretap/codex-websocket-2026-08-11T12-53-21Z-52445.jsonl
+Archive model-call rows: not investigated
+```
+
+#### 008A — Early healthy-continuation full bust
+
+Calls 2–4 explicitly reported raw provider reads of `2560 -> 0 -> 10752`.
+The middle call therefore has both a warm predecessor and immediate recovery,
+and its raw `cached_tokens=0` establishes a full one-call bust.
+
+| Call | Raw input / cached tokens | Adjacent tool activity |
+| --- | --- | --- |
+| 2, warm predecessor | `4964 / 2560` | Produced three successful `bash` calls; results were about 5.8 KB, 17.2 KB, and 1.6 KB. |
+| 3, zero-read call | `11253 / 0` | Sent those three outputs as its actual WebSocket delta; produced six successful `read` calls. |
+| 4, recovery | `24320 / 10752` | Sent the six reads' outputs; produced six further successful `read` calls. |
+
+The candidate retained an exact six-item logical prefix. Its envelope,
+instructions, four-tool configuration, settings, and prompt-cache-key
+fingerprints were unchanged. Its logical suffix added reasoning, three
+function calls, and the three `bash` outputs (about 24.8 KB total); the actual
+WebSocket delta contained only the three function outputs. It used
+`previous_response_id` on reused connection 1, which remained healthy through
+recovery. No image appeared in the immediate adjacent logical payloads, and
+no retry, reconnect, WebSocket error, or SSE fallback was recorded.
+
+This is evidence of a transient provider-reported cache-read regression on an
+otherwise healthy Pi continuation. The clean continuation and recovery make a
+provider-side cache eligibility or accounting issue a leading hypothesis, but
+the capture does not prove provider internals or exclude an unobserved Pi
+continuation-construction factor.
+
+#### 008B — Later WebSocket timeout and SSE retry
+
+This later event in the same session is distinct from 008A. Call 11 had a
+warm read of 59,904 tokens and produced a successful small `edit`. Call 12
+retained an exact prefix and unchanged envelope, used a reused WebSocket delta
+with `previous_response_id`, and began streaming an `edit` call. It did not
+reach a terminal provider-usage frame or a tool result.
+
+Pi recorded a WebSocket idle timeout after message-stream start and activated
+fallback. The wiretap records Pi requesting close with code `1000` and reason
+`idle_timeout`, followed later by an abnormal code `1006` close. Pi retried
+full logical context over SSE: telemetry recorded normalized `cacheRead=0` on
+that retry, which produced a successful `read`; the next SSE completion
+recorded normalized `cacheRead=61952` and produced a successful `edit`.
+
+The wiretap does not capture SSE, so neither the retry's zero nor the later
+read can establish raw provider `cached_tokens`. The timeout/fallback path is
+directly involved, while the server, network intermediary, and local runtime
+remain possible causes of the underlying stall. Classify this as a
+transport-associated candidate, not evidence of a provider cache regression.
 
 ### Case 009 — Two healthy partial busts and a reset-confounded full zero
 
