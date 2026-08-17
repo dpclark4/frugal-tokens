@@ -748,7 +748,13 @@ function piSession(records: Record[], id: string, updatedAt: number) {
     " ",
   )
     .trim().slice(0, 100);
-  const title = promptTitle ??
+  const sessionInfo = [...records].reverse().find((record) =>
+    record.type === "session_info"
+  );
+  const customTitle = typeof sessionInfo?.name === "string"
+    ? sessionInfo.name.trim() || undefined
+    : undefined;
+  const title = customTitle ?? promptTitle ??
     `Pi session ${basename(header?.cwd) ?? id.split("/").at(-1)?.slice(0, 8)}`;
   const transcriptUpdatedAt = [...records].reverse().find((record) =>
     record.timestamp && Number.isFinite(Date.parse(record.timestamp))

@@ -1,4 +1,4 @@
-import { deepStrictEqual } from "node:assert/strict";
+import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { PiRepository } from "./piRepository.ts";
 import type { SessionDetail } from "../shared/sessionSchemas.ts";
 
@@ -12,6 +12,32 @@ function repository(files: Record<string, string>) {
   }
   return new PiRepository(directory);
 }
+
+Deno.test("prefers the latest PI session name over the first prompt", () => {
+  const actual = repository({
+    "named.jsonl": `
+{"type":"session","version":3,"id":"named","timestamp":"2026-07-11T13:36:32.689Z","cwd":"/Users/test/project"}
+{"type":"message","id":"user-1","parentId":null,"timestamp":"2026-07-11T13:36:55.000Z","message":{"role":"user","content":[{"type":"text","text":"Inspect sessions"}]}}
+{"type":"session_info","id":"name-1","parentId":"user-1","timestamp":"2026-07-11T13:37:00.000Z","name":"Old name"}
+{"type":"session_info","id":"name-2","parentId":"name-1","timestamp":"2026-07-11T13:37:01.000Z","name":"Build Python Robot Arena"}
+`,
+  }).getSession("named");
+
+  strictEqual(actual?.title, "Build Python Robot Arena");
+});
+
+Deno.test("uses the first PI prompt after the session name is cleared", () => {
+  const actual = repository({
+    "cleared.jsonl": `
+{"type":"session","version":3,"id":"cleared","timestamp":"2026-07-11T13:36:32.689Z","cwd":"/Users/test/project"}
+{"type":"message","id":"user-1","parentId":null,"timestamp":"2026-07-11T13:36:55.000Z","message":{"role":"user","content":[{"type":"text","text":"Inspect sessions"}]}}
+{"type":"session_info","id":"name-1","parentId":"user-1","timestamp":"2026-07-11T13:37:00.000Z","name":"Old name"}
+{"type":"session_info","id":"name-2","parentId":"name-1","timestamp":"2026-07-11T13:37:01.000Z","name":""}
+`,
+  }).getSession("cleared");
+
+  strictEqual(actual?.title, "Inspect sessions");
+});
 
 Deno.test("normalizes PI JSONL sessions with tool activity and reported cost", () => {
   const actual = repository({

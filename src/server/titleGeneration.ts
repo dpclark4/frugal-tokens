@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import { importedTitleNeedsGeneration } from "./sessionTitles.ts";
 import { formatTiming } from "./timing.ts";
 
 const enabledKey = "generate_session_titles";
@@ -10,7 +11,7 @@ const generationBatchSize = 10;
 
 type Candidate = {
   id: number;
-  harness: "pi" | "claude-code" | "codex";
+  harness: "pi" | "claude-code" | "codex" | "opencode";
   imported_title: string;
   input: string;
 };
@@ -77,7 +78,7 @@ function candidateRows(
     )
     JOIN source_sessions ss ON ss.id = branch.source_session_id
     WHERE ss.generated_title IS NULL
-      AND so.harness IN ('pi', 'claude-code', 'codex')
+      AND so.harness IN ('pi', 'claude-code', 'codex', 'opencode')
       AND ss.first_seen_at ${comparison} ?
       AND NOT EXISTS (
         SELECT 1 FROM conversation_subagent_launches launch
@@ -101,7 +102,7 @@ function completedBackfillCount(db: DatabaseSync) {
     JOIN sources so ON so.id = ss.source_id
     WHERE ss.generated_title IS NOT NULL
       AND ss.first_seen_at < ?
-      AND so.harness IN ('pi', 'claude-code', 'codex')
+      AND so.harness IN ('pi', 'claude-code', 'codex', 'opencode')
       AND EXISTS (
         SELECT 1 FROM conversation_branches branch
         WHERE branch.source_session_id = ss.id
@@ -110,11 +111,13 @@ function completedBackfillCount(db: DatabaseSync) {
   return row.count;
 }
 
-function eligible(candidate: Candidate) {
-  if (candidate.harness !== "claude-code") return true;
-  const promptTitle = candidate.input.replace(/\s+/g, " ").trim().slice(0, 100);
-  return candidate.imported_title === promptTitle ||
-    candidate.imported_title.startsWith("Claude Code session ");
+export function titleGenerationEligible(
+  candidate: Pick<Candidate, "imported_title" | "input">,
+) {
+  return importedTitleNeedsGeneration(
+    candidate.imported_title,
+    candidate.input,
+  );
 }
 
 function parseCodexOutput(stdout: string) {
@@ -279,13 +282,14 @@ export async function generateMissingSessionTitles(db: DatabaseSync) {
     0,
     backfillTarget - completedBackfillCount(db),
   );
-  const backfill = candidateRows(db, "backfill").filter(eligible).slice(
-    0,
-    remainingBackfill,
-  );
+  const backfill = candidateRows(db, "backfill").filter(titleGenerationEligible)
+    .slice(
+      0,
+      remainingBackfill,
+    );
   const candidates = [
     ...backfill,
-    ...candidateRows(db, "new").filter(eligible),
+    ...candidateRows(db, "new").filter(titleGenerationEligible),
   ];
 
   for (let index = 0; index < candidates.length; index += generationBatchSize) {

@@ -16,6 +16,10 @@ import {
   enrichSessionSummary,
   sessionDetailFromConversationImports,
 } from "./sessionSummaryEnrichment.ts";
+import {
+  firstImportedUserText,
+  importedTitleNeedsGeneration,
+} from "./sessionTitles.ts";
 
 function tokenValues(tokens: TokenUsage) {
   return [
@@ -125,6 +129,21 @@ export class ConversationWriteRepository {
     return statement;
   }
 
+  #preserveAuthoritativeImportedTitle(
+    sourceSessionID: number,
+    value: LinearConversationImport,
+  ) {
+    if (
+      importedTitleNeedsGeneration(
+        value.session.title,
+        firstImportedUserText(value),
+      )
+    ) return;
+    this.#prepare(`
+      UPDATE source_sessions SET generated_title = NULL WHERE id = ?
+    `).run(sourceSessionID);
+  }
+
   replaceLinearConversation(value: LinearConversationImport) {
     this.replaceLinearConversationTree([value]);
   }
@@ -175,7 +194,9 @@ export class ConversationWriteRepository {
         if (!sourceSession) {
           throw new Error(`Unknown source artifact: ${value.externalID}`);
         }
-        sourceArtifactIDs.set(value.externalID, Number(sourceSession.id));
+        const sourceSessionID = Number(sourceSession.id);
+        sourceArtifactIDs.set(value.externalID, sourceSessionID);
+        this.#preserveAuthoritativeImportedTitle(sourceSessionID, value);
         const conversationID = Number(
           (this.#prepare(`
           INSERT INTO conversations (
@@ -407,7 +428,12 @@ export class ConversationWriteRepository {
         if (row === undefined) {
           throw new Error(`Unknown source artifact: ${artifact.externalID}`);
         }
-        sourceArtifactIDs.set(artifact.externalID, Number(row.id));
+        const sourceSessionID = Number(row.id);
+        sourceArtifactIDs.set(artifact.externalID, sourceSessionID);
+        this.#preserveAuthoritativeImportedTitle(
+          sourceSessionID,
+          artifact.value,
+        );
       }
 
       const sourceArtifactIDValues = [...sourceArtifactIDs.values()];

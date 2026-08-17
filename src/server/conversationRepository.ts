@@ -163,7 +163,7 @@ type CallRow = {
 };
 
 const effectiveConversationTitle = `
-  CASE WHEN so.harness = 'opencode' THEN c.title ELSE COALESCE((
+  COALESCE((
     SELECT ss.generated_title
     FROM conversation_branches title_branch
     JOIN source_sessions ss ON ss.id = title_branch.source_session_id
@@ -171,7 +171,7 @@ const effectiveConversationTitle = `
       AND ss.generated_title IS NOT NULL
     ORDER BY title_branch.updated_at DESC, title_branch.id DESC
     LIMIT 1
-  ), c.title) END
+  ), c.title)
 `;
 
 const conversationColumns = `

@@ -73,6 +73,51 @@ function linearImport(sourceID: number): LinearConversationImport {
   };
 }
 
+Deno.test("an authoritative imported title replaces a generated title", () => {
+  const db = openArchiveDatabase(":memory:");
+  migrateTestDatabase(db);
+  const sources = new SourceArtifactRepository(db);
+  const conversations = new ConversationWriteRepository(db);
+  const reads = new ConversationRepository(db);
+  try {
+    const sourceID = sources.ensureSource(
+      "pi",
+      "directory",
+      "Pi",
+      "/sessions",
+    );
+    const value = linearImport(sourceID);
+    value.session.title = "Prompt";
+    sources.recordUnchangedArtifact(
+      sourceID,
+      value.externalID,
+      value.artifactPath!,
+      value.observedAt,
+    );
+    conversations.replaceLinearConversation(value);
+    db.prepare(`
+      UPDATE source_sessions SET generated_title = 'Generated summary'
+      WHERE source_id = ? AND external_id = ?
+    `).run(sourceID, value.externalID);
+
+    conversations.replaceLinearConversation(value);
+    strictEqual(reads.getSession("pi", "linear")?.title, "Generated summary");
+
+    value.session.title = "User supplied name";
+    conversations.replaceLinearConversation(value);
+    strictEqual(reads.getSession("pi", "linear")?.title, "User supplied name");
+    strictEqual(
+      db.prepare(`
+        SELECT generated_title FROM source_sessions
+        WHERE source_id = ? AND external_id = ?
+      `).get(sourceID, value.externalID)?.generated_title,
+      null,
+    );
+  } finally {
+    db.close();
+  }
+});
+
 Deno.test("linear conversation replacement is idempotent and transactional", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
