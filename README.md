@@ -7,11 +7,14 @@ Requires [Deno 2.9 or newer](https://docs.deno.com/runtime/getting_started/insta
 
 ```sh
 cp .env.example .env
-deno task dev
+deno task build && deno task start
 ```
 
-Then open <http://localhost:5273>.
+Then open <http://localhost:9000>.
 
-Edit `.env` to set the sources you use; unavailable paths are ignored.
+Use `.env` to override the default session locations.
+
+For development with automatic client and server reloads, run `deno task dev`
+and open <http://localhost:5273>.
 
 See the [demo deployment guide](docs/demo-deployment.md) for hosted demo maintenance.
