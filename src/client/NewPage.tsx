@@ -408,8 +408,11 @@ export function NewPage() {
             harness={search.harness}
             harnesses={harnesses}
             misses={search.misses}
-            onHarnessChange={(harness) => update({ harness })}
-            onMissesChange={(misses) => update({ misses })}
+            page={search.page ?? 1}
+            onHarnessChange={(harness) => update({ harness, page: undefined })}
+            onMissesChange={(misses) => update({ misses, page: undefined })}
+            onPageChange={(page) =>
+              update({ page: page === 1 ? undefined : page })}
             onLoadSettled={finishOverviewFilterTransition}
           />
         </section>

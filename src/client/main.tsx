@@ -111,6 +111,7 @@ const newRoute = createRoute({
       .catch(30),
     date: z.iso.date().optional().catch(undefined),
     misses: z.string().optional(),
+    page: z.coerce.number().int().positive().optional().catch(undefined),
   }),
   component: NewPage,
 });

@@ -153,10 +153,11 @@ export async function getSessions(
   page: number,
   harness: string,
   missFilters?: SessionMissFilter[],
+  pageSize = 25,
 ) {
   const query = new URLSearchParams({
     page: String(page),
-    pageSize: "25",
+    pageSize: String(pageSize),
     harness,
   });
   if (missFilters !== undefined) {
