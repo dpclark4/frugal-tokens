@@ -5,6 +5,12 @@ Code, PI, Codex, and Cursor sessions.
 
 Requires [Deno 2.9 or newer](https://docs.deno.com/runtime/getting_started/installation/).
 
+Install Deno on macOS or Linux if needed:
+
+```sh
+curl -fsSL https://deno.land/install.sh | sh
+```
+
 ```sh
 cp .env.example .env
 deno task build && deno task start
