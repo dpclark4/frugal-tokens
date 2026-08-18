@@ -137,6 +137,53 @@ Deno.test("overview rollups return ordered root execution intervals", () => {
   }
 });
 
+Deno.test("lists recent sessions by displayed start time", () => {
+  const db = openArchiveDatabase(":memory:");
+  migrateTestDatabase(db);
+  const sources = new SourceArtifactRepository(db);
+  const projection = new ConversationWriteRepository(db);
+  const conversations = new ConversationRepository(db);
+  try {
+    const sourceID = sources.ensureSource(
+      "pi",
+      "directory",
+      "Pi",
+      "/sessions",
+    );
+    const values = [
+      { id: "older-start", startedAt: 100, updatedAt: 300 },
+      { id: "newer-start", startedAt: 200, updatedAt: 250 },
+    ];
+    for (const value of values) {
+      const imported = linearSession(sourceID);
+      imported.externalID = value.id;
+      imported.publicID = value.id;
+      imported.artifactPath = `project/${value.id}.jsonl`;
+      imported.checkpoint = { parserVersion: "test", checksum: value.id };
+      imported.session = {
+        ...imported.session,
+        title: value.id,
+        startedAt: value.startedAt,
+        updatedAt: value.updatedAt,
+      };
+      sources.recordUnchangedArtifact(
+        sourceID,
+        imported.externalID,
+        imported.artifactPath,
+        imported.observedAt,
+      );
+      projection.replaceLinearConversationTree([imported]);
+    }
+
+    deepStrictEqual(
+      conversations.listSessions(1, 10, "pi").items.map(({ id }) => id),
+      ["newer-start", "older-start"],
+    );
+  } finally {
+    db.close();
+  }
+});
+
 Deno.test("conversation repository linearizes Codex branches without duplicating usage", async () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);

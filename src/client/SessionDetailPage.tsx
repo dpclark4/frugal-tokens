@@ -2831,12 +2831,9 @@ export function SessionDetailPage() {
     : totalMissCost === undefined
     ? undefined
     : `${totalMissCost} miss cost`;
-  const canOpenInGhostty = Boolean(
-    (session.harness === "pi" || session.harness === "opencode" ||
-      session.harness === "claude-code" || session.harness === "codex") &&
-      session.workingDirectory &&
-      (session.harness !== "pi" || session.sourcePath),
-  );
+  const canOpenInGhostty = session.harness === "pi" ||
+    session.harness === "opencode" || session.harness === "claude-code" ||
+    session.harness === "codex";
   function jumpToCall(occurrence: CallOccurrence) {
     if (selectedBranch) {
       void navigate({
