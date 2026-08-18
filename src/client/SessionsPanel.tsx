@@ -2107,7 +2107,8 @@ export function SessionsPanel({
           <h2>Recent sessions</h2>
           {data && (
             <span className="session-count">
-              {integer.format(data.pagination.totalItems)} sessions
+              {integer.format(data.pagination.totalItems)}
+              <span className="session-count-unit">sessions</span>
               {loadingSessions && " · Updating…"}
             </span>
           )}

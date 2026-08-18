@@ -360,7 +360,7 @@ function defaultCollapsedTurnIDs(session: SessionDetail) {
 function DetailMetric({ label, value, detail, detailTitle }: {
   label: string;
   value: ReactNode;
-  detail?: string;
+  detail?: ReactNode;
   detailTitle?: string;
 }) {
   return (
@@ -1422,6 +1422,14 @@ function TurnBlock({
   const textTruncated = (turn.inputs ?? []).some((input) =>
     input.kind === "text" && input.truncated
   );
+  const summaryCost = summary.cost.cost === undefined
+    ? "Unpriced"
+    : `${money.format(summary.cost.cost)}${
+      summary.cost.hasUnpricedCost ? "+" : ""
+    }`;
+  const summaryCostTitle = summary.cost.hasUnpricedCost
+    ? "Known cost; some calls could not be priced"
+    : "Computed cost, including linked subagents";
   return (
     <article
       className={`sd-turn${collapsed ? " is-collapsed" : ""}`}
@@ -1430,7 +1438,17 @@ function TurnBlock({
         ? ({ "--sd-turn-color": turnColor } as CSSProperties)
         : undefined}
     >
-      <div className="sd-user-message">
+      <div
+        className="sd-user-message"
+        onClick={(event) => {
+          if (
+            event.target instanceof Element &&
+            event.target.closest("button, a, input, select, textarea")
+          ) return;
+          if (globalThis.getSelection()?.toString()) return;
+          toggleTurn(id);
+        }}
+      >
         <span className="sd-user-avatar">
           <User size={13} />
         </span>
@@ -1457,9 +1475,14 @@ function TurnBlock({
                 · {summary.elapsed}
               </span>
             )}
-            <time title={fullTimestamp.format(turn.startedAt)}>
-              {timestamp.format(turn.startedAt)}
-            </time>
+            <span className="sd-turn-header-meta">
+              <time title={fullTimestamp.format(turn.startedAt)}>
+                {timestamp.format(turn.startedAt)}
+              </time>
+              <span className="sd-turn-header-cost" title={summaryCostTitle}>
+                {summaryCost}
+              </span>
+            </span>
             <button
               type="button"
               className="sd-turn-toggle"
@@ -1539,17 +1562,9 @@ function TurnBlock({
             </span>
             <span
               className="sd-turn-metric sd-turn-cost"
-              title={summary.cost.hasUnpricedCost
-                ? "Known cost; some calls could not be priced"
-                : "Computed cost, including linked subagents"}
+              title={summaryCostTitle}
             >
-              <strong>
-                {summary.cost.cost === undefined
-                  ? "Unpriced"
-                  : `${money.format(summary.cost.cost)}${
-                    summary.cost.hasUnpricedCost ? "+" : ""
-                  }`}
-              </strong>
+              <strong>{summaryCost}</strong>
             </span>
           </div>
           {collapsed
@@ -2894,7 +2909,7 @@ export function SessionDetailPage() {
             <span className="sd-session-harness">
               <HarnessMark harness={session.harness} />
             </span>
-            <h1>{session.title}</h1>
+            <h1 title={session.title}>{session.title}</h1>
           </div>
           {branches.length > 1 && (
             <BranchControl
@@ -2917,11 +2932,15 @@ export function SessionDetailPage() {
           <DetailMetric
             label="Elapsed"
             value={elapsed(bounds.start, bounds.end) ?? "Unavailable"}
-            detail={activeDuration === undefined
-              ? undefined
-              : `${activeDuration} estimated work · ${
-                integer.format(workTime.blocks)
-              } block${workTime.blocks === 1 ? "" : "s"}`}
+            detail={activeDuration === undefined ? undefined : (
+              <>
+                <span>{activeDuration} estimated work</span>
+                <span className="sd-detail-continuation">
+                  {integer.format(workTime.blocks)}{" "}
+                  block{workTime.blocks === 1 ? "" : "s"}
+                </span>
+              </>
+            )}
             detailTitle="Estimated from interaction cadence. It may include up to five minutes before the first recorded turn and inferred work between nearby turns."
           />
           <DetailMetric

@@ -47,6 +47,10 @@ function formatRate(value?: number) {
   return value === undefined ? "—" : currency.format(value);
 }
 
+function compactModelName(model: string) {
+  return displayModelName(model).replace(/^(?:Claude|GPT)\s+/, "");
+}
+
 function BarValue({ value, maximum, formatted, color }: {
   value: number;
   maximum: number;
@@ -83,18 +87,27 @@ function ModelTable({ data }: { data: SpendCompositionData }) {
         <span>Model</span>
         <span>Spend</span>
         <span>Tokens</span>
-        <span>$/1M processed</span>
+        <span className="composition-rate-heading">
+          $/1M<span>processed</span>
+        </span>
       </div>
       <ol className="composition-models">
         {data.models.map((model) => {
           const color = modelColor(model, data.models);
+          const name = displayModelName(model.model);
           return (
             <li key={model.model}>
               <span
                 className="composition-model-name"
-                title={displayModelName(model.model)}
+                title={name}
+                aria-label={name}
               >
-                <strong>{displayModelName(model.model)}</strong>
+                <strong>
+                  <span className="composition-model-name-full">{name}</span>
+                  <span className="composition-model-name-compact">
+                    {compactModelName(model.model)}
+                  </span>
+                </strong>
               </span>
               <BarValue
                 value={model.spend}

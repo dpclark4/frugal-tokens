@@ -409,8 +409,17 @@
 
 .shape-distribution {
   position: relative;
+  display: block;
+  width: calc(100% - 6px);
   height: 27px;
   margin: 0 3px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: initial;
 }
 
 .shape-whisker,
@@ -465,8 +474,8 @@
   outline-offset: 4px;
 }
 
-.shape-distribution:hover,
-.shape-distribution:focus-visible {
+.shape-distribution:focus-visible,
+.shape-distribution.is-tooltip-open {
   z-index: 10;
 }
 
@@ -519,8 +528,8 @@
   font: var(--dashboard-type-label)/1.4 var(--mono);
 }
 
-.shape-distribution:hover .shape-distribution-tooltip,
-.shape-distribution:focus-visible .shape-distribution-tooltip {
+.shape-distribution:focus-visible .shape-distribution-tooltip,
+.shape-distribution.is-tooltip-open .shape-distribution-tooltip {
   opacity: 1;
   transform: translate(-50%, 0);
 }
@@ -531,9 +540,22 @@
   transform: translate(-50%, 3px);
 }
 
-.session-shape-table tbody tr:nth-last-child(-n + 2) .shape-distribution:hover .shape-distribution-tooltip,
-.session-shape-table tbody tr:nth-last-child(-n + 2) .shape-distribution:focus-visible .shape-distribution-tooltip {
+.session-shape-table tbody tr:nth-last-child(-n + 2) .shape-distribution:focus-visible .shape-distribution-tooltip,
+.session-shape-table tbody tr:nth-last-child(-n + 2) .shape-distribution.is-tooltip-open .shape-distribution-tooltip {
   transform: translate(-50%, 0);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .shape-distribution:hover {
+    z-index: 10;
+  }
+  .shape-distribution:hover .shape-distribution-tooltip {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  .session-shape-table tbody tr:nth-last-child(-n + 2) .shape-distribution:hover .shape-distribution-tooltip {
+    transform: translate(-50%, 0);
+  }
 }
 
 .shape-range {

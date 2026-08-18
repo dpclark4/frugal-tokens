@@ -106,3 +106,27 @@
   outline: 2px solid rgba(15, 113, 105, .3);
   outline-offset: 2px;
 }
+
+@media (max-width: 650px) {
+  .new-recent-sessions .panel-heading {
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+  }
+  .new-recent-sessions .session-count-unit,
+  .new-recent-sessions .session-title-generation-control,
+  .new-recent-sessions .session-refresh {
+    display: none;
+  }
+  .new-recent-sessions .session-filters {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-areas: "filter harness";
+    gap: 10px;
+  }
+  .new-recent-sessions .session-filter-trigger,
+  .new-recent-sessions .session-harness-control select {
+    width: 100%;
+    min-width: 0;
+  }
+}

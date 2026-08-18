@@ -96,6 +96,7 @@ function DistributionStrip({
   initialInputUsage?: UsageResponse;
   initialInputError?: string;
 }) {
+  const [tooltipOpen, setTooltipOpen] = useState(false);
   const { distribution } = metric;
   const label = metricLabels[metric.key];
   const multiDay = metric.key === "observedSpan" &&
@@ -176,6 +177,8 @@ function DistributionStrip({
     p90: position(distribution.p90, distribution.p10, distribution.p90),
   };
 
+  const tooltipId = `shape-${metric.key}-tooltip`;
+
   return (
     <tr>
       <th scope="row">{metricLabel}</th>
@@ -183,11 +186,27 @@ function DistributionStrip({
         <strong>{formatted(distribution.median)}</strong>
       </td>
       <td className="shape-distribution-cell">
-        <div
-          className="shape-distribution"
-          role="img"
+        <button
+          type="button"
+          className={`shape-distribution${
+            tooltipOpen ? " is-tooltip-open" : ""
+          }`}
           aria-label={ariaLabel}
-          tabIndex={0}
+          aria-expanded={tooltipOpen}
+          aria-controls={tooltipId}
+          onClick={() => {
+            const hasDesktopPointer = globalThis.matchMedia(
+              "(hover: hover) and (pointer: fine)",
+            ).matches;
+            if (!hasDesktopPointer) setTooltipOpen((open) => !open);
+          }}
+          onBlur={() => setTooltipOpen(false)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              setTooltipOpen(false);
+              event.currentTarget.blur();
+            }
+          }}
         >
           <span
             className="shape-end shape-end-start"
@@ -220,7 +239,11 @@ function DistributionStrip({
             style={{ left: `${positions.average}%` }}
             aria-hidden="true"
           />
-          <span className="shape-distribution-tooltip" role="tooltip">
+          <span
+            className="shape-distribution-tooltip"
+            id={tooltipId}
+            role="tooltip"
+          >
             {tooltip.map(([name, value]) => (
               <span key={name}>
                 <small>{name}</small>
@@ -229,7 +252,7 @@ function DistributionStrip({
             ))}
             {definition && <p>{definition}</p>}
           </span>
-        </div>
+        </button>
         <div className="shape-range" aria-hidden="true">
           <span>{formatted(distribution.p10)}</span>
           <span>{formatted(distribution.p90)}</span>

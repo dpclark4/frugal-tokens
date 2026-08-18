@@ -181,6 +181,12 @@
   width: 84%;
 }
 
+@media (max-width: 1120px) {
+  .cache-overview-section {
+    min-height: 0;
+  }
+}
+
 @media (max-width: 520px) {
   .cache-summary-grid {
     margin-inline: 12px;

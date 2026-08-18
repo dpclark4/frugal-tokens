@@ -136,6 +136,10 @@
   white-space: nowrap;
 }
 
+.composition-model-name-compact {
+  display: none;
+}
+
 .composition-bar-value {
   position: relative;
   display: flex;
@@ -289,15 +293,20 @@
   .composition-trend {
     padding-inline: 14px;
   }
+  .composition-ranking {
+    padding-inline: 10px;
+  }
   .composition-table-header,
   .composition-models li {
-    grid-template-columns: minmax(105px, 1fr) minmax(75px, .8fr) minmax(75px,
-      .8fr);
-    gap: 7px;
+    grid-template-columns: minmax(92px, 1fr) 62px 58px 48px;
+    gap: 5px;
   }
-  .composition-table-header span:last-child,
-  .composition-rate {
+  .composition-rate-heading > span,
+  .composition-model-name-full {
     display: none;
+  }
+  .composition-model-name-compact {
+    display: inline;
   }
   .composition-header {
     align-items: flex-start;
@@ -312,5 +321,17 @@
   }
   .composition-trend {
     min-height: 340px;
+  }
+}
+
+@media (max-width: 340px) {
+  .composition-table-header,
+  .composition-models li {
+    grid-template-columns: minmax(88px, 1fr) minmax(61px, .75fr) minmax(61px,
+      .75fr);
+  }
+  .composition-table-header .composition-rate-heading,
+  .composition-rate {
+    display: none;
   }
 }

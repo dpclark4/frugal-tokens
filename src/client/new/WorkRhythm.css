@@ -311,7 +311,6 @@
 .rhythm-day-metrics {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 15px;
 }
 
 .rhythm-day-metrics > div {
@@ -319,8 +318,14 @@
   min-width: 0;
   align-content: start;
   gap: 2px;
-  padding: 3px 0 5px;
+  padding: 3px 15px 5px 0;
   border-bottom: 1px solid #e4ebe8;
+}
+
+.rhythm-day-metrics > div:nth-child(2n) {
+  padding-right: 0;
+  padding-left: 15px;
+  border-left: 1px solid #e4ebe8;
 }
 
 .rhythm-day-metrics strong {
@@ -913,6 +918,14 @@
   .rhythm-charts {
     grid-template-columns: minmax(0, 1fr);
   }
+  .range-structure-summary {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+  .range-structure-summary section + section {
+    padding-top: 8px;
+    border-top: 1px solid #e4ebe8;
+  }
   .weekday-chart,
   .hourly-chart {
     height: 160px;
@@ -939,9 +952,6 @@
     align-items: flex-start;
     flex-direction: column;
     gap: 5px;
-  }
-  .rhythm-day-metrics {
-    grid-template-columns: 1fr;
   }
 }
 
