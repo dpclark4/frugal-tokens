@@ -33,6 +33,14 @@ const metricLabels: Record<MetricKey, string> = {
   tokenReuse: "Token reuse",
 };
 
+const metricDefinitions: Partial<Record<MetricKey, string>> = {
+  observedSpan:
+    "Time between the first and last observed calls, not active working time.",
+  startingContext: "Context present at the session’s first model call.",
+  peakContext: "Largest context processed by a single model call.",
+  tokenReuse: "Share of processed input served from cache.",
+};
+
 function formatDuration(milliseconds: number) {
   const minutes = milliseconds / 60_000;
   if (minutes < 1) return `${decimal.format(milliseconds / 1_000)} sec`;
@@ -155,9 +163,10 @@ function DistributionStrip({
     ["P90", distribution.p90],
   ] as const;
   const formatted = (value: number) => formatValue(metric.key, value);
+  const definition = metricDefinitions[metric.key];
   const ariaLabel = `${label}: ${
     tooltip.map(([name, value]) => `${name} ${formatted(value)}`).join(", ")
-  }`;
+  }${definition ? `. ${definition}` : ""}`;
   const positions = {
     p10: position(distribution.p10, distribution.p10, distribution.p90),
     q1: position(distribution.p25, distribution.p10, distribution.p90),
@@ -218,6 +227,7 @@ function DistributionStrip({
                 <strong>{formatted(value)}</strong>
               </span>
             ))}
+            {definition && <p>{definition}</p>}
           </span>
         </div>
         <div className="shape-range" aria-hidden="true">
@@ -280,27 +290,45 @@ export function SessionShape({
   return (
     <section className="session-shape" aria-labelledby="session-shape-title">
       <div className="dashboard-section-heading">
-        <h2 id="session-shape-title">Session shape</h2>
-        <div
-          className="shape-key"
-          role="img"
-          aria-label="Distribution key: whiskers show P10 to P90, the box shows P25 to P75, the line is the median, and the diamond is the mean"
-        >
-          <div className="shape-key-diagram" aria-hidden="true">
-            <span className="shape-key-whisker" />
-            <span className="shape-key-end shape-key-end-start" />
-            <span className="shape-key-end shape-key-end-end" />
-            <span className="shape-key-box" />
-            <span className="shape-key-median" />
-            <span className="shape-key-mean" />
-            <span className="shape-key-label shape-key-label-p10">P10</span>
-            <span className="shape-key-label shape-key-label-p25">P25</span>
-            <span className="shape-key-label shape-key-label-p75">P75</span>
-            <span className="shape-key-label shape-key-label-median">
-              Median
-            </span>
-            <span className="shape-key-label shape-key-label-mean">Mean</span>
-            <span className="shape-key-label shape-key-label-p90">P90</span>
+        <div className="shape-heading-title">
+          <h2 id="session-shape-title">Session shape</h2>
+          <div className="shape-key-help">
+            <button
+              type="button"
+              aria-label="How to read the session shape distributions"
+              aria-describedby="shape-key-tooltip"
+            >
+              ?
+            </button>
+            <div
+              className="shape-key-tooltip"
+              id="shape-key-tooltip"
+              role="tooltip"
+            >
+              <strong>How to read this</strong>
+              <div
+                className="shape-key-diagram"
+                role="img"
+                aria-label="Whiskers show P10 to P90, the box shows P25 to P75, the line is the median, and the diamond is the mean"
+              >
+                <span className="shape-key-whisker" />
+                <span className="shape-key-end shape-key-end-start" />
+                <span className="shape-key-end shape-key-end-end" />
+                <span className="shape-key-box" />
+                <span className="shape-key-median" />
+                <span className="shape-key-mean" />
+                <span className="shape-key-label shape-key-label-p10">P10</span>
+                <span className="shape-key-label shape-key-label-p25">P25</span>
+                <span className="shape-key-label shape-key-label-p75">P75</span>
+                <span className="shape-key-label shape-key-label-median">
+                  Median
+                </span>
+                <span className="shape-key-label shape-key-label-mean">
+                  Mean
+                </span>
+                <span className="shape-key-label shape-key-label-p90">P90</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>

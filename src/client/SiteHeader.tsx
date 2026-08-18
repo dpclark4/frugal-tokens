@@ -6,7 +6,8 @@ export function SiteHeader({ active, action }: {
   action?: ReactNode;
 }) {
   const [showSecondaryPages, setShowSecondaryPages] = useState(
-    () => sessionStorage.getItem("frugal-tokens:show-secondary-pages") === "true",
+    () =>
+      sessionStorage.getItem("frugal-tokens:show-secondary-pages") === "true",
   );
 
   useEffect(() => {
@@ -21,14 +22,19 @@ export function SiteHeader({ active, action }: {
         return next;
       });
     };
-    window.addEventListener("frugal-tokens:toggle-secondary-pages", toggle);
+    globalThis.addEventListener(
+      "frugal-tokens:toggle-secondary-pages",
+      toggle,
+    );
     return () =>
-      window.removeEventListener("frugal-tokens:toggle-secondary-pages", toggle);
+      globalThis.removeEventListener(
+        "frugal-tokens:toggle-secondary-pages",
+        toggle,
+      );
   }, []);
 
   return (
     <header className="page-header site-header">
-      <img className="site-header-mark" src="/brand-mark.png" alt="" />
       <div>
         <h1>Frugal Tokens</h1>
       </div>

@@ -3,7 +3,6 @@ import {
   Bar,
   CartesianGrid,
   ComposedChart,
-  Line,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -227,10 +226,9 @@ function CompositionTooltip({ active, payload, data, metric }: {
 }
 
 function CompositionChart(
-  { data, metric, showRate }: {
+  { data, metric }: {
     data: SpendCompositionData;
     metric: Metric;
-    showRate: boolean;
   },
 ) {
   const series = useMemo(() => [
@@ -243,8 +241,8 @@ function CompositionChart(
       ? [{ key: "other", model: undefined, color: otherModelColor }]
       : []),
   ], [data]);
-  const { rows, gapKeys } = useMemo(() => {
-    const rows: ChartRow[] = data.days.map((day) => {
+  const rows = useMemo(() =>
+    data.days.map((day) => {
       const row: ChartRow = { date: day.date, source: day };
       data.models.forEach((model, index) => {
         const value = day.models.find((item) => item.model === model.model);
@@ -257,36 +255,8 @@ function CompositionChart(
           ? day.otherSpend
           : day.otherProcessedInput;
       }
-      const totalSpend = day.models.reduce(
-        (sum, model) => sum + model.spend,
-        day.otherSpend,
-      );
-      const totalTokens = day.models.reduce(
-        (sum, model) => sum + model.processedInput,
-        day.otherProcessedInput,
-      );
-      if (totalTokens > 0) {
-        row.effectiveRate = totalSpend / totalTokens * 1_000_000;
-      }
       return row;
-    });
-
-    const gapKeys: string[] = [];
-    let previousDataIndex: number | undefined;
-    rows.forEach((row, index) => {
-      if (typeof row.effectiveRate !== "number") return;
-      if (
-        previousDataIndex !== undefined && index - previousDataIndex > 1
-      ) {
-        const key = `effectiveRateGap${gapKeys.length}`;
-        rows[previousDataIndex][key] = rows[previousDataIndex].effectiveRate;
-        row[key] = row.effectiveRate;
-        gapKeys.push(key);
-      }
-      previousDataIndex = index;
-    });
-    return { rows, gapKeys };
-  }, [data, metric]);
+    }), [data, metric]);
 
   return (
     <div
@@ -294,11 +264,7 @@ function CompositionChart(
       role="img"
       aria-label={`${
         metric === "spend" ? "Spend" : "Processed input tokens"
-      } by day, stacked by model${
-        showRate
-          ? ", with whole-day cost per million processed input tokens"
-          : ""
-      }.`}
+      } by day, stacked by model.`}
     >
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart
@@ -329,9 +295,10 @@ function CompositionChart(
           <YAxis
             yAxisId="volume"
             width={48}
-            tickFormatter={(value) => metric === "spend"
-              ? `$${compact.format(Number(value))}`
-              : compact.format(Number(value))}
+            tickFormatter={(value) =>
+              metric === "spend"
+                ? `$${compact.format(Number(value))}`
+                : compact.format(Number(value))}
             axisLine={false}
             tickLine={false}
             tick={{
@@ -339,21 +306,6 @@ function CompositionChart(
               fontSize: dashboardChartLabelSize,
               fontFamily: dashboardChartFont,
             }}
-          />
-          <YAxis
-            yAxisId="rate"
-            orientation="right"
-            width={46}
-            tickFormatter={(value) => `$${compact.format(Number(value))}`}
-            axisLine={false}
-            tickLine={false}
-            tick={showRate
-              ? {
-                fill: "#35433f",
-                fontSize: dashboardChartLabelSize,
-                fontFamily: dashboardChartFont,
-              }
-              : false}
           />
           <Tooltip
             cursor={{ stroke: "#52615d", strokeDasharray: "3 3" }}
@@ -377,39 +329,6 @@ function CompositionChart(
               isAnimationActive={false}
             />
           ))}
-          {showRate && gapKeys.map((key) => (
-            <Line
-              key={key}
-              yAxisId="rate"
-              type="linear"
-              dataKey={key}
-              stroke="#7c8783"
-              strokeWidth={2}
-              strokeDasharray="5 4"
-              dot={false}
-              activeDot={false}
-              connectNulls
-              isAnimationActive={false}
-            />
-          ))}
-          {showRate && (
-            <Line
-              yAxisId="rate"
-              type="monotone"
-              dataKey="effectiveRate"
-              stroke="#7c8783"
-              strokeWidth={2}
-              dot={false}
-              activeDot={{
-                r: 3,
-                fill: "#7c8783",
-                stroke: "#fbfcfb",
-                strokeWidth: 1.5,
-              }}
-              connectNulls={false}
-              isAnimationActive={false}
-            />
-          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
@@ -418,7 +337,6 @@ function CompositionChart(
 
 export function SpendComposition({ data }: { data: SpendCompositionData }) {
   const [metric, setMetric] = useState<Metric>("spend");
-  const [showRate, setShowRate] = useState(true);
   const empty = data.models.length === 0;
 
   return (
@@ -443,14 +361,6 @@ export function SpendComposition({ data }: { data: SpendCompositionData }) {
           <div className="composition-card composition-chart-card">
             <header className="composition-header composition-chart-header">
               <div className="composition-header-controls">
-                <label className="composition-rate-control">
-                  <input
-                    type="checkbox"
-                    checked={showRate}
-                    onChange={(event) => setShowRate(event.target.checked)}
-                  />
-                  <span>$/1M processed</span>
-                </label>
                 <div className="composition-toggle" aria-label="Chart metric">
                   <button
                     type="button"
@@ -479,11 +389,7 @@ export function SpendComposition({ data }: { data: SpendCompositionData }) {
               </div>
             </header>
             <div className="composition-trend">
-              <CompositionChart
-                data={data}
-                metric={metric}
-                showRate={showRate}
-              />
+              <CompositionChart data={data} metric={metric} />
             </div>
           </div>
         )}

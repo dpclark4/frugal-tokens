@@ -108,16 +108,6 @@ main {
   margin-bottom: 16px;
 }
 
-.site-header-mark {
-  width: 62px;
-  height: 62px;
-  flex: 0 0 62px;
-  object-fit: cover;
-  border-radius: 12px;
-  margin-right: -10px;
-  transform: translateY(0);
-}
-
 .eyebrow {
   color: var(--accent);
   font-family: var(--mono);

@@ -41,23 +41,6 @@
   gap: 14px;
 }
 
-.composition-rate-control {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: #566560;
-  font: var(--dashboard-type-label) var(--mono);
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.composition-rate-control input {
-  width: 13px;
-  height: 13px;
-  margin: 0;
-  accent-color: var(--dashboard-ink);
-}
-
 .composition-summary {
   display: grid;
   min-width: 96px;

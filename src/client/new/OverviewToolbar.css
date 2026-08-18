@@ -1,6 +1,8 @@
 .new-overview-controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
 }
 
@@ -26,6 +28,7 @@
 
 .new-range-control select,
 .new-harness-control select {
+  max-width: 100%;
   height: 34px;
   padding: 6px 28px 6px 8px;
   border: 1px solid #bdcac6;
@@ -129,15 +132,16 @@
 
   .new-page .site-header-action {
     position: static;
+    width: 100%;
     margin-top: 10px;
+  }
+
+  .new-overview-controls {
+    width: 100%;
   }
 }
 
 @media (max-width: 480px) {
-  .new-overview-controls {
-    width: 100%;
-  }
-
   .new-harness-control,
   .new-harness-control select {
     flex: 1;
