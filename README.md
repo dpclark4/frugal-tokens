@@ -19,13 +19,14 @@ deno task build && deno task start
 Then open <http://localhost:9000>.
 
 Use `.env` to override the default session locations. To use a different API
-port (e.g. if 9000 is already taken on your machine), set
-`FRUGAL_TOKENS_API_PORT` in `.env`.
+port (e.g. if 9000 is already taken on your machine), set `PORT` in `.env`
+(e.g. `PORT=9001`). This is also the port Railway (or any host that
+auto-injects `PORT`) will route traffic to, so don't rename it.
 
 For development with automatic client and server reloads, run `deno task dev`
 and open <http://localhost:5273>. Note: `deno task dev` computes its own API
-port from the web port you pass it and ignores `FRUGAL_TOKENS_API_PORT` in
-`.env`; to change the dev API port, pass a different web port instead, e.g.
-`deno task dev 5274`.
+port from the web port you pass it and ignores `PORT` in `.env`; to change
+the dev API port, pass a different web port instead, e.g. `deno task dev
+5274`.
 
 See the [demo deployment guide](docs/demo-deployment.md) for hosted demo maintenance.

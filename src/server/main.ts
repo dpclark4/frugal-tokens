@@ -1056,7 +1056,7 @@ if (serveStaticAssets) {
   app.get("*", serveStatic({ root: "./dist", path: "index.html" }));
 }
 
-const port = Number.parseInt(Deno.env.get("FRUGAL_TOKENS_API_PORT") ?? "9000", 10);
+const port = Number.parseInt(Deno.env.get("PORT") ?? "9000", 10);
 Deno.serve(
   {
     port,
