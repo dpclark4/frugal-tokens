@@ -30,7 +30,6 @@ const child = new Deno.Command(Deno.execPath(), {
   ],
   env: {
     FRUGAL_TOKENS_WEB_PORT: String(webPort),
-    FRUGAL_TOKENS_API_PORT: String(apiPort),
     PORT: String(apiPort),
   },
   stdin: "inherit",
