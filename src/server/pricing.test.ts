@@ -117,6 +117,34 @@ Deno.test("uses Luna and Terra prices effective July 30 at 4 PM Eastern", () => 
   }
 });
 
+Deno.test("uses Sol prices effective August 21 at 5 PM Eastern", () => {
+  const before = Date.parse("2026-08-21T20:59:59.999Z");
+  const effectiveAt = Date.parse("2026-08-21T21:00:00Z");
+  const shortTokens = tokens({
+    uncachedInput: 100_000,
+    cacheRead: 50_000,
+    cacheWrite: 50_000,
+    output: 100_000,
+  });
+  const longTokens = tokens({
+    uncachedInput: 300_000,
+    cacheRead: 50_000,
+    cacheWrite: 50_000,
+    output: 100_000,
+  });
+
+  closeTo(computeModelCallCost(shortTokens, "gpt-5.6-sol", before), 3.8375);
+  closeTo(
+    computeModelCallCost(shortTokens, "gpt-5.6-sol", effectiveAt),
+    2.67,
+  );
+  closeTo(computeModelCallCost(longTokens, "gpt-5.6-sol", before), 8.175);
+  closeTo(
+    computeModelCallCost(longTokens, "gpt-5.6-sol", effectiveAt),
+    5.94,
+  );
+});
+
 Deno.test("prices Claude Opus 5 at its published rates", () => {
   closeTo(
     computeModelCallCost(

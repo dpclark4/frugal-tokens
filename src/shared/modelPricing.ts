@@ -283,6 +283,24 @@ const longContext: Record<string, ModelRateCard> = {
   "minimax-m3": { input: 0.6, cacheRead: 0.12, cacheWrite: 0.6, output: 2.4 },
 };
 
+const reducedSolRates: Record<string, ModelRateCard> = {
+  "gpt-5.6-sol": {
+    input: 4,
+    cacheRead: 0.4,
+    cacheWrite: 5,
+    output: 20,
+  },
+};
+
+const reducedSolLongContextRates: Record<string, ModelRateCard> = {
+  "gpt-5.6-sol": {
+    input: 8,
+    cacheRead: 0.8,
+    cacheWrite: 10,
+    output: 30,
+  },
+};
+
 const reducedLunaTerraRates: Record<string, ModelRateCard> = {
   "gpt-5.6-terra": {
     input: 2,
@@ -317,6 +335,7 @@ const LONG_CONTEXT_THRESHOLD = 272_000;
 const GROK_LONG_CONTEXT_THRESHOLD = 200_000;
 const MINIMAX_M3_LONG_CONTEXT_THRESHOLD = 512_000;
 const OPENAI_LUNA_TERRA_PRICE_CUT = Date.parse("2026-07-30T20:00:00Z");
+const OPENAI_SOL_PRICE_CUT = Date.parse("2026-08-21T21:00:00Z");
 
 export const counterfactualModelIDs = [
   "gpt-5.6-sol",
@@ -401,6 +420,12 @@ export function modelRateCard(
     provider?.toLowerCase() === "cursor" ? cursorPricingModel(model) : model,
   );
   const long = usesLongContextRates(normalized, inputTokens);
+  if (timestamp >= OPENAI_SOL_PRICE_CUT) {
+    const reducedRates = long
+      ? reducedSolLongContextRates[normalized]
+      : reducedSolRates[normalized];
+    if (reducedRates) return reducedRates;
+  }
   if (timestamp >= OPENAI_LUNA_TERRA_PRICE_CUT) {
     const reducedRates = long
       ? reducedLunaTerraLongContextRates[normalized]
