@@ -579,7 +579,9 @@ export function RecentSessionsTable({
                   <th>Activity</th>
                   <th>Input</th>
                   <th>Output</th>
-                  <th className="recent-session-cache-heading">Cache</th>
+                  <th className="recent-session-cache-heading">
+                    Cache misses
+                  </th>
                   <th>Cost</th>
                 </tr>
               </thead>

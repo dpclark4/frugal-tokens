@@ -67,6 +67,7 @@
   font-weight: 500;
   letter-spacing: .07em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .cache-overview-table th:first-child {

@@ -29,7 +29,7 @@ function CacheSummary({ metrics }: { metrics: TtlMissMetrics }) {
         className="cache-summary-metric"
         title="Estimated input cost attributed to lost cache reuse at calls classified as cache misses."
       >
-        <span>Attributed miss cost</span>
+        <span>Attributed cost</span>
         <strong>{currency.format(metrics.combined.attributedCost)}</strong>
       </div>
       <div className="cache-summary-metric">
