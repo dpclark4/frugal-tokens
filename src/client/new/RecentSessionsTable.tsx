@@ -178,34 +178,46 @@ function HarnessMark({ harness }: { harness: SessionSummary["harness"] }) {
 function cacheMissBreakdown(session: SessionSummary) {
   const groups = [
     {
+      kind: "full",
       label: "Full miss",
+      shortLabel: "Full",
       test: (issue: NonNullable<SessionSummary["cacheIssues"]>[number]) =>
         issue.status === "full-miss" && issue.cause === undefined &&
         issue.reason !== "model-change",
     },
     {
+      kind: "partial",
       label: "Partial miss",
+      shortLabel: "Partial",
       test: (issue: NonNullable<SessionSummary["cacheIssues"]>[number]) =>
         issue.status === "partial-hit" && issue.cause === undefined &&
         issue.reason !== "model-change",
     },
     {
-      label: "TTL expiry",
+      kind: "ttl",
+      label: "TTL miss",
+      shortLabel: "TTL",
       test: (issue: NonNullable<SessionSummary["cacheIssues"]>[number]) =>
         issue.cause === "ttl",
     },
     {
+      kind: "thinking",
       label: "Thinking change",
+      shortLabel: "Thinking",
       test: (issue: NonNullable<SessionSummary["cacheIssues"]>[number]) =>
         issue.cause === "thinking-change",
     },
     {
+      kind: "model",
       label: "Model change",
+      shortLabel: "Model",
       test: (issue: NonNullable<SessionSummary["cacheIssues"]>[number]) =>
         issue.cause === undefined && issue.reason === "model-change",
     },
     {
+      kind: "compaction",
       label: "Compaction",
+      shortLabel: "Compaction",
       test: (issue: NonNullable<SessionSummary["cacheIssues"]>[number]) =>
         issue.cause === "compaction",
     },
@@ -225,16 +237,37 @@ function CacheMissSummary({ session }: { session: SessionSummary }) {
   const tooltipId = useId();
   const misses = session.cacheIssues?.length ?? 0;
   const breakdown = cacheMissBreakdown(session);
-  if (misses === 0) return <span className="recent-session-empty">—</span>;
+  const showBreakdown = breakdown.length > 0 && breakdown.length <= 2;
+  if (misses === 0) return null;
   return (
     <span
       className="recent-session-cache-summary"
       tabIndex={0}
       aria-describedby={tooltipId}
     >
-      <strong>
-        {integer.format(misses)} {misses === 1 ? "miss" : "misses"}
-      </strong>
+      {showBreakdown
+        ? (
+          <span className="recent-session-cache-breakdown">
+            {breakdown.map((group) => (
+              <span
+                className="recent-session-cache-breakdown-row"
+                key={group.kind}
+              >
+                <span
+                  className={`recent-session-cache-label is-${group.kind}`}
+                >
+                  {group.shortLabel}
+                </span>
+                <strong>×{integer.format(group.count)}</strong>
+              </span>
+            ))}
+          </span>
+        )
+        : (
+          <strong>
+            {integer.format(misses)} {misses === 1 ? "miss" : "misses"}
+          </strong>
+        )}
       <span
         className="recent-session-cache-tooltip"
         id={tooltipId}
@@ -546,7 +579,7 @@ export function RecentSessionsTable({
                   <th>Activity</th>
                   <th>Input</th>
                   <th>Output</th>
-                  <th>Cache</th>
+                  <th className="recent-session-cache-heading">Cache</th>
                   <th>Cost</th>
                 </tr>
               </thead>

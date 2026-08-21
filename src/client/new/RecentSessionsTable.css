@@ -205,7 +205,7 @@
 }
 
 .recent-session-name-column {
-  width: 41%;
+  width: 38%;
 }
 .recent-session-model-column {
   width: 14%;
@@ -220,7 +220,7 @@
   width: 8%;
 }
 .recent-session-cache-column {
-  width: 6%;
+  width: 9%;
 }
 .recent-session-cost-column {
   width: 6%;
@@ -380,7 +380,15 @@
 }
 
 .recent-session-activity-cell,
-.recent-session-output-cell,
+.recent-session-output-cell {
+  text-align: center;
+}
+
+.recent-sessions-table th.recent-session-cache-heading:nth-child(6) {
+  padding-right: 10px;
+  padding-left: 46px;
+}
+
 .recent-session-cache-cell {
   text-align: center;
 }
@@ -420,6 +428,7 @@
 
 .recent-session-cache-summary {
   position: relative;
+  left: 18px;
   display: inline-block;
   outline: none;
 }
@@ -428,11 +437,73 @@
   color: #56645f;
 }
 
+.recent-session-cache-breakdown {
+  display: inline-grid;
+  width: 98px;
+  grid-template-columns: 66px auto;
+  align-items: center;
+  justify-items: start;
+  gap: 4px 7px;
+  text-align: left;
+}
+
+.recent-session-cache-breakdown-row {
+  display: contents;
+}
+
+.recent-session-cache-label {
+  padding: 2px 5px;
+  border-radius: 3px;
+  background: #edf1ef;
+  color: #56645f;
+  font: 600 var(--dashboard-type-micro)/1.1 var(--mono);
+  letter-spacing: .035em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.recent-session-cache-label.is-full {
+  background: #f5eae8;
+  color: #934d45;
+}
+
+.recent-session-cache-label.is-partial,
+.recent-session-cache-label.is-thinking {
+  background: #f5efe3;
+  color: #80602f;
+}
+
+.recent-session-cache-label.is-ttl {
+  background: #f0ebf1;
+  color: #715f75;
+}
+
+.recent-session-cache-label.is-model {
+  background: #e9f0ed;
+  color: #4e6b63;
+}
+
+.recent-session-cache-label.is-compaction {
+  background: #ebedf5;
+  color: #5868a6;
+}
+
+.recent-session-cache-breakdown-row > strong {
+  color: #71807b;
+  font-size: var(--dashboard-type-label);
+  overflow: visible;
+}
+
 .recent-session-cache-summary:focus-visible > strong {
   color: var(--dashboard-signal);
   text-decoration: underline;
   text-decoration-color: rgba(15, 113, 105, .4);
   text-underline-offset: 3px;
+}
+
+.recent-session-cache-summary:focus-visible .recent-session-cache-breakdown {
+  outline: 2px solid rgba(15, 113, 105, .3);
+  outline-offset: 2px;
 }
 
 .recent-session-cache-tooltip {
@@ -511,11 +582,6 @@
 .recent-session-cache-tooltip-row > strong {
   color: #fff;
   font-size: var(--dashboard-type-tooltip-value);
-}
-
-.recent-session-empty {
-  color: #9aa6a2;
-  font-size: var(--dashboard-type-table);
 }
 
 .recent-session-cost-cell {
@@ -663,7 +729,7 @@
   }
 
   .recent-session-name-column {
-    width: 36%;
+    width: 35%;
   }
   .recent-session-model-column {
     width: 15%;
@@ -678,10 +744,18 @@
     width: 10%;
   }
   .recent-session-cache-column {
-    width: 10%;
+    width: 11%;
   }
   .recent-session-cost-column {
     width: 0;
+  }
+
+  .recent-sessions-table th.recent-session-cache-heading:nth-child(6) {
+    padding-inline: 10px;
+  }
+
+  .recent-session-cache-summary {
+    left: 0;
   }
 
   .recent-session-cost-cell,
