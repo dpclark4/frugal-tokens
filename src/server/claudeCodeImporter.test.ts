@@ -216,7 +216,8 @@ Deno.test("imports replayed Claude compaction checkpoints", async () => {
     const detail = reads.getSession("claude-code", "project/replayed")!;
     deepStrictEqual(
       detail.turns.map((turn) =>
-        turn.calls[0].contextEventsBefore?.map((event) => event.sourceOrder) ?? []
+        turn.calls[0].contextEventsBefore?.map((event) => event.sourceOrder) ??
+          []
       ),
       [[], [3], [7]],
     );
@@ -290,7 +291,6 @@ ${
   migrateTestDatabase(db);
   const repository = new SourceArtifactRepository(db);
   const conversations = new ConversationWriteRepository(db);
-  const reads = new ConversationRepository(db);
   try {
     const result = await syncClaudeCodeSessions(
       sessions,
@@ -351,6 +351,79 @@ ${
       (await syncClaudeCodeSessions(sessions, repository, conversations))
         .skipped,
       2,
+    );
+  } finally {
+    db.close();
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
+Deno.test("Claude lineage changes rebuild both the prior and new families", async () => {
+  const directory = Deno.makeTempDirSync();
+  const sessions = `${directory}/projects`;
+  const project = `${sessions}/project`;
+  const metadata = (id: string, origin: string) =>
+    JSON.stringify({
+      type: "ai-title",
+      sessionId: id,
+      session_id: origin,
+      aiTitle: id,
+    });
+  write(`${project}/root-a.jsonl`, metadata("root-a", "root-a"));
+  write(`${project}/root-b.jsonl`, metadata("root-b", "root-b"));
+  const childPath = `${project}/child.jsonl`;
+  const child = (parentID: string) =>
+    `${metadata("child", parentID)}\n${metadata("child", "child")}`;
+  write(childPath, child("root-a"));
+
+  const db = openArchiveDatabase(`${directory}/archive.sqlite`);
+  migrateTestDatabase(db);
+  const repository = new SourceArtifactRepository(db);
+  const conversations = new ConversationWriteRepository(db);
+  try {
+    const initial = await syncClaudeCodeSessions(
+      sessions,
+      repository,
+      conversations,
+    );
+    strictEqual(initial.imported, 3);
+    deepStrictEqual(
+      db.prepare(`
+        SELECT conversation.external_id AS conversation_id,
+          branch.external_id AS branch_id
+        FROM conversation_branches AS branch
+        JOIN conversations AS conversation ON conversation.id = branch.conversation_id
+        ORDER BY conversation.external_id, branch.external_id
+      `).all().map((row) => ({ ...row })),
+      [
+        { conversation_id: "root-a", branch_id: "child" },
+        { conversation_id: "root-a", branch_id: "root-a" },
+        { conversation_id: "root-b", branch_id: "root-b" },
+      ],
+    );
+
+    write(childPath, child("root-b"));
+    const changedAt = new Date(Date.now() + 2_000);
+    Deno.utimeSync(childPath, changedAt, changedAt);
+    const moved = await syncClaudeCodeSessions(
+      sessions,
+      repository,
+      conversations,
+    );
+    strictEqual(moved.imported, 3);
+    deepStrictEqual(
+      db.prepare(`
+        SELECT conversation.external_id AS conversation_id,
+          branch.external_id AS branch_id
+        FROM conversation_branches AS branch
+        JOIN conversations AS conversation ON conversation.id = branch.conversation_id
+        ORDER BY conversation.external_id, branch.external_id
+      `).all().map((row) => ({ ...row })),
+      [
+        { conversation_id: "root-a", branch_id: "root-a" },
+        { conversation_id: "root-b", branch_id: "child" },
+        { conversation_id: "root-b", branch_id: "root-b" },
+      ],
     );
   } finally {
     db.close();

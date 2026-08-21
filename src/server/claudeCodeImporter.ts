@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   type ClaudeCodeSessionCandidate,
   claudeCodeSourceArtifactMetadata,
@@ -54,28 +55,17 @@ function dependencyHint(candidate: ClaudeCodeSessionCandidate) {
   ).join("\n");
 }
 
-async function fingerprint(
+function fingerprint(
   candidate: ClaudeCodeSessionCandidate,
   snapshots: Map<string, Uint8Array>,
 ) {
-  const encoder = new TextEncoder();
-  const chunks = candidate.dependencies.flatMap((dependency) => [
-    encoder.encode(`${dependency.artifactPath}\0${dependency.size}\0`),
-    snapshots.get(dependency.path)!,
-    new Uint8Array([0]),
-  ]);
-  const size = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
-  const value = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    value.set(chunk, offset);
-    offset += chunk.byteLength;
+  const hash = createHash("sha256");
+  for (const dependency of candidate.dependencies) {
+    hash.update(`${dependency.artifactPath}\0${dependency.size}\0`);
+    hash.update(snapshots.get(dependency.path)!);
+    hash.update(new Uint8Array([0]));
   }
-  const digest = await crypto.subtle.digest("SHA-256", value);
-  return Array.from(
-    new Uint8Array(digest),
-    (byte) => byte.toString(16).padStart(2, "0"),
-  ).join("");
+  return hash.digest("hex");
 }
 
 function connectedArtifactFamilies(records: SourceArtifactProjectionRecord[]) {
@@ -184,20 +174,15 @@ export async function syncClaudeCodeSessions(
   const candidateByID = new Map(
     candidates.map((candidate) => [candidate.id, candidate]),
   );
-  const cached = new Map<string, {
-    values: LinearConversationImport[];
-    checksum: string;
-    checkpoint: ProjectionCheckpoint;
-    rootText: string;
-  }>();
+  // The scan retains only checksums and lineage metadata. Transcript snapshots
+  // and normalized values are reloaded for one affected family at a time.
+  const observedChecksums = new Map<string, string>();
   const metadata: SourceArtifactMetadata[] = [];
   let imported = 0;
   let skipped = 0;
   let failed = 0;
 
-  const load = async (candidate: ClaudeCodeSessionCandidate) => {
-    const existing = cached.get(candidate.id);
-    if (existing !== undefined) return existing;
+  const snapshot = (candidate: ClaudeCodeSessionCandidate) => {
     const snapshots = readCandidateSnapshots(candidate);
     const afterRead = discoverClaudeCodeSessions(directory).find((item) =>
       item.id === candidate.id
@@ -207,28 +192,14 @@ export async function syncClaudeCodeSessions(
         "Claude Code dependency tree changed while it was being read",
       );
     }
-    const checksum = await fingerprint(candidate, snapshots);
+    const checksum = fingerprint(candidate, snapshots);
     const checkpoint: ProjectionCheckpoint = {
       sourceSize: candidate.size,
       sourceModifiedAt: candidate.changeHint,
       checksum,
       parserVersion,
     };
-    const values = normalizeClaudeCodeSessionTree({
-      candidate,
-      snapshots,
-      sourceID,
-      observedAt,
-      checkpoint,
-    });
-    const value = {
-      values,
-      checksum,
-      checkpoint,
-      rootText: new TextDecoder().decode(snapshots.get(candidate.path)!),
-    };
-    cached.set(candidate.id, value);
-    return value;
+    return { snapshots, checksum, checkpoint };
   };
 
   for (const candidate of candidates) {
@@ -246,7 +217,8 @@ export async function syncClaudeCodeSessions(
       continue;
     }
     try {
-      const loaded = await load(candidate);
+      const captured = snapshot(candidate);
+      observedChecksums.set(candidate.id, captured.checksum);
       for (const dependency of candidate.dependencies) {
         if (!dependency.artifactPath.endsWith(".jsonl")) continue;
         repository.recordUnchangedArtifact(
@@ -256,7 +228,10 @@ export async function syncClaudeCodeSessions(
           observedAt,
         );
       }
-      const sourceMetadata = claudeCodeSourceArtifactMetadata(loaded.rootText);
+      const rootBytes = captured.snapshots.get(candidate.path)!;
+      const sourceMetadata = claudeCodeSourceArtifactMetadata(
+        new TextDecoder().decode(rootBytes),
+      );
       const sourceIdentity = sourceMetadata.sourceIdentity ?? candidate.id;
       metadata.push({
         externalID: candidate.id,
@@ -276,7 +251,7 @@ export async function syncClaudeCodeSessions(
         sourceID,
         candidate,
         observedAt,
-        loaded.checkpoint,
+        captured.checkpoint,
         projectionName,
       );
     } catch (error) {
@@ -341,22 +316,37 @@ export async function syncClaudeCodeSessions(
         const subagents: LinearConversationImport[] = [];
         for (const record of available) {
           const candidate = candidateByID.get(record.externalID)!;
-          const loaded = await load(candidate);
-          const value = loaded.values.find((item) =>
-            item.externalID === candidate.id
-          );
+          const captured = snapshot(candidate);
+          const expectedChecksum = observedChecksums.get(record.externalID) ??
+            record.checksum;
+          if (
+            expectedChecksum !== undefined &&
+            captured.checksum !== expectedChecksum
+          ) {
+            throw new Error(
+              "Claude Code dependency tree changed while it was being read",
+            );
+          }
+          const values = normalizeClaudeCodeSessionTree({
+            candidate,
+            snapshots: captured.snapshots,
+            sourceID,
+            observedAt,
+            checkpoint: captured.checkpoint,
+          });
+          const value = values.find((item) => item.externalID === candidate.id);
           if (value === undefined) {
             throw new Error(`Missing Claude Code root import: ${candidate.id}`);
           }
           subagents.push(
-            ...loaded.values.filter((item) => item.externalID !== candidate.id),
+            ...values.filter((item) => item.externalID !== candidate.id),
           );
           artifacts.push({
             externalID: candidate.id,
             sourceIdentity: record.sourceIdentity,
             parentSourceIdentity: record.parentSourceIdentity,
             value,
-            checkpoint: loaded.checkpoint,
+            checkpoint: captured.checkpoint,
           });
         }
         const root = artifacts.find((artifact) =>
