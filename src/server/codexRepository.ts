@@ -669,6 +669,10 @@ function decodeRecords(records: Record[]) {
   let pendingHasText = false;
   let pendingTools: ConversationToolImport[] = [];
   let pendingContent: ConversationContentImport[] = [];
+  // Codex forks can retain agent_message events while omitting their matching
+  // structured response_item records. Keep those messages as content unless a
+  // structured assistant response supersedes the same text.
+  const pendingAgentMessageContent = new Set<ConversationContentImport>();
   let pendingCallSourceIDs: string[] = [];
   const callTimings = inferCodexCallTimings(records);
   type PendingContextEvent = ConversationContextEventImport & {
@@ -772,6 +776,7 @@ function decodeRecords(records: Record[]) {
       pendingHasText = false;
       pendingTools = [];
       pendingContent = [];
+      pendingAgentMessageContent.clear();
       pendingCallSourceIDs = [];
       continue;
     }
@@ -866,6 +871,22 @@ function decodeRecords(records: Record[]) {
     }
 
     if (
+      record.type === "event_msg" && payload?.type === "agent_message"
+    ) {
+      const message = stringValue(payload.message);
+      if (message !== undefined) {
+        const content = {
+          ...preview(message),
+          sourceOrder: recordIndex + 1,
+        };
+        pendingContent.push(content);
+        pendingAgentMessageContent.add(content);
+        pendingHasText = true;
+      }
+      continue;
+    }
+
+    if (
       record.type === "response_item" &&
       (payload?.type === "custom_tool_call_output" ||
         payload?.type === "function_call_output")
@@ -884,7 +905,23 @@ function decodeRecords(records: Record[]) {
 
     if (record.type === "response_item" && hasText(record)) {
       pendingHasText = true;
-      pendingContent.push(...messageContent(record, recordIndex + 1));
+      const content = messageContent(record, recordIndex + 1);
+      // Full Codex logs store an agent_message immediately before the matching
+      // structured assistant response. Prefer the latter's stable source ID.
+      if (payload?.role === "assistant" && content.length === 1) {
+        for (let index = pendingContent.length - 1; index >= 0; index--) {
+          const fallback = pendingContent[index];
+          if (
+            !pendingAgentMessageContent.has(fallback) ||
+            fallback.preview !== content[0].preview ||
+            fallback.originalLength !== content[0].originalLength
+          ) continue;
+          pendingContent.splice(index, 1);
+          pendingAgentMessageContent.delete(fallback);
+          break;
+        }
+      }
+      pendingContent.push(...content);
       if (record.payload?.id !== undefined) {
         pendingCallSourceIDs.push(record.payload.id);
       }
@@ -976,6 +1013,7 @@ function decodeRecords(records: Record[]) {
     pendingHasText = false;
     pendingTools = [];
     pendingContent = [];
+    pendingAgentMessageContent.clear();
     pendingCallSourceIDs = [];
   }
 

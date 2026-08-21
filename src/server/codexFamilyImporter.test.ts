@@ -828,6 +828,139 @@ Deno.test("Codex does not deduplicate copied-looking calls without stable identi
   }
 });
 
+Deno.test("Codex imports compact fork history carried by agent messages", async () => {
+  const directory = Deno.makeTempDirSync();
+  const source = `${directory}/sessions`;
+  Deno.mkdirSync(source);
+  const timestamp = "2026-08-20T12:00:00.000Z";
+  const tokenCount = (output: number) => ({
+    timestamp,
+    type: "event_msg",
+    payload: {
+      type: "token_count",
+      info: {
+        last_token_usage: {
+          input_tokens: 10,
+          cached_input_tokens: 0,
+          output_tokens: output,
+          reasoning_output_tokens: 0,
+        },
+      },
+    },
+  });
+  const agentMessage = (message: string) => ({
+    timestamp,
+    type: "event_msg",
+    payload: { type: "agent_message", message },
+  });
+  const response = (id: string, text: string) => ({
+    timestamp,
+    type: "response_item",
+    payload: {
+      type: "message",
+      id,
+      role: "assistant",
+      content: [{ type: "output_text", text }],
+    },
+  });
+  const toolCall = {
+    timestamp,
+    type: "response_item",
+    payload: {
+      type: "custom_tool_call",
+      id: "first-tool",
+      call_id: "first-tool-call",
+      name: "exec",
+      input: "echo first",
+    },
+  };
+  const toolOutput = {
+    timestamp,
+    type: "response_item",
+    payload: {
+      type: "custom_tool_call_output",
+      call_id: "first-tool-call",
+      output: "Tool result",
+    },
+  };
+  const task = (turnID: string) => ({
+    timestamp,
+    type: "event_msg",
+    payload: { type: "task_started", turn_id: turnID },
+  });
+  const user = (text: string) => ({
+    timestamp,
+    type: "response_item",
+    payload: {
+      type: "message",
+      role: "user",
+      content: [{ type: "input_text", text }],
+    },
+  });
+  const sharedPrefix = [task("shared-turn"), user("Inspect this")];
+  writeJsonl(`${source}/rollout-root.jsonl`, [
+    { type: "session_meta", payload: { id: "root" } },
+    ...sharedPrefix,
+    agentMessage("First result"),
+    response("first-response", "First result"),
+    toolCall,
+    toolOutput,
+    tokenCount(1),
+    agentMessage("Final result"),
+    response("final-response", "Final result"),
+    tokenCount(2),
+    user("Queued prompt"),
+    agentMessage("Queued result"),
+    response("queued-response", "Queued result"),
+    tokenCount(3),
+    task("later-shared-turn"),
+    user("Continue"),
+    agentMessage("Continued result"),
+    response("continued-response", "Continued result"),
+    tokenCount(4),
+  ]);
+  writeJsonl(`${source}/rollout-fork.jsonl`, [
+    {
+      type: "session_meta",
+      payload: { id: "fork", forked_from_id: "root" },
+    },
+    ...sharedPrefix,
+    agentMessage("First result"),
+    tokenCount(1),
+    agentMessage("Final result"),
+    response("final-response", "Final result"),
+    tokenCount(2),
+    user("Queued prompt"),
+    agentMessage("Queued result"),
+    tokenCount(3),
+    task("later-shared-turn"),
+    user("Continue"),
+    agentMessage("Continued result"),
+    response("continued-response", "Continued result"),
+    tokenCount(4),
+  ]);
+
+  const db = openArchiveDatabase(`${directory}/archive.sqlite`);
+  migrateTestDatabase(db);
+  try {
+    const result = await syncCodexSessions(
+      source,
+      new SourceArtifactRepository(db),
+      new ConversationWriteRepository(db),
+    );
+
+    strictEqual(result.imported, 2);
+    strictEqual(result.failed, 0);
+    strictEqual(count(db, "conversations"), 1);
+    strictEqual(count(db, "conversation_branches"), 2);
+    strictEqual(count(db, "conversation_entries"), 8);
+    strictEqual(count(db, "artifact_entry_occurrences"), 15);
+  } finally {
+    db.close();
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
 Deno.test("Codex projects a source artifact without provider session identity", async () => {
   const directory = Deno.makeTempDirSync();
   const source = `${directory}/sessions`;
