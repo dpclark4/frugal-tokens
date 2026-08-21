@@ -29,7 +29,6 @@ export type FileProjectionObservation = {
   sourceID: number;
   observedAt: number;
   candidate: FileSessionCandidate;
-  bytes: Uint8Array;
   text: string;
   checksum: string;
   normalize: () => NormalizedFileSession;
@@ -218,13 +217,13 @@ export async function syncFileSessions(options: {
   const candidates = options.discover(options.directory);
   const result: ProjectionResult = { imported: 0, skipped: 0, failed: 0 };
   const failureCategories: Record<string, number> = {};
-  const observations = new Map<string, FileProjectionObservation>();
+  // Family projections retain only checksums from this scan and reload one
+  // connected family at a time after lineage has been resolved.
+  const observedChecksums = new Map<string, string>();
   const metadata: SourceArtifactMetadata[] = [];
   const metadataErrors = new Map<string, unknown>();
 
-  const observe = async (candidate: FileSessionCandidate) => {
-    const existing = observations.get(candidate.id);
-    if (existing !== undefined) return existing;
+  const readObservation = async (candidate: FileSessionCandidate) => {
     const bytes = Deno.readFileSync(candidate.path);
     const afterRead = Deno.statSync(candidate.path);
     const modifiedAt = afterRead.mtime?.getTime() ?? 0;
@@ -235,17 +234,14 @@ export async function syncFileSessions(options: {
     }
     const text = new TextDecoder().decode(bytes);
     let normalized: NormalizedFileSession | undefined;
-    const observation: FileProjectionObservation = {
+    return {
       sourceID,
       observedAt,
       candidate,
-      bytes,
       text,
       checksum: await checksum(bytes),
       normalize: () => normalized ??= options.normalize(candidate, text),
-    };
-    observations.set(candidate.id, observation);
-    return observation;
+    } satisfies FileProjectionObservation;
   };
 
   for (const candidate of candidates) {
@@ -272,7 +268,10 @@ export async function syncFileSessions(options: {
 
     let observation: FileProjectionObservation;
     try {
-      observation = await observe(candidate);
+      observation = await readObservation(candidate);
+      if (options.familyProjection !== undefined) {
+        observedChecksums.set(candidate.id, observation.checksum);
+      }
       options.repository.recordUnchangedArtifact(
         sourceID,
         candidate.id,
@@ -412,7 +411,7 @@ export async function syncFileSessions(options: {
         assertAcyclicArtifactLineage(family);
         const digestValues = family.map((record) => ({
           externalID: record.externalID,
-          checksum: observations.get(record.externalID)?.checksum ??
+          checksum: observedChecksums.get(record.externalID) ??
             record.checksum ?? null,
           parentSourceIdentity: record.parentSourceIdentity ?? null,
           availability: record.availability,
@@ -429,8 +428,7 @@ export async function syncFileSessions(options: {
           record.lastError === undefined &&
           (record.availability === "missing" ||
             record.checksum ===
-              (observations.get(record.externalID)?.checksum ??
-                record.checksum))
+              (observedChecksums.get(record.externalID) ?? record.checksum))
         );
         if (current) {
           result.skipped += available.length;
@@ -444,7 +442,7 @@ export async function syncFileSessions(options: {
               projectionName,
               {
                 parserVersion: projection.parserVersion,
-                checksum: observations.get(record.externalID)?.checksum ??
+                checksum: observedChecksums.get(record.externalID) ??
                   record.checksum,
                 dependencyDigest,
               },
@@ -455,10 +453,18 @@ export async function syncFileSessions(options: {
         }
         const projectedArtifacts = [];
         for (const record of available) {
-          projectedArtifacts.push({
-            record,
-            observation: await observe(candidateByID.get(record.externalID)!),
-          });
+          const observation = await readObservation(
+            candidateByID.get(record.externalID)!,
+          );
+          const expectedChecksum = observedChecksums.get(record.externalID) ??
+            record.checksum;
+          if (
+            expectedChecksum !== undefined &&
+            observation.checksum !== expectedChecksum
+          ) {
+            throw new Error("Source changed while it was being read");
+          }
+          projectedArtifacts.push({ record, observation });
         }
         await options.familyProjection.project({
           sourceID,

@@ -136,3 +136,75 @@ Deno.test("canonical file import skips unchanged artifacts and preserves last-go
     Deno.removeSync(directory, { recursive: true });
   }
 });
+
+Deno.test("family imports reload artifacts after metadata scanning", async () => {
+  const directory = Deno.makeTempDirSync();
+  const sourcePath = `${directory}/session.json`;
+  Deno.writeTextFileSync(sourcePath, '{"title":"Initial"}');
+  const originalTime = new Date(Date.now() - 10_000);
+  Deno.utimeSync(sourcePath, originalTime, originalTime);
+  const stat = Deno.statSync(sourcePath);
+  const candidate: FileSessionCandidate = {
+    id: "session",
+    path: sourcePath,
+    artifactPath: "session.json",
+    updatedAt: stat.mtime?.getTime() ?? 0,
+    size: stat.size,
+  };
+
+  const db = openArchiveDatabase(`${directory}/archive.sqlite`);
+  migrateTestDatabase(db);
+  const sources = new SourceArtifactRepository(db);
+  let projected = false;
+  let changedAfterScan = false;
+  try {
+    const result = await syncFileSessions({
+      harness: "codex",
+      label: "Family reload fixture",
+      directory,
+      repository: sources,
+      discover: () => [candidate],
+      normalize: (value) => ({
+        summary: {
+          id: value.id,
+          harness: "codex",
+          title: "Fixture",
+          updatedAt: 0,
+          providers: [],
+          models: [],
+          userTurns: 0,
+          modelCalls: 0,
+          tokens: emptyTokens,
+        },
+        turns: [],
+      }),
+      familyProjection: {
+        parserVersion: "fixture-family-1",
+        identityNamespace: "session",
+        relationship: "fork",
+        metadata: () => {
+          if (!changedAfterScan) {
+            changedAfterScan = true;
+            Deno.writeTextFileSync(sourcePath, '{"title":"Changed"}');
+            const changedAt = new Date(Date.now() + 2_000);
+            Deno.utimeSync(sourcePath, changedAt, changedAt);
+          }
+          return { identities: [], lineage: [] };
+        },
+        project: () => {
+          projected = true;
+        },
+      },
+    });
+
+    strictEqual(result.failed, 1);
+    strictEqual(projected, false);
+    strictEqual(
+      sources.projectionCheckpoint(1, "session")?.lastError,
+      "Source changed while it was being read",
+    );
+  } finally {
+    db.close();
+    Deno.removeSync(directory, { recursive: true });
+  }
+});

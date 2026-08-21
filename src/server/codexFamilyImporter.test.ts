@@ -440,6 +440,71 @@ Deno.test("Codex new children rebuild only their connected family", async () => 
   }
 });
 
+Deno.test("Codex lineage changes rebuild both the prior and new families", async () => {
+  const directory = Deno.makeTempDirSync();
+  const source = `${directory}/sessions`;
+  Deno.mkdirSync(source);
+  const sessionMeta = (id: string, parentID?: string) => ({
+    timestamp: "2026-04-01T10:00:00.000Z",
+    type: "session_meta",
+    payload: {
+      id,
+      cwd: "/workspace/project",
+      ...(parentID === undefined ? {} : { forked_from_id: parentID }),
+    },
+  });
+  writeJsonl(`${source}/rollout-root-a.jsonl`, [sessionMeta("root-a")]);
+  writeJsonl(`${source}/rollout-root-b.jsonl`, [sessionMeta("root-b")]);
+  const childPath = `${source}/rollout-child.jsonl`;
+  writeJsonl(childPath, [sessionMeta("child", "root-a")]);
+
+  const db = openArchiveDatabase(`${directory}/archive.sqlite`);
+  migrateTestDatabase(db);
+  const sessions = new SourceArtifactRepository(db);
+  const conversations = new ConversationWriteRepository(db);
+  try {
+    const initial = await syncCodexSessions(source, sessions, conversations);
+    strictEqual(initial.imported, 3);
+    deepStrictEqual(
+      db.prepare(`
+        SELECT conversation.external_id AS conversation_id,
+          branch.external_id AS branch_id
+        FROM conversation_branches AS branch
+        JOIN conversations AS conversation ON conversation.id = branch.conversation_id
+        ORDER BY conversation.external_id, branch.external_id
+      `).all().map((row) => ({ ...row })),
+      [
+        { conversation_id: "root-a", branch_id: "child" },
+        { conversation_id: "root-a", branch_id: "root-a" },
+        { conversation_id: "root-b", branch_id: "root-b" },
+      ],
+    );
+
+    writeJsonl(childPath, [sessionMeta("child", "root-b")]);
+    const changedAt = new Date(Date.now() + 2_000);
+    Deno.utimeSync(childPath, changedAt, changedAt);
+    const moved = await syncCodexSessions(source, sessions, conversations);
+    strictEqual(moved.imported, 3);
+    deepStrictEqual(
+      db.prepare(`
+        SELECT conversation.external_id AS conversation_id,
+          branch.external_id AS branch_id
+        FROM conversation_branches AS branch
+        JOIN conversations AS conversation ON conversation.id = branch.conversation_id
+        ORDER BY conversation.external_id, branch.external_id
+      `).all().map((row) => ({ ...row })),
+      [
+        { conversation_id: "root-a", branch_id: "root-a" },
+        { conversation_id: "root-b", branch_id: "child" },
+        { conversation_id: "root-b", branch_id: "root-b" },
+      ],
+    );
+  } finally {
+    db.close();
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
 Deno.test("Codex ancestry cycle failure preserves the last good family", async () => {
   const directory = Deno.makeTempDirSync();
   const source = `${directory}/sessions`;
