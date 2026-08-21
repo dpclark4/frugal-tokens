@@ -30,7 +30,7 @@
 .new-harness-control select {
   max-width: 100%;
   height: 34px;
-  padding: 6px 28px 6px 8px;
+  padding: 6px 8px;
   border: 1px solid #bdcac6;
   border-radius: 5px;
   background: transparent;
@@ -41,12 +41,11 @@
 .new-range-control select {
   width: 60px;
   min-width: 60px;
-  padding-right: 20px;
 }
 
 .new-harness-control select {
-  width: 120px;
-  min-width: 120px;
+  width: 124px;
+  min-width: 124px;
 }
 
 .overview-action-button {
