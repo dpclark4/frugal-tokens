@@ -404,6 +404,7 @@ provider zero when the field is present, but it is not a comparable bust.
 | 008A | `2560 -> 0 -> 10752` | Healthy same-socket continuation | Three successful `bash` outputs, about 24.8 KB total | Raw full one-call bust |
 | 008B | `59904 -> normalized 0 -> normalized 61952` | WebSocket idle timeout; full-context SSE fallback | A pending `edit` tool call | Transport-associated candidate; raw SSE usage unavailable |
 | 009 | `9728 -> 0 -> 10752`; `33280 -> 12800 -> 33280`; `47616 -> 34304 -> 53760` | First recovery followed idle timeout/reconnect; latter two healthy same-socket continuations | Two three-`bash` output batches; one small user delta | One raw full observation with reset-confounded recovery; two raw partial one-call busts |
+| 010 | `2560 -> 0 -> 4608`; `25088 -> 6656 -> 27136`; `34560 -> 30464 -> 35584` | Healthy same-socket continuation; logical-payload telemetry unavailable | Four `read` outputs; small user delta; one small `bash` output | One raw full and two material raw partial one-call observations; exact-prefix/envelope state unavailable |
 
 ### Case 001 — WebSocket failure and SSE retry
 
@@ -784,6 +785,55 @@ this session contains other successful `bash` batches and call 15 shows an
 immediate tool result is not required. Future trials should vary the named
 three-output `bash` shape against size- and order-matched `read` or text-output
 controls, while holding transport, delay, and payload shape fixed.
+
+### Case 010 — Wiretap-only full and partial observations
+
+**Date:** 2026-08-21; **Model:** `gpt-5.6-terra`
+**Pi session:** `01a025df-d2cb-70a4-888c-74edcd5cd2a5`
+
+```text
+Session:
+~/.pi/agent/sessions/--Users-dclark-development-code--/2026-08-21T19-50-20-619Z_01a025df-d2cb-70a4-888c-74edcd5cd2a5.jsonl
+Telemetry: unavailable
+Wiretap:
+~/.pi/agent/diagnostics/cache-telemetry/wiretap/codex-websocket-2026-08-21T19-50-18Z-37779.jsonl
+Archive model-call rows: unavailable; the configured database lacked the expected `turns` table
+```
+
+The raw provider usage explicitly included `cached_tokens` on every completed
+WebSocket response. One connection was constructed and opened; every request
+after the first used `previous_response_id` on that same connection. The
+wiretap recorded no WebSocket error, close, retry, reconnection, or SSE
+fallback near any observation.
+
+Three material one-call dips had a lower raw read followed by a warm recovery:
+
+| Pi turn/call | Raw cache sequence | Immediate request delta | Classification |
+| --- | --- | --- | --- |
+| 1 / 3 | `2560 -> 0 -> 4608` | Four `read` outputs: 4,476 + 3,075 + 325 + 1,120 bytes | Raw full one-call observation |
+| 6 / 1 | `25088 -> 6656 -> 27136` | One 95-byte user message; no preceding tool output | Raw partial one-call observation (26.5% retained) |
+| 12 / 2 | `34560 -> 30464 -> 35584` | One `bash` output, 159 bytes | Raw partial one-call observation (88.2% retained) |
+
+The full-zero request returned the four `read` calls in that order; their
+function-call argument sizes were 47, 25, 29, and 30 bytes. The `bash` call
+before turn 12, call 2 had 54-byte arguments. These are reproduction
+variables, not evidence that a tool name, argument size, or output size caused
+the dips: the largest partial observation followed no tool output at all.
+
+Three additional shallow raw decreases are useful context but do not meet the
+Case 005 90% retained-read convention for material partial misses: `29184 ->
+27136 -> 30464` after an 11-byte `bash` output (93.0% retained), and `30464 ->
+29184 -> 30464` after a 293-byte `bash` output (95.8% retained). The final
+completed call read `34560` after `35584`, following a 257-byte `bash` output
+(97.1% retained), but the capture ended before a following completed call, so
+it lacks recovery and remains a candidate.
+
+The wiretap establishes raw usage and a healthy transport continuation, but
+privacy-safe telemetry was not retained. Exact logical-prefix, request-envelope,
+instruction, tool-schema, prompt-cache-key, and settings comparisons therefore
+remain unavailable. This is evidence of transient provider-reported cache-read
+variation on one healthy continuation path, not proof of provider internals or
+of a Pi request-construction defect.
 
 ### Unclassified candidates — missing wiretap
 
