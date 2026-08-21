@@ -1,3 +1,9 @@
+@media (min-width: 901px) {
+  body:has(.session-detail-page) {
+    overflow: hidden;
+  }
+}
+
 .session-detail-page {
   --sd-page: #17181a;
   --sd-canvas: #1c1d1f;

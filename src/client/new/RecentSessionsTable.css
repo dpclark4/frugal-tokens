@@ -183,7 +183,6 @@
 }
 
 .recent-sessions-table-wrap {
-  overflow-x: auto;
   padding: 0 10px 4px;
   transition: opacity 120ms ease;
 }
@@ -721,6 +720,8 @@
   }
 
   .recent-sessions-table-wrap {
+    overflow-x: auto;
+    overflow-y: hidden;
     padding-inline: 6px;
   }
 

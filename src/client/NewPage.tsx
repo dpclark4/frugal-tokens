@@ -19,6 +19,10 @@ import { UsageOverview } from "./new/UsageOverview.tsx";
 import { SessionShape } from "./new/SessionShape.tsx";
 import { CacheOverview } from "./new/CacheOverview.tsx";
 import { RecentSessions } from "./new/RecentSessions.tsx";
+import {
+  readOverviewRefreshScroll,
+  saveOverviewRefreshScroll,
+} from "./new/overviewReturnScroll.ts";
 
 const route = getRouteApi("/");
 const WorkRhythm = lazy(() =>
@@ -135,6 +139,9 @@ export function NewPage() {
   }>();
   const screenshotRef = useRef<HTMLDivElement>(null);
   const pendingScrollYRef = useRef<number | undefined>(undefined);
+  const refreshScrollYRef = useRef<number | undefined>(
+    readOverviewRefreshScroll(),
+  );
   const data = loadedOverview !== undefined &&
       loadedOverview.range === search.range &&
       loadedOverview.harness === search.harness
@@ -154,6 +161,50 @@ export function NewPage() {
   const reportReady = Boolean(
     data && workRhythmData && sessionShapeIsCurrent && cacheMissesAreCurrent,
   );
+
+  useEffect(() => {
+    const saveScroll = () => saveOverviewRefreshScroll();
+    globalThis.addEventListener("pagehide", saveScroll);
+    return () => globalThis.removeEventListener("pagehide", saveScroll);
+  }, []);
+
+  useEffect(() => {
+    const scrollY = refreshScrollYRef.current;
+    const overview = screenshotRef.current;
+    if (scrollY === undefined || !overview) return;
+
+    let active = true;
+    let timer: ReturnType<typeof globalThis.setTimeout> | undefined;
+    const restore = () => {
+      if (active) globalThis.scrollTo(0, scrollY);
+    };
+    const scheduleRestore = () => {
+      requestAnimationFrame(restore);
+      globalThis.clearTimeout(timer);
+      timer = globalThis.setTimeout(restore, 100);
+    };
+    const stopRestoring = () => {
+      active = false;
+      observer.disconnect();
+    };
+    const observer = new ResizeObserver(scheduleRestore);
+    observer.observe(overview);
+    scheduleRestore();
+    globalThis.addEventListener("wheel", stopRestoring, { passive: true });
+    globalThis.addEventListener("touchstart", stopRestoring, { passive: true });
+    globalThis.addEventListener("keydown", stopRestoring);
+    const deadline = globalThis.setTimeout(stopRestoring, 5_000);
+
+    return () => {
+      active = false;
+      observer.disconnect();
+      globalThis.clearTimeout(timer);
+      globalThis.clearTimeout(deadline);
+      globalThis.removeEventListener("wheel", stopRestoring);
+      globalThis.removeEventListener("touchstart", stopRestoring);
+      globalThis.removeEventListener("keydown", stopRestoring);
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
