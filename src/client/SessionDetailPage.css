@@ -534,6 +534,10 @@
   gap: 5px;
 }
 
+.sd-cost-value {
+  align-items: center;
+}
+
 .sd-cost-miss-inline {
   overflow: hidden;
   color: var(--sd-ink-3);

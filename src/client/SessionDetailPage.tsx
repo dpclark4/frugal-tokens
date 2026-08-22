@@ -381,14 +381,13 @@ function CostIntegrityValue({
 }) {
   const missingComputed = computed === undefined && reported !== undefined;
   const mismatch = costsMismatch(reported, computed);
-  const warning = missingComputed || mismatch;
   const value = missingComputed
     ? money.format(reported)
     : computed === undefined
     ? "Unpriced"
     : money.format(computed);
   return (
-    <span className={`sd-cost-value${warning ? " is-warning" : ""}`}>
+    <span className={`sd-cost-value${mismatch ? " is-warning" : ""}`}>
       <CostWarning reported={reported} computed={computed} />
       <span>{value}</span>
     </span>
@@ -2799,7 +2798,12 @@ export function SessionDetailPage() {
     call.cacheAssessment?.status === "partial-hit" ||
     call.cacheAssessment?.status === "full-miss"
   );
-  const totalMissCost = !hasCacheMisses ||
+  const hasPricedCacheMissCost = calls.some((call) =>
+    (call.cacheAssessment?.status === "partial-hit" ||
+      call.cacheAssessment?.status === "full-miss") &&
+    call.cacheMissCost !== undefined
+  );
+  const totalMissCost = !hasCacheMisses || !hasPricedCacheMissCost ||
       session.inclusiveCacheMissCost === undefined
     ? undefined
     : `${money.format(session.inclusiveCacheMissCost)}${

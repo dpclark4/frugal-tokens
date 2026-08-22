@@ -2016,10 +2016,6 @@ table.data-table {
   color: var(--danger);
 }
 
-.cost-reported-fallback {
-  color: var(--danger);
-}
-
 .cost-warning-trigger {
   position: relative;
   display: inline-flex;
