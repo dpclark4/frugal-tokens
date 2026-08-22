@@ -831,9 +831,11 @@ export class ConversationWriteRepository {
           const unresolvedTurnKey = previousTurnKey === undefined ||
               turn.inputs === undefined || turn.inputs.length === 0
             ? undefined
-            : `${previousTurnKey}:unresolved:${turn.inputs.map((input) =>
-              entrySignature("message", "user", input)
-            ).join("|")}`;
+            : `${previousTurnKey}:unresolved:${
+              turn.inputs.map((input) =>
+                entrySignature("message", "user", input)
+              ).join("|")
+            }`;
           const unresolvedAppearance = unresolvedTurnKey === undefined
             ? undefined
             : (unresolvedTurnAppearances.get(unresolvedTurnKey) ?? 0) + 1;
@@ -1067,7 +1069,10 @@ export class ConversationWriteRepository {
               lastEntryID: previousEntryID,
             };
             canonicalTurns.set(turnKey, canonicalTurn);
-            entryMatches = currentEntrySources.map((source, canonicalIndex) => ({
+            entryMatches = currentEntrySources.map((
+              source,
+              canonicalIndex,
+            ) => ({
               canonicalIndex,
               source,
             }));
@@ -1084,14 +1089,18 @@ export class ConversationWriteRepository {
               currentCanonicalTurn.entrySources.map((_, index) => index),
             );
             entryMatches = currentEntrySources.map((source) => {
-              const canonicalIndex = currentCanonicalTurn.entrySources.findIndex(
-                (candidate, index) =>
-                  unmatchedCanonicalEntries.has(index) &&
-                  source.sourceID !== undefined &&
-                  source.sourceID === candidate.sourceID,
-              );
+              const canonicalIndex = currentCanonicalTurn.entrySources
+                .findIndex(
+                  (candidate, index) =>
+                    unmatchedCanonicalEntries.has(index) &&
+                    source.sourceID !== undefined &&
+                    source.sourceID === candidate.sourceID,
+                );
               const fallbackIndex = canonicalIndex === -1
-                ? currentCanonicalTurn.entrySources.findIndex((candidate, index) =>
+                ? currentCanonicalTurn.entrySources.findIndex((
+                  candidate,
+                  index,
+                ) =>
                   unmatchedCanonicalEntries.has(index) &&
                   source.signature === candidate.signature
                 )
@@ -1108,7 +1117,8 @@ export class ConversationWriteRepository {
             });
             previousEntryID = entryMatches.at(-1) === undefined
               ? currentCanonicalTurn.lastEntryID
-              : currentCanonicalTurn.entryIDs[entryMatches.at(-1)!.canonicalIndex];
+              : currentCanonicalTurn
+                .entryIDs[entryMatches.at(-1)!.canonicalIndex];
           }
 
           const turnKind = occurrenceKind(
@@ -1172,10 +1182,17 @@ export class ConversationWriteRepository {
               evidence(artifact),
             );
             if (callKind === "executed") {
-              let predecessor = pathCallIDs.at(-1);
+              let predecessor = pathCallIDs.findLast((id) =>
+                !canonicalCallValues.get(id)!.id.startsWith(
+                  "context-operation:",
+                )
+              );
               if (predecessor === undefined && parentCallPath !== undefined) {
                 const predecessorIndex = parentCallPath.findLastIndex((id) =>
-                  canonicalCallValues.get(id)!.startedAt <= call.startedAt
+                  canonicalCallValues.get(id)!.startedAt <= call.startedAt &&
+                  !canonicalCallValues.get(id)!.id.startsWith(
+                    "context-operation:",
+                  )
                 );
                 if (predecessorIndex >= 0) {
                   implicitParentCallPrefix = parentCallPath.slice(

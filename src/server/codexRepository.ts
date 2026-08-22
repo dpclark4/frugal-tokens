@@ -555,6 +555,18 @@ function codexReasoningSetting(payload: NonNullable<Record["payload"]>) {
   return undefined;
 }
 
+function markCodexContextOperation(call: ConversationCallImport) {
+  if (!call.id.startsWith("context-operation:")) {
+    call.id = `context-operation:${call.id}`;
+  }
+  if (
+    call.sourceID !== undefined &&
+    !call.sourceID.startsWith("context-operation:")
+  ) {
+    call.sourceID = `context-operation:${call.sourceID}`;
+  }
+}
+
 function codexCompactionDetails(record: Record): CompactionDetailImport {
   const payload = record.payload;
   const issues: string[] = [];
@@ -706,6 +718,19 @@ function decodeRecords(records: Record[]) {
   const contextEvents: PendingContextEvent[] = [];
   const pendingContextEvents: PendingContextEvent[] = [];
   let pendingCompaction: CompactionDetailImport | undefined;
+  let pendingCompactionSource:
+    | { sourceOrder: number; occurredAt?: number }
+    | undefined;
+  // Newer Codex rollouts omit context_compacted. Defer their standalone
+  // compacted record until the following record, so the legacy marker retains
+  // its original behavior when it is still present.
+  let deferredStandaloneCompaction:
+    | {
+      compaction: CompactionDetailImport;
+      sourceOrder: number;
+      occurredAt?: number;
+    }
+    | undefined;
   let lastCall: ConversationCallImport | undefined;
   let activeReasoningSetting:
     | Omit<ReasoningSettingImport, "provenance">
@@ -715,8 +740,33 @@ function decodeRecords(records: Record[]) {
     const payload = record.payload;
     const time = timestamp(record);
 
+    if (
+      deferredStandaloneCompaction !== undefined &&
+      !(record.type === "event_msg" && payload?.type === "context_compacted")
+    ) {
+      const event: PendingContextEvent = {
+        type: "compaction",
+        sourceOrder: deferredStandaloneCompaction.sourceOrder,
+        ...(deferredStandaloneCompaction.occurredAt === undefined ? {} : {
+          occurredAt: deferredStandaloneCompaction.occurredAt,
+        }),
+        compaction: numberCheckpointItems(
+          deferredStandaloneCompaction.compaction,
+        ),
+      };
+      contextEvents.push(event);
+      pendingContextEvents.push(event);
+      pendingCompaction = undefined;
+      pendingCompactionSource = undefined;
+      deferredStandaloneCompaction = undefined;
+    }
+
     if (record.type === "compacted") {
       pendingCompaction = codexCompactionDetails(record);
+      pendingCompactionSource = {
+        sourceOrder: recordIndex + 1,
+        ...(time === 0 ? {} : { occurredAt: time }),
+      };
       continue;
     }
 
@@ -729,7 +779,7 @@ function decodeRecords(records: Record[]) {
       ) {
         // Codex emits this opaque total-only call for compaction itself. Keep
         // it canonical, but tag it so only Codex hydration hides the machinery.
-        lastCall.id = `context-operation:${lastCall.id}`;
+        markCodexContextOperation(lastCall);
       }
       const event: PendingContextEvent = {
         type: "compaction",
@@ -746,6 +796,8 @@ function decodeRecords(records: Record[]) {
         ),
       };
       pendingCompaction = undefined;
+      pendingCompactionSource = undefined;
+      deferredStandaloneCompaction = undefined;
       contextEvents.push(event);
       pendingContextEvents.push(event);
       continue;
@@ -959,6 +1011,10 @@ function decodeRecords(records: Record[]) {
     ) continue;
 
     const source = payload.info.last_token_usage;
+    const standaloneCompactionOperation = pendingCompaction !== undefined &&
+      source.input_tokens === 0 && source.cached_input_tokens === 0 &&
+      source.output_tokens === 0 && source.reasoning_output_tokens === 0 &&
+      (source.total_tokens ?? 0) > 0;
     const cacheRead = Math.min(source.cached_input_tokens, source.input_tokens);
     const uncachedInput = source.input_tokens - cacheRead;
     const callTokens: TokenUsage = {
@@ -1040,6 +1096,16 @@ function decodeRecords(records: Record[]) {
     pendingContent = [];
     pendingAgentMessageContent.clear();
     pendingCallSourceIDs = [];
+    if (standaloneCompactionOperation) {
+      markCodexContextOperation(call);
+      deferredStandaloneCompaction = {
+        compaction: pendingCompaction!,
+        sourceOrder: pendingCompactionSource?.sourceOrder ?? recordIndex + 1,
+        ...(pendingCompactionSource?.occurredAt === undefined ? {} : {
+          occurredAt: pendingCompactionSource.occurredAt,
+        }),
+      };
+    }
   }
 
   for (const [index, turn] of turns.entries()) {

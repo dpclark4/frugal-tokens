@@ -1355,7 +1355,6 @@ export class ConversationRepository {
         ON miss.conversation_id = tree.conversation_id
       JOIN conversation_turns turn ON turn.id = miss.turn_id
       JOIN conversations c ON c.id = tree.conversation_id
-      WHERE miss.cause IS NULL OR miss.cause <> 'compaction'
       ORDER BY tree.root_id, tree.nested, miss.started_at, miss.model_call_id
     `).all(...rootIDs) as Array<{
       root_id: number;
@@ -1531,6 +1530,7 @@ export class ConversationRepository {
       branchRows.slice(1).map((branch, index) => [branch.id, index + 1]),
     );
     const hydratedByCallID = new Map<number, ModelCall>();
+    const hydratedBySourceTurnCall = new Map<string, ModelCall>();
     const turnOrder = [...groupedCalls.entries()].sort(([, a], [, b]) =>
       a[0].turn_started_at - b[0].turn_started_at ||
       a[0].started_at - b[0].started_at ||
@@ -1603,6 +1603,10 @@ export class ConversationRepository {
           },
         };
         hydratedByCallID.set(call.id, hydrated);
+        hydratedBySourceTurnCall.set(
+          `${call.turn_ordinal}:${call.call_within_turn ?? 1}`,
+          hydrated,
+        );
         return hydrated;
       });
       return {
@@ -1660,8 +1664,8 @@ export class ConversationRepository {
       const { affectedCall, ...event } = raw;
       let target = affectedCall === undefined
         ? undefined
-        : turns[affectedCall.turn - 1]?.calls.find((call) =>
-          call.callWithinTurn === affectedCall.call
+        : hydratedBySourceTurnCall.get(
+          `${affectedCall.turn}:${affectedCall.call}`,
         );
       if (target === undefined && contextRow.source_order_start !== null) {
         const nextCall = calls.find((call) =>

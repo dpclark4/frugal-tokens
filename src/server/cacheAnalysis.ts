@@ -596,6 +596,13 @@ export function sessionCacheIssues(
       addIssues(
         turn.calls.filter((call) =>
           isMiss(call.cacheAssessment) &&
+          call.cacheAssessment?.cause === "compaction"
+        ),
+        "compaction",
+      );
+      addIssues(
+        turn.calls.filter((call) =>
+          isMiss(call.cacheAssessment) &&
           call.cacheAssessment?.cause === "ttl"
         ),
         "ttl",

@@ -602,7 +602,12 @@ Deno.test("tracks a partial miss after compaction without counting it as a miss"
     thinkingChangeRelatedMisses: 0,
     unexpectedMisses: 0,
   });
-  deepStrictEqual(sessionCacheIssues(actual), []);
+  deepStrictEqual(sessionCacheIssues(actual), [{
+    status: "partial-hit",
+    cause: "compaction",
+    turn: 2,
+    scope: undefined,
+  }]);
 });
 
 Deno.test("attributes a Claude miss to an expired 5-minute write", () => {
@@ -844,5 +849,10 @@ Deno.test("tracks a full miss after compaction without counting it as a miss", (
   strictEqual(actual.turns[1].cacheSummary?.fullMisses, 0);
   strictEqual(actual.turns[1].cacheSummary?.compactionRelatedMisses, 1);
   strictEqual(summarizeSessionCache(actual).fullMisses, 0);
-  deepStrictEqual(sessionCacheIssues(actual), []);
+  deepStrictEqual(sessionCacheIssues(actual), [{
+    status: "full-miss",
+    cause: "compaction",
+    turn: 2,
+    scope: undefined,
+  }]);
 });

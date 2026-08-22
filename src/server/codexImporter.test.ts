@@ -21,7 +21,7 @@ const transcript = `
 {"timestamp":"2026-07-11T14:00:04.000Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"call-1","output":"ok"}}
 {"timestamp":"2026-07-11T14:00:05.000Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"Imported"}]}}
 {"timestamp":"2026-07-11T14:00:06.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"cached_input_tokens":25,"output_tokens":10,"reasoning_output_tokens":2}}}}
-{"timestamp":"2026-07-11T14:00:06.500Z","type":"event_msg","payload":{"type":"task_started"}}
+{"timestamp":"2026-07-11T14:00:06.500Z","type":"event_msg","payload":{"type":"task_started","turn_id":"compaction-turn"}}
 {"timestamp":"2026-07-11T14:00:06.900Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":0,"cached_input_tokens":0,"output_tokens":0,"reasoning_output_tokens":0,"total_tokens":4291}}}}
 {"timestamp":"2026-07-11T14:00:07.000Z","type":"compacted","payload":{"message":"","window_id":"window-2","window_number":1,"replacement_history":[{"type":"message","id":"developer-1","role":"developer","content":[{"type":"input_text","text":"Runtime instructions"}]},"legacy-item",{"type":"compaction","id":"cmp-1","encrypted_content":"sensitive-summary"}]}}
 {"timestamp":"2026-07-11T14:00:07.001Z","type":"event_msg","payload":{"type":"context_compacted"}}
@@ -30,6 +30,10 @@ const transcript = `
 {"timestamp":"2026-07-11T14:00:09.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Continue"}]}}
 {"timestamp":"2026-07-11T14:00:10.000Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"Continued"}]}}
 {"timestamp":"2026-07-11T14:00:11.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":90,"cached_input_tokens":20,"output_tokens":8,"reasoning_output_tokens":0}}}}
+{"timestamp":"2026-07-11T14:00:12.000Z","type":"event_msg","payload":{"type":"task_started"}}
+{"timestamp":"2026-07-11T14:00:13.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Later turn"}]}}
+{"timestamp":"2026-07-11T14:00:14.000Z","type":"response_item","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"Later response"}]}}
+{"timestamp":"2026-07-11T14:00:15.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"cached_input_tokens":50,"output_tokens":9,"reasoning_output_tokens":0}}}}
 `.trim();
 
 Deno.test("imports Codex sessions for SQLite reads", async () => {
@@ -65,7 +69,7 @@ Deno.test("imports Codex sessions for SQLite reads", async () => {
     const detail = reads.getSession("codex", id)!;
     strictEqual(detail.title, "Import Codex");
     strictEqual(detail.workingDirectory, "/Users/test/project");
-    strictEqual(reads.listUsageCalls(undefined, "codex").length, 2);
+    strictEqual(reads.listUsageCalls(undefined, "codex").length, 3);
     strictEqual(
       db.prepare(`
         SELECT content_preview FROM conversation_entries
@@ -118,20 +122,22 @@ Deno.test("imports Codex sessions for SQLite reads", async () => {
     strictEqual(
       db.prepare("SELECT COUNT(*) AS count FROM conversation_turns").get()!
         .count,
-      3,
+      4,
     );
     strictEqual(
       db.prepare(`
         SELECT source_call_id FROM conversation_model_calls
         WHERE source_call_id LIKE 'context-operation:%'
       `).get()!.source_call_id,
-      "context-operation:2-1",
+      "context-operation:compaction-turn:call:1",
     );
-    strictEqual(detail.turns.length, 2);
-    strictEqual(detail.userTurns, 2);
-    strictEqual(detail.modelCalls, 2);
+    strictEqual(detail.turns.length, 3);
+    strictEqual(detail.userTurns, 3);
+    strictEqual(detail.modelCalls, 3);
     strictEqual(detail.turns[0].calls[0].id, "1-1");
     strictEqual(detail.turns[1].calls[0].id, "3-1");
+    strictEqual(detail.turns[2].calls[0].id, "4-1");
+    deepStrictEqual(detail.turns[2].calls[0].contextEventsBefore, []);
     strictEqual(detail.turns[0].reasoningSetting?.settingValue, "medium");
     strictEqual(
       detail.turns[0].calls[0].reasoningSetting?.sourceFieldPath,
@@ -148,17 +154,18 @@ Deno.test("imports Codex sessions for SQLite reads", async () => {
         WHERE reasoning_setting_value IS NOT NULL
           AND source_call_id NOT LIKE 'context-operation:%'
       `).get()!.count,
-      2,
+      3,
     );
 
     const priced = priceSessionDetail(detail);
     strictEqual(
       priced.computedCost,
       priced.turns[0].calls[0].computedCost! +
-        priced.turns[1].calls[0].computedCost!,
+        priced.turns[1].calls[0].computedCost! +
+        priced.turns[2].calls[0].computedCost!,
     );
     const context = contextRange(priced.turns.flatMap((turn) => turn.calls));
-    strictEqual(context.latest?.size, 90);
+    strictEqual(context.latest?.size, 100);
 
     const analyzed = analyzeSessionCache(priced);
     strictEqual(
@@ -167,6 +174,15 @@ Deno.test("imports Codex sessions for SQLite reads", async () => {
     );
     strictEqual(
       analyzed.turns[1].calls[0].cacheAssessment?.cause,
+      "compaction",
+    );
+    strictEqual(
+      db.prepare(`
+        SELECT cause FROM conversation_cache_misses
+        WHERE conversation_id = (
+          SELECT id FROM conversations WHERE external_id = ?
+        )
+      `).get(id)!.cause,
       "compaction",
     );
     strictEqual(
@@ -185,7 +201,7 @@ Deno.test("imports Codex sessions for SQLite reads", async () => {
     strictEqual(
       db.prepare("SELECT COUNT(*) AS count FROM conversation_model_calls")
         .get()!.count,
-      3,
+      4,
     );
   } finally {
     db.close();

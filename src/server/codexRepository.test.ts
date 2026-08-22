@@ -1,5 +1,6 @@
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { CodexRepository, normalizeCodexSession } from "./codexRepository.ts";
+import { analyzeSessionCache } from "./cacheAnalysis.ts";
 import type { SessionDetail } from "../shared/sessionSchemas.ts";
 
 function repository(files: Record<string, string>) {
@@ -372,6 +373,69 @@ Deno.test("counts Codex input images without retaining data URLs", () => {
   }).getSession("2026/07/21/rollout-images");
 
   strictEqual(actual?.turns[0].calls[0].activity.images, 1);
+});
+
+Deno.test("imports standalone Codex compaction records and hides their opaque call", () => {
+  const actual = repository({
+    "2026/08/22/rollout-standalone-compaction.jsonl": `
+{"timestamp":"2026-08-22T17:04:50.000Z","type":"turn_context","payload":{"model":"gpt-5.6-sol"}}
+{"timestamp":"2026-08-22T17:04:51.000Z","type":"event_msg","payload":{"type":"task_started"}}
+{"timestamp":"2026-08-22T17:04:52.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Prepare the change"}]}}
+{"timestamp":"2026-08-22T17:04:53.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":220000,"cached_input_tokens":219000,"output_tokens":100,"reasoning_output_tokens":20}}}}
+{"timestamp":"2026-08-22T17:08:09.000Z","type":"event_msg","payload":{"type":"task_started"}}
+{"timestamp":"2026-08-22T17:08:51.073Z","type":"compacted","payload":{"message":"Preserved compaction summary","window_id":"window-2","window_number":1,"replacement_history":[{"type":"message","id":"developer-1","role":"developer","content":[{"type":"input_text","text":"Preserved runtime instructions"}]},{"type":"compaction","id":"cmp-1","encrypted_content":"sensitive-summary"}]}}
+{"timestamp":"2026-08-22T17:08:51.082Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":0,"cached_input_tokens":0,"output_tokens":0,"reasoning_output_tokens":0,"total_tokens":9903}}}}
+{"timestamp":"2026-08-22T17:08:51.084Z","type":"event_msg","payload":{"type":"item_completed"}}
+{"timestamp":"2026-08-22T17:08:51.098Z","type":"turn_context","payload":{"model":"gpt-5.6-sol","summary":"auto"}}
+{"timestamp":"2026-08-22T17:08:51.187Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Continue after compaction"}]}}
+{"timestamp":"2026-08-22T17:08:55.371Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Continuing."}]}}
+{"timestamp":"2026-08-22T17:08:57.227Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":22406,"cached_input_tokens":11008,"output_tokens":156,"reasoning_output_tokens":25}}}}
+`,
+  }).getSession("2026/08/22/rollout-standalone-compaction")!;
+
+  strictEqual(actual.turns.length, 2);
+  strictEqual(actual.turns[1].calls.length, 1);
+  const call = actual.turns[1].calls[0];
+  const event = call.contextEventsBefore![0];
+  strictEqual(event.type, "compaction");
+  strictEqual(event.sourceOrder, 6);
+  strictEqual(
+    event.occurredAt,
+    Date.parse("2026-08-22T17:08:51.073Z"),
+  );
+  strictEqual(event.compaction?.resultKind, "encrypted-checkpoint");
+  deepStrictEqual(
+    event.compaction?.checkpointItems.map((item) => ({
+      kind: item.kind,
+      sourceEntryID: item.sourceEntryID,
+      availability: item.contentAvailability,
+      preview: item.contentPreview,
+    })),
+    [
+      {
+        kind: "summary",
+        sourceEntryID: "window-2",
+        availability: "plaintext",
+        preview: "Preserved compaction summary",
+      },
+      {
+        kind: "developer-message",
+        sourceEntryID: "developer-1",
+        availability: "plaintext",
+        preview: "Preserved runtime instructions",
+      },
+      {
+        kind: "opaque-checkpoint",
+        sourceEntryID: "cmp-1",
+        availability: "encrypted",
+        preview: undefined,
+      },
+    ],
+  );
+  strictEqual(
+    analyzeSessionCache(actual).turns[1].calls[0].cacheAssessment?.cause,
+    "compaction",
+  );
 });
 
 Deno.test("falls back to legacy Codex user-message records", () => {
