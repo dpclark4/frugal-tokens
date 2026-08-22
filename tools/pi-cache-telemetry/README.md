@@ -433,6 +433,7 @@ counts unless a row explicitly states the number of affected turns.
 | 011 | `70144 -> 0 -> 85504` | Healthy same-socket continuation | Immediate 71-byte `edit` output after a 135-second, reasoning-heavy response | Full-bust turn with one raw zero-read call |
 | 012 | `31488 -> 11008 -> 32512` | Native Codex; raw transport unavailable | Immediate 490-byte `exec` output after an ordinary tool-calling response | Full-bust turn: the affected call returned exactly to the initial 11,008-token baseline |
 | 013 | `23296 -> 18176 -> 25344`; `35584 -> 23296 -> 36608`; `39936 -> 35584 -> 40960` | Native Codex; raw transport unavailable | Three single-`exec` results, 206–4,062 serialized bytes | Three partial-bust turns; recovery occurred both within a turn and on the next user turn |
+| 014 | `62464 -> normalized 0 -> normalized 64512` | WebSocket failed after message-stream start; full-context SSE fallback | One 450-byte `read` output | Transport-associated candidate; raw SSE usage unavailable |
 
 ### Case 001 — WebSocket failure and SSE retry
 
@@ -1006,6 +1007,43 @@ support testing the tool-result continuation boundary itself while varying
 result count and delivery delay. The range of retained cache and recovery
 timing also suggests the behavior is not limited to a single fixed truncation
 point or to user-turn boundaries.
+
+### Case 014 — WebSocket error and SSE retry after a small read result
+
+**Date:** 2026-08-22; **Model:** `gpt-5.6-terra`, high reasoning
+**Pi session:** `01a02a7a-1c2a-7a20-b4e5-2eee6bb0aeeb`
+**Dashboard:** turn 2, call 2 marked full miss
+
+```text
+Session:
+~/.pi/agent/sessions/--Users-danclark-programming-frugal-tokens--/2026-08-22T17-17-20-810Z_01a02a7a-1c2a-7a20-b4e5-2eee6bb0aeeb.jsonl
+Telemetry:
+~/.pi/agent/diagnostics/cache-telemetry/2026-08-22T17-17-20-810Z_01a02a7a-1c2a-7a20-b4e5-2eee6bb0aeeb.jsonl
+Wiretap:
+~/.pi/agent/diagnostics/cache-telemetry/wiretap/codex-websocket-2026-08-22T17-17-20Z-61018.jsonl
+Archive model-call rows: not investigated
+```
+
+The warm predecessor explicitly reported raw `cached_tokens=62464`. Its
+WebSocket continuation retained an exact 60-item logical prefix and unchanged
+envelope, instructions, tools, settings, and prompt-cache-key fingerprints.
+It used `previous_response_id` on reused connection 1; the actual delta
+contained one 450-byte `read` result.
+
+The continuation began streaming but did not receive a terminal usage frame.
+The socket emitted an error, then closed abnormally with code `1006`, empty
+reason, and `wasClean=false`. Pi retried the identical 66-item, 1,429,331-byte
+logical payload over SSE. Telemetry recorded normalized `cacheRead=0` on that
+completion, which the dashboard displayed as a full miss. The next completed
+SSE call recorded normalized `cacheRead=64512`.
+
+The wiretap captures WebSocket traffic only, so it cannot establish whether the
+SSE retry's normalized zero was a raw provider `cached_tokens=0`; the recovery
+is also reported only through SSE telemetry. This is therefore a
+transport-associated candidate, not a confirmed raw full bust. The error and
+fallback directly explain the transport shape, but do not identify whether the
+underlying disconnect originated with the provider, an intermediary, or the
+local runtime.
 
 ### Unclassified candidates — missing wiretap
 
