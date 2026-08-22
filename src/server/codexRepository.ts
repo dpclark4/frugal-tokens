@@ -94,6 +94,22 @@ const recordSchema = z.object({
 
 type Record = z.infer<typeof recordSchema>;
 
+const completedUserMessageSchema = z.object({
+  type: z.literal("event_msg"),
+  payload: z.object({
+    type: z.literal("item_completed"),
+    item: z.object({
+      type: z.literal("UserMessage"),
+      content: z.array(
+        z.object({
+          type: z.string(),
+          text: z.string().optional(),
+        }).passthrough(),
+      ),
+    }).passthrough(),
+  }).passthrough(),
+}).passthrough();
+
 const legacyUserMessageSchema = z.object({
   type: z.literal("event_msg"),
   timestamp: z.string(),
@@ -228,11 +244,20 @@ function legacyUserText(record: Record) {
   return legacyUserMessage(record)?.payload.message;
 }
 
+function completedUserText(record: Record) {
+  const result = completedUserMessageSchema.safeParse(record);
+  if (!result.success) return undefined;
+  return result.data.payload.item.content.find((block) =>
+    block.type === "text" && block.text?.trim()
+  )?.text;
+}
+
 function sessionPrompt(records: Record[]) {
   // Codex writes startup instructions as response_item user content, before
-  // the actual turn prompt. The event_msg user_message is the user-authored
-  // prompt and is therefore the better title source when it is available.
-  return records.map(legacyUserText).find((value) => value?.trim()) ??
+  // the actual turn prompt. Prefer explicit user-authored prompt events from
+  // current and older Codex formats when either is available.
+  return records.map(completedUserText).find((value) => value?.trim()) ??
+    records.map(legacyUserText).find((value) => value?.trim()) ??
     records.map(userText).find((value) => value?.trim());
 }
 

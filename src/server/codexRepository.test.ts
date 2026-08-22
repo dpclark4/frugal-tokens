@@ -1,8 +1,5 @@
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
-import {
-  CodexRepository,
-  normalizeCodexSession,
-} from "./codexRepository.ts";
+import { CodexRepository, normalizeCodexSession } from "./codexRepository.ts";
 import type { SessionDetail } from "../shared/sessionSchemas.ts";
 
 function repository(files: Record<string, string>) {
@@ -284,7 +281,10 @@ Deno.test("does not invent zero-duration Codex calls without boundaries", () => 
 `,
   }).getSession("2026/07/24/rollout-unknown-timing")!;
 
-  strictEqual(actual.turns[0].calls[0].startedAt, Date.parse("2026-07-24T15:00:00.100Z"));
+  strictEqual(
+    actual.turns[0].calls[0].startedAt,
+    Date.parse("2026-07-24T15:00:00.100Z"),
+  );
   strictEqual(actual.turns[0].calls[0].completedAt, undefined);
 });
 
@@ -300,6 +300,19 @@ Deno.test("prefers Codex user_message over startup instructions for titles", () 
   }).getSession("2026/07/24/rollout-title")!;
 
   strictEqual(actual.title, "hi");
+});
+
+Deno.test("prefers completed Codex UserMessage over startup instructions for titles", () => {
+  const actual = repository({
+    "2026/08/22/rollout-completed-title.jsonl": `
+{"timestamp":"2026-08-22T16:29:49.489Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions for /Users/example/project"}]}}
+{"timestamp":"2026-08-22T16:29:49.605Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Fix the importer"}]}}
+{"timestamp":"2026-08-22T16:29:49.606Z","type":"event_msg","payload":{"type":"item_completed","item":{"type":"UserMessage","content":[{"type":"text","text":"Fix the importer"}]}}}
+{"timestamp":"2026-08-22T16:29:50.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":1,"reasoning_output_tokens":0}}}}
+`,
+  }).getSession("2026/08/22/rollout-completed-title")!;
+
+  strictEqual(actual.title, "Fix the importer");
 });
 
 Deno.test("normalizes exported Codex session arrays", () => {

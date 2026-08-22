@@ -10,7 +10,7 @@ import {
 import { SourceArtifactRepository } from "./sourceArtifactRepository.ts";
 import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
 
-const parserVersion = "codex-conversation-family-10";
+const parserVersion = "codex-conversation-family-11";
 const sourceIdentityNamespace = "session";
 const forkRelationship = "fork";
 
