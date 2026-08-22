@@ -20,7 +20,7 @@ const compact = new Intl.NumberFormat("en-US", {
   notation: "compact",
   maximumFractionDigits: 1,
 });
-const sessionStarted = new Intl.DateTimeFormat(undefined, {
+const sessionActivity = new Intl.DateTimeFormat(undefined, {
   month: "short",
   day: "numeric",
   hour: "numeric",
@@ -316,7 +316,7 @@ function SessionRow({
   const reused = processed === 0 ? undefined : tokens.cacheRead / processed;
   const turns = session.inclusiveUserTurns ?? session.userTurns;
   const calls = session.inclusiveModelCalls ?? session.modelCalls;
-  const startedAt = session.startedAt ?? session.updatedAt;
+  const activityAt = session.updatedAt;
   const elapsed = duration(session.startedAt, session.endedAt);
   const model = session.models.at(-1);
   const otherModels = Math.max(0, session.models.length - 1);
@@ -325,7 +325,7 @@ function SessionRow({
   const location = session.workingDirectory;
   const metadata = [
     location,
-    sessionStarted.format(startedAt),
+    sessionActivity.format(activityAt),
     elapsed,
   ].filter(Boolean).join(" · ");
 

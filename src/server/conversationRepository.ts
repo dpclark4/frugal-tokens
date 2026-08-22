@@ -1325,7 +1325,7 @@ export class ConversationRepository {
           cr.uncached_input_tokens > 0 OR cr.cache_read_tokens > 0 OR
           COALESCE(cr.cache_write_tokens, 0) > 0
         )
-      ORDER BY COALESCE(c.started_at, c.updated_at) DESC,
+      ORDER BY c.updated_at DESC,
         COALESCE(c.public_id, c.external_id) DESC, so.harness DESC
       LIMIT ? OFFSET ?
     `).all(

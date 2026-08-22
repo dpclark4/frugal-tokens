@@ -137,7 +137,7 @@ Deno.test("overview rollups return ordered root execution intervals", () => {
   }
 });
 
-Deno.test("lists recent sessions by displayed start time", () => {
+Deno.test("lists recent sessions by last activity time", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   const sources = new SourceArtifactRepository(db);
@@ -177,7 +177,7 @@ Deno.test("lists recent sessions by displayed start time", () => {
 
     deepStrictEqual(
       conversations.listSessions(1, 10, "pi").items.map(({ id }) => id),
-      ["newer-start", "older-start"],
+      ["older-start", "newer-start"],
     );
   } finally {
     db.close();
