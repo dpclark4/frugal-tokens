@@ -52,9 +52,10 @@ function UsageTooltip({ active, label, payload, metric }: {
   metric: Metric;
 }) {
   if (!active || !payload?.length || label === undefined) return null;
-  const items = payload.filter((item) => typeof item.value === "number")
-    .sort((a, b) => b.value! - a.value!);
-  const total = items.reduce((sum, item) => sum + item.value!, 0);
+  const items = payload.filter(
+    (item): item is typeof item & { value: number } => item.value !== undefined,
+  ).sort((a, b) => b.value - a.value);
+  const total = items.reduce((sum, item) => sum + item.value, 0);
   return (
     <div className="usage-tooltip">
       <p>{day.format(new Date(Number(label)))}</p>
@@ -66,7 +67,7 @@ function UsageTooltip({ active, label, payload, metric }: {
               <i style={{ background: item.color }} />
               {item.name}
             </span>
-            <span>{formatValue(metric, item.value!)}</span>
+            <span>{formatValue(metric, item.value)}</span>
           </div>
         ))}
       </div>

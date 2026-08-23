@@ -25,6 +25,7 @@ import {
   numberCheckpointItems,
   objectValue,
   referenceCheckpointItem,
+  serializedJsonValue,
   stringValue,
 } from "./compactionImport.ts";
 
@@ -195,7 +196,7 @@ function preview(value: string): ConversationContentImport {
 
 function serializedPreview(value: JsonValue | undefined) {
   if (value === undefined) return undefined;
-  const text = typeof value === "string" ? value : JSON.stringify(value);
+  const text = serializedJsonValue(value);
   if (text === undefined) return undefined;
   const metadata = preview(text);
   return {
@@ -286,8 +287,9 @@ function tokenUsageSignature(record: Record) {
 function toolName(record: Record) {
   const payload = record.payload;
   if (payload?.type !== "custom_tool_call" || !payload.name) return undefined;
-  if (typeof payload.input !== "string") return payload.name;
-  const match = payload.input.match(/tools\.([A-Za-z0-9_]+)/);
+  const input = stringValue(payload.input);
+  if (input === undefined) return payload.name;
+  const match = input.match(/tools\.([A-Za-z0-9_]+)/);
   return match ? `${payload.name} -> ${match[1]}` : payload.name;
 }
 

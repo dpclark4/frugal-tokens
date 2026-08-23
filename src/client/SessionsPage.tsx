@@ -208,7 +208,7 @@ export function SessionsPage() {
     const target = loadMoreRef.current;
     if (
       !target || !data || data.pagination.page >= data.pagination.totalPages ||
-      typeof IntersectionObserver === "undefined"
+      !("IntersectionObserver" in globalThis)
     ) return;
     const observer = new IntersectionObserver(
       ([entry]) => {

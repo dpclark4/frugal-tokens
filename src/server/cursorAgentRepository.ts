@@ -60,6 +60,12 @@ type CursorSnapshot = {
   messages: CursorMessage[];
 };
 
+const jsonStringSchema = z.string();
+const nonemptyStringSchema = jsonStringSchema.min(1);
+const nonnegativeIntegerSchema = z.number().int().safe().nonnegative();
+const nonnegativeNumberSchema = z.number().nonnegative();
+const booleanSchema = z.boolean();
+
 const cursorStoreValueSchema = z.union([
   z.string(),
   z.number(),
@@ -123,20 +129,24 @@ function objectValue(value: JsonValue | undefined): JsonObject | undefined {
   return parsed.success ? parsed.data : undefined;
 }
 
+function jsonStringValue(value: JsonValue | undefined): string | undefined {
+  const parsed = jsonStringSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
 function stringValue(value: JsonValue | undefined): string | undefined {
-  return typeof value === "string" && value.length > 0 ? value : undefined;
+  const parsed = nonemptyStringSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
 function integerValue(value: JsonValue | undefined): number | undefined {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
-    ? value
-    : undefined;
+  const parsed = nonnegativeIntegerSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
 function numberValue(value: JsonValue | undefined): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0
-    ? value
-    : undefined;
+  const parsed = nonnegativeNumberSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
 function digestJson(serialized: string) {
@@ -153,7 +163,8 @@ function asBytes(value: CursorStoreValue | undefined): Uint8Array | undefined {
 }
 
 function asBlobID(value: CursorStoreValue | undefined): string | undefined {
-  if (typeof value === "string") return value;
+  const id = jsonStringSchema.safeParse(value);
+  if (id.success) return id.data;
   const bytes = asBytes(value);
   return bytes === undefined ? undefined : bytesToHex(bytes);
 }
@@ -185,9 +196,7 @@ function fileMeta(path: string): CursorFileMeta {
     schemaVersion: integerValue(value?.schemaVersion),
     createdAtMs: integerValue(value?.createdAtMs),
     updatedAtMs: integerValue(value?.updatedAtMs),
-    hasConversation: typeof value?.hasConversation === "boolean"
-      ? value.hasConversation
-      : undefined,
+    hasConversation: booleanSchema.safeParse(value?.hasConversation).data,
     cwd: stringValue(value?.cwd),
   };
 }
@@ -196,8 +205,9 @@ function decodeHexJSON(
   value: CursorStoreValue | undefined,
 ): JsonObject | undefined {
   let text: string | undefined;
-  if (typeof value === "string") {
-    const raw = value.trim();
+  const encoded = jsonStringSchema.safeParse(value);
+  if (encoded.success) {
+    const raw = encoded.data.trim();
     if (/^(?:[0-9a-f]{2})+$/i.test(raw)) {
       try {
         text = new TextDecoder().decode(
@@ -608,13 +618,14 @@ function preview(text: string): ConversationContentImport {
 
 function serializedPreview(value: JsonValue | undefined) {
   if (value === undefined) return undefined;
-  const text = typeof value === "string" ? value : JSON.stringify(value);
+  const text = jsonStringValue(value) ?? JSON.stringify(value);
   return text === undefined ? undefined : preview(text);
 }
 
 function contentBlocks(message: CursorMessage) {
   const content = message.content;
-  if (typeof content === "string") return [{ type: "text", text: content }];
+  const text = jsonStringValue(content);
+  if (text !== undefined) return [{ type: "text", text }];
   if (!Array.isArray(content)) return [];
   return content.flatMap((value) => {
     const block = objectValue(value);
@@ -624,9 +635,8 @@ function contentBlocks(message: CursorMessage) {
 
 function textBlocks(message: CursorMessage) {
   return contentBlocks(message).flatMap((block) => {
-    return block.type === "text" && typeof block.text === "string"
-      ? [block.text]
-      : [];
+    const text = jsonStringValue(block.text);
+    return block.type === "text" && text !== undefined ? [text] : [];
   });
 }
 
@@ -637,13 +647,12 @@ function messageText(message: CursorMessage) {
 
 function messageInputs(message: CursorMessage): ConversationContentImport[] {
   return contentBlocks(message).flatMap((block) => {
-    if (block.type === "text" && typeof block.text === "string") {
-      return [preview(block.text)];
+    const text = jsonStringValue(block.text);
+    if (block.type === "text" && text !== undefined) {
+      return [preview(text)];
     }
-    if (
-      typeof block.type === "string" &&
-      block.type.toLowerCase().includes("image")
-    ) {
+    const type = stringValue(block.type);
+    if (type?.toLowerCase().includes("image")) {
       return [{
         kind: "image",
         mimeType: stringValue(block.mimeType),

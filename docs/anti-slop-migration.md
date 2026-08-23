@@ -24,11 +24,11 @@ Initial state:
 
 Current state:
 
-- 338 findings across 51 files and 3 ungated anti-slop rules in the current
+- 285 findings across 48 files and 2 ungated anti-slop rules in the current
   migration scope
-- `no-unknown-returns`, `no-known-value-widening`,
-  `no-unsafe-dictionary-type`, `no-unknown-parameters`, and
-  `no-shape-in-symbol-names` are clean and enforced by the gate
+- `no-unknown-returns`, `no-known-value-widening`, `no-unsafe-dictionary-type`,
+  `no-unknown-parameters`, `no-shape-in-symbol-names`, and `no-runtime-typeof`
+  are clean and enforced by the gate
 - The dictionary migration also reduced overlapping findings:
   `require-safety-comment-for-type-assertion` from 173 to 159,
   `no-runtime-typeof` from 103 to 92, and `no-unknown-parameters` from 60 to 55
@@ -41,24 +41,25 @@ Current state:
   changes reduced `no-runtime-typeof` from 47 to 46 and assertion findings from
   149 to 146.
 - Renaming the session-distribution contracts, aggregation functions, report
-  inputs, and chart geometry cleared all 99 scoped
-  `no-shape-in-symbol-names` findings without changing the Session shape UI or
-  API route.
+  inputs, and chart geometry cleared all 99 scoped `no-shape-in-symbol-names`
+  findings without changing the Session shape UI or API route.
+- Parsing primitive JSON values, title settings, Cursor metadata, tool inputs,
+  and external command output cleared all 46 scoped `no-runtime-typeof`
+  findings. The same changes reduced assertion findings from 146 to 139.
 
 Current scoped rule counts:
 
 | Rule                                        | Findings |
 | ------------------------------------------- | -------: |
-| `require-safety-comment-for-type-assertion` |      146 |
+| `require-safety-comment-for-type-assertion` |      139 |
 | `no-conditional-empty-object-spread`        |      146 |
-| `no-runtime-typeof`                         |       46 |
 
 | Rule                                        | Initial findings | Files | Status             |
 | ------------------------------------------- | ---------------: | ----: | ------------------ |
 | `require-safety-comment-for-type-assertion` |              173 |    41 | Not started        |
 | `no-conditional-empty-object-spread`        |              166 |    24 | Not started        |
 | `no-shape-in-symbol-names`                  |              130 |    15 | Complete and gated |
-| `no-runtime-typeof`                         |              103 |    23 | Not started        |
+| `no-runtime-typeof`                         |              103 |    23 | Complete and gated |
 | `no-unknown-parameters`                     |               60 |    14 | Complete and gated |
 | `no-known-value-widening`                   |               42 |    23 | Complete and gated |
 | `no-unsafe-dictionary-type`                 |               25 |    14 | Complete and gated |
@@ -117,7 +118,7 @@ over collections of ad hoc narrowing helpers.
   - `tools/responses-cache-lab/`
 - [ ] Pi cache telemetry parsing (deferred from the Oxlint migration scope)
   - `tools/pi-cache-telemetry/extensions/cache-telemetry.ts`
-- [ ] Remaining client and server runtime narrowing
+- [x] Remaining client and server runtime narrowing
 
 Expected rules reduced by this unit:
 
@@ -202,11 +203,11 @@ Recommended workflow for each work unit:
 
 ## Current hotspots
 
-| Findings | File                                                     |
-| -------: | -------------------------------------------------------- |
-|       63 | `src/server/conversationRepository.ts`                   |
-|       32 | `src/server/opencodeRepository.ts`                       |
-|       30 | `src/server/main.ts`                                     |
-|       28 | `src/server/codexRepository.ts`                          |
-|       26 | `src/server/claudeCodeRepository.ts`                     |
-|       25 | `src/server/conversationWriteRepository.ts`              |
+| Findings | File                                        |
+| -------: | ------------------------------------------- |
+|       63 | `src/server/conversationRepository.ts`      |
+|       32 | `src/server/opencodeRepository.ts`          |
+|       30 | `src/server/main.ts`                        |
+|       28 | `src/server/codexRepository.ts`             |
+|       26 | `src/server/claudeCodeRepository.ts`        |
+|       25 | `src/server/conversationWriteRepository.ts` |

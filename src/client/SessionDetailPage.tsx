@@ -9,7 +9,11 @@ import {
   useState,
 } from "react";
 import { getRouteApi } from "@tanstack/react-router";
-import { jsonObjectSchema } from "../shared/json.ts";
+import {
+  jsonObjectSchema,
+  jsonStringValue,
+  jsonValueSchema,
+} from "../shared/json.ts";
 import {
   ArrowLeft,
   Bot,
@@ -702,7 +706,7 @@ function SessionNavigator({
       const element = document.getElementById(entry.id);
       return element ? [element] : [];
     });
-    if (elements.length === 0 || typeof IntersectionObserver === "undefined") {
+    if (elements.length === 0 || !("IntersectionObserver" in globalThis)) {
       return;
     }
     const observer = new IntersectionObserver(
@@ -1037,8 +1041,9 @@ function CacheMissBadges({
 function toolTarget(value?: string) {
   if (!value) return undefined;
   try {
-    const parsed = JSON.parse(value);
-    if (typeof parsed === "string") return parsed;
+    const parsed = jsonValueSchema.parse(JSON.parse(value));
+    const direct = jsonStringValue(parsed);
+    if (direct !== undefined) return direct;
     const object = jsonObjectSchema.safeParse(parsed);
     if (object.success) {
       for (
@@ -1054,8 +1059,8 @@ function toolTarget(value?: string) {
           "query",
         ]
       ) {
-        const candidate = object.data[key];
-        if (typeof candidate === "string") return candidate;
+        const candidate = jsonStringValue(object.data[key]);
+        if (candidate !== undefined) return candidate;
       }
     }
   } catch {

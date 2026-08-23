@@ -14,6 +14,7 @@ import type { SessionSummary } from "../shared/sessionSchemas.ts";
 import {
   parseSessionMissFilters,
   sessionMissFilterSchema,
+  titleGenerationSettingSchema,
 } from "../shared/sessionSchemas.ts";
 import { aggregateUsageRollups } from "./usageAnalytics.ts";
 import { aggregateTtlMisses, sumCacheMissCost } from "./ttlMissAnalytics.ts";
@@ -328,14 +329,14 @@ app.get(
 );
 
 app.put("/api/settings/title-generation", async (context) => {
-  const body = await context.req.json().catch(() => undefined) as
-    | { enabled?: unknown }
-    | undefined;
-  if (typeof body?.enabled !== "boolean") {
+  const body = titleGenerationSettingSchema.safeParse(
+    await context.req.json().catch(() => undefined),
+  );
+  if (!body.success) {
     return context.json({ error: "enabled must be a boolean" }, 400);
   }
-  setTitleGenerationEnabled(archiveDatabase, body.enabled);
-  return context.json({ enabled: body.enabled });
+  setTitleGenerationEnabled(archiveDatabase, body.data.enabled);
+  return context.json({ enabled: body.data.enabled });
 });
 
 // Settings and sync routes stay uncached; data reads below are invalidated by

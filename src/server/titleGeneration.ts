@@ -150,7 +150,7 @@ function parseCodexOutput(stdout: string) {
     const item = event.item;
     if (
       event.type === "item.completed" && item?.type === "agent_message" &&
-      typeof item.text === "string"
+      item.text !== undefined
     ) title = item.text;
     if (event.type === "turn.completed") {
       const tokens = event.usage;

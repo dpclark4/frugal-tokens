@@ -8,6 +8,7 @@ import {
   sessionDistributionResponseSchema,
   sessionListResponseSchema,
   type SessionMissFilter,
+  titleGenerationSettingSchema,
   toolCallsResponseSchema,
   ttlMissMetricsSchema,
   usageResponseSchema,
@@ -41,13 +42,9 @@ export async function getHarnesses() {
 }
 
 export async function getTitleGenerationSetting() {
-  const value = await getJson("/api/settings/title-generation") as {
-    enabled?: unknown;
-  };
-  if (typeof value.enabled !== "boolean") {
-    throw new Error("Invalid title generation setting response");
-  }
-  return value.enabled;
+  return titleGenerationSettingSchema.parse(
+    await getJson("/api/settings/title-generation"),
+  ).enabled;
 }
 
 export async function setTitleGenerationSetting(enabled: boolean) {

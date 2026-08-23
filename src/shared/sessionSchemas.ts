@@ -48,6 +48,10 @@ export const tokenUsageSchema = z.object({
   processed: z.number().int().nonnegative(),
 });
 
+export const titleGenerationSettingSchema = z.object({
+  enabled: z.boolean(),
+});
+
 export const toolEventSchema = z.object({
   name: z.string(),
   status: z.string(),

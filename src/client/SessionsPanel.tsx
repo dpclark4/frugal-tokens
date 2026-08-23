@@ -6,7 +6,11 @@ import {
   RefreshCw,
   Split,
 } from "lucide-react";
-import { jsonObjectSchema } from "../shared/json.ts";
+import {
+  jsonObjectSchema,
+  jsonStringValue,
+  jsonValueSchema,
+} from "../shared/json.ts";
 import type {
   CacheAssessment,
   CacheIssue,
@@ -1193,8 +1197,9 @@ function terminalResponseCall(calls: ModelCall[]) {
 function toolTargetPreview(value?: string) {
   if (value === undefined) return undefined;
   try {
-    const parsed = JSON.parse(value);
-    if (typeof parsed === "string") return parsed;
+    const parsed = jsonValueSchema.parse(JSON.parse(value));
+    const direct = jsonStringValue(parsed);
+    if (direct !== undefined) return direct;
     const object = jsonObjectSchema.safeParse(parsed);
     if (object.success) {
       for (
@@ -1209,8 +1214,8 @@ function toolTargetPreview(value?: string) {
           "query",
         ]
       ) {
-        const candidate = object.data[key];
-        if (typeof candidate === "string") return candidate;
+        const candidate = jsonStringValue(object.data[key]);
+        if (candidate !== undefined) return candidate;
       }
     }
   } catch {

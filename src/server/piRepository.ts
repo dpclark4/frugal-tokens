@@ -23,6 +23,7 @@ import {
   nonnegativeInteger,
   numberCheckpointItems,
   objectValue,
+  serializedJsonValue,
   stringValue,
   textCheckpointItem,
 } from "./compactionImport.ts";
@@ -48,6 +49,7 @@ const recordSchema = z.object({
   parentId: z.string().nullable().optional(),
   timestamp: z.string().optional(),
   cwd: z.string().optional(),
+  name: z.string().optional().catch(undefined),
   summary: jsonValueSchema.optional(),
   firstKeptEntryId: jsonValueSchema.optional(),
   retainedTail: jsonValueSchema.optional(),
@@ -183,7 +185,7 @@ function contentMetadata(
 
 function serializedPreview(value: JsonValue | undefined) {
   if (value === undefined) return undefined;
-  const text = typeof value === "string" ? value : JSON.stringify(value);
+  const text = serializedJsonValue(value);
   if (text === undefined) return undefined;
   const metadata = preview(text);
   return {
@@ -230,31 +232,32 @@ function piEntryCheckpointItem(entry: CheckpointEntry) {
     });
   }
   // retainedTail stores materialized messages rather than session entries.
-  if (typeof entry.role === "string") {
+  const retainedRole = stringValue(entry.role);
+  if (retainedRole !== undefined) {
     return messageCheckpointItem({
       sourceEntryID,
-      role: entry.role,
+      role: retainedRole,
       content: entry.content,
     });
   }
   if (entry.type === "custom_message") {
+    const customType = stringValue(entry.customType);
     return messageCheckpointItem({
       sourceEntryID,
       role: "user",
       content: entry.content,
       nativeMetadata: {
-        ...(typeof entry.customType === "string"
-          ? { customType: entry.customType }
-          : {}),
+        ...(customType === undefined ? {} : { customType }),
       },
     });
   }
-  if (entry.type === "branch_summary" && typeof entry.summary === "string") {
+  const branchSummary = stringValue(entry.summary);
+  if (entry.type === "branch_summary" && branchSummary !== undefined) {
     return textCheckpointItem({
       sourceEntryID,
       kind: "message",
       role: "user",
-      text: entry.summary,
+      text: branchSummary,
       nativeMetadata: { sourceKind: "branch-summary" },
     });
   }
@@ -765,9 +768,7 @@ function piSession(records: Record[], id: string, updatedAt: number) {
   const sessionInfo = [...records].reverse().find((record) =>
     record.type === "session_info"
   );
-  const customTitle = typeof sessionInfo?.name === "string"
-    ? sessionInfo.name.trim() || undefined
-    : undefined;
+  const customTitle = sessionInfo?.name?.trim() || undefined;
   const title = customTitle ?? promptTitle ??
     `Pi session ${basename(header?.cwd) ?? id.split("/").at(-1)?.slice(0, 8)}`;
   const transcriptUpdatedAt = [...records].reverse().find((record) =>

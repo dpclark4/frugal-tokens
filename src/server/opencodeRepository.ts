@@ -24,6 +24,8 @@ import {
   numberCheckpointItems,
   objectValue,
   referenceCheckpointItem,
+  serializedJsonValue,
+  stringArray,
   stringValue,
 } from "./compactionImport.ts";
 
@@ -53,7 +55,7 @@ const messageDataSchema = z.object({
 
 const partDataSchema = z.object({
   type: z.string(),
-  text: jsonValueSchema.optional(),
+  text: z.string().optional().catch(undefined),
   synthetic: z.boolean().optional(),
   mime: z.string().optional(),
   callID: z.string().optional(),
@@ -166,7 +168,7 @@ function preview(value: string): ConversationContentImport {
 
 function serializedPreview(value: JsonValue | undefined) {
   if (value === undefined) return undefined;
-  const text = typeof value === "string" ? value : JSON.stringify(value);
+  const text = serializedJsonValue(value);
   if (text === undefined) return undefined;
   const valuePreview = preview(text);
   return {
@@ -201,10 +203,8 @@ function decodeParts(rows: OpenCodePartRow[], strict = false) {
       content: [],
     };
     if (part.type === "text" && !part.synthetic) {
-      current.activity.hasText = typeof part.text === "string";
-      if (typeof part.text === "string") {
-        current.content.push(preview(part.text));
-      }
+      current.activity.hasText = part.text !== undefined;
+      if (part.text !== undefined) current.content.push(preview(part.text));
     }
     if (part.type === "reasoning") {
       current.activity.hasReasoning = true;
@@ -371,11 +371,7 @@ function completeOpenCodeCompaction(
     item.kind === "text" && item.preview !== undefined
   );
   const metadata = objectValue(compaction.nativeMetadata) ?? {};
-  const issues = Array.isArray(metadata.captureIssues)
-    ? metadata.captureIssues.filter((issue): issue is string =>
-      typeof issue === "string"
-    )
-    : [];
+  const issues = stringArray(metadata.captureIssues) ?? [];
   if (summary?.preview === undefined) {
     issues.push("summary-text-missing");
     compaction.checkpointCompleteness = compaction.checkpointItems.length > 0

@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type {
   CompactionCheckpointItemImport,
   CompactionDetailImport,
@@ -10,6 +11,11 @@ import {
 
 export const compactionPreviewLimit = 2_048;
 
+const stringSchema = z.string();
+const booleanSchema = z.boolean();
+const nonnegativeIntegerSchema = z.number().int().nonnegative();
+const stringArraySchema = z.array(stringSchema);
+
 export function objectValue(
   value: JsonValue | undefined,
 ): JsonObject | undefined {
@@ -18,37 +24,46 @@ export function objectValue(
 }
 
 export function stringValue(value: JsonValue | undefined): string | undefined {
-  return typeof value === "string" ? value : undefined;
+  const parsed = stringSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
 export function booleanValue(
   value: JsonValue | undefined,
 ): boolean | undefined {
-  return typeof value === "boolean" ? value : undefined;
+  const parsed = booleanSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
 export function nonnegativeInteger(
   value: JsonValue | undefined,
 ): number | undefined {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0
-    ? value
-    : undefined;
+  const parsed = nonnegativeIntegerSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
 export function stringArray(
   value: JsonValue | undefined,
 ): string[] | undefined {
-  return Array.isArray(value) && value.every((item) => typeof item === "string")
-    ? value
-    : undefined;
+  const parsed = stringArraySchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
+export function serializedJsonValue(
+  value: JsonValue | undefined,
+): string | undefined {
+  if (value === undefined) return undefined;
+  return stringValue(value) ?? JSON.stringify(value);
 }
 
 export function contentText(value: JsonValue | undefined): string | undefined {
-  if (typeof value === "string") return value;
+  const directText = stringValue(value);
+  if (directText !== undefined) return directText;
   if (!Array.isArray(value)) return undefined;
   const text = value.flatMap((block) => {
     const object = objectValue(block);
-    return typeof object?.text === "string" ? [object.text] : [];
+    const text = stringValue(object?.text);
+    return text === undefined ? [] : [text];
   }).join("");
   return text.length > 0 ? text : undefined;
 }
@@ -59,7 +74,8 @@ export function contentBlockTypes(
   if (!Array.isArray(value)) return undefined;
   const types = value.flatMap((block) => {
     const object = objectValue(block);
-    return typeof object?.type === "string" ? [object.type] : [];
+    const type = stringValue(object?.type);
+    return type === undefined ? [] : [type];
   });
   return types.length > 0 ? types : undefined;
 }

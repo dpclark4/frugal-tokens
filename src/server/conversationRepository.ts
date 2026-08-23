@@ -1,5 +1,9 @@
 import type { DatabaseSync } from "node:sqlite";
-import { jsonObjectSchema } from "../shared/json.ts";
+import {
+  jsonObjectSchema,
+  jsonStringValue,
+  jsonValueSchema,
+} from "../shared/json.ts";
 import {
   type CacheIssue,
   type ContextEvent,
@@ -204,8 +208,9 @@ export function conciseSessionPreview(value?: string) {
 export function sessionToolTarget(value?: string) {
   if (value === undefined) return undefined;
   try {
-    const parsed = JSON.parse(value);
-    if (typeof parsed === "string") return conciseSessionPreview(parsed);
+    const parsed = jsonValueSchema.parse(JSON.parse(value));
+    const direct = jsonStringValue(parsed);
+    if (direct !== undefined) return conciseSessionPreview(direct);
     const object = jsonObjectSchema.safeParse(parsed);
     if (object.success) {
       for (
@@ -220,10 +225,8 @@ export function sessionToolTarget(value?: string) {
           "query",
         ]
       ) {
-        const candidate = object.data[key];
-        if (typeof candidate === "string") {
-          return conciseSessionPreview(candidate);
-        }
+        const candidate = jsonStringValue(object.data[key]);
+        if (candidate !== undefined) return conciseSessionPreview(candidate);
       }
     }
   } catch {

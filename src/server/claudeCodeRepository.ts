@@ -25,6 +25,7 @@ import {
   nonnegativeInteger,
   numberCheckpointItems,
   objectValue,
+  serializedJsonValue,
   stringArray,
   stringValue,
   textCheckpointItem,
@@ -218,7 +219,7 @@ function preview(value: string): ConversationContentImport {
 
 function serializedPreview(value: JsonValue | undefined) {
   if (value === undefined) return undefined;
-  const text = typeof value === "string" ? value : JSON.stringify(value);
+  const text = serializedJsonValue(value);
   if (text === undefined) return undefined;
   const valuePreview = preview(text);
   return {
@@ -234,8 +235,10 @@ function blocks(record: Record) {
 
 function userText(record: Record) {
   const content = record.message?.content;
-  if (typeof content === "string") return content;
-  return content?.find((block) => block.type === "text")?.text;
+  if (Array.isArray(content)) {
+    return content.find((block) => block.type === "text")?.text;
+  }
+  return content;
 }
 
 function userInputs(
@@ -459,6 +462,12 @@ function sessionBounds(
   return { startedAt, endedAt };
 }
 
+function publicClaudeTool(tool: ConversationToolImport) {
+  const { sourceChildSessionID, ...persisted } = tool;
+  if (sourceChildSessionID === undefined) return persisted;
+  return { ...persisted, childSessionID: sourceChildSessionID };
+}
+
 function decodeRecords(records: Record[]) {
   const turns: Array<ConversationTurnImport & { images?: number }> = [];
   const calls = new Map<
@@ -511,18 +520,15 @@ function decodeRecords(records: Record[]) {
           if (block.type !== "tool_result" || !block.tool_use_id) continue;
           for (const value of calls.values()) {
             const tool = value.call.activity.tools.find((item) =>
-              (item as { id?: string }).id === block.tool_use_id
+              item.sourceID === block.tool_use_id
             );
             if (tool) {
               tool.status = block.is_error ? "error" : "completed";
               tool.completedAt = timestamp;
-              if (
-                typeof record.toolUseResult === "object" &&
-                !Array.isArray(record.toolUseResult) &&
-                record.toolUseResult.agentId
-              ) {
-                (tool as ConversationToolImport & { childSessionID?: string })
-                  .childSessionID = record.toolUseResult.agentId;
+              const toolResult = objectValue(record.toolUseResult);
+              const sourceChildSessionID = stringValue(toolResult?.agentId);
+              if (sourceChildSessionID !== undefined) {
+                tool.sourceChildSessionID = sourceChildSessionID;
               }
               tool.output = serializedPreview(
                 block.content ?? record.toolUseResult,
@@ -636,9 +642,7 @@ function decodeRecords(records: Record[]) {
             ...(input?.preview === undefined
               ? {}
               : { inputPreview: input.preview }),
-            // Kept internally while matching the later tool_result record.
-            id: block.id,
-          } as ConversationToolImport,
+          },
         );
       }
     }
@@ -871,11 +875,8 @@ export function normalizeClaudeCodeSessionTree(options: {
     for (const turn of decoded.turns) {
       for (const call of turn.calls) {
         for (const tool of call.activity.tools) {
-          const rawChild = (tool as ConversationToolImport & {
-            childSessionID?: string;
-          }).childSessionID;
-          delete (tool as ConversationToolImport & { childSessionID?: string })
-            .childSessionID;
+          const rawChild = tool.sourceChildSessionID;
+          delete tool.sourceChildSessionID;
           if (rawChild) {
             const child = transcripts.find((item) =>
               item.artifactPath.startsWith(
@@ -1086,6 +1087,10 @@ export class ClaudeCodeRepository {
         ).map(({ affectedCall: _affectedCall, ...event }) => event);
         return {
           ...call,
+          activity: {
+            ...call.activity,
+            tools: call.activity.tools.map(publicClaudeTool),
+          },
           ...(contextEventsBefore.length === 0 ? {} : { contextEventsBefore }),
         };
       }),

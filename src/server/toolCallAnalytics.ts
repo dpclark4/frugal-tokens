@@ -1,13 +1,11 @@
 import type { ToolCallsResponse } from "../shared/sessionSchemas.ts";
 import { z } from "zod";
 
-const commandInputSchema = z.union([
-  z.string(),
-  z.object({
-    command: z.string().optional(),
-    cmd: z.string().optional(),
-  }),
-]);
+const directCommandSchema = z.string();
+const commandFieldsSchema = z.object({
+  command: z.string().optional(),
+  cmd: z.string().optional(),
+});
 
 export type ToolCallObservation = {
   modelCallID: number;
@@ -23,11 +21,12 @@ function commandFromInput(input?: string) {
   if (!input) return undefined;
   let command: string | undefined;
   try {
-    const parsed = commandInputSchema.safeParse(JSON.parse(input));
-    if (parsed.success) {
-      command = typeof parsed.data === "string"
-        ? parsed.data
-        : parsed.data.command ?? parsed.data.cmd;
+    const parsed = JSON.parse(input);
+    const direct = directCommandSchema.safeParse(parsed);
+    if (direct.success) command = direct.data;
+    else {
+      const fields = commandFieldsSchema.safeParse(parsed);
+      if (fields.success) command = fields.data.command ?? fields.data.cmd;
     }
   } catch {
     // Truncated JSON and Codex's JavaScript wrapper are handled below.
