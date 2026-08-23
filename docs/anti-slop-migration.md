@@ -24,12 +24,27 @@ Initial state:
 
 Current state:
 
-- 602 findings across 5 ungated anti-slop rules
+- 466 findings across 58 files and 5 ungated anti-slop rules in the current
+  migration scope
 - `no-unknown-returns`, `no-known-value-widening`, and
   `no-unsafe-dictionary-type` are clean and enforced by the gate
 - The dictionary migration also reduced overlapping findings:
   `require-safety-comment-for-type-assertion` from 173 to 159,
   `no-runtime-typeof` from 103 to 92, and `no-unknown-parameters` from 60 to 55
+- Deferring the responses cache lab and Pi cache telemetry removed 136 findings
+  from the active baseline: 20 `no-conditional-empty-object-spread`, 45
+  `no-runtime-typeof`, 31 `no-shape-in-symbol-names`, 30
+  `no-unknown-parameters`, and 10 assertion findings
+
+Current scoped rule counts:
+
+| Rule                                        | Findings |
+| ------------------------------------------- | -------: |
+| `require-safety-comment-for-type-assertion` |      149 |
+| `no-conditional-empty-object-spread`        |      146 |
+| `no-shape-in-symbol-names`                  |       99 |
+| `no-runtime-typeof`                         |       47 |
+| `no-unknown-parameters`                     |       25 |
 
 | Rule                                        | Initial findings | Files | Status             |
 | ------------------------------------------- | ---------------: | ----: | ------------------ |
@@ -91,9 +106,9 @@ over collections of ad hoc narrowing helpers.
 - [ ] Source artifact and file import errors
   - `src/server/sourceArtifactRepository.ts`
   - `src/server/fileSessionImporter.ts`
-- [ ] Responses cache lab parsing
+- [ ] Responses cache lab parsing (deferred from the Oxlint migration scope)
   - `tools/responses-cache-lab/`
-- [ ] Pi cache telemetry parsing
+- [ ] Pi cache telemetry parsing (deferred from the Oxlint migration scope)
   - `tools/pi-cache-telemetry/extensions/cache-telemetry.ts`
 - [ ] Remaining client and server runtime narrowing
 
@@ -183,10 +198,7 @@ Recommended workflow for each work unit:
 | Findings | File                                                     |
 | -------: | -------------------------------------------------------- |
 |       63 | `src/server/conversationRepository.ts`                   |
-|       39 | `tools/pi-cache-telemetry/extensions/cache-telemetry.ts` |
-|       33 | `tools/responses-cache-lab/main.ts`                      |
 |       32 | `src/server/opencodeRepository.ts`                       |
-|       31 | `tools/responses-cache-lab/scenario.ts`                  |
 |       31 | `src/server/cursorAgentRepository.ts`                    |
 |       30 | `src/server/main.ts`                                     |
 |       28 | `src/server/codexRepository.ts`                          |

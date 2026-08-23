@@ -12,7 +12,9 @@
     ".pi/**",
     ".roo/**",
     ".windsurf/**",
-    "tools/oxlint/anti-slop/**"
+    "tools/oxlint/anti-slop/**",
+    "tools/pi-cache-telemetry/**",
+    "tools/responses-cache-lab/**"
   ],
   "jsPlugins": [
     {
