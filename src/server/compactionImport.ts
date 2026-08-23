@@ -123,10 +123,8 @@ export function messageCheckpointItem(options: {
   nativeMetadata?: JsonObject;
 }): CompactionCheckpointItemImport {
   const blockTypes = contentBlockTypes(options.content);
-  const nativeMetadata = {
-    ...options.nativeMetadata,
-    ...(blockTypes === undefined ? {} : { contentBlockTypes: blockTypes }),
-  };
+  const nativeMetadata: JsonObject = { ...options.nativeMetadata };
+  if (blockTypes !== undefined) nativeMetadata.contentBlockTypes = blockTypes;
   const kind = options.kind ??
     (options.role === "toolResult" ? "tool-result" : "message");
   const text = contentText(options.content);

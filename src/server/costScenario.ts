@@ -154,12 +154,13 @@ export function estimateSessionCostScenario(
     breakdown.cacheWrite += cost.cacheWrite;
     breakdown.output += cost.output;
   }
-  return {
+  const result: CostScenarioResponse = {
     model,
-    ...(canonicalModelId(model).startsWith("claude-") ? { cacheTtl } : {}),
     cost: breakdown.input + breakdown.cacheRead + breakdown.cacheWrite +
       breakdown.output,
     hasUnpricedCost,
     breakdown,
   };
+  if (canonicalModelId(model).startsWith("claude-")) result.cacheTtl = cacheTtl;
+  return result;
 }

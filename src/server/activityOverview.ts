@@ -223,33 +223,35 @@ function sessionDiagnostics(
       b.spend - a.spend || b.input - a.input
     )[0]?.[0] ?? null;
 
-    return [{
-      id: root.sessionID ?? String(root.rootSessionID),
-      title: root.title ?? `Session ${root.rootSessionID}`,
-      ...(root.harness === undefined ? {} : { harness: root.harness }),
-      primaryModel,
-      estimatedActiveMinutes: intervals.reduce(
-        (sum, interval) =>
-          sum + interval.end - interval.start,
-        0,
-      ) / 60_000,
-      observedSessionMinutes: Math.max(
-        0,
-        (root.endedAt ?? Math.max(
-          ...root.overview.days.map((day) => day.lastCallAt ?? day.firstTurnAt),
-        )) -
-          (root.startedAt ?? Math.min(
-            ...root.overview.days.map((day) => day.firstTurnAt),
-          )),
-      ) / 60_000,
-      spend: days.reduce((sum, day) => sum + day.cost, 0),
-      hasUnpricedSpend: days.some((day) => day.hasUnpricedCost),
-      processedInput,
-      ...(processedInput === 0
-        ? {}
-        : { tokenReuse: cacheRead / processedInput }),
-      userTurns: days.reduce((sum, day) => sum + day.turns, 0),
-    }];
+    const session:
+      WorkRhythmOverviewResponse["sessionDiagnostics"]["sessions"][number] = {
+        id: root.sessionID ?? String(root.rootSessionID),
+        title: root.title ?? `Session ${root.rootSessionID}`,
+        primaryModel,
+        estimatedActiveMinutes: intervals.reduce(
+          (sum, interval) =>
+            sum + interval.end - interval.start,
+          0,
+        ) / 60_000,
+        observedSessionMinutes: Math.max(
+          0,
+          (root.endedAt ?? Math.max(
+            ...root.overview.days.map((day) =>
+              day.lastCallAt ?? day.firstTurnAt
+            ),
+          )) -
+            (root.startedAt ?? Math.min(
+              ...root.overview.days.map((day) => day.firstTurnAt),
+            )),
+        ) / 60_000,
+        spend: days.reduce((sum, day) => sum + day.cost, 0),
+        hasUnpricedSpend: days.some((day) => day.hasUnpricedCost),
+        processedInput,
+        userTurns: days.reduce((sum, day) => sum + day.turns, 0),
+      };
+    if (root.harness !== undefined) session.harness = root.harness;
+    if (processedInput !== 0) session.tokenReuse = cacheRead / processedInput;
+    return [session];
   }).toSorted((a, b) =>
     a.spend - b.spend || a.processedInput - b.processedInput ||
     a.id.localeCompare(b.id)

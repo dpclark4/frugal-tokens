@@ -203,18 +203,17 @@ export function SessionDiagnostics({ data }: { data: SessionDiagnosticsData }) {
     const key = `${session.harness ?? "unknown"}:${session.id}`;
     const highlighted = highestValueKeys.has(key);
     const value = metricValue(metric, session);
-    return {
+    const point: ChartPoint = {
       ...session,
       plotValue: scaleValue(metric, value),
       highlighted,
-      ...(highlighted
-        ? {
-          highestValueLabel: `${formatMetric(metric, value)}${
-            metric === "spend" && session.hasUnpricedSpend ? "+" : ""
-          }`,
-        }
-        : {}),
     };
+    if (highlighted) {
+      point.highestValueLabel = `${formatMetric(metric, value)}${
+        metric === "spend" && session.hasUnpricedSpend ? "+" : ""
+      }`;
+    }
+    return point;
   });
   const metricLabel = metric === "spend" ? "Spend" : "Processed input";
 
