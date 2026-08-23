@@ -65,7 +65,7 @@ export function setTitleGenerationEnabled(
   }
 }
 
-function candidateRows(
+export function titleGenerationCandidates(
   db: DatabaseSync,
   period: "backfill" | "new",
 ): Candidate[] {
@@ -95,7 +95,7 @@ function candidateRows(
     JOIN source_sessions ss ON ss.id = branch.source_session_id
     WHERE ss.generated_title IS NULL
       AND so.harness IN ('pi', 'claude-code', 'codex', 'opencode')
-      AND ss.first_seen_at ${comparison} ?
+      AND c.started_at ${comparison} ?
       AND NOT EXISTS (
         SELECT 1 FROM conversation_subagent_launches launch
         WHERE launch.child_conversation_id = c.id
@@ -303,14 +303,16 @@ export async function generateMissingSessionTitles(db: DatabaseSync) {
     0,
     backfillTarget - completedBackfillCount(db),
   );
-  const backfill = candidateRows(db, "backfill").filter(titleGenerationEligible)
+  const backfill = titleGenerationCandidates(db, "backfill").filter(
+    titleGenerationEligible,
+  )
     .slice(
       0,
       remainingBackfill,
     );
   const candidates = [
     ...backfill,
-    ...candidateRows(db, "new").filter(titleGenerationEligible),
+    ...titleGenerationCandidates(db, "new").filter(titleGenerationEligible),
   ];
 
   for (let index = 0; index < candidates.length; index += generationBatchSize) {
