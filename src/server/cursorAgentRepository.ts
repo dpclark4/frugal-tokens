@@ -10,6 +10,7 @@ import type {
   LinearConversationImport,
 } from "./conversationImportTypes.ts";
 import {
+  artifactImportFailure,
   type ProjectionCheckpoint,
   SourceArtifactRepository,
 } from "./sourceArtifactRepository.ts";
@@ -1116,10 +1117,10 @@ export function syncCursorAgentSessions(
         );
       }
     } catch (error) {
-      const category = error instanceof SyntaxError
+      const failure = artifactImportFailure(error);
+      const category = failure.name === "SyntaxError"
         ? "invalid-json"
-        : error instanceof Error &&
-            error.message.toLowerCase().includes("protobuf")
+        : failure.message.toLowerCase().includes("protobuf")
         ? "invalid-store"
         : "import-error";
       failureCategories[category] = (failureCategories[category] ?? 0) + 1;
@@ -1135,7 +1136,7 @@ export function syncCursorAgentSessions(
           candidate.id,
           candidate.artifactPath,
           observedAt,
-          error,
+          failure,
           projectionName,
         );
       }
@@ -1195,6 +1196,7 @@ export function syncCursorAgentSessions(
       }
       imported += normalized.length;
     } catch (error) {
+      const failure = artifactImportFailure(error);
       console.warn(
         `[sync] harness=cursor session=${
           group[0].id
@@ -1206,7 +1208,7 @@ export function syncCursorAgentSessions(
           sourceID,
           candidate.id,
           projectionName,
-          error,
+          failure,
         );
       }
       failed += group.length;

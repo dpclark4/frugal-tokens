@@ -7,6 +7,7 @@ import {
   type OpenCodeSessionRow,
 } from "./opencodeRepository.ts";
 import {
+  artifactImportFailure,
   type ProjectionCheckpoint,
   SourceArtifactRepository,
 } from "./sourceArtifactRepository.ts";
@@ -347,6 +348,7 @@ export function syncOpenCodeSessions(
         archiveWriteDuration += performance.now() - archiveWriteStartedAt;
         imported++;
       } catch (error) {
+        const failure = artifactImportFailure(error);
         if (transaction) source.exec("ROLLBACK");
         console.warn(
           `[sync] harness=opencode session=${initial.id} projection=${projectionName} failed`,
@@ -357,7 +359,7 @@ export function syncOpenCodeSessions(
           initial.id,
           `session:${initial.id}`,
           observedAt,
-          error,
+          failure,
           projectionName,
         );
         failed++;

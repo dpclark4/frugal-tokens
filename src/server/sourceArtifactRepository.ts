@@ -41,6 +41,17 @@ export type SourceArtifactProjectionRecord = {
   lastError?: string;
 };
 
+export type ArtifactImportFailure = {
+  name?: string;
+  message: string;
+};
+
+export function artifactImportFailure(cause: unknown): ArtifactImportFailure {
+  return cause instanceof Error
+    ? { name: cause.name, message: cause.message }
+    : { message: String(cause) };
+}
+
 function optional<T>(value: T | null): T | undefined {
   return value === null ? undefined : value;
 }
@@ -128,7 +139,7 @@ export class SourceArtifactRepository {
     sourceID: number,
     externalID: string,
     projectionName: string,
-    error: unknown,
+    failure: ArtifactImportFailure,
   ) {
     this.#prepare(`
       INSERT INTO artifact_import_projections (
@@ -139,7 +150,7 @@ export class SourceArtifactRepository {
     `).run(
       this.#sourceArtifactID(sourceID, externalID),
       projectionName,
-      error instanceof Error ? error.message : String(error),
+      failure.message,
     );
   }
 
@@ -188,7 +199,7 @@ export class SourceArtifactRepository {
     externalID: string,
     artifactPath: string,
     observedAt: number,
-    error: unknown,
+    failure: ArtifactImportFailure,
     projectionName = "conversation",
   ) {
     this.recordUnchangedArtifact(
@@ -197,7 +208,7 @@ export class SourceArtifactRepository {
       artifactPath,
       observedAt,
     );
-    this.recordProjectionError(sourceID, externalID, projectionName, error);
+    this.recordProjectionError(sourceID, externalID, projectionName, failure);
   }
 
   markArtifactsSeen(

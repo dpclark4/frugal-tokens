@@ -3,11 +3,15 @@ import type {
   ConversationTurnImport,
 } from "./conversationImportTypes.ts";
 import type {
+  ArtifactImportFailure,
   ProjectionCheckpoint,
   SourceArtifactMetadata,
   SourceArtifactProjectionRecord,
 } from "./sourceArtifactRepository.ts";
-import { SourceArtifactRepository } from "./sourceArtifactRepository.ts";
+import {
+  artifactImportFailure,
+  SourceArtifactRepository,
+} from "./sourceArtifactRepository.ts";
 import type { SessionSummary } from "../shared/sessionSchemas.ts";
 
 export type FileSessionCandidate = {
@@ -130,13 +134,12 @@ function assertAcyclicArtifactLineage(
   }
 }
 
-function failureCategory(error: unknown) {
-  if (error instanceof SyntaxError) return "invalid-json";
-  const message = error instanceof Error ? error.message : String(error);
-  if (message.includes("changed while it was being read")) {
+function failureCategory(failure: ArtifactImportFailure) {
+  if (failure.name === "SyntaxError") return "invalid-json";
+  if (failure.message.includes("changed while it was being read")) {
     return "changed-during-read";
   }
-  if (message.toLowerCase().includes("constraint")) {
+  if (failure.message.toLowerCase().includes("constraint")) {
     return "database-constraint";
   }
   return "import-error";
@@ -221,7 +224,7 @@ export async function syncFileSessions(options: {
   // connected family at a time after lineage has been resolved.
   const observedChecksums = new Map<string, string>();
   const metadata: SourceArtifactMetadata[] = [];
-  const metadataErrors = new Map<string, unknown>();
+  const metadataErrors = new Map<string, ArtifactImportFailure>();
 
   const readObservation = async (candidate: FileSessionCandidate) => {
     const bytes = Deno.readFileSync(candidate.path);
@@ -279,7 +282,8 @@ export async function syncFileSessions(options: {
         observedAt,
       );
     } catch (error) {
-      const category = failureCategory(error);
+      const failure = artifactImportFailure(error);
+      const category = failureCategory(failure);
       failureCategories[category] = (failureCategories[category] ?? 0) + 1;
       console.warn(
         `[sync] harness=${options.harness} source=${candidate.path} failed category=${category}`,
@@ -290,7 +294,7 @@ export async function syncFileSessions(options: {
         candidate.id,
         candidate.artifactPath,
         observedAt,
-        error,
+        failure,
       );
       result.failed++;
       continue;
@@ -303,7 +307,7 @@ export async function syncFileSessions(options: {
           ...options.familyProjection.metadata(observation),
         });
       } catch (error) {
-        metadataErrors.set(candidate.id, error);
+        metadataErrors.set(candidate.id, artifactImportFailure(error));
       }
       continue;
     }
@@ -348,6 +352,7 @@ export async function syncFileSessions(options: {
       );
       result.imported++;
     } catch (error) {
+      const failure = artifactImportFailure(error);
       console.warn(
         `[sync] harness=${options.harness} source=${candidate.path} projection=${projectionName} failed`,
         error,
@@ -356,7 +361,7 @@ export async function syncFileSessions(options: {
         sourceID,
         candidate.id,
         projectionName,
-        error,
+        failure,
       );
       result.failed++;
     }
@@ -369,12 +374,13 @@ export async function syncFileSessions(options: {
         options.repository.replaceSourceArtifactMetadata(sourceID, metadata);
       }
     } catch (error) {
+      const failure = artifactImportFailure(error);
       for (const candidate of candidates) {
         options.repository.recordProjectionError(
           sourceID,
           candidate.id,
           projectionName,
-          error,
+          failure,
         );
         result.failed++;
       }
@@ -495,12 +501,13 @@ export async function syncFileSessions(options: {
         }
         result.imported += projectedArtifacts.length;
       } catch (error) {
+        const failure = artifactImportFailure(error);
         for (const record of available) {
           options.repository.recordProjectionError(
             sourceID,
             record.externalID,
             projectionName,
-            error,
+            failure,
           );
           result.failed++;
         }
