@@ -2,6 +2,7 @@
   "nodeModulesDir": "auto",
   "minimumDependencyAge": 0,
   "imports": {
+    "@oxlint/plugins": "npm:@oxlint/plugins@1.79.0",
     "@tanstack/react-router": "npm:@tanstack/react-router@1.170.17",
     "@vitejs/plugin-react": "npm:@vitejs/plugin-react@6.0.3",
     "hono": "npm:hono@4.12.29",
@@ -9,6 +10,7 @@
     "hono/deno": "npm:hono@4.12.29/deno",
     "html-to-image": "npm:html-to-image@1.11.13",
     "lucide-react": "npm:lucide-react@1.25.0",
+    "oxlint": "npm:oxlint@1.79.0",
     "pretty-ms": "npm:pretty-ms@9.3.0",
     "react": "npm:react@19.2.7",
     "react/jsx-runtime": "npm:react@19.2.7/jsx-runtime",
@@ -45,6 +47,7 @@
   "tasks": {
     "setup": "deno install -g -A npm:@j178/prek && prek install",
     "check": "deno check src/server/main.ts src/client/main.tsx vite.config.ts",
+    "lint:oxlint": "deno run -A oxlint .",
     "test": "deno test --allow-env --allow-read --allow-write",
     "db:new": "deno run -A scripts/runDbmate.ts new",
     "db:migrate": "deno run --allow-env=FRUGAL_TOKENS_DATABASE_URL,HOME,USERPROFILE --allow-read --allow-write scripts/prepareDatabase.ts && deno run -A scripts/runDbmate.ts --no-dump-schema up",
