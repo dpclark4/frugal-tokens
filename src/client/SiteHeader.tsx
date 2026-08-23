@@ -46,23 +46,23 @@ export function SiteHeader({ active, action }: {
           Overview
         </a>
         {showSecondaryPages && (
-          <>
-            <a className={active === "old" ? "active" : undefined} href="/old">
-              Old
-            </a>
-            <a
-              className={active === "performance" ? "active" : undefined}
-              href="/performance"
-            >
-              Performance
-            </a>
-            <a
-              className={active === "tool-calls" ? "active" : undefined}
-              href="/tool-calls"
-            >
-              Tool calls
-            </a>
-          </>
+          <a className={active === "old" ? "active" : undefined} href="/old">
+            Old
+          </a>
+        )}
+        <a
+          className={active === "performance" ? "active" : undefined}
+          href="/performance"
+        >
+          Performance
+        </a>
+        {showSecondaryPages && (
+          <a
+            className={active === "tool-calls" ? "active" : undefined}
+            href="/tool-calls"
+          >
+            Tool calls
+          </a>
         )}
       </nav>
       {action && <div className="site-header-action">{action}</div>}
