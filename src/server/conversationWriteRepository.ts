@@ -210,6 +210,7 @@ export class ConversationWriteRepository {
       const conversationIDs = new Map<string, number>();
       const sourceArtifactIDs = new Map<string, number>();
       for (const value of values) {
+        // SAFETY: The static SQL projection and migrated schema define this row contract.
         const sourceSession = this.#prepare(`
           SELECT id FROM source_sessions
           WHERE source_id = ? AND external_id = ?
@@ -221,6 +222,7 @@ export class ConversationWriteRepository {
         sourceArtifactIDs.set(value.externalID, sourceSessionID);
         this.#preserveAuthoritativeImportedTitle(sourceSessionID, value);
         const conversationID = Number(
+          // SAFETY: The static SQL projection and migrated schema define this row contract.
           (this.#prepare(`
           INSERT INTO conversations (
             source_id, external_id, title, working_directory, updated_at,
@@ -442,6 +444,7 @@ export class ConversationWriteRepository {
     try {
       const sourceArtifactIDs = new Map<string, number>();
       for (const artifact of ordered) {
+        // SAFETY: The static SQL projection and migrated schema define this row contract.
         const row = this.#prepare(`
           SELECT id FROM source_sessions
           WHERE source_id = ? AND external_id = ?
@@ -463,12 +466,14 @@ export class ConversationWriteRepository {
       const sourcePlaceholders = sourceArtifactIDValues.map(() => "?").join(
         ", ",
       );
+      // SAFETY: The static SQL projection and migrated schema define this row contract.
       const oldConversationIDs = (this.#prepare(`
         SELECT DISTINCT conversation_id AS id FROM conversation_branches
         WHERE source_session_id IN (${sourcePlaceholders})
       `).all(...sourceArtifactIDValues) as Array<{ id: number }>).map((row) =>
         Number(row.id)
       );
+      // SAFETY: The static SQL projection and migrated schema define this row contract.
       const target = this.#prepare(`
         SELECT id FROM conversations WHERE source_id = ? AND external_id = ?
       `).get(family.sourceID, family.externalID) as { id: number } | undefined;
@@ -486,6 +491,7 @@ export class ConversationWriteRepository {
         Array<{ modelCallID: number; toolEventID: number }>
       >();
       for (const subagent of family.subagents ?? []) {
+        // SAFETY: The static SQL projection and migrated schema define this row contract.
         const sourceArtifact = this.#prepare(`
           SELECT id FROM source_sessions
           WHERE source_id = ? AND external_id = ?
@@ -500,6 +506,7 @@ export class ConversationWriteRepository {
           Number(sourceArtifact.id),
         );
         const subagentConversationID = Number(
+          // SAFETY: The static SQL projection and migrated schema define this row contract.
           (this.#prepare(`
           INSERT INTO conversations (
             source_id, external_id, title, working_directory, updated_at,
@@ -591,6 +598,7 @@ export class ConversationWriteRepository {
       }
 
       const conversationID = Number(
+        // SAFETY: The static SQL projection and migrated schema define this row contract.
         (this.#prepare(`
         INSERT INTO conversations (
           source_id, external_id, title, working_directory, updated_at,
@@ -617,6 +625,7 @@ export class ConversationWriteRepository {
       const branchIDs = new Map<string, number>();
       for (const artifact of ordered) {
         const branchID = Number(
+          // SAFETY: The static SQL projection and migrated schema define this row contract.
           (this.#prepare(`
           INSERT INTO conversation_branches (
             conversation_id, source_session_id, external_id,
@@ -696,6 +705,7 @@ export class ConversationWriteRepository {
         nativeMetadata?: unknown;
       }) =>
         Number(
+          // SAFETY: The static SQL projection and migrated schema define this row contract.
           (this.#prepare(`
         INSERT INTO conversation_entries (
           conversation_id, parent_entry_id, producer_model_call_id,
@@ -902,6 +912,7 @@ export class ConversationWriteRepository {
             turnOrdinal++;
             canonicalTurnValues.push({ ...turn, number: turnOrdinal });
             const turnID: number = Number(
+              // SAFETY: The static SQL projection and migrated schema define this row contract.
               (this.#prepare(`
               INSERT INTO conversation_turns (
                 conversation_id, parent_turn_id, source_turn_id, ordinal,
@@ -945,6 +956,7 @@ export class ConversationWriteRepository {
               if (callID === undefined) {
                 callOrdinal++;
                 callID = Number(
+                  // SAFETY: The static SQL projection and migrated schema define this row contract.
                   (this.#prepare(`
                   INSERT INTO conversation_model_calls (
                     conversation_id, turn_id, source_call_id, ordinal,
@@ -1008,6 +1020,7 @@ export class ConversationWriteRepository {
               });
               call.activity.tools.forEach((tool, index) => {
                 const toolEventID = Number(
+                  // SAFETY: The static SQL projection and migrated schema define this row contract.
                   (this.#prepare(`
                   INSERT INTO conversation_tool_events (
                     model_call_id, source_tool_id, ordinal, name, status,
@@ -1260,6 +1273,7 @@ export class ConversationWriteRepository {
       }
 
       for (const [childExternalID, launches] of launchTools) {
+        // SAFETY: The static SQL projection and migrated schema define this row contract.
         const child = this.#prepare(`
           SELECT id FROM conversations
           WHERE source_id = ? AND external_id = ?
@@ -1423,6 +1437,7 @@ export class ConversationWriteRepository {
       parentExternalID: undefined,
     }]);
     const branchID = Number(
+      // SAFETY: The static SQL projection and migrated schema define this row contract.
       (this.#prepare(`
       INSERT INTO conversation_branches (
         conversation_id, source_session_id, external_id,
@@ -1457,6 +1472,7 @@ export class ConversationWriteRepository {
       sourceOrder?: number;
     }) => {
       const entryID = Number(
+        // SAFETY: The static SQL projection and migrated schema define this row contract.
         (this.#prepare(`
         INSERT INTO conversation_entries (
           conversation_id, parent_entry_id, producer_model_call_id,
@@ -1506,6 +1522,7 @@ export class ConversationWriteRepository {
 
     for (const turn of value.session.turns) {
       const turnID: number = Number(
+        // SAFETY: The static SQL projection and migrated schema define this row contract.
         (this.#prepare(`
         INSERT INTO conversation_turns (
           conversation_id, parent_turn_id, source_turn_id, ordinal, started_at,
@@ -1540,6 +1557,7 @@ export class ConversationWriteRepository {
       for (const call of turn.calls) {
         callOrdinal++;
         const callID = Number(
+          // SAFETY: The static SQL projection and migrated schema define this row contract.
           (this.#prepare(`
           INSERT INTO conversation_model_calls (
             conversation_id, turn_id, source_call_id, ordinal,
@@ -1610,6 +1628,7 @@ export class ConversationWriteRepository {
 
         call.activity.tools.forEach((tool, index) => {
           const toolEventID = Number(
+            // SAFETY: The static SQL projection and migrated schema define this row contract.
             (this.#prepare(`
             INSERT INTO conversation_tool_events (
               model_call_id, source_tool_id, ordinal, name, status,
@@ -1723,6 +1742,7 @@ export class ConversationWriteRepository {
     knownTurnIDs?: Map<number, number>,
     knownPredecessors?: Map<number, number | undefined>,
   ) {
+    // SAFETY: The static SQL branch projects the call and turn columns below.
     const callRows = knownCallIDs === undefined
       ? this.#prepare(`
         SELECT call.id, call.call_within_turn, turn.id AS turn_id,
@@ -1850,6 +1870,7 @@ export class ConversationWriteRepository {
   }
 
   #sourceHarness(sourceID: number) {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const row = this.#prepare(
       "SELECT harness FROM sources WHERE id = ?",
     ).get(sourceID) as { harness: SessionSummary["harness"] } | undefined;

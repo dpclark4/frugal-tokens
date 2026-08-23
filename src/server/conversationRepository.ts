@@ -325,6 +325,7 @@ export class ConversationRepository {
   constructor(private db: DatabaseSync) {}
 
   listHarnesses(): Harness[] {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     return (this.db.prepare(`
       SELECT DISTINCT so.harness
       FROM sources so
@@ -377,6 +378,7 @@ export class ConversationRepository {
     const predicates = candidates.map(() =>
       "(so.harness = ? AND COALESCE(c.public_id, c.external_id) = ?)"
     ).join(" OR ");
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.db.prepare(`
       SELECT so.harness,
         COALESCE(c.public_id, c.external_id) AS public_id,
@@ -403,6 +405,7 @@ export class ConversationRepository {
   }
 
   getSession(harness: Harness, id: string): SessionDetail | undefined {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const row = this.db.prepare(`
       SELECT ${conversationColumns}
       FROM conversations c
@@ -421,6 +424,7 @@ export class ConversationRepository {
   }
 
   listUsageCalls(startedAt?: number, harness?: Harness): UsageCall[] {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.db.prepare(`
       WITH RECURSIVE tree(conversation_id, root_id, parent_id) AS (
         SELECT c.id, c.id, NULL
@@ -586,6 +590,7 @@ export class ConversationRepository {
     endedAt: number,
     harness?: Harness,
   ): ToolCallObservation[] {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.db.prepare(`
       SELECT tool.model_call_id, tool.name, tool.input_preview,
         tool.started_at AS tool_started_at,
@@ -638,6 +643,7 @@ export class ConversationRepository {
       root_started_at: number | null;
       root_updated_at: number;
     };
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.db.prepare(`
       WITH RECURSIVE tree(conversation_id, root_id) AS (
         SELECT c.id, c.id FROM conversations c
@@ -727,6 +733,7 @@ export class ConversationRepository {
       root_started_at: number | null;
       root_updated_at: number;
     };
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.db.prepare(`
       WITH RECURSIVE tree(conversation_id, root_id) AS (
         SELECT c.id, c.id FROM conversations c
@@ -816,6 +823,7 @@ export class ConversationRepository {
       missed_tokens: number;
       unpriced: number;
     };
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.db.prepare(`
       WITH RECURSIVE tree(conversation_id, root_id) AS (
         SELECT c.id, c.id FROM conversations c
@@ -907,6 +915,7 @@ export class ConversationRepository {
     };
     const parameters = [startedAt, harness ?? null, harness ?? null] as const;
     const rows = measured("root-rollups", () =>
+      // SAFETY: The static SQL projection and migrated schema define this row contract.
       this.db.prepare(`
         SELECT c.id, ${effectiveConversationTitle} AS title, so.harness,
           c.started_at, c.ended_at, cr.overview_json,
@@ -932,6 +941,7 @@ export class ConversationRepository {
       }>);
     const spendRows = includeSubagentSpend
       ? measured("descendant-spend", () =>
+        // SAFETY: The static SQL projection and migrated schema define this row contract.
         this.db.prepare(`
         SELECT c.id, COALESCE((
           WITH RECURSIVE descendants(id) AS (
@@ -968,6 +978,7 @@ export class ConversationRepository {
       ? measured(
         "root-execution-intervals",
         () =>
+          // SAFETY: The static SQL projection and migrated schema define this row contract.
           this.db.prepare(`
           WITH selected_roots(id) AS MATERIALIZED (
             SELECT c.id
@@ -1058,6 +1069,7 @@ export class ConversationRepository {
     startedAt: number,
     harness?: Harness,
   ): StoredSessionDistributionRollup[] {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.db.prepare(`
       SELECT c.id, ${effectiveConversationTitle} AS title, so.harness,
         cr.overview_json,
@@ -1102,6 +1114,7 @@ export class ConversationRepository {
     startedAt?: number,
     harness?: Harness,
   ): StoredUsageRollup[] {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.db.prepare(`
       SELECT c.id, COALESCE(c.started_at, c.updated_at) AS session_started_at,
         cr.uncached_input_tokens + cr.cache_read_tokens +
@@ -1147,6 +1160,7 @@ export class ConversationRepository {
     startedAt?: number,
     harness?: Harness,
   ): StoredSubagentUsage[] {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.db.prepare(`
       WITH RECURSIVE tree(conversation_id, root_id, depth) AS (
         SELECT c.id, c.id, 0
@@ -1207,6 +1221,7 @@ export class ConversationRepository {
     startedAt?: number,
     harness?: Harness,
   ): InitialInputSample[] {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.db.prepare(`
       SELECT so.harness,
         COALESCE(c.started_at, c.updated_at) AS session_started_at,
@@ -1295,6 +1310,7 @@ export class ConversationRepository {
 
   #rootCount(harness?: Harness, missFilters?: SessionMissFilter[]) {
     const filter = this.#rootFilter(missFilters);
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const row = this.db.prepare(`
       ${filter.cte}
       SELECT COUNT(*) AS count
@@ -1321,6 +1337,7 @@ export class ConversationRepository {
     offset: number,
   ): ConversationRow[] {
     const filter = this.#rootFilter(missFilters);
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     return this.db.prepare(`
       ${filter.cte}
       SELECT ${conversationColumns}
@@ -1350,6 +1367,7 @@ export class ConversationRepository {
   #storedCacheIssues(rootIDs: number[]): Map<number, CacheIssue[]> {
     if (rootIDs.length === 0) return new Map();
     const placeholders = rootIDs.map(() => "?").join(", ");
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.db.prepare(`
       WITH RECURSIVE tree(conversation_id, root_id, nested) AS (
         SELECT c.id, c.id, 0 FROM conversations c
@@ -1449,6 +1467,7 @@ export class ConversationRepository {
   }
 
   #sourcePath(conversationID: number) {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const row = this.db.prepare(`
       SELECT ss.artifact_path
       FROM conversation_branches branch
@@ -1465,6 +1484,7 @@ export class ConversationRepository {
     const calls = this.#conversationCalls(row.id);
     const callIDs = calls.map((call) => call.id);
     const placeholders = callIDs.map(() => "?").join(", ");
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const contentRows = callIDs.length === 0 ? [] : this.db.prepare(`
       SELECT producer_model_call_id AS model_call_id,
         COALESCE(content_kind, kind) AS kind, content_preview,
@@ -1479,6 +1499,7 @@ export class ConversationRepository {
       original_length: number | null;
       truncated: number;
     }>;
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const tools = callIDs.length === 0 ? [] : this.db.prepare(`
       SELECT tool.id, tool.model_call_id, tool.name, tool.status,
         tool.started_at, tool.completed_at, tool.input_preview,
@@ -1508,6 +1529,7 @@ export class ConversationRepository {
     }>;
     const turnIDs = [...new Set(calls.map((call) => call.turn_id))];
     const turnPlaceholders = turnIDs.map(() => "?").join(", ");
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const inputs = turnIDs.length === 0 ? [] : this.db.prepare(`
       SELECT entry.turn_id, COALESCE(entry.content_kind, entry.kind) AS kind,
         entry.content_preview,
@@ -1650,6 +1672,7 @@ export class ConversationRepository {
       return hydrated;
     });
 
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const contextRows = this.db.prepare(`
       SELECT entry.native_metadata_json, occurrence.source_order_start,
         occurrence.branch_id
@@ -1667,6 +1690,7 @@ export class ConversationRepository {
     }>;
     const sessionContextEvents: ContextEvent[] = [];
     for (const contextRow of contextRows) {
+      // SAFETY: This column contains ConversationContextEventImport JSON written by the projection owner.
       const raw = JSON.parse(contextRow.native_metadata_json) as
         & ContextEvent
         & {
@@ -1695,6 +1719,7 @@ export class ConversationRepository {
         ];}
     }
 
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const children = this.db.prepare(`
       SELECT ${conversationColumns}
       FROM conversation_subagent_launches launch
@@ -1743,6 +1768,7 @@ export class ConversationRepository {
   }
 
   #conversationBranches(conversationID: number) {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     return this.db.prepare(`
       SELECT branch.id, branch.external_id, branch.updated_at,
         parent.external_id AS parent_external_id,
@@ -1771,6 +1797,7 @@ export class ConversationRepository {
   // The transcript remains chronological by default; branch topology lets the
   // client focus one conversational path without duplicating stored usage.
   #conversationCalls(conversationID: number): CallRow[] {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     return this.db.prepare(`
       WITH ordered_path_calls AS (
         SELECT occurrence.*,
@@ -1843,6 +1870,7 @@ export class ConversationRepository {
   }
 
   #parentPublicID(conversationID: number) {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const row = this.db.prepare(`
       SELECT COALESCE(parent.public_id, parent.external_id) AS id
       FROM conversation_subagent_launches launch

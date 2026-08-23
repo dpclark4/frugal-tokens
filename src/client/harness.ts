@@ -15,6 +15,20 @@ const harnesses = {
   pi: { icon: piIcon, name: "PI" },
 } satisfies Record<Harness, { icon: string; name: string }>;
 
+export function parseHarnessFilter(value: string): Harness | "all" | undefined {
+  switch (value) {
+    case "all":
+    case "claude-code":
+    case "codex":
+    case "cursor":
+    case "opencode":
+    case "pi":
+      return value;
+    default:
+      return undefined;
+  }
+}
+
 export function harnessName(harness: Harness) {
   return harnesses[harness].name;
 }

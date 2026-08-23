@@ -136,18 +136,21 @@ export function SessionInputChart({ usage }: { usage: UsageResponse }) {
                   content={(props) => (
                     <SessionInputTooltip
                       active={props.active}
-                      payload={props.payload as Array<
-                        {
-                          payload?: {
-                            date: string;
-                            endDate?: string;
-                            median: number;
-                            p90: number;
-                            average: number;
-                            sessions: number;
-                          };
-                        }
-                      >}
+                      payload={
+                        /* SAFETY: Recharts wraps rows from this chart data in tooltip payload entries. */
+                        props.payload as Array<
+                          {
+                            payload?: {
+                              date: string;
+                              endDate?: string;
+                              median: number;
+                              p90: number;
+                              average: number;
+                              sessions: number;
+                            };
+                          }
+                        >
+                      }
                     />
                   )}
                 />

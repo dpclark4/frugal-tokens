@@ -375,7 +375,10 @@ export function SessionDiagnostics({ data }: { data: SessionDiagnosticsData }) {
                   content={(props) => (
                     <SessionTooltip
                       active={props.active}
-                      payload={props.payload as Array<{ payload?: ChartPoint }>}
+                      payload={
+                        /* SAFETY: Recharts wraps rows from this chart data in tooltip payload entries. */
+                        props.payload as Array<{ payload?: ChartPoint }>
+                      }
                     />
                   )}
                 />

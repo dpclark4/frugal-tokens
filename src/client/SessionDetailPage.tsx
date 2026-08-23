@@ -944,7 +944,12 @@ function CacheMissBadges({
   useEffect(() => {
     if (!openKind) return;
     const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) {
+      if (
+        !containerRef.current?.contains(
+          /* SAFETY: Document pointer events target DOM nodes accepted by contains. */ event
+            .target as Node,
+        )
+      ) {
         setOpenKind(undefined);
       }
     };
@@ -1441,7 +1446,9 @@ function TurnBlock({
       className={`sd-turn${collapsed ? " is-collapsed" : ""}`}
       id={id}
       style={turnColor
-        ? ({ "--sd-turn-color": turnColor } as CSSProperties)
+        ? (/* SAFETY: React accepts this owned CSS custom property at runtime. */ {
+          "--sd-turn-color": turnColor,
+        } as CSSProperties)
         : undefined}
     >
       <div
@@ -1775,7 +1782,12 @@ function BranchControl({
   useEffect(() => {
     if (!open) return;
     const close = (event: MouseEvent) => {
-      if (!container.current?.contains(event.target as Node)) setOpen(false);
+      if (
+        !container.current?.contains(
+          /* SAFETY: Document pointer events target DOM nodes accepted by contains. */ event
+            .target as Node,
+        )
+      ) setOpen(false);
     };
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOpen(false);
@@ -1865,9 +1877,12 @@ function BranchControl({
                   className={`sd-branch-path${
                     selected?.id === branch.id ? " is-selected" : ""
                   }`}
-                  style={{
-                    "--sd-branch-offset": `${depth * 12}px`,
-                  } as CSSProperties}
+                  style={
+                    // SAFETY: React accepts this owned CSS custom property at runtime.
+                    {
+                      "--sd-branch-offset": `${depth * 12}px`,
+                    } as CSSProperties
+                  }
                   onClick={() => {
                     onSelect(branch.id);
                     setOpen(false);
@@ -2024,7 +2039,12 @@ function WorkBlocks({ workTime }: { workTime: WorkTimeSummary }) {
   useEffect(() => {
     if (!open) return;
     const closeOnOutsidePointer = (event: PointerEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+      if (
+        !containerRef.current?.contains(
+          /* SAFETY: Document pointer events target DOM nodes accepted by contains. */ event
+            .target as Node,
+        )
+      ) setOpen(false);
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") setOpen(false);
@@ -2525,7 +2545,10 @@ function Metadata({
             <select
               value={cacheTtl}
               onChange={(event) =>
-                onCacheTtlChange(event.target.value as "5m" | "1h")}
+                onCacheTtlChange(
+                  /* SAFETY: The cache TTL select renders only 5m and 1h. */ event
+                    .target.value as "5m" | "1h",
+                )}
             >
               <option value="5m">5 minutes</option>
               <option value="1h">1 hour</option>
@@ -2649,7 +2672,9 @@ export function SessionDetailPage() {
   const navigate = route.useNavigate();
   const selectedModel = model === "recorded" ||
       counterfactualModelIDs.includes(
-        model as typeof counterfactualModelIDs[number],
+        /* SAFETY: The model value comes from counterfactualModelIDs options. */ model as typeof counterfactualModelIDs[
+          number
+        ],
       )
     ? model
     : "recorded";

@@ -65,7 +65,12 @@ export function OverviewToolbar({
   useEffect(() => {
     if (!shareOpen) return;
     const closeOnOutsideClick = (event: PointerEvent) => {
-      if (!shareRef.current?.contains(event.target as Node)) {
+      if (
+        !shareRef.current?.contains(
+          /* SAFETY: Document pointer events target DOM nodes accepted by contains. */ event
+            .target as Node,
+        )
+      ) {
         setShareOpen(false);
       }
     };
@@ -87,7 +92,11 @@ export function OverviewToolbar({
           aria-label="Overview range"
           value={range}
           onChange={(event) =>
-            onRangeChange(Number(event.target.value) as OverviewRange)}
+            onRangeChange(
+              /* SAFETY: The range select renders only 30 and 90. */ Number(
+                event.target.value,
+              ) as OverviewRange,
+            )}
         >
           <option value={30}>30D</option>
           <option value={90}>90D</option>
@@ -98,7 +107,10 @@ export function OverviewToolbar({
           aria-label="Harness"
           value={harness}
           onChange={(event) =>
-            onHarnessChange(event.target.value as OverviewHarness)}
+            onHarnessChange(
+              /* SAFETY: The rendered harness options exhaust OverviewHarness. */ event
+                .target.value as OverviewHarness,
+            )}
         >
           <HarnessOptions harnesses={harnesses} />
         </select>

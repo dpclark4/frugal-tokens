@@ -6,6 +6,7 @@ import type {
 } from "../shared/sessionSchemas.ts";
 import { getHarnesses, getToolCalls } from "./api.ts";
 import { HarnessOptions } from "./HarnessOptions.tsx";
+import { parseHarnessFilter } from "./harness.ts";
 import { SiteHeader } from "./SiteHeader.tsx";
 
 const route = getRouteApi("/tool-calls");
@@ -33,12 +34,16 @@ export function ToolCallsPage() {
     let active = true;
     setData(undefined);
     setError(undefined);
-    getToolCalls(search.range, search.harness, search.expanded).then((result) => {
-      if (active) setData(result);
-    }).catch((reason) => {
+    getToolCalls(search.range, search.harness, search.expanded).then(
+      (result) => {
+        if (active) setData(result);
+      },
+    ).catch((reason) => {
       if (active) {
         setError(
-          reason instanceof Error ? reason.message : "Unable to load tool calls",
+          reason instanceof Error
+            ? reason.message
+            : "Unable to load tool calls",
         );
       }
     });
@@ -84,8 +89,10 @@ export function ToolCallsPage() {
             <span>Harness</span>
             <select
               value={search.harness}
-              onChange={(event) =>
-                update({ harness: event.target.value as typeof search.harness })}
+              onChange={(event) => {
+                const harness = parseHarnessFilter(event.target.value);
+                if (harness !== undefined) update({ harness });
+              }}
             >
               <HarnessOptions harnesses={harnesses} />
             </select>
@@ -99,7 +106,11 @@ export function ToolCallsPage() {
       {data && (
         <section className="tool-calls-panel">
           {data.tools.length === 0
-            ? <div className="tool-calls-message">No tool calls in this range.</div>
+            ? (
+              <div className="tool-calls-message">
+                No tool calls in this range.
+              </div>
+            )
             : (
               <div className="tool-calls-table-wrap">
                 <table className="tool-calls-table">
@@ -107,9 +118,12 @@ export function ToolCallsPage() {
                     <col className="tool-column" />
                     <col className="calls-column" />
                     <col className="ratio-column" />
-                    {Array.from({ length: 6 }, (_, index) => (
-                      <col className="runtime-column" key={index} />
-                    ))}
+                    {Array.from(
+                      { length: 6 },
+                      (_, index) => (
+                        <col className="runtime-column" key={index} />
+                      ),
+                    )}
                   </colgroup>
                   <thead>
                     <tr>
@@ -146,7 +160,9 @@ export function ToolCallsPage() {
                         <td>
                           <span className="call-count-stack">
                             <strong>{integer.format(tool.count)} tool</strong>
-                            <small>{integer.format(tool.modelCalls)} model</small>
+                            <small>
+                              {integer.format(tool.modelCalls)} model
+                            </small>
                           </span>
                         </td>
                         <td>{decimal.format(tool.callsPerModelCall)}</td>

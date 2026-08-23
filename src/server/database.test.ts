@@ -33,6 +33,7 @@ Deno.test("opens an archive database with the required SQLite settings", () => {
   try {
     const first = openArchiveDatabase(path);
     migrateTestDatabase(first);
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const tables = first.prepare(`
       SELECT COUNT(*) AS count
       FROM sqlite_schema

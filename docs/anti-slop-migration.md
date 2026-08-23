@@ -24,11 +24,9 @@ Initial state:
 
 Current state:
 
-- 139 findings across 33 files and 1 ungated anti-slop rule in the current
-  migration scope
-- `no-unknown-returns`, `no-known-value-widening`, `no-unsafe-dictionary-type`,
-  `no-unknown-parameters`, `no-shape-in-symbol-names`, `no-runtime-typeof`, and
-  `no-conditional-empty-object-spread` are clean and enforced by the gate
+- 0 anti-slop findings and 0 ungated anti-slop rules in the current migration
+  scope
+- All configured anti-slop rules are clean and enforced by the gate
 - The dictionary migration also reduced overlapping findings:
   `require-safety-comment-for-type-assertion` from 173 to 159,
   `no-runtime-typeof` from 103 to 92, and `no-unknown-parameters` from 60 to 55
@@ -50,16 +48,15 @@ Current state:
   repositories, and analytics cleared all 146 scoped
   `no-conditional-empty-object-spread` findings while preserving absent optional
   properties.
+- Boundary parsing, inference, and named transient fields removed unnecessary
+  assertions; remaining boundary assertions now document their checked
+  invariants, clearing all 139 scoped assertion findings.
 
-Current scoped rule counts:
-
-| Rule                                        | Findings |
-| ------------------------------------------- | -------: |
-| `require-safety-comment-for-type-assertion` |      139 |
+Current scoped rule counts: none.
 
 | Rule                                        | Initial findings | Files | Status             |
 | ------------------------------------------- | ---------------: | ----: | ------------------ |
-| `require-safety-comment-for-type-assertion` |              173 |    41 | Not started        |
+| `require-safety-comment-for-type-assertion` |              173 |    41 | Complete and gated |
 | `no-conditional-empty-object-spread`        |              166 |    24 | Complete and gated |
 | `no-shape-in-symbol-names`                  |              130 |    15 | Complete and gated |
 | `no-runtime-typeof`                         |              103 |    23 | Complete and gated |
@@ -169,9 +166,9 @@ Expected rule reduced by this unit:
 Do this last because earlier schema and inference work should remove assertions.
 Do not add generic safety comments mechanically.
 
-- [ ] Remove assertions made unnecessary by parsing or inference
-- [ ] Replace assertion-based narrowing with domain constructors where available
-- [ ] Add `SAFETY:` comments only when a concrete checked invariant remains
+- [x] Remove assertions made unnecessary by parsing or inference
+- [x] Replace assertion-based narrowing with domain constructors where available
+- [x] Add `SAFETY:` comments only when a concrete checked invariant remains
 
 Expected rule reduced by this unit:
 
@@ -179,10 +176,11 @@ Expected rule reduced by this unit:
 
 ### 6. Enforcement
 
-- [ ] Reach zero anti-slop findings
-- [ ] Run Deno lint, type checks, and tests
+- [x] Reach zero anti-slop findings
+- [x] Run Deno lint, type checks, and tests
 - [x] Add the rule-level Oxlint gate to `prek.toml`
-- [ ] Decide whether `deno task check` should include Oxlint
+- [x] Keep Oxlint as its dedicated task and `prek` gate rather than adding it to
+      the type-check-only `deno task check`
 
 The gate uses `.oxlintrc.prek.json`. It enforces every rule that has no known
 findings, while `.oxlintrc.json` remains the full migration target. Promote a
@@ -206,11 +204,4 @@ Recommended workflow for each work unit:
 
 ## Current hotspots
 
-| Findings | File                                        |
-| -------: | ------------------------------------------- |
-|       63 | `src/server/conversationRepository.ts`      |
-|       32 | `src/server/opencodeRepository.ts`          |
-|       30 | `src/server/main.ts`                        |
-|       28 | `src/server/codexRepository.ts`             |
-|       26 | `src/server/claudeCodeRepository.ts`        |
-|       25 | `src/server/conversationWriteRepository.ts` |
+No active anti-slop hotspots remain.

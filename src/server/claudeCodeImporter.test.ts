@@ -88,6 +88,7 @@ Deno.test("imports a Claude Code root and namespaced child tree", async () => {
       detail.turns[0].calls[0].activity.tools[0].childSessionID,
       "child",
     );
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const childIdentity = db.prepare(`
       SELECT child.external_id, child.public_id
       FROM conversation_subagent_launches launch

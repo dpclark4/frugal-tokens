@@ -231,9 +231,12 @@ export function InitialInputChart({
                   content={(props) => (
                     <InitialInputTooltip
                       active={props.active}
-                      payload={props.payload as Array<{
-                        payload?: ChartRow;
-                      }>}
+                      payload={
+                        /* SAFETY: Recharts wraps rows from this chart data in tooltip payload entries. */
+                        props.payload as Array<{
+                          payload?: ChartRow;
+                        }>
+                      }
                       enabledHarnesses={enabledHarnesses}
                       label={label}
                     />

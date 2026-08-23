@@ -62,6 +62,7 @@ Deno.test("canonical file import skips unchanged artifacts and preserves last-go
       repository: sources,
       discover,
       normalize: (candidate, text) => {
+        // SAFETY: The test importer serializes this fixture with title and updatedAt fields.
         const value = JSON.parse(text) as { title: string; updatedAt: number };
         return {
           summary: {

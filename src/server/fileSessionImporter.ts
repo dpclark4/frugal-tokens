@@ -67,11 +67,9 @@ type ProjectionResult = {
 };
 
 function checksum(bytes: Uint8Array) {
-  const buffer = bytes.buffer.slice(
-    bytes.byteOffset,
-    bytes.byteOffset + bytes.byteLength,
-  ) as ArrayBuffer;
-  return crypto.subtle.digest("SHA-256", buffer).then((digest) =>
+  return crypto.subtle.digest("SHA-256", Uint8Array.from(bytes)).then((
+    digest,
+  ) =>
     Array.from(
       new Uint8Array(digest),
       (byte) => byte.toString(16).padStart(2, "0"),

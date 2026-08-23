@@ -10,7 +10,7 @@ import {
   getTitleGenerationSetting,
   setTitleGenerationSetting,
 } from "../api.ts";
-import { harnessIcon, harnessName } from "../harness.ts";
+import { harnessIcon, harnessName, parseHarnessFilter } from "../harness.ts";
 import { HarnessOptions } from "../HarnessOptions.tsx";
 import type { OverviewHarness } from "./OverviewToolbar.tsx";
 import "./RecentSessionsTable.css";
@@ -538,8 +538,10 @@ export function RecentSessionsTable({
             <span className="recent-sessions-control-label">Harness</span>
             <select
               value={harness}
-              onChange={(event) =>
-                onHarnessChange(event.target.value as OverviewHarness)}
+              onChange={(event) => {
+                const selected = parseHarnessFilter(event.target.value);
+                if (selected !== undefined) onHarnessChange(selected);
+              }}
             >
               <HarnessOptions harnesses={harnesses} />
             </select>

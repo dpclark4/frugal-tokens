@@ -51,6 +51,7 @@ function digest(values: unknown[]) {
 // is the cheap hint; changed trees still receive a full content checksum below.
 function aggregates(db: DatabaseSync, table: "message" | "part") {
   return new Map(
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     (db.prepare(`
       SELECT session_id, COUNT(*) AS row_count
       FROM ${table}
@@ -90,6 +91,7 @@ function candidate(
 }
 
 function discover(db: DatabaseSync) {
+  // SAFETY: The static SQL projection and migrated schema define this row contract.
   const sessions = db.prepare(`
     SELECT ${sessionColumns} FROM session ORDER BY id
   `).all() as OpenCodeSessionRow[];
@@ -124,6 +126,7 @@ function placeholders(values: unknown[]) {
 }
 
 function snapshot(db: DatabaseSync, rootID: string): OpenCodeSnapshot {
+  // SAFETY: The static SQL projection and migrated schema define this row contract.
   const sessions = db.prepare(`
     WITH RECURSIVE tree(id) AS (
       SELECT id FROM session WHERE id = ?
@@ -139,6 +142,7 @@ function snapshot(db: DatabaseSync, rootID: string): OpenCodeSnapshot {
   }
   const sessionIDs = sessions.map((session) => session.id);
   const ids = placeholders(sessionIDs);
+  // SAFETY: The static SQL projection and migrated schema define this row contract.
   const messages = db.prepare(`
     -- OpenCode can store enormous generated diffs in message.summary. The
     -- archive does not use that field, so keep it out of normalization and the checksum.
@@ -147,6 +151,7 @@ function snapshot(db: DatabaseSync, rootID: string): OpenCodeSnapshot {
     FROM message WHERE session_id IN (${ids})
     ORDER BY session_id, time_created, id
   `).all(...sessionIDs) as OpenCodeMessageRow[];
+  // SAFETY: The static SQL projection and migrated schema define this row contract.
   const parts = db.prepare(`
     SELECT id, message_id, session_id, time_created, time_updated, data
     FROM part WHERE session_id IN (${ids})

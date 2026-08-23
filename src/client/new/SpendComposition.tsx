@@ -325,7 +325,10 @@ function CompositionChart(
             content={(props) => (
               <CompositionTooltip
                 active={props.active}
-                payload={props.payload as Array<{ payload?: ChartRow }>}
+                payload={
+                  /* SAFETY: Recharts wraps rows from this chart data in tooltip payload entries. */
+                  props.payload as Array<{ payload?: ChartRow }>
+                }
                 data={data}
                 metric={metric}
               />

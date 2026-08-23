@@ -4,15 +4,18 @@ import claudeIcon from "./assets/icons/claude.svg";
 import grokIcon from "./assets/icons/grok-dark.svg";
 import moonshotIcon from "./assets/icons/moonshot.svg";
 
-const providerIcons = {
-  anthropic: claudeIcon,
-  openai: chatGPTIcon,
-  xai: grokIcon,
-  moonshot: moonshotIcon,
-} as const;
-
 export function modelIcon(model: string) {
   const provider = modelMetadata(model).provider;
-  const source = providerIcons[provider as keyof typeof providerIcons];
-  return source ? { provider, source } : undefined;
+  switch (provider) {
+    case "anthropic":
+      return { provider, source: claudeIcon };
+    case "openai":
+      return { provider, source: chatGPTIcon };
+    case "xai":
+      return { provider, source: grokIcon };
+    case "moonshot":
+      return { provider, source: moonshotIcon };
+    default:
+      return undefined;
+  }
 }

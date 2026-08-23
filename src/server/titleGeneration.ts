@@ -37,6 +37,7 @@ const codexOutputEventSchema = z.object({
 });
 
 function setting(db: DatabaseSync, key: string) {
+  // SAFETY: The static SQL projection and migrated schema define this row contract.
   return (db.prepare("SELECT value FROM app_settings WHERE key = ?").get(key) as
     | { value: string }
     | undefined)?.value;
@@ -70,6 +71,7 @@ function candidateRows(
 ): Candidate[] {
   const enabledAt = Number(setting(db, enabledAtKey) ?? Date.now());
   const comparison = period === "backfill" ? "<" : ">=";
+  // SAFETY: The static SQL projection and migrated schema define this row contract.
   return db.prepare(`
     SELECT ss.id, so.harness, c.title AS imported_title,
       (
@@ -110,6 +112,7 @@ function candidateRows(
 
 function completedBackfillCount(db: DatabaseSync) {
   const enabledAt = Number(setting(db, enabledAtKey) ?? Date.now());
+  // SAFETY: The static SQL projection and migrated schema define this row contract.
   const row = db.prepare(`
     SELECT COUNT(*) AS count
     FROM source_sessions ss
@@ -221,6 +224,7 @@ async function generateCandidateTitle(db: DatabaseSync, candidate: Candidate) {
 
   const startedAt = Date.now();
   const runID = Number(
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     (db.prepare(`
       INSERT INTO title_generation_runs (
         source_session_id, started_at, status, model, reasoning_effort,
@@ -269,6 +273,7 @@ async function generateCandidateTitle(db: DatabaseSync, candidate: Candidate) {
       } runtime=${formatTiming(Date.now() - startedAt)}`,
     );
   } catch (error) {
+    // SAFETY: Deno.Command failures extend Error with the captured exit and usage metadata.
     const detail = error as Error & { exitCode?: number; usage?: Usage };
     db.prepare(`
       UPDATE title_generation_runs

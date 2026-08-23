@@ -3,9 +3,9 @@ import { getRouteApi } from "@tanstack/react-router";
 import {
   Bar,
   BarChart,
+  CartesianGrid,
   Line,
   LineChart,
-  CartesianGrid,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -18,6 +18,7 @@ import type {
 } from "../shared/sessionSchemas.ts";
 import { getHarnesses, getPerformance } from "./api.ts";
 import { HarnessOptions } from "./HarnessOptions.tsx";
+import { parseHarnessFilter } from "./harness.ts";
 import { SiteHeader } from "./SiteHeader.tsx";
 
 const route = getRouteApi("/performance");
@@ -26,7 +27,10 @@ const compact = new Intl.NumberFormat("en-US", {
   notation: "compact",
   maximumFractionDigits: 1,
 });
-const date = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+const date = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+});
 
 type ProviderResult = PerformanceResponse["openai"];
 type DistributionKey = "efficiency" | "finalContextShare";
@@ -58,7 +62,8 @@ function MissTooltip({ active, payload }: {
       <div>
         <span>Sessions with a miss</span>
         <strong>
-          {week.sessionsWithMiss} of {week.sessions} · {displayRate(week.sessionRate)}
+          {week.sessionsWithMiss} of {week.sessions} ·{" "}
+          {displayRate(week.sessionRate)}
         </strong>
       </div>
       <div>
@@ -99,7 +104,11 @@ function EfficiencyBoxPlot({
 
   return (
     <div className="efficiency-chart">
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Weekly ${label.toLowerCase()} distributions`}>
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label={`Weekly ${label.toLowerCase()} distributions`}
+      >
         {[0, 0.25, 0.5, 0.75, 1].map((value) => (
           <g key={value}>
             <line
@@ -109,7 +118,12 @@ function EfficiencyBoxPlot({
               y2={y(value)}
               className="efficiency-grid-line"
             />
-            <text x={left - 9} y={y(value) + 4} textAnchor="end" className="efficiency-axis-label efficiency-y-axis-label">
+            <text
+              x={left - 9}
+              y={y(value) + 4}
+              textAnchor="end"
+              className="efficiency-axis-label efficiency-y-axis-label"
+            >
               {Math.round(value * 100)}%
             </text>
           </g>
@@ -122,18 +136,37 @@ function EfficiencyBoxPlot({
             <g key={week.date}>
               {value && (
                 <g
-                  className={`efficiency-box ${value.sampleSize < 5 ? "small-sample" : ""}`}
+                  className={`efficiency-box ${
+                    value.sampleSize < 5 ? "small-sample" : ""
+                  }`}
                   tabIndex={0}
                   role="img"
-                  aria-label={`${week.date}, ${label.toLowerCase()} median ${percent(value.median)}, ${value.sampleSize} sessions`}
+                  aria-label={`${week.date}, ${label.toLowerCase()} median ${
+                    percent(value.median)
+                  }, ${value.sampleSize} sessions`}
                   onMouseEnter={() => setSelected(week)}
                   onMouseLeave={() => setSelected(undefined)}
                   onFocus={() => setSelected(week)}
                   onBlur={() => setSelected(undefined)}
                 >
-                  <line x1={x} x2={x} y1={y(value.upperWhisker)} y2={y(value.lowerWhisker)} />
-                  <line x1={x - boxWidth / 3} x2={x + boxWidth / 3} y1={y(value.upperWhisker)} y2={y(value.upperWhisker)} />
-                  <line x1={x - boxWidth / 3} x2={x + boxWidth / 3} y1={y(value.lowerWhisker)} y2={y(value.lowerWhisker)} />
+                  <line
+                    x1={x}
+                    x2={x}
+                    y1={y(value.upperWhisker)}
+                    y2={y(value.lowerWhisker)}
+                  />
+                  <line
+                    x1={x - boxWidth / 3}
+                    x2={x + boxWidth / 3}
+                    y1={y(value.upperWhisker)}
+                    y2={y(value.upperWhisker)}
+                  />
+                  <line
+                    x1={x - boxWidth / 3}
+                    x2={x + boxWidth / 3}
+                    y1={y(value.lowerWhisker)}
+                    y2={y(value.lowerWhisker)}
+                  />
                   <rect
                     x={x - boxWidth / 2}
                     y={y(value.q3)}
@@ -150,7 +183,12 @@ function EfficiencyBoxPlot({
                 </g>
               )}
               {(index % 2 === 0 || weeks.length <= 8) && (
-                <text x={x} y={height - 17} textAnchor="middle" className="efficiency-axis-label">
+                <text
+                  x={x}
+                  y={height - 17}
+                  textAnchor="middle"
+                  className="efficiency-axis-label"
+                >
                   {date.format(new Date(`${week.date}T00:00:00`))}
                 </text>
               )}
@@ -168,20 +206,47 @@ function EfficiencyBoxPlot({
                   {date.format(new Date(`${selected.endDate}T00:00:00`))}
                 </p>
                 <strong>{selectedEfficiency.sampleSize} sessions</strong>
-                {selectedEfficiency.sampleSize < 5 && <small>Small sample</small>}
+                {selectedEfficiency.sampleSize < 5 && (
+                  <small>Small sample</small>
+                )}
               </div>
               <dl>
-                <div><dt>Lower</dt><dd>{percent(selectedEfficiency.lowerWhisker)}</dd></div>
-                <div><dt>P25</dt><dd>{percent(selectedEfficiency.q1)}</dd></div>
-                <div><dt>Median</dt><dd>{percent(selectedEfficiency.median)}</dd></div>
-                <div><dt>P75</dt><dd>{percent(selectedEfficiency.q3)}</dd></div>
-                <div><dt>Upper</dt><dd>{percent(selectedEfficiency.upperWhisker)}</dd></div>
-                <div><dt>Average</dt><dd>{percent(selectedEfficiency.average)}</dd></div>
-                <div><dt>Outliers</dt><dd>{selectedEfficiency.outliers}</dd></div>
+                <div>
+                  <dt>Lower</dt>
+                  <dd>{percent(selectedEfficiency.lowerWhisker)}</dd>
+                </div>
+                <div>
+                  <dt>P25</dt>
+                  <dd>{percent(selectedEfficiency.q1)}</dd>
+                </div>
+                <div>
+                  <dt>Median</dt>
+                  <dd>{percent(selectedEfficiency.median)}</dd>
+                </div>
+                <div>
+                  <dt>P75</dt>
+                  <dd>{percent(selectedEfficiency.q3)}</dd>
+                </div>
+                <div>
+                  <dt>Upper</dt>
+                  <dd>{percent(selectedEfficiency.upperWhisker)}</dd>
+                </div>
+                <div>
+                  <dt>Average</dt>
+                  <dd>{percent(selectedEfficiency.average)}</dd>
+                </div>
+                <div>
+                  <dt>Outliers</dt>
+                  <dd>{selectedEfficiency.outliers}</dd>
+                </div>
               </dl>
             </div>
           )
-          : <span className="efficiency-tooltip-hint">Hover to see details</span>}
+          : (
+            <span className="efficiency-tooltip-hint">
+              Hover to see details
+            </span>
+          )}
       </div>
     </div>
   );
@@ -209,8 +274,18 @@ function DistributionPanel({
         </span>
       </div>
       {!result
-        ? <div className="performance-chart"><div className="chart-message">Loading distribution…</div></div>
-        : <EfficiencyBoxPlot weeks={result.weeks} distribution={distribution} label={label} />}
+        ? (
+          <div className="performance-chart">
+            <div className="chart-message">Loading distribution…</div>
+          </div>
+        )
+        : (
+          <EfficiencyBoxPlot
+            weeks={result.weeks}
+            distribution={distribution}
+            label={label}
+          />
+        )}
     </article>
   );
 }
@@ -218,7 +293,12 @@ function DistributionPanel({
 const cacheLossBuckets = [
   { bucket: "0-16k", key: "loss0To16k", label: "0–16k", color: "#dbad94" },
   { bucket: "16-64k", key: "loss16To64k", label: "16–64k", color: "#c97850" },
-  { bucket: "64-128k", key: "loss64To128k", label: "64–128k", color: "#a94b2a" },
+  {
+    bucket: "64-128k",
+    key: "loss64To128k",
+    label: "64–128k",
+    color: "#a94b2a",
+  },
   { bucket: "128k+", key: "loss128kPlus", label: "128k+", color: "#762d1b" },
 ] as const;
 
@@ -257,20 +337,29 @@ function CacheLossTooltip({ active, payload }: {
         <span>Requests</span>
         <span>Tokens</span>
       </div>
-      {[...retention.lossBuckets].reverse().map((bucket) => bucket.unretainedTokens > 0 && (
-        <div className="cache-loss-tooltip-row" key={bucket.bucket}>
-          <span>{cacheLossBuckets.find((entry) => entry.bucket === bucket.bucket)?.label} misses</span>
-          <strong>{integer.format(bucket.requests)}</strong>
-          <strong title={integer.format(bucket.unretainedTokens)}>
-            {compact.format(bucket.unretainedTokens)}
-          </strong>
-        </div>
-      ))}
+      {[...retention.lossBuckets].reverse().map((bucket) =>
+        bucket.unretainedTokens > 0 && (
+          <div className="cache-loss-tooltip-row" key={bucket.bucket}>
+            <span>
+              {cacheLossBuckets.find((entry) =>
+                entry.bucket === bucket.bucket
+              )
+                ?.label} misses
+            </span>
+            <strong>{integer.format(bucket.requests)}</strong>
+            <strong title={integer.format(bucket.unretainedTokens)}>
+              {compact.format(bucket.unretainedTokens)}
+            </strong>
+          </div>
+        )
+      )}
     </div>
   );
 }
 
-function CacheLossPanel({ title, result }: { title: string; result?: ProviderResult }) {
+function CacheLossPanel(
+  { title, result }: { title: string; result?: ProviderResult },
+) {
   const rows: CacheLossWeek[] = (result?.weeks ?? []).map((week) => ({
     ...week,
     loss0To16k: lossTokens(week.cacheRetention, "0-16k"),
@@ -279,7 +368,9 @@ function CacheLossPanel({ title, result }: { title: string; result?: ProviderRes
     loss128kPlus: lossTokens(week.cacheRetention, "128k+"),
   }));
   const hasData = rows.some((week) =>
-    week.cacheRetention?.lossBuckets.some((bucket) => bucket.unretainedTokens > 0)
+    week.cacheRetention?.lossBuckets.some((bucket) =>
+      bucket.unretainedTokens > 0
+    )
   );
 
   return (
@@ -291,18 +382,30 @@ function CacheLossPanel({ title, result }: { title: string; result?: ProviderRes
         </span>
       </div>
       {!result
-        ? <div className="performance-chart"><div className="chart-message">Loading cache misses…</div></div>
+        ? (
+          <div className="performance-chart">
+            <div className="chart-message">Loading cache misses…</div>
+          </div>
+        )
         : !hasData
-        ? <div className="image-cohort-message">No partial or full cache misses.</div>
+        ? (
+          <div className="image-cohort-message">
+            No partial or full cache misses.
+          </div>
+        )
         : (
           <>
             <div className="performance-chart cache-retention-chart">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={rows} margin={{ top: 12, right: 24, bottom: 4, left: -12 }}>
+                <BarChart
+                  data={rows}
+                  margin={{ top: 12, right: 24, bottom: 4, left: -12 }}
+                >
                   <CartesianGrid vertical={false} stroke="#e6e2d9" />
                   <XAxis
                     dataKey="date"
-                    tickFormatter={(value) => date.format(new Date(`${value}T00:00:00`))}
+                    tickFormatter={(value) =>
+                      date.format(new Date(`${value}T00:00:00`))}
                     tickLine={false}
                     axisLine={false}
                     minTickGap={24}
@@ -330,7 +433,8 @@ function CacheLossPanel({ title, result }: { title: string; result?: ProviderRes
             <div className="performance-legend cache-retention-legend">
               {[...cacheLossBuckets].reverse().map((bucket) => (
                 <span key={bucket.key}>
-                  <i style={{ background: bucket.color }} /> {bucket.label} misses
+                  <i style={{ background: bucket.color }} /> {bucket.label}{" "}
+                  misses
                 </span>
               ))}
             </div>
@@ -367,9 +471,14 @@ function ImageCohortPanel({
           <div className="image-cohort-list">
             {result.imageCohorts.map((cohort) => {
               const missRate = rate(cohort.sessionsWithMiss, cohort.sessions);
-              const title = `${cohort.sessionsWithMiss} of ${cohort.sessions} sessions`;
+              const title =
+                `${cohort.sessionsWithMiss} of ${cohort.sessions} sessions`;
               return (
-                <div className="image-cohort-row" key={cohort.cohort} title={title}>
+                <div
+                  className="image-cohort-row"
+                  key={cohort.cohort}
+                  title={title}
+                >
                   <div>
                     <span>{imageCohortLabels[cohort.cohort]}</span>
                     <strong>{displayRate(missRate)}</strong>
@@ -417,7 +526,9 @@ function ProviderPanel({
           >
             <option value="all">All models</option>
             {models.map((model) => (
-              <option key={model} value={model}>{displayModelName(model)}</option>
+              <option key={model} value={model}>
+                {displayModelName(model)}
+              </option>
             ))}
           </select>
         </label>
@@ -433,13 +544,17 @@ function ProviderPanel({
         </div>
         <div>
           <strong>
-            {result ? displayRate(rate(result.sessionsWithMiss, result.sessions)) : "–"}
+            {result
+              ? displayRate(rate(result.sessionsWithMiss, result.sessions))
+              : "–"}
           </strong>
           <span>Sessions with miss</span>
         </div>
         <div>
           <strong>
-            {result ? displayRate(rate(result.turnsWithMiss, result.turns)) : "–"}
+            {result
+              ? displayRate(rate(result.turnsWithMiss, result.turns))
+              : "–"}
           </strong>
           <span>Turns with miss</span>
         </div>
@@ -449,11 +564,15 @@ function ProviderPanel({
           ? <div className="chart-message">Loading comparison…</div>
           : (
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={rows} margin={{ top: 12, right: 24, bottom: 4, left: -12 }}>
+              <LineChart
+                data={rows}
+                margin={{ top: 12, right: 24, bottom: 4, left: -12 }}
+              >
                 <CartesianGrid vertical={false} stroke="#e6e2d9" />
                 <XAxis
                   dataKey="date"
-                  tickFormatter={(value) => date.format(new Date(`${value}T00:00:00`))}
+                  tickFormatter={(value) =>
+                    date.format(new Date(`${value}T00:00:00`))}
                   tickLine={false}
                   axisLine={false}
                   minTickGap={24}
@@ -473,7 +592,12 @@ function ProviderPanel({
                   stroke="#b4522d"
                   strokeWidth={2}
                   dot={{ r: 3, fill: "#b4522d", strokeWidth: 0 }}
-                  activeDot={{ r: 5, fill: "#b4522d", stroke: "#fffdf8", strokeWidth: 2 }}
+                  activeDot={{
+                    r: 5,
+                    fill: "#b4522d",
+                    stroke: "#fffdf8",
+                    strokeWidth: 2,
+                  }}
                   connectNulls={false}
                 />
                 <Line
@@ -483,7 +607,12 @@ function ProviderPanel({
                   stroke="#466244"
                   strokeWidth={2}
                   dot={{ r: 3, fill: "#466244", strokeWidth: 0 }}
-                  activeDot={{ r: 5, fill: "#466244", stroke: "#fffdf8", strokeWidth: 2 }}
+                  activeDot={{
+                    r: 5,
+                    fill: "#466244",
+                    stroke: "#fffdf8",
+                    strokeWidth: 2,
+                  }}
                   connectNulls={false}
                 />
               </LineChart>
@@ -491,8 +620,12 @@ function ProviderPanel({
           )}
       </div>
       <div className="performance-legend">
-        <span><i className="session-series" /> Sessions</span>
-        <span><i className="turn-series" /> Turns</span>
+        <span>
+          <i className="session-series" /> Sessions
+        </span>
+        <span>
+          <i className="turn-series" /> Turns
+        </span>
       </div>
     </article>
   );
@@ -513,12 +646,22 @@ export function PerformancePage() {
     let active = true;
     setData(undefined);
     setError(undefined);
-    getPerformance(search.harness, search.openai, search.anthropic).then((result) => {
-      if (active) setData(result);
-    }).catch((reason) => {
-      if (active) setError(reason instanceof Error ? reason.message : "Unable to load performance");
+    getPerformance(search.harness, search.openai, search.anthropic).then(
+      (result) => {
+        if (active) setData(result);
+      },
+    ).catch((reason) => {
+      if (active) {
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : "Unable to load performance",
+        );
+      }
     });
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [search.harness, search.openai, search.anthropic]);
 
   function update(next: Partial<typeof search>) {
@@ -536,7 +679,10 @@ export function PerformancePage() {
           <span>Harness</span>
           <select
             value={search.harness}
-            onChange={(event) => update({ harness: event.target.value as typeof search.harness })}
+            onChange={(event) => {
+              const harness = parseHarnessFilter(event.target.value);
+              if (harness !== undefined) update({ harness });
+            }}
           >
             <HarnessOptions harnesses={harnesses} />
           </select>
@@ -559,7 +705,10 @@ export function PerformancePage() {
       </section>
       <section className="performance-section-heading">
         <h2>Cache efficiency</h2>
-        <p>Cached input as a percent of total session input. Higher means more context was served from cache.</p>
+        <p>
+          Cached input as a percent of total session input. Higher means more
+          context was served from cache.
+        </p>
       </section>
       <section className="performance-grid">
         <DistributionPanel
@@ -577,7 +726,10 @@ export function PerformancePage() {
       </section>
       <section className="performance-section-heading">
         <h2>Context efficiency</h2>
-        <p>Final input context as a percent of total session input. Higher means less earlier context processing.</p>
+        <p>
+          Final input context as a percent of total session input. Higher means
+          less earlier context processing.
+        </p>
       </section>
       <section className="performance-grid">
         <DistributionPanel
@@ -602,7 +754,10 @@ export function PerformancePage() {
       </section>
       <section className="performance-section-heading">
         <h2>Unexpected cache-miss volume</h2>
-        <p>Partial/full misses not attributed to compaction or cache expiry, grouped by inferred context loss.</p>
+        <p>
+          Partial/full misses not attributed to compaction or cache expiry,
+          grouped by inferred context loss.
+        </p>
       </section>
       <section className="performance-grid">
         <CacheLossPanel title="OpenAI" result={data?.openai} />

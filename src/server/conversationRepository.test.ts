@@ -252,6 +252,7 @@ Deno.test("conversation repository linearizes Codex branches without duplicating
       "compaction",
     );
     const callIDs = new Map(
+      // SAFETY: The static SQL projection and migrated schema define this row contract.
       (db.prepare(`
         SELECT source_call_id, id FROM conversation_model_calls
       `).all() as Array<{ source_call_id: string; id: number }>).map((row) => [
@@ -276,6 +277,7 @@ Deno.test("conversation repository linearizes Codex branches without duplicating
     );
 
     const storedPredecessors = new Map(
+      // SAFETY: The static SQL projection and migrated schema define this row contract.
       (db.prepare(`
         SELECT model_call_id, previous_model_call_id
         FROM conversation_cache_misses
@@ -420,6 +422,7 @@ Deno.test("session lists read cache issue reasons from normalized misses", () =>
     );
     projection.replaceLinearConversationTree([session]);
 
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const row = db.prepare(`
       SELECT cr.conversation_id, cr.summary_json
       FROM conversation_rollups cr

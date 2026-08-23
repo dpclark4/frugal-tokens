@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   activityOverviewResponseSchema,
   costScenarioResponseSchema,
@@ -15,6 +16,7 @@ import {
   workRhythmOverviewResponseSchema,
 } from "../shared/sessionSchemas.ts";
 
+// SAFETY: Vite injects the typed env object into import.meta for client builds.
 const apiBaseUrl = (import.meta as ImportMeta & {
   env: { VITE_API_BASE_URL?: string };
 }).env.VITE_API_BASE_URL?.replace(/\/+$/, "") ?? "";
@@ -197,8 +199,11 @@ export async function openSessionInGhostty(id: string, harness: string) {
     { method: "POST" },
   );
   if (response.ok) return;
-  const body = await response.json().catch(() => undefined) as
-    | { error?: string }
-    | undefined;
-  throw new Error(body?.error ?? `Request failed (${response.status})`);
+  const body = z.object({ error: z.string().optional() }).safeParse(
+    await response.json().catch(() => undefined),
+  );
+  throw new Error(
+    (body.success ? body.data.error : undefined) ??
+      `Request failed (${response.status})`,
+  );
 }

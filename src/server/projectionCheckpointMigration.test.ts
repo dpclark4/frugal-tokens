@@ -77,6 +77,7 @@ Deno.test("cleanup migrations preserve canonical checkpoints and remove V1 table
       0,
     );
     const columns =
+      // SAFETY: The static SQL projection and migrated schema define this row contract.
       (db.prepare("PRAGMA table_info(source_sessions)").all() as Array<{
         name: string;
       }>).map((column) => column.name);

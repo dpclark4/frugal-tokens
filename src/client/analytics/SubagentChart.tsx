@@ -201,7 +201,8 @@ export function SubagentChart({ usage }: { usage: UsageResponse }) {
                     (maximum: number) => maximum + bucketWidth / 2,
                   ]}
                   ticks={data.map((entry) => entry.timestamp)}
-                  tickFormatter={(value: number) => shortDay.format(new Date(value))}
+                  tickFormatter={(value: number) =>
+                    shortDay.format(new Date(value))}
                   tickLine={false}
                   axisLine={false}
                   interval="preserveStartEnd"
@@ -223,9 +224,12 @@ export function SubagentChart({ usage }: { usage: UsageResponse }) {
                   content={(props) => (
                     <SubagentTooltip
                       active={props.active}
-                      payload={props.payload as Array<{
-                        payload?: TooltipRow;
-                      }>}
+                      payload={
+                        /* SAFETY: Recharts wraps rows from this chart data in tooltip payload entries. */
+                        props.payload as Array<{
+                          payload?: TooltipRow;
+                        }>
+                      }
                     />
                   )}
                 />

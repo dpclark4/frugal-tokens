@@ -605,7 +605,7 @@ function decodeMessages(
 }
 
 function decodeUsageMessage(
-  row: MessageRow,
+  row: UsageMessageRow,
   session: {
     id: string;
     rootID: string;
@@ -653,7 +653,7 @@ function decodeUsageMessage(
         rootID: session.rootID,
         parentID: session.parentID,
       },
-      cacheChainID: (row as UsageMessageRow).session_id,
+      cacheChainID: row.session_id,
       turnID: "unassigned",
       turnOrdinal: 0,
       sessionStartedAt: session.rootStartedAt,
@@ -790,12 +790,14 @@ export class OpenCodeRepository {
 
   listSessions(page: number, pageSize: number) {
     const totalItems = Number(
+      // SAFETY: The static SQL projection and migrated schema define this row contract.
       (this.#db
         .prepare(
           "SELECT COUNT(*) AS count FROM session WHERE parent_id IS NULL",
         )
         .get() as { count: number }).count,
     );
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.#db.prepare(`
       SELECT id, parent_id, title, model, agent, time_updated
       FROM session
@@ -817,6 +819,7 @@ export class OpenCodeRepository {
   }
 
   getSession(id: string) {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const row = this.#db.prepare(`
       SELECT id, parent_id, title, model, agent, time_updated
       FROM session
@@ -828,6 +831,7 @@ export class OpenCodeRepository {
   }
 
   listUsageCalls(startedAt?: number) {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const sessionRows = this.#db.prepare(`
       SELECT id, parent_id, time_created
       FROM session
@@ -853,6 +857,7 @@ export class OpenCodeRepository {
         rootStartedAt: root.time_created,
       });
     }
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const imageRows = this.#db.prepare(`
       SELECT message_id, COUNT(*) AS count
       FROM part
@@ -869,6 +874,7 @@ export class OpenCodeRepository {
     const activeTurnOrdinals = new Map<string, number>();
     const pendingTurnImages = new Map<string, number>();
     if (startedAt !== undefined) {
+      // SAFETY: The static SQL projection and migrated schema define this row contract.
       const priorSessions = this.#db.prepare(`
         SELECT id, session_id
         FROM message
@@ -887,6 +893,7 @@ export class OpenCodeRepository {
         pendingTurnImages.set(session_id, imagesByMessage.get(id) ?? 0);
       });
     }
+    // SAFETY: Both static SQL branches project the UsageMessageRow columns.
     const rows = startedAt === undefined
       ? this.#db.prepare(`
         SELECT id, session_id, time_created, data
@@ -942,6 +949,7 @@ export class OpenCodeRepository {
   #detail(row: SessionRow, visited: Set<string>): SessionDetail {
     visited.add(row.id);
     const decoded = this.#decodeSession(row, true);
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const children = this.#db.prepare(`
       SELECT id, parent_id, title, model, agent, time_updated
       FROM session
@@ -973,6 +981,7 @@ export class OpenCodeRepository {
   }
 
   #decodeSession(row: SessionRow, includeActivity = false) {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const messages = this.#db.prepare(`
       SELECT id, time_created, data
       FROM message
@@ -982,6 +991,7 @@ export class OpenCodeRepository {
     if (!includeActivity) {
       return decodeMessages(messages, undefined, false);
     }
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const parts = this.#db.prepare(`
       SELECT message_id, data
       FROM part

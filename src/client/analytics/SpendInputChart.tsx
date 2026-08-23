@@ -164,9 +164,12 @@ export function SpendInputChart({ usage, metric }: {
                     <UsageTooltip
                       active={props.active}
                       label={props.label}
-                      payload={props.payload as Array<
-                        { color?: string; name?: string; value?: number }
-                      >}
+                      payload={
+                        /* SAFETY: Recharts wraps rows from this chart data in tooltip payload entries. */
+                        props.payload as Array<
+                          { color?: string; name?: string; value?: number }
+                        >
+                      }
                       metric={metric}
                     />
                   )}

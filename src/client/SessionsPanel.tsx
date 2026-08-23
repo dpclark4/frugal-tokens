@@ -27,7 +27,7 @@ import { contextRange, contextSize } from "../shared/contextMetrics.ts";
 import { displayModelName } from "../shared/modelNames.ts";
 import { rollupCosts } from "../shared/costMetrics.ts";
 import { getTitleGenerationSetting, setTitleGenerationSetting } from "./api.ts";
-import { harnessIcon, harnessName } from "./harness.ts";
+import { harnessIcon, harnessName, parseHarnessFilter } from "./harness.ts";
 import { HarnessOptions } from "./HarnessOptions.tsx";
 import { costsMismatch, CostWarning } from "./CostWarning.tsx";
 
@@ -2154,8 +2154,10 @@ export function SessionsPanel({
             <span className="session-control-label">Harness</span>
             <select
               value={harness}
-              onChange={(event) =>
-                onHarnessChange(event.target.value as typeof harness)}
+              onChange={(event) => {
+                const selected = parseHarnessFilter(event.target.value);
+                if (selected !== undefined) onHarnessChange(selected);
+              }}
             >
               <HarnessOptions harnesses={harnesses} />
             </select>

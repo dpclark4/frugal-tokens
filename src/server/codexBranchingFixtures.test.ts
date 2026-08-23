@@ -37,6 +37,7 @@ function artifacts(name: string): FixtureArtifact[] {
   return [...Deno.readDirSync(fixturePath(name))]
     .filter((entry) => entry.isFile && entry.name.endsWith(".jsonl"))
     .map((entry) => {
+      // SAFETY: These checked-in JSONL fixtures follow the FixtureRecord event contract.
       const records = Deno.readTextFileSync(`${fixturePath(name)}${entry.name}`)
         .trim().split("\n").map((line) => JSON.parse(line) as FixtureRecord);
       const metadata = records.find((record) => record.type === "session_meta")
