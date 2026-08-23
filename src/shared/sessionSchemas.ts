@@ -714,6 +714,8 @@ const performanceWeekSchema = z.object({
   sessionsWithMiss: z.number().int().nonnegative(),
   turns: z.number().int().nonnegative(),
   turnsWithMiss: z.number().int().nonnegative(),
+  modelCalls: z.number().int().nonnegative(),
+  modelCallsWithMiss: z.number().int().nonnegative(),
   efficiency: performanceDistributionSchema.optional(),
   finalContextShare: performanceDistributionSchema.optional(),
   cacheRetention: cacheRetentionSchema.optional(),
@@ -732,6 +734,8 @@ const performanceProviderSchema = z.object({
   sessionsWithMiss: z.number().int().nonnegative(),
   turns: z.number().int().nonnegative(),
   turnsWithMiss: z.number().int().nonnegative(),
+  modelCalls: z.number().int().nonnegative(),
+  modelCallsWithMiss: z.number().int().nonnegative(),
   imageCohorts: z.array(imageCohortSchema),
   weeks: z.array(performanceWeekSchema),
 });

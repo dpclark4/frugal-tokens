@@ -18,8 +18,11 @@ import type {
 } from "../shared/sessionSchemas.ts";
 import { getHarnesses, getPerformance } from "./api.ts";
 import { HarnessOptions } from "./HarnessOptions.tsx";
-import { parseHarnessFilter } from "./harness.ts";
 import { SiteHeader } from "./SiteHeader.tsx";
+import {
+  dashboardChartFont,
+  dashboardChartLabelSize,
+} from "./new/formatters.ts";
 
 const route = getRouteApi("/performance");
 const integer = new Intl.NumberFormat("en-US");
@@ -34,10 +37,37 @@ const date = new Intl.DateTimeFormat(undefined, {
 
 type ProviderResult = PerformanceResponse["openai"];
 type DistributionKey = "efficiency" | "finalContextShare";
+type Lab = "openai" | "anthropic";
+type MissMetric = "sessions" | "turns" | "modelCalls";
 type Week = ProviderResult["weeks"][number] & {
   sessionRate: number | null;
   turnRate: number | null;
+  modelCallRate: number | null;
 };
+
+const missMetrics = [
+  {
+    key: "sessions",
+    label: "Sessions",
+    rateKey: "sessionRate",
+    missKey: "sessionsWithMiss",
+    color: "#b4522d",
+  },
+  {
+    key: "turns",
+    label: "Turns",
+    rateKey: "turnRate",
+    missKey: "turnsWithMiss",
+    color: "#466244",
+  },
+  {
+    key: "modelCalls",
+    label: "Model calls",
+    rateKey: "modelCallRate",
+    missKey: "modelCallsWithMiss",
+    color: "#4d7180",
+  },
+] as const;
 
 function rate(part: number, total: number) {
   return total === 0 ? null : part / total * 100;
@@ -47,31 +77,78 @@ function displayRate(value: number | null) {
   return value === null ? "No data" : `${value.toFixed(1)}%`;
 }
 
-function MissTooltip({ active, payload }: {
+function missRateAxisMax(rows: Week[], visible: Set<MissMetric>) {
+  const maximum = Math.max(
+    0,
+    ...rows.flatMap((week) =>
+      missMetrics
+        .filter((metric) => visible.has(metric.key))
+        .map((metric) => week[metric.rateKey])
+        .filter((value): value is number => value !== null)
+    ),
+  );
+  const withHeadroom = maximum * 1.15;
+  return [5, 10, 20, 25, 50, 75, 100].find((limit) => withHeadroom <= limit) ??
+    100;
+}
+
+function MissTooltip({ active, payload, visible, comparisonRows }: {
   active?: boolean;
   payload?: Array<{ payload?: Week }>;
+  visible: Set<MissMetric>;
+  comparisonRows: Week[];
 }) {
   const week = payload?.[0]?.payload;
   if (!active || !week) return null;
+  const comparison = comparisonRows.find((row) => row.date === week.date);
   return (
-    <div className="tooltip-surface usage-tooltip performance-tooltip">
+    <div className="tooltip-surface usage-tooltip performance-tooltip comparison-tooltip">
       <p>
         {date.format(new Date(`${week.date}T00:00:00`))}–
         {date.format(new Date(`${week.endDate}T00:00:00`))}
       </p>
-      <div>
-        <span>Sessions with a miss</span>
-        <strong>
-          {week.sessionsWithMiss} of {week.sessions} ·{" "}
-          {displayRate(week.sessionRate)}
-        </strong>
+      <div className="comparison-tooltip-table-head" aria-hidden="true">
+        <span>Category</span>
+        <span>Total</span>
+        <span>Misses</span>
+        <span>Rate</span>
+        <span>Other</span>
+        <span>Difference</span>
       </div>
-      <div>
-        <span>Turns with a miss</span>
-        <strong>
-          {week.turnsWithMiss} of {week.turns} · {displayRate(week.turnRate)}
-        </strong>
-      </div>
+      {missMetrics.filter((metric) => visible.has(metric.key)).map((metric) => {
+        const currentRate = week[metric.rateKey];
+        const otherRate = comparison?.[metric.rateKey] ?? null;
+        const difference = currentRate === null || otherRate === null
+          ? null
+          : currentRate - otherRate;
+        const roundedDifference = difference === null
+          ? null
+          : Math.round(difference * 10) / 10;
+        return (
+          <div className="comparison-tooltip-row" key={metric.key}>
+            <span>{metric.label}</span>
+            <span>{integer.format(week[metric.key])}</span>
+            <span>{integer.format(week[metric.missKey])}</span>
+            <strong>{displayRate(currentRate)}</strong>
+            <strong>{otherRate === null ? "—" : displayRate(otherRate)}</strong>
+            <strong
+              className={roundedDifference === null || roundedDifference === 0
+                ? "neutral"
+                : roundedDifference > 0
+                ? "negative"
+                : "positive"}
+            >
+              {roundedDifference === null
+                ? "—"
+                : roundedDifference === 0
+                ? "Same"
+                : `${Math.abs(roundedDifference).toFixed(1)} pp ${
+                  roundedDifference > 0 ? "higher" : "lower"
+                }`}
+            </strong>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -496,147 +573,283 @@ function ImageCohortPanel({
   );
 }
 
-function ProviderPanel({
-  title,
-  result,
-  models,
-  onModelChange,
-}: {
-  title: string;
+type ComparisonCohort = {
+  lab: Lab;
+  harness: string;
+  model: string;
   result?: ProviderResult;
   models: string[];
-  onModelChange: (model: string) => void;
-}) {
-  const rows: Week[] = (result?.weeks ?? []).map((week) => ({
+  error?: string;
+  updateLab: (lab: Lab) => void;
+  updateHarness: (harness: string) => void;
+  updateModel: (model: string) => void;
+};
+
+function comparisonRows(result?: ProviderResult): Week[] {
+  return (result?.weeks ?? []).map((week) => ({
     ...week,
     sessionRate: rate(week.sessionsWithMiss, week.sessions),
     turnRate: rate(week.turnsWithMiss, week.turns),
+    modelCallRate: rate(week.modelCallsWithMiss, week.modelCalls),
   }));
+}
+
+function useComparison(initialLab: Lab, initialHarness = "all") {
+  const [lab, setLab] = useState<Lab>(initialLab);
+  const [harness, setHarness] = useState(initialHarness);
+  const [model, setModel] = useState("all");
+  const [response, setResponse] = useState<PerformanceResponse>();
+  const [error, setError] = useState<string>();
+
+  useEffect(() => {
+    let active = true;
+    setResponse(undefined);
+    setError(undefined);
+    getPerformance(
+      harness,
+      lab === "openai" ? model : "all",
+      lab === "anthropic" ? model : "all",
+    ).then((next) => {
+      if (active) setResponse(next);
+    }).catch((reason) => {
+      if (active) {
+        setError(reason instanceof Error ? reason.message : "Unable to load");
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [lab, harness, model]);
+
+  return {
+    lab,
+    harness,
+    model,
+    result: response?.[lab],
+    models: response?.models[lab] ?? [],
+    error,
+    updateLab(nextLab: Lab) {
+      setLab(nextLab);
+      setModel("all");
+    },
+    updateHarness: setHarness,
+    updateModel: setModel,
+  } satisfies ComparisonCohort;
+}
+
+function ComparisonControls({
+  cohort,
+  harnesses,
+}: {
+  cohort: ComparisonCohort;
+  harnesses: SessionSummary["harness"][];
+}) {
   return (
-    <article className="performance-provider">
-      <div className="performance-provider-heading">
-        <div>
-          <h2>{title}</h2>
-        </div>
+    <div className="comparison-config">
+      <div className="comparison-controls">
+        <label>
+          <span>Lab</span>
+          <select
+            value={cohort.lab}
+            onChange={(event) =>
+              cohort.updateLab(
+                event.target.value === "anthropic" ? "anthropic" : "openai",
+              )}
+          >
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic</option>
+          </select>
+        </label>
+        <label>
+          <span>Harness</span>
+          <select
+            value={cohort.harness}
+            onChange={(event) => cohort.updateHarness(event.target.value)}
+          >
+            <HarnessOptions harnesses={harnesses} />
+          </select>
+        </label>
         <label>
           <span>Model</span>
           <select
-            value={result?.selectedModel ?? "all"}
-            onChange={(event) => onModelChange(event.target.value)}
+            value={cohort.model}
+            onChange={(event) => cohort.updateModel(event.target.value)}
           >
             <option value="all">All models</option>
-            {models.map((model) => (
-              <option key={model} value={model}>
-                {displayModelName(model)}
+            {cohort.models.toSorted((a, b) =>
+              b.localeCompare(a, undefined, {
+                numeric: true,
+                sensitivity: "base",
+              })
+            ).map((availableModel) => (
+              <option key={availableModel} value={availableModel}>
+                {displayModelName(availableModel)}
               </option>
             ))}
           </select>
         </label>
       </div>
-      <div className="performance-totals">
-        <div>
-          <strong>{integer.format(result?.sessions ?? 0)}</strong>
-          <span>Sessions</span>
-        </div>
-        <div>
-          <strong>{integer.format(result?.turns ?? 0)}</strong>
-          <span>Turns</span>
-        </div>
-        <div>
-          <strong>
-            {result
-              ? displayRate(rate(result.sessionsWithMiss, result.sessions))
-              : "–"}
-          </strong>
-          <span>Sessions with miss</span>
-        </div>
-        <div>
-          <strong>
-            {result
-              ? displayRate(rate(result.turnsWithMiss, result.turns))
-              : "–"}
-          </strong>
-          <span>Turns with miss</span>
-        </div>
-      </div>
-      <div className="performance-chart">
-        {!result
-          ? <div className="chart-message">Loading comparison…</div>
-          : (
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={rows}
-                margin={{ top: 12, right: 24, bottom: 4, left: -12 }}
-              >
-                <CartesianGrid vertical={false} stroke="#e6e2d9" />
-                <XAxis
-                  dataKey="date"
-                  tickFormatter={(value) =>
-                    date.format(new Date(`${value}T00:00:00`))}
-                  tickLine={false}
-                  axisLine={false}
-                  minTickGap={24}
-                />
-                <YAxis
-                  domain={[0, 100]}
-                  tickFormatter={(value) => `${value}%`}
-                  tickLine={false}
-                  axisLine={false}
-                  width={48}
-                />
-                <Tooltip content={<MissTooltip />} />
-                <Line
-                  type="monotone"
-                  dataKey="sessionRate"
-                  name="Sessions"
-                  stroke="#b4522d"
-                  strokeWidth={2}
-                  dot={{ r: 3, fill: "#b4522d", strokeWidth: 0 }}
-                  activeDot={{
-                    r: 5,
-                    fill: "#b4522d",
-                    stroke: "#fffdf8",
-                    strokeWidth: 2,
-                  }}
-                  connectNulls={false}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="turnRate"
-                  name="Turns"
-                  stroke="#466244"
-                  strokeWidth={2}
-                  dot={{ r: 3, fill: "#466244", strokeWidth: 0 }}
-                  activeDot={{
-                    r: 5,
-                    fill: "#466244",
-                    stroke: "#fffdf8",
-                    strokeWidth: 2,
-                  }}
-                  connectNulls={false}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
-      </div>
-      <div className="performance-legend">
-        <span>
-          <i className="session-series" /> Sessions
-        </span>
-        <span>
-          <i className="turn-series" /> Turns
-        </span>
-      </div>
-    </article>
+    </div>
+  );
+}
+
+function ComparisonMetrics({
+  result,
+  visible,
+  onToggle,
+}: {
+  result?: ProviderResult;
+  visible: Set<MissMetric>;
+  onToggle: (metric: MissMetric) => void;
+}) {
+  return (
+    <div className="comparison-metrics">
+      {missMetrics.map((metric) => {
+        const total = result?.[metric.key] ?? 0;
+        const misses = result?.[metric.missKey] ?? 0;
+        const enabled = visible.has(metric.key);
+        return (
+          <button
+            className={enabled ? "active" : undefined}
+            type="button"
+            aria-pressed={enabled}
+            onClick={() => onToggle(metric.key)}
+            key={metric.key}
+          >
+            <i style={{ background: metric.color }} />
+            <strong>{result ? displayRate(rate(misses, total)) : "–"}</strong>
+            <span>{metric.label}</span>
+            <small>{integer.format(misses)} of {integer.format(total)}</small>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ComparisonChart({
+  cohort,
+  rows,
+  visible,
+  axisMaximum,
+  comparisonRows,
+}: {
+  cohort: ComparisonCohort;
+  rows: Week[];
+  visible: Set<MissMetric>;
+  axisMaximum: number;
+  comparisonRows: Week[];
+}) {
+  return (
+    <div className="performance-chart comparison-chart">
+      {cohort.error
+        ? <div className="chart-message">{cohort.error}</div>
+        : !cohort.result
+        ? <div className="chart-message">Loading comparison…</div>
+        : visible.size === 0
+        ? <div className="chart-message">Select a metric above.</div>
+        : (
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart
+              data={rows}
+              margin={{ top: 12, right: 24, bottom: 4, left: -12 }}
+            >
+              <CartesianGrid vertical={false} stroke="#e6e2d9" />
+              <XAxis
+                dataKey="date"
+                tickFormatter={(value) =>
+                  date.format(new Date(`${value}T00:00:00`))}
+                tickLine={false}
+                axisLine={false}
+                minTickGap={24}
+                tick={{
+                  fontFamily: dashboardChartFont,
+                  fontSize: dashboardChartLabelSize,
+                }}
+              />
+              <YAxis
+                domain={[0, axisMaximum]}
+                tickFormatter={(value) => `${value}%`}
+                tickLine={false}
+                axisLine={false}
+                tick={{
+                  fontFamily: dashboardChartFont,
+                  fontSize: dashboardChartLabelSize,
+                }}
+                width={48}
+              />
+              <Tooltip
+                content={
+                  <MissTooltip
+                    visible={visible}
+                    comparisonRows={comparisonRows}
+                  />
+                }
+              />
+              {missMetrics.map((metric) =>
+                visible.has(metric.key) && (
+                  <Line
+                    key={metric.key}
+                    type="linear"
+                    dataKey={metric.rateKey}
+                    name={metric.label}
+                    stroke={metric.color}
+                    strokeWidth={2}
+                    dot={{ r: 3, fill: metric.color, strokeWidth: 0 }}
+                    activeDot={{
+                      r: 5,
+                      fill: metric.color,
+                      stroke: "#fffdf8",
+                      strokeWidth: 2,
+                    }}
+                    connectNulls={false}
+                  />
+                )
+              )}
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+    </div>
   );
 }
 
 export function PerformancePage() {
   const search = route.useSearch();
-  const navigate = route.useNavigate();
   const [data, setData] = useState<PerformanceResponse>();
   const [harnesses, setHarnesses] = useState<SessionSummary["harness"][]>([]);
   const [error, setError] = useState<string>();
+  const comparisonA = useComparison("openai");
+  const comparisonB = useComparison("openai", "pi");
+  const [visibleMetricsA, setVisibleMetricsA] = useState<Set<MissMetric>>(
+    () => new Set(missMetrics.map((metric) => metric.key)),
+  );
+  const [visibleMetricsB, setVisibleMetricsB] = useState<Set<MissMetric>>(
+    () => new Set(missMetrics.map((metric) => metric.key)),
+  );
+  const comparisonARows = comparisonRows(comparisonA.result);
+  const comparisonBRows = comparisonRows(comparisonB.result);
+  const comparisonAxisMaximum = missRateAxisMax(
+    [...comparisonARows, ...comparisonBRows],
+    new Set([...visibleMetricsA, ...visibleMetricsB]),
+  );
+
+  function toggleMetricA(metric: MissMetric) {
+    setVisibleMetricsA((current) => {
+      const next = new Set(current);
+      if (next.has(metric)) next.delete(metric);
+      else next.add(metric);
+      return next;
+    });
+  }
+
+  function toggleMetricB(metric: MissMetric) {
+    setVisibleMetricsB((current) => {
+      const next = new Set(current);
+      if (next.has(metric)) next.delete(metric);
+      else next.add(metric);
+      return next;
+    });
+  }
 
   useEffect(() => {
     getHarnesses().then(setHarnesses).catch(() => undefined);
@@ -664,44 +877,52 @@ export function PerformancePage() {
     };
   }, [search.harness, search.openai, search.anthropic]);
 
-  function update(next: Partial<typeof search>) {
-    navigate({ search: { ...search, ...next } });
-  }
-
   return (
-    <main>
+    <main className="new-page performance-page">
       <SiteHeader active="performance" />
       <section className="performance-intro">
-        <div>
-          <h2>Cache performance</h2>
-        </div>
-        <label>
-          <span>Harness</span>
-          <select
-            value={search.harness}
-            onChange={(event) => {
-              const harness = parseHarnessFilter(event.target.value);
-              if (harness !== undefined) update({ harness });
-            }}
-          >
-            <HarnessOptions harnesses={harnesses} />
-          </select>
-        </label>
+        <h2>Cache miss rate</h2>
       </section>
-      {error && <div className="error performance-error">{error}</div>}
-      <section className="performance-grid">
-        <ProviderPanel
-          title="OpenAI"
-          result={data?.openai}
-          models={data?.models.openai ?? []}
-          onModelChange={(openai) => update({ openai })}
-        />
-        <ProviderPanel
-          title="Anthropic"
-          result={data?.anthropic}
-          models={data?.models.anthropic ?? []}
-          onModelChange={(anthropic) => update({ anthropic })}
-        />
+      <section className="performance-comparison-shell">
+        {error && <div className="error performance-error">{error}</div>}
+        <div className="performance-grid">
+          <article className="performance-provider comparison-panel">
+            <ComparisonControls
+              cohort={comparisonA}
+              harnesses={harnesses}
+            />
+            <ComparisonMetrics
+              result={comparisonA.result}
+              visible={visibleMetricsA}
+              onToggle={toggleMetricA}
+            />
+            <ComparisonChart
+              cohort={comparisonA}
+              rows={comparisonARows}
+              visible={visibleMetricsA}
+              axisMaximum={comparisonAxisMaximum}
+              comparisonRows={comparisonBRows}
+            />
+          </article>
+          <article className="performance-provider comparison-panel">
+            <ComparisonControls
+              cohort={comparisonB}
+              harnesses={harnesses}
+            />
+            <ComparisonMetrics
+              result={comparisonB.result}
+              visible={visibleMetricsB}
+              onToggle={toggleMetricB}
+            />
+            <ComparisonChart
+              cohort={comparisonB}
+              rows={comparisonBRows}
+              visible={visibleMetricsB}
+              axisMaximum={comparisonAxisMaximum}
+              comparisonRows={comparisonARows}
+            />
+          </article>
+        </div>
       </section>
       <section className="performance-section-heading">
         <h2>Cache efficiency</h2>

@@ -75,8 +75,12 @@ Deno.test("aggregates weekly session and turn cache miss rates by model", () => 
   strictEqual(result.openai.sessionsWithMiss, 2);
   strictEqual(result.openai.turns, 9);
   strictEqual(result.openai.turnsWithMiss, 2);
+  strictEqual(result.openai.modelCalls, 9);
+  strictEqual(result.openai.modelCallsWithMiss, 2);
   strictEqual(result.openai.weeks.length, 1);
   strictEqual(result.openai.weeks[0].sessions, 5);
+  strictEqual(result.openai.weeks[0].modelCalls, 9);
+  strictEqual(result.openai.weeks[0].modelCallsWithMiss, 2);
   strictEqual(result.anthropic.sessions, 0);
 });
 
@@ -161,6 +165,7 @@ Deno.test("excludes zero-input calls from performance eligibility", () => {
 
   strictEqual(result.openai.sessions, 0);
   strictEqual(result.openai.turns, 0);
+  strictEqual(result.openai.modelCalls, 0);
 });
 
 Deno.test("calculates weekly session cache-efficiency box plot values", () => {

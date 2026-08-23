@@ -140,6 +140,8 @@ function emptyWeek(date: string): Week {
     sessionsWithMiss: 0,
     turns: 0,
     turnsWithMiss: 0,
+    modelCalls: 0,
+    modelCallsWithMiss: 0,
   };
 }
 
@@ -218,6 +220,8 @@ function providerResult(
   let sessionsWithMiss = 0;
   let turns = 0;
   let turnsWithMiss = 0;
+  let modelCalls = 0;
+  let modelCallsWithMiss = 0;
 
   for (const sessionCalls of sessions.values()) {
     const sessionWeek = weekKey(sessionCalls[0].sessionStartedAt);
@@ -266,6 +270,18 @@ function providerResult(
     );
     turns += sessionTurns.size;
     bucket.turns += sessionTurns.size;
+    modelCalls += sessionCalls.length;
+    bucket.modelCalls += sessionCalls.length;
+    for (const call of sessionCalls) {
+      if (
+        call.cacheAssessment.cause === undefined &&
+        (call.cacheAssessment.status === "partial-hit" ||
+          call.cacheAssessment.status === "full-miss")
+      ) {
+        modelCallsWithMiss++;
+        bucket.modelCallsWithMiss++;
+      }
+    }
     for (const turnCalls of sessionTurns.values()) {
       if (
         turnCalls.some((call) =>
@@ -364,6 +380,8 @@ function providerResult(
     sessionsWithMiss,
     turns,
     turnsWithMiss,
+    modelCalls,
+    modelCallsWithMiss,
     imageCohorts: imageResults,
     weeks: [...weeks.values()],
   };
