@@ -23,18 +23,17 @@ type Harness = SessionSummary["harness"];
 
 function contextEvent(value: ConversationContextEventImport): ContextEvent {
   const { affectedCall: _affectedCall, compaction, ...event } = value;
-  return {
-    ...event,
-    ...(compaction === undefined ? {} : {
-      compaction: {
-        ...compaction,
-        checkpointItems: compaction.checkpointItems.map((item, index) => ({
-          ...item,
-          ordinal: item.ordinal ?? index + 1,
-        })),
-      },
-    }),
-  };
+  const hydrated: ContextEvent = { ...event };
+  if (compaction !== undefined) {
+    hydrated.compaction = {
+      ...compaction,
+      checkpointItems: compaction.checkpointItems.map((item, index) => ({
+        ...item,
+        ordinal: item.ordinal ?? index + 1,
+      })),
+    };
+  }
+  return hydrated;
 }
 
 /** Hydrates the API detail shape without re-reading a freshly written tree. */
@@ -54,115 +53,126 @@ export function sessionDetailFromConversationImports(
       events.filter((event) => event.affectedCall !== undefined),
       (event) => `${event.affectedCall!.turn}:${event.affectedCall!.call}`,
     );
-    const turns = value.session.turns.map((turn) => ({
-      number: turn.number,
-      startedAt: turn.startedAt,
-      inputs: (turn.inputs ?? []).map<TurnInput>((input) => ({
-        kind: input.kind,
-        ...(input.preview === undefined ? {} : { preview: input.preview }),
-        ...(input.originalLength === undefined ? {} : {
-          originalLength: input.originalLength,
-        }),
-        ...(input.truncated === undefined ? {} : {
-          truncated: input.truncated,
-        }),
-        ...(input.mimeType === undefined ? {} : { mimeType: input.mimeType }),
-      })),
-      ...(turn.reasoningSetting === undefined ? {} : {
-        reasoningSetting: turn.reasoningSetting,
-      }),
-      calls: turn.calls.map<ModelCall>((call) => {
-        const text = call.content?.find((content) => content.kind === "text");
-        return {
+    const turns = value.session.turns.map((turn) => {
+      const inputs = (turn.inputs ?? []).map<TurnInput>((input) => {
+        const hydrated: TurnInput = { kind: input.kind };
+        if (input.preview !== undefined) hydrated.preview = input.preview;
+        if (input.originalLength !== undefined) {
+          hydrated.originalLength = input.originalLength;
+        }
+        if (input.truncated !== undefined) hydrated.truncated = input.truncated;
+        if (input.mimeType !== undefined) hydrated.mimeType = input.mimeType;
+        return hydrated;
+      });
+      const calls = turn.calls.map<ModelCall>((call) => {
+        const activity: ModelCall["activity"] = {
+          hasText: call.activity.hasText,
+          hasReasoning: call.activity.hasReasoning,
+          tools: call.activity.tools.map((tool) => {
+            const hydrated: ModelCall["activity"]["tools"][number] = {
+              name: tool.name,
+              status: tool.status,
+            };
+            if (tool.startedAt !== undefined) {
+              hydrated.startedAt = tool.startedAt;
+            }
+            if (tool.completedAt !== undefined) {
+              hydrated.completedAt = tool.completedAt;
+            }
+            if (tool.childExternalID !== undefined) {
+              hydrated.childSessionID =
+                byID.get(tool.childExternalID)?.publicID ??
+                  tool.childExternalID;
+            }
+            if (tool.inputPreview !== undefined) {
+              hydrated.inputPreview = tool.inputPreview;
+            }
+            if (tool.outputPreview !== undefined) {
+              hydrated.outputPreview = tool.outputPreview;
+            }
+            return hydrated;
+          }),
+        };
+        if (call.activity.finishReason !== undefined) {
+          activity.finishReason = call.activity.finishReason;
+        }
+        if (call.activity.images !== undefined) {
+          activity.images = call.activity.images;
+        }
+        const hydrated: ModelCall = {
           id: call.id,
           callWithinTurn: call.callWithinTurn,
-          ...(text?.preview === undefined ? {} : { preview: text.preview }),
           provider: call.provider,
           model: call.model,
           startedAt: call.startedAt,
-          ...(call.completedAt === undefined ? {} : {
-            completedAt: call.completedAt,
-          }),
-          ...(call.reportedCost === undefined ? {} : {
-            reportedCost: call.reportedCost,
-          }),
           tokens: call.tokens,
-          activity: {
-            ...(call.activity.finishReason === undefined ? {} : {
-              finishReason: call.activity.finishReason,
-            }),
-            ...(call.activity.images === undefined ? {} : {
-              images: call.activity.images,
-            }),
-            hasText: call.activity.hasText,
-            hasReasoning: call.activity.hasReasoning,
-            tools: call.activity.tools.map((tool) => ({
-              name: tool.name,
-              status: tool.status,
-              ...(tool.startedAt === undefined ? {} : {
-                startedAt: tool.startedAt,
-              }),
-              ...(tool.completedAt === undefined ? {} : {
-                completedAt: tool.completedAt,
-              }),
-              ...(tool.childExternalID === undefined ? {} : {
-                childSessionID: byID.get(tool.childExternalID)?.publicID ??
-                  tool.childExternalID,
-              }),
-              ...(tool.inputPreview === undefined ? {} : {
-                inputPreview: tool.inputPreview,
-              }),
-              ...(tool.outputPreview === undefined ? {} : {
-                outputPreview: tool.outputPreview,
-              }),
-            })),
-          },
-          ...(call.reasoningSetting === undefined ? {} : {
-            reasoningSetting: call.reasoningSetting,
-          }),
+          activity,
           contextEventsBefore: (attached.get(
             `${turn.number}:${call.callWithinTurn}`,
           ) ?? []).map(contextEvent),
         };
-      }),
-    }));
-    return {
+        const text = call.content?.find((content) => content.kind === "text");
+        if (text?.preview !== undefined) hydrated.preview = text.preview;
+        if (call.completedAt !== undefined) {
+          hydrated.completedAt = call.completedAt;
+        }
+        if (call.reportedCost !== undefined) {
+          hydrated.reportedCost = call.reportedCost;
+        }
+        if (call.reasoningSetting !== undefined) {
+          hydrated.reasoningSetting = call.reasoningSetting;
+        }
+        return hydrated;
+      });
+      const hydrated: SessionDetail["turns"][number] = {
+        number: turn.number,
+        startedAt: turn.startedAt,
+        inputs,
+        calls,
+      };
+      if (turn.reasoningSetting !== undefined) {
+        hydrated.reasoningSetting = turn.reasoningSetting;
+      }
+      return hydrated;
+    });
+    const hydrated: SessionDetail = {
       id: value.publicID ?? value.externalID,
-      ...(value.artifactPath === undefined ? {} : {
-        sourcePath: value.artifactPath,
-      }),
-      ...(value.workingDirectory === undefined ? {} : {
-        workingDirectory: value.workingDirectory,
-      }),
       harness,
       title: value.session.title,
       updatedAt: value.session.updatedAt,
-      ...(value.session.startedAt === undefined ? {} : {
-        startedAt: value.session.startedAt,
-      }),
-      ...(value.session.endedAt === undefined ? {} : {
-        endedAt: value.session.endedAt,
-      }),
       providers: value.session.providers,
       models: value.session.models,
       userTurns: turns.length,
       modelCalls: turns.reduce((total, turn) => total + turn.calls.length, 0),
-      ...(value.session.reportedCost === undefined ? {} : {
-        reportedCost: value.session.reportedCost,
-      }),
       tokens: value.session.tokens,
-      ...(value.parentExternalID === undefined ? {} : {
-        parentID: byID.get(value.parentExternalID)?.publicID ??
-          value.parentExternalID,
-      }),
-      ...(value.session.agent === undefined ? {} : {
-        agent: value.session.agent,
-      }),
       turns,
       contextEvents: events.filter((event) => event.affectedCall === undefined)
         .map(contextEvent),
       subagents: (children.get(value.externalID) ?? []).map(hydrate),
     };
+    if (value.artifactPath !== undefined) {
+      hydrated.sourcePath = value.artifactPath;
+    }
+    if (value.workingDirectory !== undefined) {
+      hydrated.workingDirectory = value.workingDirectory;
+    }
+    if (value.session.startedAt !== undefined) {
+      hydrated.startedAt = value.session.startedAt;
+    }
+    if (value.session.endedAt !== undefined) {
+      hydrated.endedAt = value.session.endedAt;
+    }
+    if (value.session.reportedCost !== undefined) {
+      hydrated.reportedCost = value.session.reportedCost;
+    }
+    if (value.parentExternalID !== undefined) {
+      hydrated.parentID = byID.get(value.parentExternalID)?.publicID ??
+        value.parentExternalID;
+    }
+    if (value.session.agent !== undefined) {
+      hydrated.agent = value.session.agent;
+    }
+    return hydrated;
   };
   const root = byID.get(rootExternalID);
   if (root === undefined) {
