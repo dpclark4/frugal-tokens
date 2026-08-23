@@ -36,7 +36,6 @@ const date = new Intl.DateTimeFormat(undefined, {
 });
 
 type ProviderResult = PerformanceResponse["openai"];
-type DistributionKey = "efficiency" | "finalContextShare";
 type Lab = "openai" | "anthropic";
 type HarnessSelection = "all" | SessionSummary["harness"];
 type MissMetric = "sessions" | "turns" | "modelCalls";
@@ -154,220 +153,6 @@ function MissTooltip({ active, payload, visible, comparisonRows }: {
   );
 }
 
-function percent(value: number) {
-  return `${(value * 100).toFixed(1)}%`;
-}
-
-function EfficiencyBoxPlot({
-  weeks,
-  distribution,
-  label,
-}: {
-  weeks: ProviderResult["weeks"];
-  distribution: DistributionKey;
-  label: string;
-}) {
-  const [selected, setSelected] = useState<ProviderResult["weeks"][number]>();
-  const width = 720;
-  const height = 260;
-  const left = 42;
-  const right = 10;
-  const top = 14;
-  const bottom = 40;
-  const plotWidth = width - left - right;
-  const plotHeight = height - top - bottom;
-  const step = plotWidth / Math.max(weeks.length, 1);
-  const y = (value: number) => top + (1 - value) * plotHeight;
-  const selectedEfficiency = selected?.[distribution];
-
-  return (
-    <div className="efficiency-chart">
-      <svg
-        viewBox={`0 0 ${width} ${height}`}
-        role="img"
-        aria-label={`Weekly ${label.toLowerCase()} distributions`}
-      >
-        {[0, 0.25, 0.5, 0.75, 1].map((value) => (
-          <g key={value}>
-            <line
-              x1={left}
-              x2={width - right}
-              y1={y(value)}
-              y2={y(value)}
-              className="efficiency-grid-line"
-            />
-            <text
-              x={left - 9}
-              y={y(value) + 4}
-              textAnchor="end"
-              className="efficiency-axis-label efficiency-y-axis-label"
-            >
-              {Math.round(value * 100)}%
-            </text>
-          </g>
-        ))}
-        {weeks.map((week, index) => {
-          const value = week[distribution];
-          const x = left + step * index + step / 2;
-          const boxWidth = Math.min(24, step * .48);
-          return (
-            <g key={week.date}>
-              {value && (
-                <g
-                  className={`efficiency-box ${
-                    value.sampleSize < 5 ? "small-sample" : ""
-                  }`}
-                  tabIndex={0}
-                  role="img"
-                  aria-label={`${week.date}, ${label.toLowerCase()} median ${
-                    percent(value.median)
-                  }, ${value.sampleSize} sessions`}
-                  onMouseEnter={() => setSelected(week)}
-                  onMouseLeave={() => setSelected(undefined)}
-                  onFocus={() => setSelected(week)}
-                  onBlur={() => setSelected(undefined)}
-                >
-                  <line
-                    x1={x}
-                    x2={x}
-                    y1={y(value.upperWhisker)}
-                    y2={y(value.lowerWhisker)}
-                  />
-                  <line
-                    x1={x - boxWidth / 3}
-                    x2={x + boxWidth / 3}
-                    y1={y(value.upperWhisker)}
-                    y2={y(value.upperWhisker)}
-                  />
-                  <line
-                    x1={x - boxWidth / 3}
-                    x2={x + boxWidth / 3}
-                    y1={y(value.lowerWhisker)}
-                    y2={y(value.lowerWhisker)}
-                  />
-                  <rect
-                    x={x - boxWidth / 2}
-                    y={y(value.q3)}
-                    width={boxWidth}
-                    height={Math.max(1, y(value.q1) - y(value.q3))}
-                  />
-                  <line
-                    className="efficiency-median"
-                    x1={x - boxWidth / 2}
-                    x2={x + boxWidth / 2}
-                    y1={y(value.median)}
-                    y2={y(value.median)}
-                  />
-                </g>
-              )}
-              {(index % 2 === 0 || weeks.length <= 8) && (
-                <text
-                  x={x}
-                  y={height - 17}
-                  textAnchor="middle"
-                  className="efficiency-axis-label"
-                >
-                  {date.format(new Date(`${week.date}T00:00:00`))}
-                </text>
-              )}
-            </g>
-          );
-        })}
-      </svg>
-      <div className="efficiency-tooltip-slot" aria-live="polite">
-        {selected && selectedEfficiency
-          ? (
-            <div className="efficiency-tooltip">
-              <div className="efficiency-tooltip-heading">
-                <p>
-                  {date.format(new Date(`${selected.date}T00:00:00`))}–
-                  {date.format(new Date(`${selected.endDate}T00:00:00`))}
-                </p>
-                <strong>{selectedEfficiency.sampleSize} sessions</strong>
-                {selectedEfficiency.sampleSize < 5 && (
-                  <small>Small sample</small>
-                )}
-              </div>
-              <dl>
-                <div>
-                  <dt>Lower</dt>
-                  <dd>{percent(selectedEfficiency.lowerWhisker)}</dd>
-                </div>
-                <div>
-                  <dt>P25</dt>
-                  <dd>{percent(selectedEfficiency.q1)}</dd>
-                </div>
-                <div>
-                  <dt>Median</dt>
-                  <dd>{percent(selectedEfficiency.median)}</dd>
-                </div>
-                <div>
-                  <dt>P75</dt>
-                  <dd>{percent(selectedEfficiency.q3)}</dd>
-                </div>
-                <div>
-                  <dt>Upper</dt>
-                  <dd>{percent(selectedEfficiency.upperWhisker)}</dd>
-                </div>
-                <div>
-                  <dt>Average</dt>
-                  <dd>{percent(selectedEfficiency.average)}</dd>
-                </div>
-                <div>
-                  <dt>Outliers</dt>
-                  <dd>{selectedEfficiency.outliers}</dd>
-                </div>
-              </dl>
-            </div>
-          )
-          : (
-            <span className="efficiency-tooltip-hint">
-              Hover to see details
-            </span>
-          )}
-      </div>
-    </div>
-  );
-}
-
-function DistributionPanel({
-  title,
-  result,
-  distribution,
-  label,
-}: {
-  title: string;
-  result?: ProviderResult;
-  distribution: DistributionKey;
-  label: string;
-}) {
-  return (
-    <article className="performance-provider efficiency-panel">
-      <div className="performance-provider-heading">
-        <div>
-          <h2>{title}</h2>
-        </div>
-        <span className="efficiency-model">
-          {displayModelName(result?.selectedModel ?? "all")}
-        </span>
-      </div>
-      {!result
-        ? (
-          <div className="performance-chart">
-            <div className="chart-message">Loading distribution…</div>
-          </div>
-        )
-        : (
-          <EfficiencyBoxPlot
-            weeks={result.weeks}
-            distribution={distribution}
-            label={label}
-          />
-        )}
-    </article>
-  );
-}
-
 const cacheLossBuckets = [
   { bucket: "0-16k", key: "loss0To16k", label: "0–16k", color: "#dbad94" },
   { bucket: "16-64k", key: "loss16To64k", label: "16–64k", color: "#c97850" },
@@ -389,12 +174,11 @@ type CacheLossWeek = ProviderResult["weeks"][number] & {
 };
 
 function lossMisses(
-  retention: ProviderResult["weeks"][number]["cacheRetention"],
+  buckets: ProviderResult["weeks"][number]["cacheLossBuckets"],
   bucket: CacheLossBucket,
 ) {
-  if (!retention) return null;
-  return retention.lossBuckets.find((entry) => entry.bucket === bucket)
-    ?.requests ?? 0;
+  if (!buckets) return null;
+  return buckets.find((entry) => entry.bucket === bucket)?.requests ?? 0;
 }
 
 function cacheLossDifference(value: number, other?: number) {
@@ -412,10 +196,11 @@ function CacheLossTooltip({ active, payload, comparisonWeeks }: {
   comparisonWeeks?: ProviderResult["weeks"];
 }) {
   const week = payload?.[0]?.payload;
-  const retention = week?.cacheRetention;
-  if (!active || !week || !retention) return null;
-  const comparison = comparisonWeeks?.find((entry) => entry.date === week.date)
-    ?.cacheRetention;
+  const buckets = week?.cacheLossBuckets;
+  if (!active || !week || !buckets) return null;
+  const comparisonBuckets = comparisonWeeks?.find((entry) =>
+    entry.date === week.date
+  )?.cacheLossBuckets;
   return (
     <div className="tooltip-surface usage-tooltip performance-tooltip comparison-tooltip cache-loss-comparison-tooltip">
       <p>
@@ -430,10 +215,10 @@ function CacheLossTooltip({ active, payload, comparisonWeeks }: {
         <span>Difference</span>
       </div>
       {[...cacheLossBuckets].reverse().map((definition) => {
-        const bucket = retention.lossBuckets.find((entry) =>
+        const bucket = buckets.find((entry) =>
           entry.bucket === definition.bucket
         );
-        const other = comparison?.lossBuckets.find((entry) =>
+        const other = comparisonBuckets?.find((entry) =>
           entry.bucket === definition.bucket
         );
         const misses = bucket?.requests ?? 0;
@@ -482,17 +267,17 @@ function CacheLossPanel({ result, comparisonResult }: {
 }) {
   const rows: CacheLossWeek[] = (result?.weeks ?? []).map((week) => ({
     ...week,
-    loss0To16k: lossMisses(week.cacheRetention, "0-16k"),
-    loss16To64k: lossMisses(week.cacheRetention, "16-64k"),
-    loss64To128k: lossMisses(week.cacheRetention, "64-128k"),
-    loss128kPlus: lossMisses(week.cacheRetention, "128k+"),
+    loss0To16k: lossMisses(week.cacheLossBuckets, "0-16k"),
+    loss16To64k: lossMisses(week.cacheLossBuckets, "16-64k"),
+    loss64To128k: lossMisses(week.cacheLossBuckets, "64-128k"),
+    loss128kPlus: lossMisses(week.cacheLossBuckets, "128k+"),
   }));
   const hasData = rows.some((week) =>
-    week.cacheRetention?.lossBuckets.some((bucket) => bucket.requests > 0)
+    week.cacheLossBuckets?.some((bucket) => bucket.requests > 0)
   );
 
   return (
-    <article className="performance-provider cache-retention-panel comparison-data-panel">
+    <article className="performance-provider cache-loss-panel comparison-data-panel">
       {!result
         ? (
           <div className="performance-chart">
@@ -501,13 +286,13 @@ function CacheLossPanel({ result, comparisonResult }: {
         )
         : !hasData
         ? (
-          <div className="image-cohort-message">
+          <div className="performance-panel-message">
             No partial or full cache misses.
           </div>
         )
         : (
           <>
-            <div className="performance-chart cache-retention-chart">
+            <div className="performance-chart cache-loss-chart">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
                   data={rows}
@@ -548,7 +333,7 @@ function CacheLossPanel({ result, comparisonResult }: {
                 </BarChart>
               </ResponsiveContainer>
             </div>
-            <div className="performance-legend cache-retention-legend">
+            <div className="performance-legend cache-loss-legend">
               {[...cacheLossBuckets].reverse().map((bucket) => (
                 <span key={bucket.key}>
                   <i style={{ background: bucket.color }} /> {bucket.label}{" "}
@@ -557,58 +342,6 @@ function CacheLossPanel({ result, comparisonResult }: {
               ))}
             </div>
           </>
-        )}
-    </article>
-  );
-}
-
-const imageCohortLabels = {
-  "no-image": "No image",
-  "first-turn-image": "Image in first turn",
-  "later-turn-image": "Image introduced later",
-} as const;
-
-function ImageCohortPanel({
-  title,
-  result,
-}: {
-  title: string;
-  result?: ProviderResult;
-}) {
-  return (
-    <article className="performance-provider image-cohort-panel">
-      <div className="performance-provider-heading">
-        <h2>{title}</h2>
-        <span className="efficiency-model">
-          {displayModelName(result?.selectedModel ?? "all")}
-        </span>
-      </div>
-      {!result
-        ? <div className="image-cohort-message">Loading image cohorts…</div>
-        : (
-          <div className="image-cohort-list">
-            {result.imageCohorts.map((cohort) => {
-              const missRate = rate(cohort.sessionsWithMiss, cohort.sessions);
-              const title =
-                `${cohort.sessionsWithMiss} of ${cohort.sessions} sessions`;
-              return (
-                <div
-                  className="image-cohort-row"
-                  key={cohort.cohort}
-                  title={title}
-                >
-                  <div>
-                    <span>{imageCohortLabels[cohort.cohort]}</span>
-                    <strong>{displayRate(missRate)}</strong>
-                  </div>
-                  <i>
-                    <b style={{ width: `${missRate ?? 0}%` }} />
-                  </i>
-                  <small>{cohort.sessionsWithMiss} of {cohort.sessions}</small>
-                </div>
-              );
-            })}
-          </div>
         )}
     </article>
   );
@@ -992,10 +725,7 @@ export function PerformancePage() {
           </div>
         </section>
         <section className="performance-comparison-section">
-          <h2>Unexpected cache miss depth</h2>
-          <p>
-            Unexpected misses grouped by estimated reusable tokens lost.
-          </p>
+          <h2>Unexpected misses by context lost</h2>
           <div className="performance-grid">
             <CacheLossPanel
               result={comparisonA.result}
@@ -1007,61 +737,6 @@ export function PerformancePage() {
             />
           </div>
         </section>
-      </section>
-      <section className="performance-section-heading">
-        <h2>Cache efficiency</h2>
-        <p>
-          Cached input as a percent of total session input. Higher means more
-          context was served from cache.
-        </p>
-      </section>
-      <section className="performance-grid">
-        <DistributionPanel
-          title={comparisonA.lab === "openai" ? "OpenAI" : "Anthropic"}
-          result={comparisonA.result}
-          distribution="efficiency"
-          label="Cache efficiency"
-        />
-        <DistributionPanel
-          title={comparisonB.lab === "openai" ? "OpenAI" : "Anthropic"}
-          result={comparisonB.result}
-          distribution="efficiency"
-          label="Cache efficiency"
-        />
-      </section>
-      <section className="performance-section-heading">
-        <h2>Context efficiency</h2>
-        <p>
-          Final input context as a percent of total session input. Higher means
-          less earlier context processing.
-        </p>
-      </section>
-      <section className="performance-grid">
-        <DistributionPanel
-          title={comparisonA.lab === "openai" ? "OpenAI" : "Anthropic"}
-          result={comparisonA.result}
-          distribution="finalContextShare"
-          label="Context efficiency"
-        />
-        <DistributionPanel
-          title={comparisonB.lab === "openai" ? "OpenAI" : "Anthropic"}
-          result={comparisonB.result}
-          distribution="finalContextShare"
-          label="Context efficiency"
-        />
-      </section>
-      <section className="performance-section-heading">
-        <h2>Miss rate by image use</h2>
-      </section>
-      <section className="performance-grid">
-        <ImageCohortPanel
-          title={comparisonA.lab === "openai" ? "OpenAI" : "Anthropic"}
-          result={comparisonA.result}
-        />
-        <ImageCohortPanel
-          title={comparisonB.lab === "openai" ? "OpenAI" : "Anthropic"}
-          result={comparisonB.result}
-        />
       </section>
     </main>
   );

@@ -1,9 +1,5 @@
 import type { PerformanceResponse } from "../shared/sessionSchemas.ts";
-import {
-  contextRange,
-  contextSize,
-  hasInputContext,
-} from "../shared/contextMetrics.ts";
+import { contextSize, hasInputContext } from "../shared/contextMetrics.ts";
 import {
   type AssessedUsageCall,
   categorizeUsageCallCache,
@@ -41,8 +37,6 @@ export const PERFORMANCE_MODELS = {
 } as const;
 
 type Vendor = keyof typeof PERFORMANCE_MODELS;
-type ImageCohort =
-  PerformanceResponse[Vendor]["imageCohorts"][number]["cohort"];
 type Week = PerformanceResponse[Vendor]["weeks"][number];
 
 const CACHE_LOSS_BUCKETS = ["0-16k", "16-64k", "64-128k", "128k+"] as const;
@@ -102,37 +96,6 @@ function weekKey(value: number) {
   return date.subtract({ days: date.dayOfWeek - 1 }).toString();
 }
 
-function percentile(values: number[], quantile: number) {
-  const index = (values.length - 1) * quantile;
-  const lower = Math.floor(index);
-  const remainder = index - lower;
-  return values[lower] + (values[lower + 1] - values[lower]) * remainder ||
-    values[lower];
-}
-
-function efficiencyDistribution(values: number[]) {
-  const sorted = values.toSorted((a, b) => a - b);
-  const q1 = percentile(sorted, 0.25);
-  const median = percentile(sorted, 0.5);
-  const q3 = percentile(sorted, 0.75);
-  const iqr = q3 - q1;
-  const lowerFence = q1 - 1.5 * iqr;
-  const upperFence = q3 + 1.5 * iqr;
-  const included = sorted.filter((value) =>
-    value >= lowerFence && value <= upperFence
-  );
-  return {
-    lowerWhisker: included[0],
-    q1,
-    median,
-    q3,
-    upperWhisker: included.at(-1)!,
-    average: sorted.reduce((sum, value) => sum + value, 0) / sorted.length,
-    sampleSize: sorted.length,
-    outliers: sorted.length - included.length,
-  };
-}
-
 function emptyWeek(date: string): Week {
   return {
     date,
@@ -160,25 +123,8 @@ function weeksBetween(start: number, end: number) {
   return weeks;
 }
 
-function imageCohorts(calls: AssessedUsageCall[]) {
-  const cohorts = new Map<string, ImageCohort>();
-  for (const call of calls) {
-    const key = `${call.harness}:${call.session.rootID}`;
-    if (!cohorts.has(key)) cohorts.set(key, "no-image");
-    if (
-      call.session.id !== call.session.rootID || (call.images ?? 0) === 0
-    ) continue;
-    if (call.turnOrdinal === 1) cohorts.set(key, "first-turn-image");
-    else if (cohorts.get(key) !== "first-turn-image") {
-      cohorts.set(key, "later-turn-image");
-    }
-  }
-  return cohorts;
-}
-
 function providerResult(
   calls: AssessedUsageCall[],
-  cohorts: Map<string, ImageCohort>,
   vendor: Vendor,
   selectedModel: string,
   start: number,
@@ -190,7 +136,7 @@ function providerResult(
     call.sessionStartedAt >= start && call.sessionStartedAt <= end &&
     hasInputContext(call.tokens)
   );
-  const retentionCalls = calls.filter((call) =>
+  const lossCandidates = calls.filter((call) =>
     vendorFor(call) === vendor &&
     (selectedModel === "all" || call.model === selectedModel) &&
     call.startedAt >= start && call.startedAt <= end &&
@@ -201,23 +147,7 @@ function providerResult(
     matching,
     (call) => `${call.harness}:${call.session.rootID}`,
   );
-  const efficiencyByWeek = new Map<string, number[]>();
-  const finalContextShareByWeek = new Map<string, number[]>();
-  const cacheRetentionByWeek = new Map<string, {
-    comparableRequests: number;
-    requestsWithLoss: number;
-    partialHits: number;
-    fullMisses: number;
-    retainedTokens: number;
-    unretainedTokens: number;
-    losses: number[];
-    lossBuckets: Record<CacheLossBucket, CacheLossBucketTotals>;
-  }>();
-  const imageResults: PerformanceResponse[Vendor]["imageCohorts"] = [
-    { cohort: "no-image", sessions: 0, sessionsWithMiss: 0 },
-    { cohort: "first-turn-image", sessions: 0, sessionsWithMiss: 0 },
-    { cohort: "later-turn-image", sessions: 0, sessionsWithMiss: 0 },
-  ];
+  const cacheLossByWeek = new Map<string, CacheLossBuckets>();
   let sessionsWithMiss = 0;
   let turns = 0;
   let turnsWithMiss = 0;
@@ -229,25 +159,6 @@ function providerResult(
     const bucket = weeks.get(sessionWeek);
     if (!bucket) continue;
     bucket.sessions++;
-    const totalInput = sessionCalls.reduce(
-      (sum, call) => sum + contextSize(call.tokens),
-      0,
-    );
-    if (totalInput > 0) {
-      const cacheEfficiency = efficiencyByWeek.get(sessionWeek) ?? [];
-      cacheEfficiency.push(
-        sessionCalls.reduce((sum, call) => sum + call.tokens.cacheRead, 0) /
-          totalInput,
-      );
-      efficiencyByWeek.set(sessionWeek, cacheEfficiency);
-
-      const finalContext = contextRange(sessionCalls).latest;
-      if (finalContext) {
-        const shares = finalContextShareByWeek.get(sessionWeek) ?? [];
-        shares.push(finalContext.size / totalInput);
-        finalContextShareByWeek.set(sessionWeek, shares);
-      }
-    }
     const sessionMiss = sessionCalls.some((call) =>
       isUnexpectedMiss(call.cacheAssessment)
     );
@@ -255,14 +166,6 @@ function providerResult(
       sessionsWithMiss++;
       bucket.sessionsWithMiss++;
     }
-    const sessionKey = `${sessionCalls[0].harness}:${
-      sessionCalls[0].session.rootID
-    }`;
-    const imageResult = imageResults.find((result) =>
-      result.cohort === (cohorts.get(sessionKey) ?? "no-image")
-    )!;
-    imageResult.sessions++;
-    if (sessionMiss) imageResult.sessionsWithMiss++;
     const sessionTurns = Map.groupBy(
       sessionCalls,
       (call) => `${call.session.id}:${call.turnID}`,
@@ -287,81 +190,36 @@ function providerResult(
     }
   }
 
-  for (const call of retentionCalls) {
+  for (const call of lossCandidates) {
     const assessment = call.cacheAssessment;
     const previousReusable = assessment.previousReusableTokens;
-    if (
-      previousReusable === undefined ||
-      (assessment.status !== "hit" && !isUnexpectedMiss(assessment))
-    ) continue;
+    if (previousReusable === undefined || !isUnexpectedMiss(assessment)) {
+      continue;
+    }
+
+    const expectedReusable = Math.min(
+      previousReusable,
+      contextSize(call.tokens),
+    );
+    const retained = Math.min(call.tokens.cacheRead, expectedReusable);
+    const unretained = Math.max(expectedReusable - retained, 0);
+    if (unretained === 0) continue;
 
     const date = weekKey(call.startedAt);
-    const bucket = cacheRetentionByWeek.get(date) ?? {
-      comparableRequests: 0,
-      requestsWithLoss: 0,
-      partialHits: 0,
-      fullMisses: 0,
-      retainedTokens: 0,
-      unretainedTokens: 0,
-      losses: [],
-      lossBuckets: emptyCacheLossBuckets(),
-    };
-    const retained = Math.min(call.tokens.cacheRead, previousReusable);
-    const unretained = Math.max(previousReusable - retained, 0);
-    bucket.comparableRequests++;
-    bucket.retainedTokens += retained;
+    const buckets = cacheLossByWeek.get(date) ?? emptyCacheLossBuckets();
+    const bucket = buckets[cacheLossBucket(unretained)];
+    bucket.requests++;
     bucket.unretainedTokens += unretained;
-    bucket.losses.push(unretained);
-    // The chart intentionally excludes hits, including small shortfalls below
-    // the 10% miss threshold, because they can represent fresh input.
-    if (assessment.status !== "hit" && unretained > 0) {
-      const lossBucket = bucket.lossBuckets[cacheLossBucket(unretained)];
-      lossBucket.requests++;
-      lossBucket.unretainedTokens += unretained;
-    }
-    if (assessment.status === "partial-hit") {
-      bucket.requestsWithLoss++;
-      bucket.partialHits++;
-    } else if (assessment.status === "full-miss") {
-      bucket.requestsWithLoss++;
-      bucket.fullMisses++;
-    }
-    cacheRetentionByWeek.set(date, bucket);
+    cacheLossByWeek.set(date, buckets);
   }
 
-  for (const [date, values] of efficiencyByWeek) {
-    const week = weeks.get(date);
-    if (week) week.efficiency = efficiencyDistribution(values);
-  }
-  for (const [date, values] of finalContextShareByWeek) {
-    const week = weeks.get(date);
-    if (week) week.finalContextShare = efficiencyDistribution(values);
-  }
-  for (const [date, retention] of cacheRetentionByWeek) {
+  for (const [date, buckets] of cacheLossByWeek) {
     const week = weeks.get(date);
     if (!week) continue;
-    const totalReusable = retention.retainedTokens + retention.unretainedTokens;
-    week.cacheRetention = {
-      comparableRequests: retention.comparableRequests,
-      requestsWithLoss: retention.requestsWithLoss,
-      partialHits: retention.partialHits,
-      fullMisses: retention.fullMisses,
-      retainedTokens: retention.retainedTokens,
-      unretainedTokens: retention.unretainedTokens,
-      retainedShare: totalReusable === 0
-        ? 0
-        : retention.retainedTokens / totalReusable,
-      lossRequestRate: retention.requestsWithLoss /
-        retention.comparableRequests,
-      p90UnretainedTokens: percentile(
-        retention.losses.toSorted((a, b) => a - b),
-        0.9,
-      ),
-      lossBuckets: CACHE_LOSS_BUCKETS.map((bucket) => ({
-        bucket,
-        ...retention.lossBuckets[bucket],
-      })),
-    };
+    week.cacheLossBuckets = CACHE_LOSS_BUCKETS.map((bucket) => ({
+      bucket,
+      ...buckets[bucket],
+    }));
   }
 
   return {
@@ -373,7 +231,6 @@ function providerResult(
     turnsWithMiss,
     modelCalls,
     modelCallsWithMiss,
-    imageCohorts: imageResults,
     weeks: [...weeks.values()],
   };
 }
@@ -386,7 +243,6 @@ export function aggregatePerformance(
   anthropicModel = "all",
 ): PerformanceResponse {
   const assessed = categorizeUsageCallCache(calls);
-  const cohorts = imageCohorts(assessed);
   return {
     rangeDays: PERFORMANCE_RANGE_DAYS,
     models: {
@@ -395,7 +251,6 @@ export function aggregatePerformance(
     },
     openai: providerResult(
       assessed,
-      cohorts,
       "openai",
       openaiModel,
       start,
@@ -403,7 +258,6 @@ export function aggregatePerformance(
     ),
     anthropic: providerResult(
       assessed,
-      cohorts,
       "anthropic",
       anthropicModel,
       start,

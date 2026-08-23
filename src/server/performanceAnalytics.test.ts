@@ -31,25 +31,6 @@ function call(
   };
 }
 
-function efficiencyCall(
-  session: string,
-  startedAt: number,
-  efficiency: number,
-): UsageCall {
-  const result = call(session, 1, startedAt, 0);
-  return {
-    ...result,
-    sessionStartedAt: startedAt,
-    tokens: {
-      ...result.tokens,
-      uncachedInput: 100 - efficiency * 100,
-      cacheRead: efficiency * 100,
-      freshPrompt: 100 - efficiency * 100,
-      processed: 100,
-    },
-  };
-}
-
 Deno.test("aggregates weekly session and turn cache miss rates by model", () => {
   const start = new Date(2026, 2, 2).getTime();
   const end = new Date(2026, 2, 8, 23, 59).getTime();
@@ -99,20 +80,33 @@ Deno.test("buckets every partial and full cache loss", () => {
     start,
     end,
   );
-  const retention = result.openai.weeks[0].cacheRetention!;
+  const buckets = result.openai.weeks[0].cacheLossBuckets!;
 
-  strictEqual(retention.comparableRequests, 2);
-  strictEqual(retention.requestsWithLoss, 2);
-  strictEqual(retention.partialHits, 2);
-  strictEqual(retention.fullMisses, 0);
-  strictEqual(retention.retainedTokens, 175);
-  strictEqual(retention.unretainedTokens, 25);
-  strictEqual(retention.retainedShare, 0.875);
-  strictEqual(retention.lossRequestRate, 1);
-  strictEqual(retention.p90UnretainedTokens, 18.5);
-  strictEqual(retention.lossBuckets[0].requests, 2);
-  strictEqual(retention.lossBuckets[0].unretainedTokens, 25);
-  strictEqual(retention.lossBuckets[1].requests, 0);
+  strictEqual(buckets[0].requests, 2);
+  strictEqual(buckets[0].unretainedTokens, 25);
+  strictEqual(buckets[1].requests, 0);
+});
+
+Deno.test("limits context loss to reusable overlap", () => {
+  const start = new Date(2026, 2, 2).getTime();
+  const end = new Date(2026, 2, 8, 23, 59).getTime();
+  const smallerContext = call("smaller", 2, start + 20, 20);
+  smallerContext.tokens.uncachedInput = 30;
+  smallerContext.tokens.freshPrompt = 30;
+  smallerContext.tokens.processed = 50;
+
+  const result = aggregatePerformance(
+    [
+      call("smaller", 1, start + 10, 0, 100),
+      smallerContext,
+    ],
+    start,
+    end,
+  );
+  const buckets = result.openai.weeks[0].cacheLossBuckets!;
+
+  strictEqual(buckets[0].requests, 1);
+  strictEqual(buckets[0].unretainedTokens, 30);
 });
 
 Deno.test("excludes model changes from unexpected miss rates and volume", () => {
@@ -130,52 +124,12 @@ Deno.test("excludes model changes from unexpected miss rates and volume", () => 
     start,
     end,
   );
-  const retention = result.openai.weeks[0].cacheRetention!;
+  const buckets = result.openai.weeks[0].cacheLossBuckets!;
 
   strictEqual(result.openai.sessionsWithMiss, 1);
   strictEqual(result.openai.turnsWithMiss, 1);
   strictEqual(result.openai.modelCallsWithMiss, 1);
-  strictEqual(retention.comparableRequests, 1);
-  strictEqual(retention.requestsWithLoss, 1);
-  strictEqual(retention.partialHits, 1);
-  strictEqual(retention.fullMisses, 0);
-  strictEqual(retention.lossBuckets[0].requests, 1);
-});
-
-Deno.test("groups image sessions into exclusive cohorts with miss rates", () => {
-  const start = new Date(2026, 2, 2).getTime();
-  const end = new Date(2026, 2, 8, 23, 59).getTime();
-  const cohortSession = (
-    session: string,
-    imagesOn: "none" | "first" | "later",
-    miss: boolean,
-  ) => {
-    const first = call(session, 1, start + 10, 0, 100);
-    const second = call(session, 2, start + 20, miss ? 0 : 100);
-    return [
-      imagesOn === "first" ? { ...first, images: 1 } : first,
-      imagesOn === "later" || imagesOn === "first"
-        ? { ...second, images: 1 }
-        : second,
-    ];
-  };
-  const result = aggregatePerformance(
-    [
-      ...cohortSession("no-image-miss", "none", true),
-      ...cohortSession("no-image-clean", "none", false),
-      ...cohortSession("first-image-miss", "first", true),
-      ...cohortSession("first-image-clean", "first", false),
-      ...cohortSession("later-image-miss", "later", true),
-      ...cohortSession("later-image-clean", "later", false),
-    ],
-    start,
-    end,
-  );
-
-  for (const cohort of result.openai.imageCohorts) {
-    strictEqual(cohort.sessions, 2);
-    strictEqual(cohort.sessionsWithMiss, 1);
-  }
+  strictEqual(buckets[0].requests, 1);
 });
 
 Deno.test("excludes zero-input calls from performance eligibility", () => {
@@ -193,59 +147,4 @@ Deno.test("excludes zero-input calls from performance eligibility", () => {
   strictEqual(result.openai.sessions, 0);
   strictEqual(result.openai.turns, 0);
   strictEqual(result.openai.modelCalls, 0);
-});
-
-Deno.test("calculates weekly session cache-efficiency box plot values", () => {
-  const start = new Date(2026, 2, 2).getTime();
-  const end = new Date(2026, 2, 8, 23, 59).getTime();
-  const result = aggregatePerformance(
-    [0, 0.25, 0.5, 0.75, 1].map((efficiency, index) =>
-      efficiencyCall(`session-${index}`, start + index * 10, efficiency)
-    ),
-    start,
-    end,
-  );
-  const distribution = result.openai.weeks[0].efficiency!;
-
-  strictEqual(distribution.lowerWhisker, 0);
-  strictEqual(distribution.q1, 0.25);
-  strictEqual(distribution.median, 0.5);
-  strictEqual(distribution.q3, 0.75);
-  strictEqual(distribution.upperWhisker, 1);
-  strictEqual(distribution.average, 0.5);
-  strictEqual(distribution.sampleSize, 5);
-  strictEqual(distribution.outliers, 0);
-});
-
-Deno.test("calculates final-context share from the latest request and all session input", () => {
-  const start = new Date(2026, 2, 2).getTime();
-  const end = new Date(2026, 2, 8, 23, 59).getTime();
-  const earlier = call("session", 1, start + 10, 0);
-  const latest = call("session", 2, start + 20, 100);
-  earlier.sessionStartedAt = start;
-  latest.sessionStartedAt = start;
-
-  const result = aggregatePerformance([latest, earlier], start, end);
-  const distribution = result.openai.weeks[0].finalContextShare!;
-
-  strictEqual(distribution.median, 2 / 3);
-  strictEqual(distribution.average, 2 / 3);
-  strictEqual(distribution.sampleSize, 1);
-});
-
-Deno.test("uses Tukey whiskers and reports efficiency outliers", () => {
-  const start = new Date(2026, 2, 2).getTime();
-  const end = new Date(2026, 2, 8, 23, 59).getTime();
-  const result = aggregatePerformance(
-    [0, 0.5, 0.5, 0.5, 1].map((efficiency, index) =>
-      efficiencyCall(`session-${index}`, start + index * 10, efficiency)
-    ),
-    start,
-    end,
-  );
-  const distribution = result.openai.weeks[0].efficiency!;
-
-  strictEqual(distribution.lowerWhisker, 0.5);
-  strictEqual(distribution.upperWhisker, 0.5);
-  strictEqual(distribution.outliers, 2);
 });

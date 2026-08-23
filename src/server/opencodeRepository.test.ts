@@ -113,7 +113,6 @@ Deno.test("removes empty turns without dropping reported cost", () => {
         cacheChainID: "session",
         turnID: "session:priced-user",
         turnOrdinal: 2,
-        images: 1,
         sessionStartedAt: 1,
         provider,
         model,
@@ -153,22 +152,52 @@ Deno.test("excludes OpenCode synthetic tool traces from message content", () => 
     "INSERT INTO message VALUES (?, 'session', ?, ?)",
   );
   insertMessage.run("user", 1, JSON.stringify({ role: "user" }));
-  insertMessage.run("assistant", 2, JSON.stringify({
-    role: "assistant",
-    tokens: { input: 1, output: 1, reasoning: 0, cache: { read: 0, write: 0 } },
-  }));
+  insertMessage.run(
+    "assistant",
+    2,
+    JSON.stringify({
+      role: "assistant",
+      tokens: {
+        input: 1,
+        output: 1,
+        reasoning: 0,
+        cache: { read: 0, write: 0 },
+      },
+    }),
+  );
   const insertPart = database.prepare(
     "INSERT INTO part VALUES (?, 'session', ?, ?, ?)",
   );
-  insertPart.run("prompt", "user", 1, JSON.stringify({
-    type: "text", text: "Read these files.", synthetic: false,
-  }));
-  insertPart.run("tool-input", "user", 1, JSON.stringify({
-    type: "text", text: "Called the Read tool", synthetic: true,
-  }));
-  insertPart.run("tool-output", "user", 1, JSON.stringify({
-    type: "text", text: "<file>tool output</file>", synthetic: true,
-  }));
+  insertPart.run(
+    "prompt",
+    "user",
+    1,
+    JSON.stringify({
+      type: "text",
+      text: "Read these files.",
+      synthetic: false,
+    }),
+  );
+  insertPart.run(
+    "tool-input",
+    "user",
+    1,
+    JSON.stringify({
+      type: "text",
+      text: "Called the Read tool",
+      synthetic: true,
+    }),
+  );
+  insertPart.run(
+    "tool-output",
+    "user",
+    1,
+    JSON.stringify({
+      type: "text",
+      text: "<file>tool output</file>",
+      synthetic: true,
+    }),
+  );
   database.close();
 
   const repository = new OpenCodeRepository(path);

@@ -677,34 +677,10 @@ export const overviewResponseSchema = z.object({
   })),
 });
 
-const performanceDistributionSchema = z.object({
-  lowerWhisker: z.number().min(0).max(1),
-  q1: z.number().min(0).max(1),
-  median: z.number().min(0).max(1),
-  q3: z.number().min(0).max(1),
-  upperWhisker: z.number().min(0).max(1),
-  average: z.number().min(0).max(1),
-  sampleSize: z.number().int().positive(),
-  outliers: z.number().int().nonnegative(),
-});
-
 const cacheLossBucketSchema = z.object({
   bucket: z.enum(["0-16k", "16-64k", "64-128k", "128k+"]),
   requests: z.number().int().nonnegative(),
   unretainedTokens: z.number().int().nonnegative(),
-});
-
-const cacheRetentionSchema = z.object({
-  comparableRequests: z.number().int().positive(),
-  requestsWithLoss: z.number().int().nonnegative(),
-  partialHits: z.number().int().nonnegative(),
-  fullMisses: z.number().int().nonnegative(),
-  retainedTokens: z.number().int().nonnegative(),
-  unretainedTokens: z.number().int().nonnegative(),
-  retainedShare: z.number().min(0).max(1),
-  lossRequestRate: z.number().min(0).max(1),
-  p90UnretainedTokens: z.number().nonnegative(),
-  lossBuckets: z.array(cacheLossBucketSchema),
 });
 
 const performanceWeekSchema = z.object({
@@ -716,15 +692,7 @@ const performanceWeekSchema = z.object({
   turnsWithMiss: z.number().int().nonnegative(),
   modelCalls: z.number().int().nonnegative(),
   modelCallsWithMiss: z.number().int().nonnegative(),
-  efficiency: performanceDistributionSchema.optional(),
-  finalContextShare: performanceDistributionSchema.optional(),
-  cacheRetention: cacheRetentionSchema.optional(),
-});
-
-const imageCohortSchema = z.object({
-  cohort: z.enum(["no-image", "first-turn-image", "later-turn-image"]),
-  sessions: z.number().int().nonnegative(),
-  sessionsWithMiss: z.number().int().nonnegative(),
+  cacheLossBuckets: z.array(cacheLossBucketSchema).optional(),
 });
 
 const performanceProviderSchema = z.object({
@@ -736,7 +704,6 @@ const performanceProviderSchema = z.object({
   turnsWithMiss: z.number().int().nonnegative(),
   modelCalls: z.number().int().nonnegative(),
   modelCallsWithMiss: z.number().int().nonnegative(),
-  imageCohorts: z.array(imageCohortSchema),
   weeks: z.array(performanceWeekSchema),
 });
 
