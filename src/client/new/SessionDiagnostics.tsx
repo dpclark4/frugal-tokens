@@ -25,7 +25,7 @@ type ChartPoint = SessionPoint & {
   highestValueLabel?: string;
   highlighted: boolean;
 };
-type SessionDotShapeProps = {
+type SessionDotGeometryProps = {
   cx?: number;
   cy?: number;
   payload?: ChartPoint;
@@ -129,7 +129,7 @@ function SessionDot({
   cy,
   payload,
   onOpen,
-}: SessionDotShapeProps & { onOpen: (session: ChartPoint) => void }) {
+}: SessionDotGeometryProps & { onOpen: (session: ChartPoint) => void }) {
   if (cx === undefined || cy === undefined || !payload) return <g />;
   const canOpen = payload.harness !== undefined;
   const open = () => {
@@ -233,6 +233,12 @@ export function SessionDiagnostics({ data }: { data: SessionDiagnosticsData }) {
       },
     });
   }
+
+  const scatterDotProps = {
+    "shape": (geometry: SessionDotGeometryProps) => (
+      <SessionDot {...geometry} onOpen={openSession} />
+    ),
+  };
 
   return (
     <section
@@ -376,9 +382,7 @@ export function SessionDiagnostics({ data }: { data: SessionDiagnosticsData }) {
                 />
                 <Scatter
                   data={points}
-                  shape={(props: SessionDotShapeProps) => (
-                    <SessionDot {...props} onOpen={openSession} />
-                  )}
+                  {...scatterDotProps}
                   isAnimationActive={false}
                 />
               </ScatterChart>

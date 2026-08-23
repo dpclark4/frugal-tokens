@@ -32,7 +32,7 @@ import {
   aggregateWorkRhythmOverview,
 } from "./activityOverview.ts";
 import { workRhythmRange } from "./workRhythm.ts";
-import { aggregateSessionShape } from "./sessionShapeAnalytics.ts";
+import { aggregateSessionDistributions } from "./sessionShapeAnalytics.ts";
 import { expandHomePath, openArchiveDatabase, sqlitePath } from "./database.ts";
 import { SourceArtifactRepository } from "./sourceArtifactRepository.ts";
 import { ConversationRepository } from "./conversationRepository.ts";
@@ -515,13 +515,18 @@ app.get("/api/session-shape", (context) => {
     ? undefined
     : harness as SessionSummary["harness"];
   const loadStartedAt = performance.now();
-  const loaded = readRepository.listSessionShapeRollups(
+  const loaded = readRepository.listSessionDistributionRollups(
     start,
     selectedHarness,
   );
   const loadDuration = performance.now() - loadStartedAt;
   const aggregationStartedAt = performance.now();
-  const shape = aggregateSessionShape(loaded, start, end, range);
+  const distributions = aggregateSessionDistributions(
+    loaded,
+    start,
+    end,
+    range,
+  );
   const aggregationDuration = performance.now() - aggregationStartedAt;
   const totalDuration = performance.now() - requestStartedAt;
   context.header(
@@ -531,13 +536,13 @@ app.get("/api/session-shape", (context) => {
     }, total;dur=${totalDuration.toFixed(1)}`,
   );
   console.info(
-    `[session-shape] harness=${harness} range=${range} roots=${loaded.length} samples=${shape.sampleSize} database=${
+    `[session-shape] harness=${harness} range=${range} roots=${loaded.length} samples=${distributions.sampleSize} database=${
       formatTiming(loadDuration)
     } aggregate=${formatTiming(aggregationDuration)} total=${
       formatTiming(totalDuration)
     }`,
   );
-  return context.json(shape);
+  return context.json(distributions);
 });
 
 app.get("/api/activity-overview", (context) => {

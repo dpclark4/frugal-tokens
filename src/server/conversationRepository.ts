@@ -49,7 +49,7 @@ export type InitialInputSample = {
   input: number;
 };
 
-export type StoredSessionShapeRollup = StoredOverviewRollup & {
+export type StoredSessionDistributionRollup = StoredOverviewRollup & {
   initialInput?: number;
 };
 
@@ -1045,10 +1045,10 @@ export class ConversationRepository {
     });
   }
 
-  listSessionShapeRollups(
+  listSessionDistributionRollups(
     startedAt: number,
     harness?: Harness,
-  ): StoredSessionShapeRollup[] {
+  ): StoredSessionDistributionRollup[] {
     const rows = this.db.prepare(`
       SELECT c.id, ${effectiveConversationTitle} AS title, so.harness,
         cr.overview_json,

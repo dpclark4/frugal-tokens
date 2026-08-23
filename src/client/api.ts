@@ -5,9 +5,9 @@ import {
   overviewResponseSchema,
   performanceResponseSchema,
   sessionDetailSchema,
+  sessionDistributionResponseSchema,
   sessionListResponseSchema,
   type SessionMissFilter,
-  sessionShapeResponseSchema,
   toolCallsResponseSchema,
   ttlMissMetricsSchema,
   usageResponseSchema,
@@ -93,11 +93,11 @@ export async function getWorkRhythm(
   );
 }
 
-export async function getSessionShape(
+export async function getSessionDistributions(
   range: 30 | 90,
   harness: string,
 ) {
-  return sessionShapeResponseSchema.parse(
+  return sessionDistributionResponseSchema.parse(
     await getJson(`/api/session-shape?range=${range}&harness=${harness}`),
   );
 }

@@ -1,6 +1,7 @@
 import { deepStrictEqual, strictEqual } from "node:assert";
 import {
   activityOverviewResponseSchema,
+  spendCompositionSchema,
   workRhythmOverviewResponseSchema,
 } from "../shared/sessionSchemas.ts";
 import type { StoredOverviewRollup } from "./overviewAnalytics.ts";
@@ -213,5 +214,5 @@ Deno.test("spend composition selects the union of top spend and token models", (
   strictEqual(result.models[0].provider, "anthropic");
   strictEqual(result.models[0].hasUnpricedCost, true);
   strictEqual(result.models[0].effectiveCostPerMillion, 10);
-  activityOverviewResponseSchema.shape.spendComposition.parse(result);
+  spendCompositionSchema.parse(result);
 });

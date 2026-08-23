@@ -24,11 +24,11 @@ Initial state:
 
 Current state:
 
-- 437 findings across 58 files and 4 ungated anti-slop rules in the current
+- 338 findings across 51 files and 3 ungated anti-slop rules in the current
   migration scope
-- `no-unknown-returns`, `no-known-value-widening`, and
-  `no-unsafe-dictionary-type`, and `no-unknown-parameters` are clean and
-  enforced by the gate
+- `no-unknown-returns`, `no-known-value-widening`,
+  `no-unsafe-dictionary-type`, `no-unknown-parameters`, and
+  `no-shape-in-symbol-names` are clean and enforced by the gate
 - The dictionary migration also reduced overlapping findings:
   `require-safety-comment-for-type-assertion` from 173 to 159,
   `no-runtime-typeof` from 103 to 92, and `no-unknown-parameters` from 60 to 55
@@ -40,6 +40,10 @@ Current state:
   boundaries cleared all 25 scoped `no-unknown-parameters` findings. The same
   changes reduced `no-runtime-typeof` from 47 to 46 and assertion findings from
   149 to 146.
+- Renaming the session-distribution contracts, aggregation functions, report
+  inputs, and chart geometry cleared all 99 scoped
+  `no-shape-in-symbol-names` findings without changing the Session shape UI or
+  API route.
 
 Current scoped rule counts:
 
@@ -47,14 +51,13 @@ Current scoped rule counts:
 | ------------------------------------------- | -------: |
 | `require-safety-comment-for-type-assertion` |      146 |
 | `no-conditional-empty-object-spread`        |      146 |
-| `no-shape-in-symbol-names`                  |       99 |
 | `no-runtime-typeof`                         |       46 |
 
 | Rule                                        | Initial findings | Files | Status             |
 | ------------------------------------------- | ---------------: | ----: | ------------------ |
 | `require-safety-comment-for-type-assertion` |              173 |    41 | Not started        |
 | `no-conditional-empty-object-spread`        |              166 |    24 | Not started        |
-| `no-shape-in-symbol-names`                  |              130 |    15 | Not started        |
+| `no-shape-in-symbol-names`                  |              130 |    15 | Complete and gated |
 | `no-runtime-typeof`                         |              103 |    23 | Not started        |
 | `no-unknown-parameters`                     |               60 |    14 | Complete and gated |
 | `no-known-value-widening`                   |               42 |    23 | Complete and gated |
@@ -149,9 +152,9 @@ Expected rule reduced by this unit:
 
 ### 4. Domain naming
 
-- [ ] Classify symbols containing `shape` by domain meaning
-- [ ] Rename exported/shared symbols before local symbols
-- [ ] Avoid replacing `shape` with another vague representation word
+- [x] Classify symbols containing `shape` by domain meaning
+- [x] Rename exported/shared symbols before local symbols
+- [x] Avoid replacing `shape` with another vague representation word
 
 Expected rule reduced by this unit:
 

@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { getRouteApi } from "@tanstack/react-router";
 import type {
   ActivityOverviewResponse,
-  SessionShapeResponse,
+  SessionDistributionResponse,
   SessionSummary,
   TtlMissMetrics,
   WorkRhythmOverviewResponse,
@@ -16,7 +16,7 @@ import {
   type ScreenshotState,
 } from "./new/OverviewToolbar.tsx";
 import { UsageOverview } from "./new/UsageOverview.tsx";
-import { SessionShape } from "./new/SessionShape.tsx";
+import { SessionDistributions } from "./new/SessionShape.tsx";
 import { CacheOverview } from "./new/CacheOverview.tsx";
 import { RecentSessions } from "./new/RecentSessions.tsx";
 import {
@@ -127,10 +127,10 @@ export function NewPage() {
   const [copyReportState, setCopyReportState] = useState<CopyReportState>(
     "idle",
   );
-  const [loadedSessionShape, setLoadedSessionShape] = useState<{
+  const [loadedSessionDistributions, setLoadedSessionDistributions] = useState<{
     range: 30 | 90;
     harness: string;
-    data: SessionShapeResponse;
+    data: SessionDistributionResponse;
   }>();
   const [loadedCacheMisses, setLoadedCacheMisses] = useState<{
     range: 30 | 90;
@@ -152,14 +152,16 @@ export function NewPage() {
       loadedWorkRhythm.harness === search.harness
     ? loadedWorkRhythm.data
     : undefined;
-  const sessionShapeIsCurrent = loadedSessionShape !== undefined &&
-    loadedSessionShape.range === search.range &&
-    loadedSessionShape.harness === search.harness;
+  const sessionDistributionsAreCurrent =
+    loadedSessionDistributions !== undefined &&
+    loadedSessionDistributions.range === search.range &&
+    loadedSessionDistributions.harness === search.harness;
   const cacheMissesAreCurrent = loadedCacheMisses !== undefined &&
     loadedCacheMisses.range === search.range &&
     loadedCacheMisses.harness === search.harness;
   const reportReady = Boolean(
-    data && workRhythmData && sessionShapeIsCurrent && cacheMissesAreCurrent,
+    data && workRhythmData && sessionDistributionsAreCurrent &&
+      cacheMissesAreCurrent,
   );
 
   useEffect(() => {
@@ -292,15 +294,16 @@ export function NewPage() {
 
   async function copyReport() {
     if (
-      !data || !workRhythmData || !loadedSessionShape ||
-      !sessionShapeIsCurrent || !loadedCacheMisses || !cacheMissesAreCurrent
+      !data || !workRhythmData || !loadedSessionDistributions ||
+      !sessionDistributionsAreCurrent || !loadedCacheMisses ||
+      !cacheMissesAreCurrent
     ) return;
     try {
       const { buildOverviewReport } = await import("./overviewReport.ts");
       await copyText(buildOverviewReport({
         overview: data,
         workRhythmOverview: workRhythmData,
-        sessionShape: loadedSessionShape.data,
+        sessionDistributions: loadedSessionDistributions.data,
         cacheMisses: loadedCacheMisses.data,
         harness: search.harness,
       }));
@@ -367,16 +370,16 @@ export function NewPage() {
           <div className="new-overview-grid">
             <div className="new-overview-left">
               <UsageOverview data={data} />
-              <SessionShape
+              <SessionDistributions
                 range={search.range}
                 harness={search.harness}
-                onDataChange={(sessionShape) =>
-                  setLoadedSessionShape(
-                    sessionShape
+                onDataChange={(sessionDistributions) =>
+                  setLoadedSessionDistributions(
+                    sessionDistributions
                       ? {
                         range: search.range,
                         harness: search.harness,
-                        data: sessionShape,
+                        data: sessionDistributions,
                       }
                       : undefined,
                   )}

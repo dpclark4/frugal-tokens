@@ -975,7 +975,7 @@ export type SessionListResponse = z.infer<typeof sessionListResponseSchema>;
 export type SessionSummary = z.infer<typeof sessionSummarySchema>;
 export type TokenUsage = z.infer<typeof tokenUsageSchema>;
 export type UsageResponse = z.infer<typeof usageResponseSchema>;
-export const sessionShapeMetricKeySchema = z.enum([
+export const sessionDistributionMetricKeySchema = z.enum([
   "cost",
   "processedInput",
   "userTurns",
@@ -985,14 +985,14 @@ export const sessionShapeMetricKeySchema = z.enum([
   "tokenReuse",
 ]);
 
-export const sessionShapeResponseSchema = z.object({
+export const sessionDistributionResponseSchema = z.object({
   rangeDays: z.union([z.literal(30), z.literal(90)]),
   sampleSize: z.number().int().nonnegative(),
   unpricedSessions: z.number().int().nonnegative(),
   multiDaySessions: z.number().int().nonnegative(),
   multiDaySessionRate: z.number().min(0).max(1),
   metrics: z.array(z.object({
-    key: sessionShapeMetricKeySchema,
+    key: sessionDistributionMetricKeySchema,
     distribution: z.object({
       p10: z.number().nonnegative(),
       p25: z.number().nonnegative(),
@@ -1015,7 +1015,9 @@ export type WorkRhythmOverviewResponse = z.infer<
 >;
 export type SpendCompositionData = z.infer<typeof spendCompositionSchema>;
 export type OverviewResponse = z.infer<typeof overviewResponseSchema>;
-export type SessionShapeResponse = z.infer<typeof sessionShapeResponseSchema>;
+export type SessionDistributionResponse = z.infer<
+  typeof sessionDistributionResponseSchema
+>;
 export type PerformanceResponse = z.infer<typeof performanceResponseSchema>;
 export type ToolCallsResponse = z.infer<typeof toolCallsResponseSchema>;
 export type TtlMissMetrics = z.infer<typeof ttlMissMetricsSchema>;
