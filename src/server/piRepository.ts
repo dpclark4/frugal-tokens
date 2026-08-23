@@ -6,7 +6,11 @@ import {
   type SessionSummary,
   type TokenUsage,
 } from "../shared/sessionSchemas.ts";
-import { type JsonValue, jsonValueSchema } from "../shared/json.ts";
+import {
+  type JsonObject,
+  type JsonValue,
+  jsonValueSchema,
+} from "../shared/json.ts";
 import { usageCallsFromSession } from "./usage.ts";
 import type {
   CompactionDetailImport,
@@ -241,14 +245,14 @@ function piEntryCheckpointItem(entry: CheckpointEntry) {
     });
   }
   if (entry.type === "custom_message") {
+    const nativeMetadata: JsonObject = {};
     const customType = stringValue(entry.customType);
+    if (customType !== undefined) nativeMetadata.customType = customType;
     return messageCheckpointItem({
       sourceEntryID,
       role: "user",
       content: entry.content,
-      nativeMetadata: {
-        ...(customType === undefined ? {} : { customType }),
-      },
+      nativeMetadata,
     });
   }
   const branchSummary = stringValue(entry.summary);
@@ -364,6 +368,16 @@ function piCompactionDetails(
   const usage = objectValue(record.usage);
   const fromHook = booleanValue(record.fromHook);
   const firstKeptEntryID = stringValue(record.firstKeptEntryId);
+  const nativeMetadata: JsonObject = { boundaryKind };
+  if (firstKeptEntryID !== undefined) {
+    nativeMetadata.firstKeptEntryID = firstKeptEntryID;
+  }
+  if (Array.isArray(record.retainedTail)) {
+    nativeMetadata.retainedTailCount = record.retainedTail.length;
+  }
+  if (fromHook !== undefined) nativeMetadata.fromHook = fromHook;
+  if (usage !== undefined) nativeMetadata.summaryUsage = usage;
+  if (issues.length > 0) nativeMetadata.captureIssues = issues;
   return {
     sourceID: record.id,
     trigger: "unknown",
@@ -372,16 +386,7 @@ function piCompactionDetails(
     preContextTokens: tokensBefore,
     retainedItemCount: retainedItems.length,
     droppedItemCount,
-    nativeMetadata: {
-      boundaryKind,
-      ...(firstKeptEntryID === undefined ? {} : { firstKeptEntryID }),
-      ...(Array.isArray(record.retainedTail)
-        ? { retainedTailCount: record.retainedTail.length }
-        : {}),
-      ...(fromHook === undefined ? {} : { fromHook }),
-      ...(usage === undefined ? {} : { summaryUsage: usage }),
-      ...(issues.length === 0 ? {} : { captureIssues: issues }),
-    },
+    nativeMetadata,
     checkpointItems,
   };
 }
@@ -430,13 +435,14 @@ function decodeRecords(records: Record[]) {
         record.type !== "thinking_level_change" ||
         record.thinkingLevel === undefined
       ) return [];
-      return [{
+      const change: ReasoningSettingState = {
         settingName: "thinkingLevel",
         settingValue: record.thinkingLevel,
         sourceFieldPath: "thinkingLevel",
         sourceOrder: recordIndex + 1,
-        ...(timestamp === 0 ? {} : { observedAt: timestamp }),
-      }];
+      };
+      if (timestamp !== 0) change.observedAt = timestamp;
+      return [change];
     },
   );
   const reasoningSettingAt = (
@@ -465,11 +471,11 @@ function decodeRecords(records: Record[]) {
       const event: PendingContextEvent = {
         type: "compaction",
         sourceOrder: recordIndex + 1,
-        ...(timestamp === 0 ? {} : { occurredAt: timestamp }),
         compaction: numberCheckpointItems(
           piCompactionDetails(record, records),
         ),
       };
+      if (timestamp !== 0) event.occurredAt = timestamp;
       contextEvents.push(event);
       pendingContextEvents.push(event);
       continue;
@@ -485,19 +491,20 @@ function decodeRecords(records: Record[]) {
           messageTimestamp,
           recordIndex + 1,
         );
-        turns.push({
+        const turn: ConversationTurnImport & { images?: number } = {
           number: turns.length + 1,
           startedAt: messageTimestamp,
           calls: [],
           inputs: contentMetadata(record.message?.content ?? []),
-          ...(reasoningSetting === undefined ? {} : {
-            reasoningSetting: {
-              ...reasoningSetting,
-              provenance: "inherited" as const,
-            },
-          }),
           images: userImages(record),
-        });
+        };
+        if (reasoningSetting !== undefined) {
+          turn.reasoningSetting = {
+            ...reasoningSetting,
+            provenance: "inherited",
+          };
+        }
+        turns.push(turn);
       }
       continue;
     }
@@ -557,50 +564,45 @@ function decodeRecords(records: Record[]) {
     const call: ConversationCallImport = {
       id: record.id ?? `${turn.number}-${turn.calls.length + 1}`,
       callWithinTurn: turn.calls.length + 1,
-      ...(content.find((item) => item.kind === "text")?.preview === undefined
-        ? {}
-        : {
-          preview: content.find((item) => item.kind === "text")!.preview,
-        }),
       provider,
       model,
       startedAt: messageTimestamp,
       completedAt: timestamp,
       reportedCost: cost,
       tokens: callTokens,
-      ...(reasoningSetting === undefined ? {} : {
-        reasoningSetting: {
-          ...reasoningSetting,
-          provenance: "inherited" as const,
-        },
-      }),
       activity: {
         finishReason: message.stopReason,
-        ...(turn.images && turn.calls.length === 0
-          ? { images: turn.images }
-          : {}),
         hasText: false,
         hasReasoning: source.reasoning > 0,
         tools: [],
       },
       content,
     };
+    const text = content.find((item) => item.kind === "text")?.preview;
+    if (text !== undefined) call.preview = text;
+    if (reasoningSetting !== undefined) {
+      call.reasoningSetting = {
+        ...reasoningSetting,
+        provenance: "inherited",
+      };
+    }
+    if (turn.images && turn.calls.length === 0) {
+      call.activity.images = turn.images;
+    }
 
     for (const block of message.content ?? []) {
       if (block.type === "text") call.activity.hasText = true;
       if (block.type === "thinking") call.activity.hasReasoning = true;
       if (block.type === "toolCall" && block.id && block.name) {
         const input = serializedPreview(block.arguments);
-        const tool = {
+        const tool: ConversationToolImport = {
           sourceID: block.id,
           name: block.name,
           status: "pending",
           startedAt: timestamp,
           input,
-          ...(input?.preview === undefined
-            ? {}
-            : { inputPreview: input.preview }),
         };
+        if (input?.preview !== undefined) tool.inputPreview = input.preview;
         call.activity.tools.push(tool);
         tools.set(block.id, tool);
       }

@@ -7,7 +7,11 @@ import {
   type SessionSummary,
   type TokenUsage,
 } from "../shared/sessionSchemas.ts";
-import { type JsonValue, jsonValueSchema } from "../shared/json.ts";
+import {
+  type JsonObject,
+  type JsonValue,
+  jsonValueSchema,
+} from "../shared/json.ts";
 import type { UsageCall } from "./usage.ts";
 import type {
   CompactionCheckpointItemImport,
@@ -15,6 +19,7 @@ import type {
   ConversationCallImport,
   ConversationContentImport,
   ConversationContextEventImport,
+  ConversationToolImport,
   ConversationTurnImport,
   LinearConversationImport,
 } from "./conversationImportTypes.ts";
@@ -223,7 +228,7 @@ function decodeParts(rows: OpenCodePartRow[], strict = false) {
     if (part.type === "tool" && part.tool) {
       const input = serializedPreview(part.state?.input);
       const output = serializedPreview(part.state?.output);
-      current.activity.tools.push({
+      const tool: ConversationToolImport = {
         sourceID: part.callID,
         name: part.tool,
         status: part.state?.status ?? "unknown",
@@ -232,13 +237,10 @@ function decodeParts(rows: OpenCodePartRow[], strict = false) {
         childExternalID: part.state?.metadata?.sessionId,
         input,
         output,
-        ...(input?.preview === undefined
-          ? {}
-          : { inputPreview: input.preview }),
-        ...(output?.preview === undefined
-          ? {}
-          : { outputPreview: output.preview }),
-      });
+      };
+      if (input?.preview !== undefined) tool.inputPreview = input.preview;
+      if (output?.preview !== undefined) tool.outputPreview = output.preview;
+      current.activity.tools.push(tool);
     }
     if (part.type === "compaction") {
       current.compaction = {
@@ -270,11 +272,10 @@ function openCodeCheckpointItem(
   const text = parts?.content.find((item) =>
     item.kind === "text" && item.preview !== undefined
   );
-  const nativeMetadata = {
-    ...(parts?.activity.tools.length
-      ? { toolCount: parts.activity.tools.length }
-      : {}),
-  };
+  const nativeMetadata: JsonObject = {};
+  if (parts?.activity.tools.length) {
+    nativeMetadata.toolCount = parts.activity.tools.length;
+  }
   if (text?.preview !== undefined) {
     return {
       sourceEntryID: row.id,
@@ -334,6 +335,11 @@ function openCodeCompactionDetails(
   ) {
     issues.push("retained-message-unsupported");
   }
+  const nativeMetadata: JsonObject = { markerMessageID: markerRow.id };
+  if (tailStartID !== undefined) nativeMetadata.tailStartID = tailStartID;
+  if (auto !== undefined) nativeMetadata.auto = auto;
+  if (overflow !== undefined) nativeMetadata.overflow = overflow;
+  if (issues.length > 0) nativeMetadata.captureIssues = issues;
   return {
     sourceID: marker.sourceID,
     trigger: overflow === true
@@ -351,13 +357,7 @@ function openCodeCompactionDetails(
     droppedItemCount: retainedValues === undefined
       ? undefined
       : Math.max(0, markerIndex - retainedValues.length),
-    nativeMetadata: {
-      markerMessageID: markerRow.id,
-      ...(tailStartID === undefined ? {} : { tailStartID }),
-      ...(auto === undefined ? {} : { auto }),
-      ...(overflow === undefined ? {} : { overflow }),
-      ...(issues.length === 0 ? {} : { captureIssues: issues }),
-    },
+    nativeMetadata,
     checkpointItems: retainedItems,
   };
 }
@@ -396,11 +396,10 @@ function completeOpenCodeCompaction(
       truncated: summary.truncated ?? false,
     });
   }
-  compaction.nativeMetadata = {
-    ...metadata,
-    summaryMessageID: summaryRow.id,
-    ...(issues.length === 0 ? {} : { captureIssues: issues }),
-  };
+  metadata.summaryMessageID = summaryRow.id;
+  if (issues.length > 0) metadata.captureIssues = issues;
+  else delete metadata.captureIssues;
+  compaction.nativeMetadata = metadata;
   numberCheckpointItems(compaction);
 }
 
@@ -551,7 +550,6 @@ function decodeMessages(
     const call: ConversationCallImport = {
       id: row.id,
       callWithinTurn: turn.calls.length + 1,
-      ...(textPreview === undefined ? {} : { preview: textPreview }),
       provider,
       model,
       startedAt: message.time?.created ?? row.time_created,
@@ -562,6 +560,7 @@ function decodeMessages(
       activity,
       content: compactionOperation ? [] : decodedParts?.content ?? [],
     };
+    if (textPreview !== undefined) call.preview = textPreview;
     turn.calls.push(call);
     if (!compactionOperation) {
       for (let index = pendingContextEvents.length - 1; index >= 0; index--) {
@@ -750,12 +749,11 @@ export function normalizeOpenCodeSessionTree(options: {
       true,
     );
     const summary = summaryFromDecoded(row, decoded);
-    return {
+    const imported: LinearConversationImport = {
       sourceID: options.sourceID,
       externalID: row.id,
       parentExternalID: row.parent_id ?? undefined,
       artifactPath: `session:${row.id}`,
-      ...(row.directory ? { workingDirectory: row.directory } : {}),
       observedAt: options.observedAt,
       checkpoint: options.checkpoint,
       session: {
@@ -774,6 +772,8 @@ export function normalizeOpenCodeSessionTree(options: {
         contextEvents: decoded.contextEvents,
       },
     };
+    if (row.directory) imported.workingDirectory = row.directory;
+    return imported;
   });
 }
 
@@ -920,14 +920,15 @@ export class OpenCodeRepository {
       }
       if (decoded.call && sessionsWithUserTurn.has(row.session_id)) {
         const images = pendingTurnImages.get(row.session_id) ?? 0;
-        calls.push({
+        const call: UsageCall = {
           ...decoded.call,
           turnID: `${row.session_id}:${
             activeTurnIDs.get(row.session_id) ?? "prior"
           }`,
           turnOrdinal: activeTurnOrdinals.get(row.session_id) ?? 0,
-          ...(images > 0 ? { images } : {}),
-        });
+        };
+        if (images > 0) call.images = images;
+        calls.push(call);
         pendingTurnImages.set(row.session_id, 0);
       }
     }
