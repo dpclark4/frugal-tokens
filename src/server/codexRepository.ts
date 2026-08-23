@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  type SessionDetail,
   sessionDetailSchema,
   sessionListResponseSchema,
   type SessionSummary,
@@ -1206,22 +1207,22 @@ export class CodexRepository {
   getSession(id: string) {
     const file = this.#files().find((entry) => entry.id === id);
     if (!file) return undefined;
-    return sessionDetailSchema.parse(this.#detail(file));
+    return this.#detail(file);
   }
 
   listUsageCalls(startedAt?: number) {
     return this.#files().filter((file) =>
       startedAt === undefined || file.updatedAt >= startedAt
-    ).flatMap((file) =>
-      usageCallsFromSession(sessionDetailSchema.parse(this.#detail(file)))
-    ).filter((call) => startedAt === undefined || call.startedAt >= startedAt);
+    ).flatMap((file) => usageCallsFromSession(this.#detail(file))).filter((
+      call,
+    ) => startedAt === undefined || call.startedAt >= startedAt);
   }
 
   #summary(id: string, path: string, updatedAt: number): SessionSummary {
     return codexSession(readRecords(path), id, updatedAt).summary;
   }
 
-  #detail(file: CodexSessionCandidate): unknown {
+  #detail(file: CodexSessionCandidate): SessionDetail {
     const normalized = codexSession(
       readRecords(file.path),
       file.id,
@@ -1248,7 +1249,7 @@ export class CodexRepository {
     const contextEvents = normalized.contextEvents.filter((event) =>
       event.affectedCall === undefined
     );
-    return {
+    return sessionDetailSchema.parse({
       ...normalized.summary,
       userTurns: turns.length,
       modelCalls: turns.reduce((total, turn) => total + turn.calls.length, 0),
@@ -1256,7 +1257,7 @@ export class CodexRepository {
       turns,
       ...(contextEvents.length === 0 ? {} : { contextEvents }),
       subagents: [],
-    };
+    });
   }
 }
 

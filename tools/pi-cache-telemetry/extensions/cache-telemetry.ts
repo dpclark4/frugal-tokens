@@ -59,6 +59,15 @@ const WEBSOCKET_COUNTER_KEYS = [
 ] as const;
 
 type JsonRecord = Record<string, unknown>;
+type StableRecord = { [key: string]: StableValue };
+type StableValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | StableValue[]
+  | StableRecord;
 
 type RequestObservation = {
   sequence: number;
@@ -79,24 +88,34 @@ type PreviousRequest = {
   inputItemHashes: string[];
 };
 
-function stableValue(value: unknown): unknown {
+function stableValue(value: unknown): StableValue {
   if (Array.isArray(value)) return value.map(stableValue);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value as JsonRecord)
-        .filter(([, child]) => child !== undefined)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, child]) => [key, stableValue(child)]),
-    );
+  switch (typeof value) {
+    case "object":
+      if (value === null) return null;
+      return Object.fromEntries(
+        Object.entries(value as JsonRecord)
+          .filter(([, child]) => child !== undefined)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([key, child]) => [key, stableValue(child)]),
+      );
+    case "string":
+    case "number":
+    case "boolean":
+    case "undefined":
+      return value;
+    default:
+      return undefined;
   }
-  return value;
 }
 
 function serialized(value: unknown): string {
+  const fallback = () =>
+    JSON.stringify({ unserializable: true, type: typeof value });
   try {
-    return JSON.stringify(stableValue(value));
+    return JSON.stringify(stableValue(value)) ?? fallback();
   } catch {
-    return JSON.stringify({ unserializable: true, type: typeof value });
+    return fallback();
   }
 }
 
@@ -257,7 +276,10 @@ function safeHeaders(headers: Record<string, string>): Record<string, string> {
   );
 }
 
-function safeDiagnosticDetailValue(key: string, value: unknown): unknown {
+function safeDiagnosticDetailValue(
+  key: string,
+  value: unknown,
+): string | boolean | number | undefined {
   switch (key) {
     case "configuredTransport":
     case "fallbackTransport":

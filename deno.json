@@ -48,6 +48,7 @@
     "setup": "deno install -g -A npm:@j178/prek && prek install",
     "check": "deno check src/server/main.ts src/client/main.tsx vite.config.ts",
     "lint:oxlint": "deno run -A oxlint .",
+    "lint:oxlint:gate": "deno run -A oxlint --config .oxlintrc.prek.json --quiet .",
     "test": "deno test --allow-env --allow-read --allow-write",
     "db:new": "deno run -A scripts/runDbmate.ts new",
     "db:migrate": "deno run --allow-env=FRUGAL_TOKENS_DATABASE_URL,HOME,USERPROFILE --allow-read --allow-write scripts/prepareDatabase.ts && deno run -A scripts/runDbmate.ts --no-dump-schema up",

@@ -14,7 +14,7 @@ hooks = [
     language = "system",
     entry = "deno fmt --check",
     files = "\\.(ts|tsx|json)$",
-    exclude = "^(\\.agents/|tools/oxlint/anti-slop/)",
+    exclude = "^(\\.agents/|tools/oxlint/anti-slop/|tools/pi-cache-telemetry/)",
   },
   {
     id = "deno-lint",
@@ -22,6 +22,15 @@ hooks = [
     language = "system",
     entry = "deno lint",
     files = "\\.(ts|tsx)$",
+    exclude = "^(\\.agents/|tools/oxlint/anti-slop/)",
+  },
+  {
+    id = "anti-slop-gate",
+    name = "anti-slop gate",
+    language = "system",
+    entry = "deno task lint:oxlint:gate",
+    pass_filenames = false,
+    files = "\\.(js|jsx|mjs|cjs|ts|tsx|json)$",
     exclude = "^(\\.agents/|tools/oxlint/anti-slop/)",
   },
   {

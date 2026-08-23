@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  type SessionDetail,
   sessionDetailSchema,
   sessionListResponseSchema,
   type SessionSummary,
@@ -1010,9 +1011,7 @@ export class ClaudeCodeRepository {
   getSession(id: string) {
     const file = this.#files().find((entry) => entry.id === id);
     if (!file) return undefined;
-    return sessionDetailSchema.parse(
-      this.#detail(file.id, file.path, file.updatedAt),
-    );
+    return this.#detail(file.id, file.path, file.updatedAt);
   }
 
   listUsageCalls(startedAt?: number) {
@@ -1020,9 +1019,7 @@ export class ClaudeCodeRepository {
       startedAt === undefined || file.updatedAt >= startedAt
     ).flatMap((file) =>
       usageCallsFromSession(
-        sessionDetailSchema.parse(
-          this.#detail(file.id, file.path, file.updatedAt),
-        ),
+        this.#detail(file.id, file.path, file.updatedAt),
       )
     ).filter((call) => startedAt === undefined || call.startedAt >= startedAt);
   }
@@ -1075,7 +1072,7 @@ export class ClaudeCodeRepository {
     updatedAt: number,
     parentID?: string,
     title?: string,
-  ): unknown {
+  ): SessionDetail {
     const records = readRecords(path);
     const decoded = decodeRecords(records);
     const summary = this.#summary(id, path, updatedAt);
@@ -1096,7 +1093,7 @@ export class ClaudeCodeRepository {
       event.affectedCall === undefined
     );
     const subagentDirectory = `${path.slice(0, -6)}/subagents`;
-    let subagents: unknown[] = [];
+    let subagents: SessionDetail[] = [];
     try {
       subagents = [...Deno.readDirSync(subagentDirectory)]
         .filter((entry) =>
@@ -1128,13 +1125,13 @@ export class ClaudeCodeRepository {
     } catch (error) {
       if (!(error instanceof Deno.errors.NotFound)) throw error;
     }
-    return {
+    return sessionDetailSchema.parse({
       ...summary,
       title: title ?? summary.title,
       parentID,
       turns,
       ...(contextEvents.length === 0 ? {} : { contextEvents }),
       subagents,
-    };
+    });
   }
 }

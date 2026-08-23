@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import {
+  type SessionDetail,
   sessionDetailSchema,
   sessionListResponseSchema,
   type SessionSummary,
@@ -13,7 +14,6 @@ import type {
   ConversationCallImport,
   ConversationContentImport,
   ConversationContextEventImport,
-  ConversationToolImport,
   ConversationTurnImport,
   LinearConversationImport,
 } from "./conversationImportTypes.ts";
@@ -828,7 +828,7 @@ export class OpenCodeRepository {
     `).get(id) as SessionRow | undefined;
     if (!row) return undefined;
 
-    return sessionDetailSchema.parse(this.#detail(row, new Set()));
+    return this.#detail(row, new Set());
   }
 
   listUsageCalls(startedAt?: number) {
@@ -942,7 +942,7 @@ export class OpenCodeRepository {
     return this.#toSummary(row, this.#decodeSession(row));
   }
 
-  #detail(row: SessionRow, visited: Set<string>): unknown {
+  #detail(row: SessionRow, visited: Set<string>): SessionDetail {
     visited.add(row.id);
     const decoded = this.#decodeSession(row, true);
     const children = this.#db.prepare(`
@@ -961,7 +961,7 @@ export class OpenCodeRepository {
         ).map(({ affectedCall: _affectedCall, ...event }) => event),
       })),
     }));
-    return {
+    return sessionDetailSchema.parse({
       ...this.#toSummary(row, decoded),
       parentID: row.parent_id ?? undefined,
       agent: row.agent ?? undefined,
@@ -972,7 +972,7 @@ export class OpenCodeRepository {
       subagents: children
         .filter((child) => !visited.has(child.id))
         .map((child) => this.#detail(child, new Set(visited))),
-    };
+    });
   }
 
   #decodeSession(row: SessionRow, includeActivity = false) {

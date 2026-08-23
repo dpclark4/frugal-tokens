@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  type SessionDetail,
   sessionDetailSchema,
   sessionListResponseSchema,
   type SessionSummary,
@@ -658,22 +659,22 @@ export class PiRepository {
   getSession(id: string) {
     const file = this.#files().find((entry) => entry.id === id);
     if (!file) return undefined;
-    return sessionDetailSchema.parse(this.#detail(file));
+    return this.#detail(file);
   }
 
   listUsageCalls(startedAt?: number) {
     return this.#files().filter((file) =>
       startedAt === undefined || file.updatedAt >= startedAt
-    ).flatMap((file) =>
-      usageCallsFromSession(sessionDetailSchema.parse(this.#detail(file)))
-    ).filter((call) => startedAt === undefined || call.startedAt >= startedAt);
+    ).flatMap((file) => usageCallsFromSession(this.#detail(file))).filter((
+      call,
+    ) => startedAt === undefined || call.startedAt >= startedAt);
   }
 
   #summary(id: string, path: string, updatedAt: number): SessionSummary {
     return piSession(readRecords(path), id, updatedAt).summary;
   }
 
-  #detail(file: PiSessionCandidate): unknown {
+  #detail(file: PiSessionCandidate): SessionDetail {
     const normalized = piSession(
       readRecords(file.path),
       file.id,
@@ -689,7 +690,7 @@ export class PiRepository {
         ).map(({ affectedCall: _affectedCall, ...event }) => event),
       })),
     }));
-    return {
+    return sessionDetailSchema.parse({
       ...normalized.summary,
       parentID: undefined,
       turns,
@@ -697,7 +698,7 @@ export class PiRepository {
         event.affectedCall === undefined
       ),
       subagents: [],
-    };
+    });
   }
 }
 
