@@ -42,6 +42,12 @@ not a bust.
   comparable calls; the containing turn is a partial miss.
 - **Candidate bust:** the affected turn lacks either a warm predecessor, a
   recovery call, or provider usage needed to classify it confidently.
+- **Reset-associated miss/candidate:** the affected call follows a client-side
+  continuation reset, sends full context without `previous_response_id`, or
+  changes instructions/envelope state. It may be a real zero/low cache read,
+  but it is not evidence of a regression on an otherwise healthy continuation.
+  Record the reset trigger separately when known. A user-reported `/reload` is
+  a procedural clue, not an artifact-established fact.
 - A first-call baseline, whether zero or positive, is not a bust. Initial
   `0 -> 0` calls establish no unexpected dip, and a later return to a positive
   first-call baseline can establish a full miss only after session-grown cache
@@ -434,6 +440,13 @@ counts unless a row explicitly states the number of affected turns.
 | 012 | `31488 -> 11008 -> 32512` | Native Codex; raw transport unavailable | Immediate 490-byte `exec` output after an ordinary tool-calling response | Full-bust turn: the affected call returned exactly to the initial 11,008-token baseline |
 | 013 | `23296 -> 18176 -> 25344`; `35584 -> 23296 -> 36608`; `39936 -> 35584 -> 40960` | Native Codex; raw transport unavailable | Three single-`exec` results, 206–4,062 serialized bytes | Three partial-bust turns; recovery occurred both within a turn and on the next user turn |
 | 014 | `62464 -> normalized 0 -> normalized 64512` | WebSocket failed after message-stream start; full-context SSE fallback | One 450-byte `read` output | Transport-associated candidate; raw SSE usage unavailable |
+| 015 | `21248 -> 17152 -> 25344`; `22272 -> 11008 -> 28416` | Native Codex; raw transport unavailable | Single `exec` results of 122 bytes and about 40.8 KB | One partial-bust observation and one full-bust observation returning to the 11,008-token initial baseline |
+| 016 | `7680 -> 0 -> 9728`; `12800 -> 10752 -> 12800`; `13824 -> 0 -> 14848` | Healthy Pi WebSocket for first two; full-context reset on the third | Tiny/mixed `bash` batches; instruction change at reset | One full-bust turn, one partial-bust turn, and one instruction-change/reset-associated candidate turn |
+| 017 | Seven positive dips; three retained at most 90% | Healthy Pi WebSocket continuations | User delta, 53-byte `edit`, two small `bash` outputs, plus shallow controls | Three material partial observations across two turns; four additional shallow dashboard dips |
+| 018 | `1536 -> 0 -> 0`; `6656 -> 0 -> 11776`; six material partial dips | Healthy Pi WebSocket continuations | Single and batched `bash`/`read` results from 11 bytes to about 14.2 KB | One no-recovery candidate, one full-bust turn, and six material partial observations across five turns |
+| 019 | `108928 -> normalized 0 -> normalized 112128` | WebSocket closed `1012` after message-stream start; full-context SSE fallback | A 68-byte `edit` output; one call earlier, a 142 KB `read` output | Transport-associated candidate; raw SSE usage unavailable |
+| 020 | `10880 -> 2560 -> 24192`; `61056 -> 16000 -> 61056` | Healthy same-socket continuations | Three `read` outputs, about 35 KB; one 71-byte `edit` output | Two partial-bust turns with one raw call-level dip each |
+| 021 | `9600 -> 0`, no following call | Healthy same-socket continuation | Second consecutive three-output batch: `read`, `read`, `bash`, about 20.7 KB | Raw full-zero no-recovery candidate |
 
 ### Case 001 — WebSocket failure and SSE retry
 
@@ -1044,6 +1057,344 @@ transport-associated candidate, not a confirmed raw full bust. The error and
 fallback directly explain the transport shape, but do not identify whether the
 underlying disconnect originated with the provider, an intermediary, or the
 local runtime.
+
+### Case 015 — Native Codex partial and full misses in the screenshot window
+
+**Date:** 2026-08-23; **Model:** `gpt-5.6-sol`, medium reasoning
+**Codex session:** `01a02f0f-64af-70f3-ad52-7ac9d07a7910`
+
+```text
+Codex session:
+~/.codex/sessions/2026/08/23/rollout-2026-08-23T10-38-53-01a02f0f-64af-70f3-ad52-7ac9d07a7910.jsonl
+Pi telemetry: unavailable; native Codex session
+Wiretap: unavailable
+Archive model-call rows: unavailable while the live session was in progress
+```
+
+The dashboard snapshot covered the first 11 completed calls. Calls 3–5 read
+`21248 -> 17152 -> 25344`, establishing one partial call-level regression with
+immediate recovery. The affected call followed one serialized 122-byte `exec`
+result. Calls 6–8 read `22272 -> 11008 -> 28416`; 11,008 was also the first-call
+provider/model cache baseline, so call 7 retained the stable harness prefix but
+none of the session-grown cache. This establishes a full-bust observation. It
+followed one serialized `exec` result of about 40.8 KB.
+
+Call 6 had itself decreased from 25,344 to 22,272, but its following call fell
+further instead of recovering, so it is not counted as another partial bust.
+The rollout recorded no compaction, retry, abort, model change, reasoning
+change, or error near the observations. Transport reuse, exact logical-prefix
+state, and envelope stability are unavailable in native Codex.
+
+The same boundary produced a partial miss after a tiny result and a full miss
+after a large result. This keeps output size useful as a controlled variable
+without making it a sufficient explanation. The session continued after the
+11-call screenshot, so later calls must not be mixed into this snapshot count.
+
+### Case 016 — Pi Oxlint session: two healthy regressions and one reset
+
+**Date:** 2026-08-23; **Model:** `gpt-5.6-sol`, medium reasoning
+**Pi session:** `01a02ee6-c76d-7765-9558-7c0c78b74616`
+**Archive conversation:** `2503`
+
+```text
+Session:
+~/.pi/agent/sessions/--Users-danclark-.herdr-worktrees-frugal-tokens-worktree-calm-river-fc01--/2026-08-23T13-54-31-405Z_01a02ee6-c76d-7765-9558-7c0c78b74616.jsonl
+Telemetry:
+~/.pi/agent/diagnostics/cache-telemetry/2026-08-23T13-54-31-405Z_01a02ee6-c76d-7765-9558-7c0c78b74616.jsonl
+Wiretap:
+~/.pi/agent/diagnostics/cache-telemetry/wiretap/codex-websocket-2026-08-23T13-54-30Z-25912.jsonl
+```
+
+Two dashboard events are established healthy-continuation regressions:
+
+| Turn / call (global call) | Archive call / source call | Raw sequence | Actual delta | Classification |
+| --- | --- | --- | --- | --- |
+| 1 / 5 (5) | `110688` / `a4dcabc2` | `7680 -> 0 -> 9728` | Three `bash` outputs, 81 + 1,895 + 367 bytes | Full-bust turn |
+| 7 / 2 (12) | `110695` / `04ed92c0` | `12800 -> 10752 -> 12800` | Two `bash` outputs, 93 + 94 bytes | Partial-bust turn; 84.0% retained |
+
+Both requests retained an exact logical prefix and unchanged envelope, tools,
+instructions, settings, and prompt-cache-key fingerprints. They used
+`previous_response_id` deltas on reused connection 1. The wiretap recorded no
+error, retry, reconnect, or SSE fallback. Pi submitted the affected requests
+about 1.4 seconds and 147 milliseconds after their warm predecessors,
+respectively.
+
+The third dashboard full marker, turn 11 / call 1 (global call 16; archive
+`110699`, source `b4dc8583`), is a different class. Its raw sequence was
+`13824 -> 0 -> 14848`, but Pi omitted `previous_response_id` and sent all 57
+logical input items. The preceding completed response did contain a valid raw
+response ID. At the boundary, the instruction and envelope hashes changed,
+the telemetry sequence restarted, and the tools, settings, model, and
+prompt-cache-key hash stayed unchanged. Call 17 used call 16's new response ID
+and recovered normally.
+
+The user later reported that they might have run `/reload`; the artifacts do
+not independently record that command. The hash change and telemetry restart
+are consistent with a reload or skill/instruction refresh. Classify this as an
+**instruction-change/reset-associated candidate**, not a regression on a
+healthy continuation. It also identifies an analytics opportunity: dashboard
+classification should distinguish instruction/reset misses from unexpected
+continuation misses.
+
+### Case 017 — Pi dependency review with material and shallow partial dips
+
+**Date:** 2026-08-23; **Model:** `gpt-5.6-sol`, medium reasoning
+**Pi session:** `01a02edb-36ff-7a5b-af05-3963488c6191`
+**Archive conversation:** `2500`
+
+```text
+Session:
+~/.pi/agent/sessions/--Users-danclark-programming-0sql--/2026-08-23T13-41-53-535Z_01a02edb-36ff-7a5b-af05-3963488c6191.jsonl
+Telemetry:
+~/.pi/agent/diagnostics/cache-telemetry/2026-08-23T13-41-53-535Z_01a02edb-36ff-7a5b-af05-3963488c6191.jsonl
+Wiretap:
+~/.pi/agent/diagnostics/cache-telemetry/wiretap/codex-websocket-2026-08-23T13-41-52Z-5255.jsonl
+```
+
+The archive recorded seven partial call-level dips across three dashboard
+turns. Using the 90%-retained material convention from Case 005, three are
+material and immediately recover:
+
+| Turn / call (global call) | Archive call | Raw sequence | Actual delta | Retained |
+| --- | --- | --- | --- | ---: |
+| 6 / 1 (11) | `110827` | `14464 -> 12800 -> 14464` | One small user message; no immediate tool result | 88.5% |
+| 6 / 8 (18) | `110834` | `21632 -> 15488 -> 22656` | One 53-byte `edit` output | 71.6% |
+| 10 / 2 (49) | `110865` | `40064 -> 31872 -> 42112` | Two `bash` outputs, 657 + 123 bytes | 79.6% |
+
+All three retained exact logical prefixes and unchanged envelope,
+instructions, tools, settings, and prompt-cache-key fingerprints. They used
+`previous_response_id` on a reused healthy WebSocket, with no nearby failure,
+retry, reconnect, or SSE fallback. The user-message observation is a warm
+control showing that an immediate tool result is common but not required.
+
+Four additional dashboard dips were shallow: `23680 -> 22656 -> 25728`
+(95.7%), `25728 -> 24704 -> 25728` (96.0%), `27776 -> 25728 -> 29824`
+(92.6%), and `30848 -> 29824 -> 30848` (96.7%). Preserve them as cache-frontier
+variation and reproduction context, but keep them separate from the three
+material observations when comparing case counts.
+
+### Case 018 — Pi outdated-dependency work with repeated healthy regressions
+
+**Date:** 2026-08-23; **Model:** `gpt-5.6-sol`, medium reasoning
+**Pi session:** `01a02edf-ec70-7fac-8961-f7f5a40c02a4`
+**Archive conversation:** `2499`
+
+```text
+Session:
+~/.pi/agent/sessions/--Users-danclark-programming-dan-website--/2026-08-23T13-47-02-128Z_01a02edf-ec70-7fac-8961-f7f5a40c02a4.jsonl
+Telemetry:
+~/.pi/agent/diagnostics/cache-telemetry/2026-08-23T13-47-02-128Z_01a02edf-ec70-7fac-8961-f7f5a40c02a4.jsonl
+Wiretap:
+~/.pi/agent/diagnostics/cache-telemetry/wiretap/codex-websocket-2026-08-23T13-47-01Z-13354.jsonl
+```
+
+Turn 2 / call 4 (global call 5; archive `110887`) was marked full by the
+dashboard, but its raw sequence was `1536 -> 0 -> 0`. It followed one
+3,462-byte `bash` output on an exact-prefix, same-socket continuation with no
+transport failure. Because the following comparable call remained cold, it
+lacks the recovery required by this guide. Classify it as a **no-recovery
+candidate/consecutive-cold sequence**, not an established one-call bust.
+
+Turn 3 / call 4 (global call 10; archive `110892`) is established: raw reads
+were `6656 -> 0 -> 11776`. Its delta returned four outputs in order: `bash`
+3,821 bytes, `bash` 4,439 bytes, `read` 2,279 bytes, and `read` 282 bytes. It
+retained an exact prefix and unchanged envelope and used `previous_response_id`
+on healthy connection 1, with no failure or fallback. This is a full-bust
+turn.
+
+Six positive dips retained at most 90% and recovered immediately:
+
+| Turn / call (global call) | Raw sequence | Actual delta | Retained |
+| --- | --- | --- | ---: |
+| 3 / 7 (13) | `11776 -> 7680 -> 12800` | One 3,912-byte `bash` output | 65.2% |
+| 4 / 7 (21) | `23040 -> 13824 -> 27136` | Five `read` outputs, about 14.2 KB total | 60.0% |
+| 4 / 9 (23) | `27136 -> 23040 -> 28160` | One 14-byte `bash` output | 84.9% |
+| 6 / 2 (48) | `43520 -> 35328 -> 44544` | One 717-byte `bash` output | 81.2% |
+| 8 / 5 (62) | `61952 -> 52736 -> 66048` | One 3,667-byte `bash` output | 85.1% |
+| 9 / 20 (82) | `78336 -> 64000 -> 79360` | One 11-byte `bash` output | 81.7% |
+
+For all six, telemetry recorded an exact logical prefix and unchanged
+envelope, instructions, tools, settings, and prompt-cache-key fingerprints.
+Every request used a `previous_response_id` delta on reused connection 1. No
+error, retry, reconnect, or SSE fallback occurred near a dip or recovery.
+Submission delay varied from 14 milliseconds to about 38.7 seconds, so an
+immediate request is not required by this capture.
+
+Nine further dashboard partials retained 93.0%–99.0%, generally losing one to
+five 1,024-token blocks. Keep these shallow observations in raw counts but do
+not combine them with the six material regressions when comparing severity.
+This session shows both very small single outputs and larger multi-output
+batches on affected calls, while many other tool continuations stayed warm.
+Tool boundary, name, count, and size are reproduction variables, not proven
+causes.
+
+### Case 019 — WebSocket `1012` and SSE retry after a tiny edit result
+
+**Date:** 2026-08-23; **Model:** `gpt-5.6-sol`, medium reasoning
+**Pi session:** `01a02f88-0ee1-7f57-ac78-7a7b4f1ae7dd`
+
+```text
+Session:
+~/.pi/agent/sessions/--Users-danclark-programming-frugal-tokens--/2026-08-23T16-50-40-993Z_01a02f88-0ee1-7f57-ac78-7a7b4f1ae7dd.jsonl
+Telemetry:
+~/.pi/agent/diagnostics/cache-telemetry/2026-08-23T16-50-40-993Z_01a02f88-0ee1-7f57-ac78-7a7b4f1ae7dd.jsonl
+Wiretap:
+~/.pi/agent/diagnostics/cache-telemetry/wiretap/codex-websocket-2026-08-23T16-50-40Z-69511.jsonl
+Archive model-call rows: not investigated
+```
+
+Turn 11 had a warm read of 108,928 tokens. Its next WebSocket request retained
+an exact 268-item logical prefix and unchanged envelope, instructions, tools,
+settings, and prompt-cache-key fingerprints. It used `previous_response_id` on
+reused connection 2 and sent one 68-byte `edit` result 97 milliseconds after
+the warm completion.
+
+The request began message streaming but received no terminal usage frame. The
+socket closed cleanly with code `1012` and an empty reason; telemetry recorded
+a transport failure in the `after_message_stream_start` phase. Pi retried the
+identical 271-item, 2,823,565-byte logical payload over SSE. The retry recorded
+normalized `cacheRead=0`, and the following SSE completion recorded normalized
+`cacheRead=112128`.
+
+The warm predecessor had consumed one approximately 142 KB `read` result and
+then produced the affected `edit` call. Because that large result completed
+warmly, the immediate differentiator is the transport failure rather than
+output size alone. The wiretap does not capture raw SSE usage, so the retry's
+zero and recovery cannot establish raw provider `cached_tokens`. Classify this
+as a **transport-associated candidate**, closest to Cases 001, 008B, and 014.
+
+### Case 020 — Two healthy partial busts after large reads and a tiny edit
+
+**Date:** 2026-08-23; **Model:** `gpt-5.6-sol`, high reasoning
+**Pi session:** `01a02fce-f6c1-768a-9017-7079786a095e`
+
+```text
+Session:
+~/.pi/agent/sessions/--Users-danclark-programming-frugal-tokens--/2026-08-23T18-08-07-873Z_01a02fce-f6c1-768a-9017-7079786a095e.jsonl
+Telemetry:
+~/.pi/agent/diagnostics/cache-telemetry/2026-08-23T18-08-07-873Z_01a02fce-f6c1-768a-9017-7079786a095e.jsonl
+Wiretap:
+~/.pi/agent/diagnostics/cache-telemetry/wiretap/codex-websocket-2026-08-23T18-08-06Z-55275.jsonl
+Archive model-call rows: not investigated
+```
+
+Two material call-level dips occurred in separate turns and recovered on the
+following completed calls:
+
+| Turn / call (global call) | Raw sequence | Actual delta | Retained |
+| --- | --- | --- | ---: |
+| 1 / 5 (5) | `10880 -> 2560 -> 24192` | Three `read` outputs, 5,944 + 9,050 + 20,020 bytes | 23.5% |
+| 8 / 16 (29) | `61056 -> 16000 -> 61056` | One 71-byte `edit` output | 26.2% |
+
+Both affected requests retained exact logical prefixes and unchanged envelope,
+instructions, tools, settings, and prompt-cache-key fingerprints. They used
+`previous_response_id` deltas on reused, healthy connection 1. The wiretap
+recorded raw provider usage on every completed call and no error, retry,
+reconnection, or SSE fallback near either dip or recovery.
+
+The first affected request was submitted 31 milliseconds after its warm
+predecessor. It returned the second consecutive three-`read` output batch: the
+preceding warm request had itself returned three `read` outputs totaling about
+20 KB. The affected approximately 35 KB batch therefore repeats the early
+multi-output shape in Cases 003B, 004, 006, 008A, 010, and 018. The session's
+initial `0 -> 0` calls are baseline growth and are not counted as misses.
+
+The second affected request was submitted 84 milliseconds after a 25-second
+response that had consumed a 110-byte `read` result and produced an `edit`.
+The 71-byte `edit` result read only 16,000 cached tokens. That response produced
+another `edit`; its result was also exactly 71 bytes, was submitted 42
+milliseconds later, and recovered exactly to the predecessor's 61,056-token
+read. This matched miss/recovery control makes the `edit` tool and result size
+poor standalone explanations. Recovery to the older warm frontier is
+consistent with delayed continuation-frontier visibility or ancestor lookup,
+but provider cache state is not observable and the capture does not establish
+that mechanism.
+
+### Case 021 — Raw zero after a second consecutive three-output batch
+
+**Date:** 2026-08-23; **Model:** `gpt-5.6-sol`, medium reasoning
+**Pi session:** `01a02fdd-343e-7fb6-9ef7-de5c6b8ecf83`
+
+```text
+Session:
+~/.pi/agent/sessions/--Users-danclark-programming-frugal-tokens--/2026-08-23T18-23-41-118Z_01a02fdd-343e-7fb6-9ef7-de5c6b8ecf83.jsonl
+Telemetry:
+~/.pi/agent/diagnostics/cache-telemetry/2026-08-23T18-23-41-118Z_01a02fdd-343e-7fb6-9ef7-de5c6b8ecf83.jsonl
+Wiretap:
+~/.pi/agent/diagnostics/cache-telemetry/wiretap/codex-websocket-2026-08-23T18-23-40Z-72552.jsonl
+Archive model-call rows: not investigated
+```
+
+The four completed calls reported raw cache reads of `0 -> 2560 -> 9600 ->
+0`. The final zero followed a warm predecessor but the session ended without a
+following comparable call. Under this guide's recovery requirement, turn 2 is
+a **raw full-zero no-recovery candidate**, not an established full-bust turn.
+
+The zero-read request returned three outputs in order: `read` 9,050 bytes,
+`read` 1,332 bytes, and `bash` 10,272 bytes, about 20.7 KB total. It was
+submitted 43 milliseconds after the warm completion, retained an exact 16-item
+logical prefix and unchanged envelope, instructions, tools, settings, and
+prompt-cache-key fingerprints, and used `previous_response_id` on reused
+healthy connection 1. No error, retry, reconnect, or fallback occurred.
+
+The warm predecessor had itself returned three tool outputs (`read`, `read`,
+`read`) totaling about 32.2 KB, plus a small user item. This independently
+repeats Case 020's early shape: the first multi-output continuation is warm and
+the second consecutive three-output batch receives a materially lower read.
+Case 021 changes one tool name and reduces the affected batch from about 35 KB
+to about 20.7 KB, so exact tool identity and large size are not required by
+this pair. Without recovery, it remains reproduction evidence rather than an
+established one-call bust.
+
+### Cross-case synthesis and next reproduction clues
+
+Cases 015–018 add two established full and ten material partial Pi
+healthy-continuation observations, plus one native Codex full and one native
+Codex partial observation. They also add two deliberately separate Pi
+candidates: one instruction/reset-associated zero and one zero without
+immediate recovery.
+
+Across the twelve established material Pi observations, eleven immediately
+followed tool results. Those results covered `bash`, `read`, and `edit`, single
+and multi-output batches, and approximately 11 bytes to 14.2 KB. The remaining
+observation followed a user message. Every established Pi observation had raw
+provider usage, immediate recovery, exact-prefix and stable-envelope telemetry,
+`previous_response_id`, a reused healthy socket, and no transport fallback.
+
+Cases 019–021 add two established material partial-bust turns, one
+transport-associated candidate, and one raw-zero no-recovery candidate. Cases
+020 and 021 independently place an early regression on the second consecutive
+three-output batch, submitted 31–43 milliseconds after a warm predecessor. The
+later Case 020 dip supplies a matched control: one 71-byte `edit` result dipped
+to an older frontier and the next 71-byte `edit` result recovered exactly to
+the prior warm read. These observations make exact tool identity, output size,
+and immediate submission individually insufficient explanations while
+strengthening repeated batch position and continuation-frontier timing as
+controlled variables.
+
+The leading issue suggested by the combined captures is a transient failure to
+see the newest continuation cache frontier: an affected call reads zero, the
+initial stable baseline, or a lower chunk-aligned frontier, and the next call
+sees the newer frontier. Delayed continuation-node cache publication,
+eligibility, ancestor lookup, or replica visibility are useful provider-side
+hypotheses. Cross-harness native Codex cases and unchanged Pi envelopes make a
+Pi-only payload-construction defect less likely, but provider internals are not
+observable and the captures do not prove a cause.
+
+Prioritize these controlled trials:
+
+1. Return one tiny text tool result and vary submission delay: immediate,
+   100 ms, 1 second, 5 seconds, and 30 seconds.
+2. Repeat with one medium result and a size-matched multi-result batch while
+   preserving tool names/order and total bytes.
+3. Run the same shape in fresh Pi and native Codex sessions; keep reset/reload
+   trials in a separate experiment class.
+4. Add a user-message continuation control after the same predecessor.
+5. Record whether each positive dip equals an older observed cache frontier or
+   differs by 1,024-token blocks.
+6. For reload/instruction trials, record instruction and envelope hashes and
+   verify whether omission of `previous_response_id` is intentional Pi
+   behavior; do not count those as healthy-continuation regressions.
 
 ### Unclassified candidates — missing wiretap
 
