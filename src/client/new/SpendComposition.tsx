@@ -198,7 +198,7 @@ function CompositionTooltip({ active, payload, data, metric }: {
     : totalSpend / totalTokens * 1_000_000;
 
   return (
-    <div className="composition-tooltip">
+    <div className="tooltip-surface composition-tooltip">
       <header>
         <strong>{longDate.format(parseDate(day.date))}</strong>
         <span>

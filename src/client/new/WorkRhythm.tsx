@@ -102,7 +102,7 @@ function WeekdayTooltip({ active, payload }: {
   const row = payload?.[0]?.payload;
   if (!active || !row) return null;
   return (
-    <div className="rhythm-tooltip">
+    <div className="tooltip-surface rhythm-tooltip">
       <strong>{row.label}</strong>
       <span>{formatDuration(row.averageMinutes)} average per {row.label}</span>
       <span>
@@ -123,7 +123,7 @@ function HourlyTooltip({ active, payload }: {
   const row = payload?.[0]?.payload;
   if (!active || !row) return null;
   return (
-    <div className="rhythm-tooltip">
+    <div className="tooltip-surface rhythm-tooltip">
       <strong>{hourRange(row.hour)}</strong>
       <span>{formatDuration(row.estimatedMinutes)} estimated active</span>
       <span>{(row.shareOfTotal * 100).toFixed(1)}% of observed activity</span>
@@ -1039,7 +1039,7 @@ function ActivityTimeline({ day }: { day: WorkRhythmDay }) {
       </section>
       {tooltip && createPortal(
         <div
-          className="timeline-session-tooltip floating"
+          className="tooltip-surface timeline-session-tooltip floating"
           id="active-timeline-session-tooltip"
           role="tooltip"
           style={{ left: tooltip.left, top: tooltip.top }}

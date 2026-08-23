@@ -90,14 +90,16 @@ the semantic custom properties defined on `.new-page` in
 - Use `dashboardChartFont` and `dashboardChartLabelSize` from
   `src/client/new/formatters.ts` for Recharts axes. Keep exceptional chart
   annotations at the micro size instead of defining another axis size.
-- Dashboard tooltips should use the established dark treatment: dashboard ink
-  background, subtle light border, `5px` radius, compact shadow and padding,
-  `10px` body text, and `11px` white titles or emphasized values. Use muted
-  blue-green text for labels and secondary metadata, and a low-contrast divider
-  when separating the header from rows.
-- Match tooltip structure and typography across charts before adding a local
-  variant. A variant may change width or layout to fit its data, but not the
-  core color, type scale, border, radius, or emphasis hierarchy.
+- Tooltips should use the global light `.tooltip-surface` primitive and its
+  semantic custom properties from `src/client/styles.css`. Use the shared
+  off-white background, neutral border, `5px` radius, compact shadow and
+  padding, `10px` body text, and `11px` dark titles or emphasized values. Use
+  `--tooltip-muted` for labels and secondary metadata and `--tooltip-rule` for
+  dividers.
+- Match tooltip structure and typography across routes and charts before adding
+  a local variant. A variant may change width, positioning, visibility, or
+  layout to fit its data, but must inherit the surface, color, type scale,
+  border, radius, and shadow from `.tooltip-surface`.
 - Expose custom hover information on keyboard focus when the underlying element
   is focusable. Tooltips must clarify data rather than carry actions or repeat
   visible labels unnecessarily.

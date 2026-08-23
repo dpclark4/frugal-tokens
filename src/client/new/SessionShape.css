@@ -54,12 +54,6 @@
   left: -12px;
   width: min(380px, calc(100vw - 48px));
   padding: 10px 12px 12px;
-  border: 1px solid rgba(255, 255, 255, .2);
-  border-radius: 5px;
-  background: var(--dashboard-ink);
-  box-shadow: 0 8px 20px rgba(32, 53, 48, .16);
-  color: #aebfba;
-  font: var(--dashboard-type-label)/1.35 var(--mono);
   opacity: 0;
   pointer-events: none;
   visibility: hidden;
@@ -71,9 +65,9 @@
   display: block;
   margin-bottom: 7px;
   padding-bottom: 6px;
-  border-bottom: 1px solid rgba(255, 255, 255, .16);
-  color: #fff;
-  font-size: var(--dashboard-type-tooltip-value);
+  border-bottom: 1px solid var(--tooltip-rule);
+  color: var(--tooltip-text);
+  font-size: var(--tooltip-type-value);
 }
 
 .shape-key-help:hover .shape-key-tooltip,
@@ -90,16 +84,16 @@
 }
 
 .shape-key-tooltip .shape-key-label {
-  color: #aebfba;
+  color: var(--tooltip-muted);
 }
 
 .shape-key-tooltip .shape-key-median {
-  border-color: #fff;
+  border-color: var(--tooltip-text);
 }
 
 .shape-key-tooltip .shape-key-mean {
-  border-color: #aebfba;
-  background: var(--dashboard-ink);
+  border-color: var(--tooltip-muted);
+  background: var(--tooltip-bg);
 }
 
 .shape-key-whisker,
@@ -489,11 +483,6 @@
   gap: 5px 13px;
   min-width: 128px;
   padding: 8px 10px;
-  border: 1px solid #b7c7c2;
-  border-radius: 5px;
-  background: var(--dashboard-ink);
-  box-shadow: 0 8px 20px rgba(32, 53, 48, .16);
-  color: #f5faf8;
   opacity: 0;
   pointer-events: none;
   text-align: left;
@@ -507,14 +496,14 @@
 }
 
 .shape-distribution-tooltip small {
-  color: #b7cbc5;
-  font: var(--dashboard-type-label) var(--mono);
+  color: var(--tooltip-muted);
+  font: var(--tooltip-type-body) var(--mono);
   letter-spacing: .04em;
 }
 
 .shape-distribution-tooltip strong {
-  color: #fff;
-  font: var(--dashboard-type-tooltip-value) var(--mono);
+  color: var(--tooltip-text);
+  font: var(--tooltip-type-value) var(--mono);
   white-space: nowrap;
 }
 
@@ -523,9 +512,9 @@
   grid-column: 1 / -1;
   margin: 3px 0 0;
   padding-top: 7px;
-  border-top: 1px solid rgba(255, 255, 255, .16);
-  color: #b7cbc5;
-  font: var(--dashboard-type-label)/1.4 var(--mono);
+  border-top: 1px solid var(--tooltip-rule);
+  color: var(--tooltip-muted);
+  font: var(--tooltip-type-body)/1.4 var(--mono);
 }
 
 .shape-distribution:focus-visible .shape-distribution-tooltip,

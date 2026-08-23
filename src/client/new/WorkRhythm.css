@@ -120,18 +120,12 @@
   gap: 3px;
   max-width: 220px;
   padding: 9px 11px;
-  border: 1px solid #b7c7c2;
-  border-radius: 5px;
-  background: var(--dashboard-ink);
-  box-shadow: 0 8px 20px rgba(32, 53, 48, .16);
-  color: #dce8e4;
-  font: var(--dashboard-type-label)/1.4 var(--mono);
 }
 
 .rhythm-tooltip strong {
   margin-bottom: 2px;
-  color: #fff;
-  font-size: var(--dashboard-type-tooltip-value);
+  color: var(--tooltip-text);
+  font-size: var(--tooltip-type-value);
 }
 
 .hourly-peak {
@@ -450,12 +444,12 @@
   width: 238px;
   gap: 5px;
   padding: 9px 11px;
-  border: 1px solid #b7c7c2;
+  border: 1px solid var(--tooltip-border);
   border-radius: 5px;
-  background: var(--dashboard-ink);
-  box-shadow: 0 8px 20px rgba(32, 53, 48, .16);
-  color: #dce8e4;
-  font: var(--dashboard-type-label)/1.35 var(--mono);
+  background: var(--tooltip-bg);
+  box-shadow: var(--tooltip-shadow);
+  color: var(--tooltip-text);
+  font: var(--tooltip-type-body)/1.4 var(--mono);
   opacity: 0;
   pointer-events: none;
   white-space: normal;
@@ -469,14 +463,14 @@
 
 .session-spend-tooltip strong {
   flex: none;
-  color: #fff;
-  font: 650 var(--dashboard-type-label) var(--mono);
+  color: var(--tooltip-text);
+  font: 650 var(--tooltip-type-body) var(--mono);
 }
 
 .session-spend-tooltip em {
   padding-top: 4px;
-  border-top: 1px solid rgba(255, 255, 255, .16);
-  color: #c3d1cd;
+  border-top: 1px solid var(--tooltip-rule);
+  color: var(--tooltip-muted);
   font-style: normal;
 }
 
@@ -750,12 +744,6 @@
   width: 285px;
   gap: 3px;
   padding: 9px 11px;
-  border: 1px solid #b7c7c2;
-  border-radius: 5px;
-  background: var(--dashboard-ink, #14201e);
-  box-shadow: 0 8px 20px rgba(32, 53, 48, .22);
-  color: #dce8e4;
-  font: var(--dashboard-type-label, 10px)/1.4 var(--mono);
   opacity: 0;
   pointer-events: none;
   transform: translateY(-50%);
@@ -763,8 +751,8 @@
 
 .timeline-session-tooltip strong {
   overflow: hidden;
-  color: #fff;
-  font: 600 var(--dashboard-type-tooltip-value, 11px) var(--mono);
+  color: var(--tooltip-text);
+  font: 600 var(--tooltip-type-value) var(--mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -772,8 +760,8 @@
 .timeline-session-tooltip em {
   margin-top: 3px;
   padding-top: 4px;
-  border-top: 1px solid rgba(255, 255, 255, .16);
-  color: #b7cbc5;
+  border-top: 1px solid var(--tooltip-rule);
+  color: var(--tooltip-muted);
   font-style: normal;
 }
 

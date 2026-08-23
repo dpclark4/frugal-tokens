@@ -61,7 +61,7 @@ function SubagentTooltip({ active, payload }: {
     : day.format(new Date(`${row.date}T00:00:00`));
   return (
     <div
-      className="usage-tooltip subagent-tooltip"
+      className="tooltip-surface usage-tooltip subagent-tooltip"
       onMouseMove={(event) => event.stopPropagation()}
       onPointerMove={(event) => event.stopPropagation()}
     >

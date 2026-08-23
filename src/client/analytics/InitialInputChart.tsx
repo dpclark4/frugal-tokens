@@ -82,7 +82,7 @@ function InitialInputTooltip({
     .toSorted((a, b) => b.median - a.median);
   if (cohorts.length === 0) return null;
   return (
-    <div className="usage-tooltip initial-input-tooltip">
+    <div className="tooltip-surface usage-tooltip initial-input-tooltip">
       <p>{day.format(new Date(`${row.date}T00:00:00`))}</p>
       <strong>Median {label.toLocaleLowerCase()}</strong>
       <div className="initial-input-tooltip-header" aria-hidden="true">

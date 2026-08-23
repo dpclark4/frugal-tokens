@@ -50,7 +50,11 @@ export function CostWarning({
         strokeWidth={2.25}
         aria-hidden="true"
       />
-      <span className="cost-warning-tooltip" id={tooltipID} role="tooltip">
+      <span
+        className="tooltip-surface cost-warning-tooltip"
+        id={tooltipID}
+        role="tooltip"
+      >
         <span className="cost-warning-heading">
           {missingComputed
             ? "Calculated pricing unavailable"

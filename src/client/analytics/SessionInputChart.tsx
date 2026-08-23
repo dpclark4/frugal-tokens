@@ -45,7 +45,7 @@ function SessionInputTooltip({ active, payload }: {
     }`
     : day.format(new Date(`${row.date}T00:00:00`));
   return (
-    <div className="usage-tooltip">
+    <div className="tooltip-surface usage-tooltip">
       <p>{dateLabel}</p>
       <strong>
         {row.sessions} {row.sessions === 1 ? "session" : "sessions"}

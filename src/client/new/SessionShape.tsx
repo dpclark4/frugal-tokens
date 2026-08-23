@@ -243,7 +243,7 @@ function DistributionStrip({
             aria-hidden="true"
           />
           <span
-            className="shape-distribution-tooltip"
+            className="tooltip-surface shape-distribution-tooltip"
             id={tooltipId}
             role="tooltip"
           >
@@ -327,7 +327,7 @@ export function SessionDistributions({
               ?
             </button>
             <div
-              className="shape-key-tooltip"
+              className="tooltip-surface shape-key-tooltip"
               id="shape-key-tooltip"
               role="tooltip"
             >

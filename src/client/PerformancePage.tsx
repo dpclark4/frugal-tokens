@@ -54,7 +54,7 @@ function MissTooltip({ active, payload }: {
   const week = payload?.[0]?.payload;
   if (!active || !week) return null;
   return (
-    <div className="usage-tooltip performance-tooltip">
+    <div className="tooltip-surface usage-tooltip performance-tooltip">
       <p>
         {date.format(new Date(`${week.date}T00:00:00`))}–
         {date.format(new Date(`${week.endDate}T00:00:00`))}
@@ -327,7 +327,7 @@ function CacheLossTooltip({ active, payload }: {
   const retention = week?.cacheRetention;
   if (!active || !week || !retention) return null;
   return (
-    <div className="usage-tooltip performance-tooltip">
+    <div className="tooltip-surface usage-tooltip performance-tooltip">
       <p>
         {date.format(new Date(`${week.date}T00:00:00`))}–
         {date.format(new Date(`${week.endDate}T00:00:00`))}

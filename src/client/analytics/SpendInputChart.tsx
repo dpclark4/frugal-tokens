@@ -57,7 +57,7 @@ function UsageTooltip({ active, label, payload, metric }: {
   ).sort((a, b) => b.value - a.value);
   const total = items.reduce((sum, item) => sum + item.value, 0);
   return (
-    <div className="usage-tooltip">
+    <div className="tooltip-surface usage-tooltip">
       <p>{day.format(new Date(Number(label)))}</p>
       <strong>{formatValue(metric, total)} total</strong>
       <div className="usage-tooltip-models">
@@ -206,7 +206,10 @@ export function SpendInputChart({ usage, metric }: {
               >
                 +{overflowSeries.length} more
               </button>
-              <span className="model-overflow-popover" role="tooltip">
+              <span
+                className="tooltip-surface model-overflow-popover"
+                role="tooltip"
+              >
                 {overflowSeries.map((
                   { model, label, color, total: modelTotal },
                 ) => (

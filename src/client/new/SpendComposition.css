@@ -227,12 +227,6 @@
   min-width: 245px;
   gap: 5px;
   padding: 10px 12px;
-  border: 1px solid #b7c7c2;
-  border-radius: 5px;
-  background: var(--dashboard-ink);
-  box-shadow: 0 8px 20px rgba(32, 53, 48, .16);
-  color: #dce8e4;
-  font: var(--dashboard-type-label)/1.35 var(--mono);
 }
 
 .composition-tooltip header,
@@ -247,12 +241,12 @@
   grid-template-columns: 1fr auto;
   margin-bottom: 3px;
   padding-bottom: 6px;
-  border-bottom: 1px solid rgba(255, 255, 255, .16);
+  border-bottom: 1px solid var(--tooltip-rule);
 }
 
 .composition-tooltip header strong {
-  color: #fff;
-  font-size: var(--dashboard-type-tooltip-value);
+  color: var(--tooltip-text);
+  font-size: var(--tooltip-type-value);
 }
 
 .composition-tooltip > div > span {
@@ -262,15 +256,15 @@
 }
 
 .composition-tooltip > div > strong {
-  color: #fff;
-  font-size: var(--dashboard-type-tooltip-value);
+  color: var(--tooltip-text);
+  font-size: var(--tooltip-type-value);
   font-variant-numeric: tabular-nums;
 }
 
 .composition-tooltip small {
   min-width: 55px;
-  color: #aebfba;
-  font-size: var(--dashboard-type-label);
+  color: var(--tooltip-muted);
+  font-size: var(--tooltip-type-body);
   text-align: right;
 }
 

@@ -136,7 +136,11 @@ function ChartTooltip({ entry, modelColors, alignRight }: {
     : entry.cost / (entry.input / 1_000_000);
   const models = entry.models.toSorted((a, b) => b.cost - a.cost || b.input - a.input);
   return (
-    <div className={`combined-usage-tooltip${alignRight ? " align-right" : ""}`}>
+    <div
+      className={`tooltip-surface combined-usage-tooltip${
+        alignRight ? " align-right" : ""
+      }`}
+    >
       <p>{day.format(new Date(entry.timestamp))}</p>
       <div className="combined-tooltip-totals">
         <div><strong>{money.format(entry.cost)}</strong><span>spend</span></div>
@@ -240,7 +244,10 @@ export function SpendInputOverviewChart({ usage, range }: {
                 <button type="button" aria-label={`Show ${models.length - 5} more models`}>
                   +{models.length - 5} models
                 </button>
-                <span className="model-overflow-popover" role="tooltip">
+                <span
+                  className="tooltip-surface model-overflow-popover"
+                  role="tooltip"
+                >
                   {models.slice(5).map((model) => (
                     <span key={model.model} className="model-summary-item">
                       <i style={{ background: model.color }} />

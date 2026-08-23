@@ -269,7 +269,7 @@ function CacheMissSummary({ session }: { session: SessionSummary }) {
           </strong>
         )}
       <span
-        className="recent-session-cache-tooltip"
+        className="tooltip-surface recent-session-cache-tooltip"
         id={tooltipId}
         role="tooltip"
       >

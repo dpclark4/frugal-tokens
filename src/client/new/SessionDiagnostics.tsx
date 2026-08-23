@@ -81,7 +81,7 @@ function SessionTooltip({
   const session = payload?.[0]?.payload;
   if (!active || !session) return null;
   return (
-    <div className="usage-tooltip session-diagnostics-tooltip">
+    <div className="tooltip-surface usage-tooltip session-diagnostics-tooltip">
       <p>{session.title}</p>
       <span className="session-diagnostics-tooltip-model">
         {session.harness ? harnessName(session.harness) : "Unknown harness"}
