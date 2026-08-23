@@ -80,7 +80,9 @@ function isMiss(assessment: CacheAssessment | undefined): boolean {
     assessment?.status === "full-miss";
 }
 
-function isUnexpectedMiss(assessment: CacheAssessment | undefined): boolean {
+export function isUnexpectedMiss(
+  assessment: CacheAssessment | undefined,
+): boolean {
   return isMiss(assessment) && assessment?.cause === undefined &&
     assessment?.reason !== "model-change";
 }

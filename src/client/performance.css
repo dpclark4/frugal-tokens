@@ -127,14 +127,34 @@
 
 .performance-comparison-shell {
   overflow: hidden;
-  border: 1px solid var(--dashboard-rule);
-  border-radius: 8px;
-  background: var(--dashboard-panel);
-  box-shadow: 0 18px 48px rgba(32, 53, 48, .07);
+  margin-top: 34px;
+  padding: 12px;
+  border: 1px solid #cbd6d2;
+  border-radius: 12px;
+  background: var(--dashboard-bg);
+  box-shadow: 0 22px 60px rgba(32, 53, 48, .09);
 }
 
 .performance-comparison-shell .performance-grid {
-  gap: 0;
+  gap: 12px;
+}
+
+.performance-comparison-section {
+  margin-top: 24px;
+}
+
+.performance-comparison-section > h2 {
+  margin: 0 0 12px;
+  color: var(--dashboard-ink);
+  font-size: var(--dashboard-type-section-title);
+  letter-spacing: -.035em;
+}
+
+.performance-comparison-section > p {
+  max-width: 720px;
+  margin: -6px 0 12px;
+  color: var(--dashboard-muted);
+  font-size: 13px;
 }
 
 .performance-provider {
@@ -160,16 +180,12 @@
   font-size: 22px;
 }
 
-.comparison-panel {
+.comparison-data-panel {
   overflow: hidden;
-  border: 0;
-  border-radius: 0;
+  border: 1px solid var(--dashboard-rule);
+  border-radius: 8px;
   background: var(--dashboard-panel);
   box-shadow: none;
-}
-
-.comparison-panel + .comparison-panel {
-  border-left: 1px solid var(--dashboard-rule);
 }
 
 .comparison-config {
@@ -178,7 +194,8 @@
   align-items: end;
   gap: 12px;
   padding: 12px 14px;
-  border-bottom: 1px solid var(--dashboard-rule);
+  border: 1px solid var(--dashboard-rule);
+  border-radius: 8px;
   background: var(--dashboard-panel);
 }
 
@@ -548,30 +565,62 @@
   color: var(--muted);
 }
 
+.performance-page .cache-loss-comparison-tooltip {
+  min-width: 480px;
+}
+
 .cache-loss-tooltip-columns,
 .cache-loss-tooltip-row {
   display: grid !important;
-  grid-template-columns: minmax(0, 1fr) 54px 58px;
+  grid-template-columns: minmax(76px, 1fr) 48px 72px 72px 92px;
   gap: 8px !important;
-}
-
-.cache-loss-tooltip-columns {
-  padding-top: 9px !important;
-  color: var(--muted);
-  font-size: 8px;
-  letter-spacing: .03em;
-  text-transform: uppercase;
-}
-
-.cache-loss-tooltip-columns span:not(:first-child),
-.cache-loss-tooltip-row > span,
-.cache-loss-tooltip-row strong {
-  font-variant-numeric: tabular-nums;
   text-align: right;
 }
 
+.cache-loss-tooltip-columns {
+  padding: 2px 0 5px !important;
+  color: var(--dashboard-muted);
+  font-size: var(--dashboard-type-micro);
+  font-weight: 650;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.cache-loss-tooltip-row {
+  padding: 6px 0 !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.cache-loss-tooltip-row + .cache-loss-tooltip-row {
+  border-top: 1px solid #e4ebe8;
+}
+
+.cache-loss-tooltip-columns > span:first-child,
+.cache-loss-tooltip-row > span:first-child {
+  text-align: left;
+}
+
+.cache-loss-tooltip-row > span {
+  color: var(--tooltip-muted);
+}
+
 .cache-loss-tooltip-row strong {
+  color: var(--tooltip-text);
+  font-size: var(--tooltip-type-value);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.cache-loss-tooltip-row strong.positive {
+  color: var(--dashboard-signal);
+}
+
+.cache-loss-tooltip-row strong.negative {
+  color: #b34e32;
+}
+
+.cache-loss-tooltip-row strong.neutral {
+  color: var(--dashboard-muted);
 }
 
 .performance-legend {
@@ -980,11 +1029,6 @@
 @media (max-width: 1250px) {
   .performance-grid {
     grid-template-columns: 1fr;
-  }
-
-  .comparison-panel + .comparison-panel {
-    border-top: 1px solid var(--dashboard-rule);
-    border-left: 0;
   }
 
   .tool-calls-intro,

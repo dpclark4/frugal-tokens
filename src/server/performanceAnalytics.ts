@@ -7,6 +7,7 @@ import {
 import {
   type AssessedUsageCall,
   categorizeUsageCallCache,
+  isUnexpectedMiss,
 } from "./cacheAnalysis.ts";
 import type { UsageCall } from "./usage.ts";
 
@@ -248,9 +249,7 @@ function providerResult(
       }
     }
     const sessionMiss = sessionCalls.some((call) =>
-      call.cacheAssessment.cause === undefined &&
-      (call.cacheAssessment.status === "partial-hit" ||
-        call.cacheAssessment.status === "full-miss")
+      isUnexpectedMiss(call.cacheAssessment)
     );
     if (sessionMiss) {
       sessionsWithMiss++;
@@ -273,22 +272,14 @@ function providerResult(
     modelCalls += sessionCalls.length;
     bucket.modelCalls += sessionCalls.length;
     for (const call of sessionCalls) {
-      if (
-        call.cacheAssessment.cause === undefined &&
-        (call.cacheAssessment.status === "partial-hit" ||
-          call.cacheAssessment.status === "full-miss")
-      ) {
+      if (isUnexpectedMiss(call.cacheAssessment)) {
         modelCallsWithMiss++;
         bucket.modelCallsWithMiss++;
       }
     }
     for (const turnCalls of sessionTurns.values()) {
       if (
-        turnCalls.some((call) =>
-          call.cacheAssessment.cause === undefined &&
-          (call.cacheAssessment.status === "partial-hit" ||
-            call.cacheAssessment.status === "full-miss")
-        )
+        turnCalls.some((call) => isUnexpectedMiss(call.cacheAssessment))
       ) {
         turnsWithMiss++;
         bucket.turnsWithMiss++;
@@ -300,8 +291,8 @@ function providerResult(
     const assessment = call.cacheAssessment;
     const previousReusable = assessment.previousReusableTokens;
     if (
-      previousReusable === undefined || assessment.cause !== undefined ||
-      !["hit", "partial-hit", "full-miss"].includes(assessment.status)
+      previousReusable === undefined ||
+      (assessment.status !== "hit" && !isUnexpectedMiss(assessment))
     ) continue;
 
     const date = weekKey(call.startedAt);

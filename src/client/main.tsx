@@ -129,12 +129,26 @@ const performanceRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/performance",
   validateSearch: z.object({
-    harness: z.enum(["all", "opencode", "claude-code", "pi", "codex", "cursor"])
-      .catch(
-        "all",
-      ),
-    openai: z.string().catch("all"),
-    anthropic: z.string().catch("all"),
+    leftLab: z.enum(["openai", "anthropic"]).catch("openai"),
+    leftHarness: z.enum([
+      "all",
+      "opencode",
+      "claude-code",
+      "pi",
+      "codex",
+      "cursor",
+    ]).catch("all"),
+    leftModel: z.string().catch("all"),
+    rightLab: z.enum(["openai", "anthropic"]).catch("openai"),
+    rightHarness: z.enum([
+      "all",
+      "opencode",
+      "claude-code",
+      "pi",
+      "codex",
+      "cursor",
+    ]).catch("pi"),
+    rightModel: z.string().catch("all"),
   }),
   component: PerformancePage,
 });

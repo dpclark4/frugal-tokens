@@ -38,6 +38,7 @@ const date = new Intl.DateTimeFormat(undefined, {
 type ProviderResult = PerformanceResponse["openai"];
 type DistributionKey = "efficiency" | "finalContextShare";
 type Lab = "openai" | "anthropic";
+type HarnessSelection = "all" | SessionSummary["harness"];
 type MissMetric = "sessions" | "turns" | "modelCalls";
 type Week = ProviderResult["weeks"][number] & {
   sessionRate: number | null;
@@ -387,77 +388,111 @@ type CacheLossWeek = ProviderResult["weeks"][number] & {
   loss128kPlus: number | null;
 };
 
-function lossTokens(
+function lossMisses(
   retention: ProviderResult["weeks"][number]["cacheRetention"],
   bucket: CacheLossBucket,
 ) {
   if (!retention) return null;
   return retention.lossBuckets.find((entry) => entry.bucket === bucket)
-    ?.unretainedTokens ?? 0;
+    ?.requests ?? 0;
 }
 
-function CacheLossTooltip({ active, payload }: {
+function cacheLossDifference(value: number, other?: number) {
+  if (other === undefined) return "—";
+  const difference = value - other;
+  if (difference === 0) return "Same";
+  return `${integer.format(Math.abs(difference))} ${
+    difference > 0 ? "more" : "fewer"
+  }`;
+}
+
+function CacheLossTooltip({ active, payload, comparisonWeeks }: {
   active?: boolean;
   payload?: Array<{ payload?: CacheLossWeek }>;
+  comparisonWeeks?: ProviderResult["weeks"];
 }) {
   const week = payload?.[0]?.payload;
   const retention = week?.cacheRetention;
   if (!active || !week || !retention) return null;
+  const comparison = comparisonWeeks?.find((entry) => entry.date === week.date)
+    ?.cacheRetention;
   return (
-    <div className="tooltip-surface usage-tooltip performance-tooltip">
+    <div className="tooltip-surface usage-tooltip performance-tooltip comparison-tooltip cache-loss-comparison-tooltip">
       <p>
         {date.format(new Date(`${week.date}T00:00:00`))}–
         {date.format(new Date(`${week.endDate}T00:00:00`))}
       </p>
       <div className="cache-loss-tooltip-columns" aria-hidden="true">
-        <span />
-        <span>Requests</span>
-        <span>Tokens</span>
+        <span>Depth</span>
+        <span>Misses</span>
+        <span>Lost tokens</span>
+        <span>Other</span>
+        <span>Difference</span>
       </div>
-      {[...retention.lossBuckets].reverse().map((bucket) =>
-        bucket.unretainedTokens > 0 && (
-          <div className="cache-loss-tooltip-row" key={bucket.bucket}>
-            <span>
-              {cacheLossBuckets.find((entry) =>
-                entry.bucket === bucket.bucket
-              )
-                ?.label} misses
-            </span>
-            <strong>{integer.format(bucket.requests)}</strong>
-            <strong title={integer.format(bucket.unretainedTokens)}>
-              {compact.format(bucket.unretainedTokens)}
+      {[...cacheLossBuckets].reverse().map((definition) => {
+        const bucket = retention.lossBuckets.find((entry) =>
+          entry.bucket === definition.bucket
+        );
+        const other = comparison?.lossBuckets.find((entry) =>
+          entry.bucket === definition.bucket
+        );
+        const misses = bucket?.requests ?? 0;
+        const tokens = bucket?.unretainedTokens ?? 0;
+        const otherMisses = other?.requests;
+        const difference = otherMisses === undefined
+          ? undefined
+          : misses - otherMisses;
+        if (misses === 0 && (otherMisses ?? 0) === 0) return null;
+        return (
+          <div className="cache-loss-tooltip-row" key={definition.bucket}>
+            <span>{definition.label}</span>
+            <strong>{integer.format(misses)}</strong>
+            <strong title={integer.format(tokens)}>
+              {compact.format(tokens)}
+            </strong>
+            <strong
+              title={otherMisses === undefined
+                ? undefined
+                : integer.format(otherMisses)}
+            >
+              {otherMisses === undefined ? "—" : integer.format(otherMisses)}
+            </strong>
+            <strong
+              className={difference === undefined || difference === 0
+                ? "neutral"
+                : difference > 0
+                ? "negative"
+                : "positive"}
+              title={difference === undefined
+                ? undefined
+                : integer.format(Math.abs(difference))}
+            >
+              {cacheLossDifference(misses, otherMisses)}
             </strong>
           </div>
-        )
-      )}
+        );
+      })}
     </div>
   );
 }
 
-function CacheLossPanel(
-  { title, result }: { title: string; result?: ProviderResult },
-) {
+function CacheLossPanel({ result, comparisonResult }: {
+  result?: ProviderResult;
+  comparisonResult?: ProviderResult;
+}) {
   const rows: CacheLossWeek[] = (result?.weeks ?? []).map((week) => ({
     ...week,
-    loss0To16k: lossTokens(week.cacheRetention, "0-16k"),
-    loss16To64k: lossTokens(week.cacheRetention, "16-64k"),
-    loss64To128k: lossTokens(week.cacheRetention, "64-128k"),
-    loss128kPlus: lossTokens(week.cacheRetention, "128k+"),
+    loss0To16k: lossMisses(week.cacheRetention, "0-16k"),
+    loss16To64k: lossMisses(week.cacheRetention, "16-64k"),
+    loss64To128k: lossMisses(week.cacheRetention, "64-128k"),
+    loss128kPlus: lossMisses(week.cacheRetention, "128k+"),
   }));
   const hasData = rows.some((week) =>
-    week.cacheRetention?.lossBuckets.some((bucket) =>
-      bucket.unretainedTokens > 0
-    )
+    week.cacheRetention?.lossBuckets.some((bucket) => bucket.requests > 0)
   );
 
   return (
-    <article className="performance-provider cache-retention-panel">
-      <div className="performance-provider-heading">
-        <h2>{title}</h2>
-        <span className="efficiency-model">
-          {displayModelName(result?.selectedModel ?? "all")}
-        </span>
-      </div>
+    <article className="performance-provider cache-retention-panel comparison-data-panel">
       {!result
         ? (
           <div className="performance-chart">
@@ -493,7 +528,13 @@ function CacheLossPanel(
                     axisLine={false}
                     width={48}
                   />
-                  <Tooltip content={<CacheLossTooltip />} />
+                  <Tooltip
+                    content={
+                      <CacheLossTooltip
+                        comparisonWeeks={comparisonResult?.weeks}
+                      />
+                    }
+                  />
                   {cacheLossBuckets.map((bucket) => (
                     <Bar
                       key={bucket.key}
@@ -575,13 +616,13 @@ function ImageCohortPanel({
 
 type ComparisonCohort = {
   lab: Lab;
-  harness: string;
+  harness: HarnessSelection;
   model: string;
   result?: ProviderResult;
   models: string[];
   error?: string;
   updateLab: (lab: Lab) => void;
-  updateHarness: (harness: string) => void;
+  updateHarness: (harness: HarnessSelection) => void;
   updateModel: (model: string) => void;
 };
 
@@ -594,10 +635,7 @@ function comparisonRows(result?: ProviderResult): Week[] {
   }));
 }
 
-function useComparison(initialLab: Lab, initialHarness = "all") {
-  const [lab, setLab] = useState<Lab>(initialLab);
-  const [harness, setHarness] = useState(initialHarness);
-  const [model, setModel] = useState("all");
+function useComparison(lab: Lab, harness: string, model: string) {
   const [response, setResponse] = useState<PerformanceResponse>();
   const [error, setError] = useState<string>();
 
@@ -622,19 +660,23 @@ function useComparison(initialLab: Lab, initialHarness = "all") {
   }, [lab, harness, model]);
 
   return {
-    lab,
-    harness,
-    model,
     result: response?.[lab],
     models: response?.models[lab] ?? [],
     error,
-    updateLab(nextLab: Lab) {
-      setLab(nextLab);
-      setModel("all");
-    },
-    updateHarness: setHarness,
-    updateModel: setModel,
-  } satisfies ComparisonCohort;
+  };
+}
+
+function harnessSelection(value: string): HarnessSelection {
+  switch (value) {
+    case "opencode":
+    case "claude-code":
+    case "pi":
+    case "codex":
+    case "cursor":
+      return value;
+    default:
+      return "all";
+  }
 }
 
 function ComparisonControls({
@@ -664,7 +706,8 @@ function ComparisonControls({
           <span>Harness</span>
           <select
             value={cohort.harness}
-            onChange={(event) => cohort.updateHarness(event.target.value)}
+            onChange={(event) =>
+              cohort.updateHarness(harnessSelection(event.target.value))}
           >
             <HarnessOptions harnesses={harnesses} />
           </select>
@@ -803,6 +846,7 @@ function ComparisonChart({
                       strokeWidth: 2,
                     }}
                     connectNulls={false}
+                    isAnimationActive={false}
                   />
                 )
               )}
@@ -815,11 +859,52 @@ function ComparisonChart({
 
 export function PerformancePage() {
   const search = route.useSearch();
-  const [data, setData] = useState<PerformanceResponse>();
+  const navigate = route.useNavigate();
   const [harnesses, setHarnesses] = useState<SessionSummary["harness"][]>([]);
-  const [error, setError] = useState<string>();
-  const comparisonA = useComparison("openai");
-  const comparisonB = useComparison("openai", "pi");
+  const leftResult = useComparison(
+    search.leftLab,
+    search.leftHarness,
+    search.leftModel,
+  );
+  const rightResult = useComparison(
+    search.rightLab,
+    search.rightHarness,
+    search.rightModel,
+  );
+  const comparisonA = {
+    lab: search.leftLab,
+    harness: search.leftHarness,
+    model: search.leftModel,
+    ...leftResult,
+    updateLab(lab: Lab) {
+      void navigate({
+        search: { ...search, leftLab: lab, leftModel: "all" },
+      });
+    },
+    updateHarness(harness: HarnessSelection) {
+      void navigate({ search: { ...search, leftHarness: harness } });
+    },
+    updateModel(model: string) {
+      void navigate({ search: { ...search, leftModel: model } });
+    },
+  } satisfies ComparisonCohort;
+  const comparisonB = {
+    lab: search.rightLab,
+    harness: search.rightHarness,
+    model: search.rightModel,
+    ...rightResult,
+    updateLab(lab: Lab) {
+      void navigate({
+        search: { ...search, rightLab: lab, rightModel: "all" },
+      });
+    },
+    updateHarness(harness: HarnessSelection) {
+      void navigate({ search: { ...search, rightHarness: harness } });
+    },
+    updateModel(model: string) {
+      void navigate({ search: { ...search, rightModel: model } });
+    },
+  } satisfies ComparisonCohort;
   const [visibleMetricsA, setVisibleMetricsA] = useState<Set<MissMetric>>(
     () => new Set(missMetrics.map((metric) => metric.key)),
   );
@@ -828,9 +913,13 @@ export function PerformancePage() {
   );
   const comparisonARows = comparisonRows(comparisonA.result);
   const comparisonBRows = comparisonRows(comparisonB.result);
-  const comparisonAxisMaximum = missRateAxisMax(
-    [...comparisonARows, ...comparisonBRows],
-    new Set([...visibleMetricsA, ...visibleMetricsB]),
+  const comparisonAAxisMaximum = missRateAxisMax(
+    comparisonARows,
+    visibleMetricsA,
+  );
+  const comparisonBAxisMaximum = missRateAxisMax(
+    comparisonBRows,
+    visibleMetricsB,
   );
 
   function toggleMetricA(metric: MissMetric) {
@@ -855,74 +944,69 @@ export function PerformancePage() {
     getHarnesses().then(setHarnesses).catch(() => undefined);
   }, []);
 
-  useEffect(() => {
-    let active = true;
-    setData(undefined);
-    setError(undefined);
-    getPerformance(search.harness, search.openai, search.anthropic).then(
-      (result) => {
-        if (active) setData(result);
-      },
-    ).catch((reason) => {
-      if (active) {
-        setError(
-          reason instanceof Error
-            ? reason.message
-            : "Unable to load performance",
-        );
-      }
-    });
-    return () => {
-      active = false;
-    };
-  }, [search.harness, search.openai, search.anthropic]);
-
   return (
     <main className="new-page performance-page">
       <SiteHeader active="performance" />
-      <section className="performance-intro">
-        <h2>Cache miss rate</h2>
-      </section>
       <section className="performance-comparison-shell">
-        {error && <div className="error performance-error">{error}</div>}
-        <div className="performance-grid">
-          <article className="performance-provider comparison-panel">
-            <ComparisonControls
-              cohort={comparisonA}
-              harnesses={harnesses}
-            />
-            <ComparisonMetrics
-              result={comparisonA.result}
-              visible={visibleMetricsA}
-              onToggle={toggleMetricA}
-            />
-            <ComparisonChart
-              cohort={comparisonA}
-              rows={comparisonARows}
-              visible={visibleMetricsA}
-              axisMaximum={comparisonAxisMaximum}
-              comparisonRows={comparisonBRows}
-            />
-          </article>
-          <article className="performance-provider comparison-panel">
-            <ComparisonControls
-              cohort={comparisonB}
-              harnesses={harnesses}
-            />
-            <ComparisonMetrics
-              result={comparisonB.result}
-              visible={visibleMetricsB}
-              onToggle={toggleMetricB}
-            />
-            <ComparisonChart
-              cohort={comparisonB}
-              rows={comparisonBRows}
-              visible={visibleMetricsB}
-              axisMaximum={comparisonAxisMaximum}
-              comparisonRows={comparisonARows}
-            />
-          </article>
+        <div className="performance-grid comparison-controls-grid">
+          <ComparisonControls
+            cohort={comparisonA}
+            harnesses={harnesses}
+          />
+          <ComparisonControls
+            cohort={comparisonB}
+            harnesses={harnesses}
+          />
         </div>
+        <section className="performance-comparison-section">
+          <h2>Unexpected cache miss rate</h2>
+          <div className="performance-grid">
+            <article className="performance-provider comparison-data-panel">
+              <ComparisonMetrics
+                result={comparisonA.result}
+                visible={visibleMetricsA}
+                onToggle={toggleMetricA}
+              />
+              <ComparisonChart
+                cohort={comparisonA}
+                rows={comparisonARows}
+                visible={visibleMetricsA}
+                axisMaximum={comparisonAAxisMaximum}
+                comparisonRows={comparisonBRows}
+              />
+            </article>
+            <article className="performance-provider comparison-data-panel">
+              <ComparisonMetrics
+                result={comparisonB.result}
+                visible={visibleMetricsB}
+                onToggle={toggleMetricB}
+              />
+              <ComparisonChart
+                cohort={comparisonB}
+                rows={comparisonBRows}
+                visible={visibleMetricsB}
+                axisMaximum={comparisonBAxisMaximum}
+                comparisonRows={comparisonARows}
+              />
+            </article>
+          </div>
+        </section>
+        <section className="performance-comparison-section">
+          <h2>Unexpected cache miss depth</h2>
+          <p>
+            Unexpected misses grouped by estimated reusable tokens lost.
+          </p>
+          <div className="performance-grid">
+            <CacheLossPanel
+              result={comparisonA.result}
+              comparisonResult={comparisonB.result}
+            />
+            <CacheLossPanel
+              result={comparisonB.result}
+              comparisonResult={comparisonA.result}
+            />
+          </div>
+        </section>
       </section>
       <section className="performance-section-heading">
         <h2>Cache efficiency</h2>
@@ -933,14 +1017,14 @@ export function PerformancePage() {
       </section>
       <section className="performance-grid">
         <DistributionPanel
-          title="OpenAI"
-          result={data?.openai}
+          title={comparisonA.lab === "openai" ? "OpenAI" : "Anthropic"}
+          result={comparisonA.result}
           distribution="efficiency"
           label="Cache efficiency"
         />
         <DistributionPanel
-          title="Anthropic"
-          result={data?.anthropic}
+          title={comparisonB.lab === "openai" ? "OpenAI" : "Anthropic"}
+          result={comparisonB.result}
           distribution="efficiency"
           label="Cache efficiency"
         />
@@ -954,14 +1038,14 @@ export function PerformancePage() {
       </section>
       <section className="performance-grid">
         <DistributionPanel
-          title="OpenAI"
-          result={data?.openai}
+          title={comparisonA.lab === "openai" ? "OpenAI" : "Anthropic"}
+          result={comparisonA.result}
           distribution="finalContextShare"
           label="Context efficiency"
         />
         <DistributionPanel
-          title="Anthropic"
-          result={data?.anthropic}
+          title={comparisonB.lab === "openai" ? "OpenAI" : "Anthropic"}
+          result={comparisonB.result}
           distribution="finalContextShare"
           label="Context efficiency"
         />
@@ -970,19 +1054,14 @@ export function PerformancePage() {
         <h2>Miss rate by image use</h2>
       </section>
       <section className="performance-grid">
-        <ImageCohortPanel title="OpenAI" result={data?.openai} />
-        <ImageCohortPanel title="Anthropic" result={data?.anthropic} />
-      </section>
-      <section className="performance-section-heading">
-        <h2>Unexpected cache-miss volume</h2>
-        <p>
-          Partial/full misses not attributed to compaction or cache expiry,
-          grouped by inferred context loss.
-        </p>
-      </section>
-      <section className="performance-grid">
-        <CacheLossPanel title="OpenAI" result={data?.openai} />
-        <CacheLossPanel title="Anthropic" result={data?.anthropic} />
+        <ImageCohortPanel
+          title={comparisonA.lab === "openai" ? "OpenAI" : "Anthropic"}
+          result={comparisonA.result}
+        />
+        <ImageCohortPanel
+          title={comparisonB.lab === "openai" ? "OpenAI" : "Anthropic"}
+          result={comparisonB.result}
+        />
       </section>
     </main>
   );

@@ -115,6 +115,33 @@ Deno.test("buckets every partial and full cache loss", () => {
   strictEqual(retention.lossBuckets[1].requests, 0);
 });
 
+Deno.test("excludes model changes from unexpected miss rates and volume", () => {
+  const start = new Date(2026, 2, 2).getTime();
+  const end = new Date(2026, 2, 8, 23, 59).getTime();
+  const switched = call("switched", 2, start + 20, 0);
+  switched.model = "gpt-5.3-codex";
+  const result = aggregatePerformance(
+    [
+      call("switched", 1, start + 10, 0, 100),
+      switched,
+      call("unexpected", 1, start + 30, 0, 100),
+      call("unexpected", 2, start + 40, 50),
+    ],
+    start,
+    end,
+  );
+  const retention = result.openai.weeks[0].cacheRetention!;
+
+  strictEqual(result.openai.sessionsWithMiss, 1);
+  strictEqual(result.openai.turnsWithMiss, 1);
+  strictEqual(result.openai.modelCallsWithMiss, 1);
+  strictEqual(retention.comparableRequests, 1);
+  strictEqual(retention.requestsWithLoss, 1);
+  strictEqual(retention.partialHits, 1);
+  strictEqual(retention.fullMisses, 0);
+  strictEqual(retention.lossBuckets[0].requests, 1);
+});
+
 Deno.test("groups image sessions into exclusive cohorts with miss rates", () => {
   const start = new Date(2026, 2, 2).getTime();
   const end = new Date(2026, 2, 8, 23, 59).getTime();
