@@ -21,6 +21,14 @@ export type StoredSubagentUsage = {
   hasUnpricedCost: boolean;
 };
 
+type UsageAggregation = {
+  response: UsageResponse;
+  dayCount: number;
+};
+
+type CallUsageAggregation = UsageAggregation & { callCount: number };
+type RollupUsageAggregation = UsageAggregation & { rootCount: number };
+
 function dateKey(value: number) {
   const date = new Date(value);
   return [
@@ -197,7 +205,7 @@ export function aggregateUsage(
   start?: number,
   subagentCoverage: UsageResponse["subagentCoverage"] = "full",
   initialInputSamples: InitialInputSample[] = [],
-): { response: UsageResponse; callCount: number; dayCount: number } {
+): CallUsageAggregation {
   const days = new Map<
     string,
     Map<string, { input: number; cost: number; hasPricedCost: boolean }>
@@ -304,7 +312,7 @@ export function aggregateUsageRollups(
   start?: number,
   subagentCoverage: UsageResponse["subagentCoverage"] = "full",
   initialInputSamples: InitialInputSample[] = [],
-): { response: UsageResponse; rootCount: number; dayCount: number } {
+): RollupUsageAggregation {
   const modelDays = new Map<
     string,
     Map<string, { input: number; cost: number; hasPricedCost: boolean }>

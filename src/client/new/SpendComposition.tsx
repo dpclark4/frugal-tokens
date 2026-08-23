@@ -256,19 +256,19 @@ function CompositionChart(
   ], [data]);
   const rows = useMemo(() =>
     data.days.map((day) => {
-      const row: ChartRow = { date: day.date, source: day };
+      const values: Record<string, number> = {};
       data.models.forEach((model, index) => {
         const value = day.models.find((item) => item.model === model.model);
-        row[`model${index}`] = metric === "spend"
+        values[`model${index}`] = metric === "spend"
           ? value?.spend ?? 0
           : value?.processedInput ?? 0;
       });
       if (data.other) {
-        row.other = metric === "spend"
+        values.other = metric === "spend"
           ? day.otherSpend
           : day.otherProcessedInput;
       }
-      return row;
+      return { date: day.date, source: day, ...values };
     }), [data, metric]);
 
   return (
@@ -325,7 +325,10 @@ function CompositionChart(
             content={(props) => (
               <CompositionTooltip
                 active={props.active}
-                payload={props.payload as Array<{ payload?: ChartRow }>}
+                payload={
+                  /* SAFETY: Recharts wraps rows from this chart data in tooltip payload entries. */
+                  props.payload as Array<{ payload?: ChartRow }>
+                }
                 data={data}
                 metric={metric}
               />

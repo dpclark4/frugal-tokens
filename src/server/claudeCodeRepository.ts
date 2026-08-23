@@ -1,10 +1,16 @@
 import { z } from "zod";
 import {
+  type SessionDetail,
   sessionDetailSchema,
   sessionListResponseSchema,
   type SessionSummary,
   type TokenUsage,
 } from "../shared/sessionSchemas.ts";
+import {
+  type JsonObject,
+  type JsonValue,
+  jsonValueSchema,
+} from "../shared/json.ts";
 import { usageCallsFromSession } from "./usage.ts";
 import type {
   CompactionCheckpointItemImport,
@@ -23,6 +29,7 @@ import {
   nonnegativeInteger,
   numberCheckpointItems,
   objectValue,
+  serializedJsonValue,
   stringArray,
   stringValue,
   textCheckpointItem,
@@ -38,12 +45,12 @@ const contentBlockSchema = z.object({
   name: z.string().optional(),
   tool_use_id: z.string().optional(),
   is_error: z.boolean().optional(),
-  input: z.unknown().optional(),
-  content: z.unknown().optional(),
+  input: jsonValueSchema.optional(),
+  content: jsonValueSchema.optional(),
   source: z.object({
     media_type: z.string().optional(),
-  }).passthrough().optional(),
-}).passthrough();
+  }).catchall(jsonValueSchema).optional(),
+}).catchall(jsonValueSchema);
 
 const recordSchema = z.object({
   type: z.string(),
@@ -57,9 +64,9 @@ const recordSchema = z.object({
   customTitle: z.string().optional(),
   isMeta: z.boolean().optional(),
   isSidechain: z.boolean().optional(),
-  isCompactSummary: z.unknown().optional(),
-  compactMetadata: z.unknown().optional(),
-  content: z.unknown().optional(),
+  isCompactSummary: jsonValueSchema.optional(),
+  compactMetadata: jsonValueSchema.optional(),
+  content: jsonValueSchema.optional(),
   promptSource: z.string().optional(),
   promptId: z.string().nullable().optional(),
   userType: z.string().optional(),
@@ -87,7 +94,7 @@ const recordSchema = z.object({
     z.array(contentBlockSchema),
     z.object({
       agentId: z.string().optional(),
-    }).passthrough(),
+    }).catchall(jsonValueSchema),
   ]).optional(),
 }).passthrough();
 
@@ -214,9 +221,9 @@ function preview(value: string): ConversationContentImport {
   };
 }
 
-function serializedPreview(value: unknown) {
+function serializedPreview(value: JsonValue | undefined) {
   if (value === undefined) return undefined;
-  const text = typeof value === "string" ? value : JSON.stringify(value);
+  const text = serializedJsonValue(value);
   if (text === undefined) return undefined;
   const valuePreview = preview(text);
   return {
@@ -232,8 +239,10 @@ function blocks(record: Record) {
 
 function userText(record: Record) {
   const content = record.message?.content;
-  if (typeof content === "string") return content;
-  return content?.find((block) => block.type === "text")?.text;
+  if (Array.isArray(content)) {
+    return content.find((block) => block.type === "text")?.text;
+  }
+  return content;
 }
 
 function userInputs(
@@ -244,21 +253,22 @@ function userInputs(
     ? {}
     : { sourceID: `${record.uuid}:input:1` };
   const text = userText(record);
-  const inputs = text === undefined ? [] : [{
+  const inputs: ConversationContentImport[] = text === undefined ? [] : [{
     ...preview(text),
     ...source,
     sourceOrder,
   }];
   for (const [index, block] of blocks(record).entries()) {
     if (block.type === "image") {
-      inputs.push({
+      const input: ConversationContentImport = {
         kind: "image",
         mimeType: block.source?.media_type,
-        ...(record.uuid === undefined
-          ? {}
-          : { sourceID: `${record.uuid}:input:${index + 1}` }),
         sourceOrder,
-      });
+      };
+      if (record.uuid !== undefined) {
+        input.sourceID = `${record.uuid}:input:${index + 1}`;
+      }
+      inputs.push(input);
     }
   }
   return inputs;
@@ -288,12 +298,9 @@ function claudeCheckpointItem(
     role,
     content,
     kind: role === "system" ? "system-message" : undefined,
-    nativeMetadata: {
-      sourceType: record.type,
-      ...(record.subtype === undefined
-        ? {}
-        : { sourceSubtype: record.subtype }),
-    },
+    nativeMetadata: record.subtype === undefined
+      ? { sourceType: record.type }
+      : { sourceType: record.type, sourceSubtype: record.subtype },
   });
 }
 
@@ -407,6 +414,19 @@ function claudeCompactionDetails(
   if (metadata?.durationMs !== undefined && durationMs === undefined) {
     issues.push("duration-ms-invalid");
   }
+  const nativeMetadata: JsonObject = {};
+  if (summaryRecord?.uuid !== undefined) {
+    nativeMetadata.summaryEntryID = summaryRecord.uuid;
+  }
+  if (preservedIDs !== undefined) {
+    nativeMetadata.preservedEntryIDs = preservedIDs;
+  }
+  if (segmentMetadata !== undefined) {
+    nativeMetadata.preservedSegment = segmentMetadata;
+  }
+  if (durationMs !== undefined) nativeMetadata.durationMs = durationMs;
+  if (triggerValue !== undefined) nativeMetadata.nativeTrigger = triggerValue;
+  if (issues.length > 0) nativeMetadata.captureIssues = issues;
   return {
     sourceID: marker.uuid,
     trigger,
@@ -420,20 +440,7 @@ function claudeCompactionDetails(
     postContextTokens: postTokens,
     droppedContextTokens: droppedTokens,
     retainedItemCount: preservedItems.length,
-    nativeMetadata: {
-      ...(summaryRecord?.uuid === undefined
-        ? {}
-        : { summaryEntryID: summaryRecord.uuid }),
-      ...(preservedIDs === undefined
-        ? {}
-        : { preservedEntryIDs: preservedIDs }),
-      ...(segmentMetadata === undefined
-        ? {}
-        : { preservedSegment: segmentMetadata }),
-      ...(durationMs === undefined ? {} : { durationMs }),
-      ...(triggerValue === undefined ? {} : { nativeTrigger: triggerValue }),
-      ...(issues.length === 0 ? {} : { captureIssues: issues }),
-    },
+    nativeMetadata,
     checkpointItems,
   };
 }
@@ -457,6 +464,12 @@ function sessionBounds(
   return { startedAt, endedAt };
 }
 
+function publicClaudeTool(tool: ConversationToolImport) {
+  const { sourceChildSessionID, ...persisted } = tool;
+  if (sourceChildSessionID === undefined) return persisted;
+  return { ...persisted, childSessionID: sourceChildSessionID };
+}
+
 function decodeRecords(records: Record[]) {
   const turns: Array<ConversationTurnImport & { images?: number }> = [];
   const calls = new Map<
@@ -478,11 +491,11 @@ function decodeRecords(records: Record[]) {
       const event: PendingContextEvent = {
         type: "compaction",
         sourceOrder: recordIndex + 1,
-        ...(timestamp === 0 ? {} : { occurredAt: timestamp }),
         compaction: numberCheckpointItems(
           claudeCompactionDetails(records, recordIndex),
         ),
       };
+      if (timestamp !== 0) event.occurredAt = timestamp;
       contextEvents.push(event);
       pendingContextEvents.push(event);
       continue;
@@ -491,36 +504,34 @@ function decodeRecords(records: Record[]) {
       const content = record.message?.content;
       if (startsTurn(record, turns.length > 0)) {
         const inputs = userInputs(record, recordIndex + 1);
-        turns.push({
+        const turn: ConversationTurnImport & { images?: number } = {
           number: turns.length + 1,
-          ...(record.uuid === undefined ? {} : {
-            sourceID: record.uuid,
-            identityBasis: "stable-id" as const,
-          }),
           sourceOrderStart: recordIndex + 1,
           startedAt: timestamp,
           calls: [],
           inputs,
           images: inputs.filter((input) => input.kind === "image").length,
-        });
+        };
+        if (record.uuid !== undefined) {
+          turn.sourceID = record.uuid;
+          turn.identityBasis = "stable-id";
+        }
+        turns.push(turn);
       }
       if (Array.isArray(content)) {
         for (const block of content) {
           if (block.type !== "tool_result" || !block.tool_use_id) continue;
           for (const value of calls.values()) {
             const tool = value.call.activity.tools.find((item) =>
-              (item as { id?: string }).id === block.tool_use_id
+              item.sourceID === block.tool_use_id
             );
             if (tool) {
               tool.status = block.is_error ? "error" : "completed";
               tool.completedAt = timestamp;
-              if (
-                typeof record.toolUseResult === "object" &&
-                !Array.isArray(record.toolUseResult) &&
-                record.toolUseResult.agentId
-              ) {
-                (tool as ConversationToolImport & { childSessionID?: string })
-                  .childSessionID = record.toolUseResult.agentId;
+              const toolResult = objectValue(record.toolUseResult);
+              const sourceChildSessionID = stringValue(toolResult?.agentId);
+              if (sourceChildSessionID !== undefined) {
+                tool.sourceChildSessionID = sourceChildSessionID;
               }
               tool.output = serializedPreview(
                 block.content ?? record.toolUseResult,
@@ -606,13 +617,14 @@ function decodeRecords(records: Record[]) {
       if (block.type === "text") {
         decoded.call.activity.hasText = true;
         if (block.text !== undefined) {
-          decoded.call.content?.push({
+          const content: ConversationContentImport = {
             ...preview(block.text),
-            ...(record.uuid === undefined
-              ? {}
-              : { sourceID: `${record.uuid}:content:${blockIndex + 1}` }),
             sourceOrder: recordIndex + 1,
-          });
+          };
+          if (record.uuid !== undefined) {
+            content.sourceID = `${record.uuid}:content:${blockIndex + 1}`;
+          }
+          decoded.call.content?.push(content);
           decoded.call.preview ??= block.text;
         }
       }
@@ -622,22 +634,17 @@ function decodeRecords(records: Record[]) {
       }
       if (block.type === "tool_use" && block.name && block.id) {
         const input = serializedPreview(block.input);
-        decoded.call.activity.tools.push(
-          {
-            sourceID: block.id,
-            sourceEntryID: record.uuid,
-            sourceOrderStart: recordIndex + 1,
-            name: block.name,
-            status: "pending",
-            startedAt: timestamp,
-            input,
-            ...(input?.preview === undefined
-              ? {}
-              : { inputPreview: input.preview }),
-            // Kept internally while matching the later tool_result record.
-            id: block.id,
-          } as ConversationToolImport,
-        );
+        const tool: ConversationToolImport = {
+          sourceID: block.id,
+          sourceEntryID: record.uuid,
+          sourceOrderStart: recordIndex + 1,
+          name: block.name,
+          status: "pending",
+          startedAt: timestamp,
+          input,
+        };
+        if (input?.preview !== undefined) tool.inputPreview = input.preview;
+        decoded.call.activity.tools.push(tool);
       }
     }
   }
@@ -869,11 +876,8 @@ export function normalizeClaudeCodeSessionTree(options: {
     for (const turn of decoded.turns) {
       for (const call of turn.calls) {
         for (const tool of call.activity.tools) {
-          const rawChild = (tool as ConversationToolImport & {
-            childSessionID?: string;
-          }).childSessionID;
-          delete (tool as ConversationToolImport & { childSessionID?: string })
-            .childSessionID;
+          const rawChild = tool.sourceChildSessionID;
+          delete tool.sourceChildSessionID;
           if (rawChild) {
             const child = transcripts.find((item) =>
               item.artifactPath.startsWith(
@@ -892,7 +896,7 @@ export function normalizeClaudeCodeSessionTree(options: {
     )?.timestamp;
     const bounds = sessionBounds(decoded.turns);
     const externalID = externalIDs.get(transcript.artifactPath)!;
-    return {
+    const imported: LinearConversationImport = {
       sourceID: options.sourceID,
       externalID,
       publicID: rawID,
@@ -900,7 +904,6 @@ export function normalizeClaudeCodeSessionTree(options: {
         ? undefined
         : externalIDs.get(parentArtifactPath),
       artifactPath: transcript.artifactPath,
-      ...(workingDirectory === undefined ? {} : { workingDirectory }),
       observedAt: options.observedAt,
       checkpoint: options.checkpoint,
       session: {
@@ -928,6 +931,10 @@ export function normalizeClaudeCodeSessionTree(options: {
         contextEvents: decoded.contextEvents,
       },
     };
+    if (workingDirectory !== undefined) {
+      imported.workingDirectory = workingDirectory;
+    }
+    return imported;
   });
 }
 
@@ -1010,9 +1017,7 @@ export class ClaudeCodeRepository {
   getSession(id: string) {
     const file = this.#files().find((entry) => entry.id === id);
     if (!file) return undefined;
-    return sessionDetailSchema.parse(
-      this.#detail(file.id, file.path, file.updatedAt),
-    );
+    return this.#detail(file.id, file.path, file.updatedAt);
   }
 
   listUsageCalls(startedAt?: number) {
@@ -1020,9 +1025,7 @@ export class ClaudeCodeRepository {
       startedAt === undefined || file.updatedAt >= startedAt
     ).flatMap((file) =>
       usageCallsFromSession(
-        sessionDetailSchema.parse(
-          this.#detail(file.id, file.path, file.updatedAt),
-        ),
+        this.#detail(file.id, file.path, file.updatedAt),
       )
     ).filter((call) => startedAt === undefined || call.startedAt >= startedAt);
   }
@@ -1075,7 +1078,7 @@ export class ClaudeCodeRepository {
     updatedAt: number,
     parentID?: string,
     title?: string,
-  ): unknown {
+  ): SessionDetail {
     const records = readRecords(path);
     const decoded = decodeRecords(records);
     const summary = this.#summary(id, path, updatedAt);
@@ -1086,17 +1089,23 @@ export class ClaudeCodeRepository {
           event.affectedCall?.turn === turn.number &&
           event.affectedCall.call === call.callWithinTurn
         ).map(({ affectedCall: _affectedCall, ...event }) => event);
-        return {
+        const hydrated = {
           ...call,
-          ...(contextEventsBefore.length === 0 ? {} : { contextEventsBefore }),
+          activity: {
+            ...call.activity,
+            tools: call.activity.tools.map(publicClaudeTool),
+          },
         };
+        return contextEventsBefore.length === 0
+          ? hydrated
+          : { ...hydrated, contextEventsBefore };
       }),
     }));
     const contextEvents = decoded.contextEvents.filter((event) =>
       event.affectedCall === undefined
     );
     const subagentDirectory = `${path.slice(0, -6)}/subagents`;
-    let subagents: unknown[] = [];
+    let subagents: SessionDetail[] = [];
     try {
       subagents = [...Deno.readDirSync(subagentDirectory)]
         .filter((entry) =>
@@ -1128,13 +1137,15 @@ export class ClaudeCodeRepository {
     } catch (error) {
       if (!(error instanceof Deno.errors.NotFound)) throw error;
     }
-    return {
+    const detail = {
       ...summary,
       title: title ?? summary.title,
       parentID,
       turns,
-      ...(contextEvents.length === 0 ? {} : { contextEvents }),
       subagents,
     };
+    return sessionDetailSchema.parse(
+      contextEvents.length === 0 ? detail : { ...detail, contextEvents },
+    );
   }
 }

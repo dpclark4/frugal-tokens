@@ -145,10 +145,8 @@ function intensity(
 ): WorkRhythmDay["intensity"] {
   if (minutes <= 0) return 0;
   const lower = nonzero.filter((value) => value < minutes).length;
-  return Math.min(
-    4,
-    Math.floor(lower * 4 / nonzero.length) + 1,
-  ) as WorkRhythmDay["intensity"];
+  const levels = [1, 2, 3, 4] as const;
+  return levels[Math.min(3, Math.floor(lower * 4 / nonzero.length))];
 }
 
 export function workRhythmRange(
@@ -483,12 +481,6 @@ export function aggregateWorkRhythm(
 }
 
 function dateWeekday(date: string): 0 | 1 | 2 | 3 | 4 | 5 | 6 {
-  return (Temporal.PlainDate.from(date).dayOfWeek % 7) as
-    | 0
-    | 1
-    | 2
-    | 3
-    | 4
-    | 5
-    | 6;
+  const weekdays = [0, 1, 2, 3, 4, 5, 6] as const;
+  return weekdays[Temporal.PlainDate.from(date).dayOfWeek % 7];
 }

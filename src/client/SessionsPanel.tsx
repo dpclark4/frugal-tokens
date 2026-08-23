@@ -6,6 +6,11 @@ import {
   RefreshCw,
   Split,
 } from "lucide-react";
+import {
+  jsonObjectSchema,
+  jsonStringValue,
+  jsonValueSchema,
+} from "../shared/json.ts";
 import type {
   CacheAssessment,
   CacheIssue,
@@ -22,7 +27,7 @@ import { contextRange, contextSize } from "../shared/contextMetrics.ts";
 import { displayModelName } from "../shared/modelNames.ts";
 import { rollupCosts } from "../shared/costMetrics.ts";
 import { getTitleGenerationSetting, setTitleGenerationSetting } from "./api.ts";
-import { harnessIcon, harnessName } from "./harness.ts";
+import { harnessIcon, harnessName, parseHarnessFilter } from "./harness.ts";
 import { HarnessOptions } from "./HarnessOptions.tsx";
 import { costsMismatch, CostWarning } from "./CostWarning.tsx";
 
@@ -1192,9 +1197,11 @@ function terminalResponseCall(calls: ModelCall[]) {
 function toolTargetPreview(value?: string) {
   if (value === undefined) return undefined;
   try {
-    const parsed = JSON.parse(value);
-    if (typeof parsed === "string") return parsed;
-    if (parsed && typeof parsed === "object") {
+    const parsed = jsonValueSchema.parse(JSON.parse(value));
+    const direct = jsonStringValue(parsed);
+    if (direct !== undefined) return direct;
+    const object = jsonObjectSchema.safeParse(parsed);
+    if (object.success) {
       for (
         const key of [
           "description",
@@ -1207,8 +1214,8 @@ function toolTargetPreview(value?: string) {
           "query",
         ]
       ) {
-        const candidate = (parsed as Record<string, unknown>)[key];
-        if (typeof candidate === "string") return candidate;
+        const candidate = jsonStringValue(object.data[key]);
+        if (candidate !== undefined) return candidate;
       }
     }
   } catch {
@@ -2147,8 +2154,10 @@ export function SessionsPanel({
             <span className="session-control-label">Harness</span>
             <select
               value={harness}
-              onChange={(event) =>
-                onHarnessChange(event.target.value as typeof harness)}
+              onChange={(event) => {
+                const selected = parseHarnessFilter(event.target.value);
+                if (selected !== undefined) onHarnessChange(selected);
+              }}
             >
               <HarnessOptions harnesses={harnesses} />
             </select>

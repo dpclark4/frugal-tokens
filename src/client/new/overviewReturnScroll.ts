@@ -1,16 +1,18 @@
+import { z } from "zod";
+
 export const overviewReturnScrollKey = "frugal-tokens:overview-return-scroll";
 export const overviewRefreshScrollKey = "frugal-tokens:overview-refresh-scroll";
 
-type SavedOverviewScroll = {
-  href: string;
-  scrollY: number;
-};
+const savedOverviewScrollSchema = z.object({
+  href: z.string(),
+  scrollY: z.number().finite(),
+}).nullable();
 
 export function readOverviewRefreshScroll() {
   try {
-    const saved = JSON.parse(
+    const saved = savedOverviewScrollSchema.parse(JSON.parse(
       sessionStorage.getItem(overviewRefreshScrollKey) ?? "null",
-    ) as SavedOverviewScroll | null;
+    ));
     sessionStorage.removeItem(overviewRefreshScrollKey);
     return saved?.href === globalThis.location.href &&
         Number.isFinite(saved.scrollY)

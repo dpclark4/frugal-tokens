@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import type { JsonObject } from "../shared/json.ts";
 import type {
   ConversationContentImport,
   LinearConversationImport,
@@ -209,6 +210,7 @@ export class ConversationWriteRepository {
       const conversationIDs = new Map<string, number>();
       const sourceArtifactIDs = new Map<string, number>();
       for (const value of values) {
+        // SAFETY: The static SQL projection and migrated schema define this row contract.
         const sourceSession = this.#prepare(`
           SELECT id FROM source_sessions
           WHERE source_id = ? AND external_id = ?
@@ -220,6 +222,7 @@ export class ConversationWriteRepository {
         sourceArtifactIDs.set(value.externalID, sourceSessionID);
         this.#preserveAuthoritativeImportedTitle(sourceSessionID, value);
         const conversationID = Number(
+          // SAFETY: The static SQL projection and migrated schema define this row contract.
           (this.#prepare(`
           INSERT INTO conversations (
             source_id, external_id, title, working_directory, updated_at,
@@ -441,6 +444,7 @@ export class ConversationWriteRepository {
     try {
       const sourceArtifactIDs = new Map<string, number>();
       for (const artifact of ordered) {
+        // SAFETY: The static SQL projection and migrated schema define this row contract.
         const row = this.#prepare(`
           SELECT id FROM source_sessions
           WHERE source_id = ? AND external_id = ?
@@ -462,12 +466,14 @@ export class ConversationWriteRepository {
       const sourcePlaceholders = sourceArtifactIDValues.map(() => "?").join(
         ", ",
       );
+      // SAFETY: The static SQL projection and migrated schema define this row contract.
       const oldConversationIDs = (this.#prepare(`
         SELECT DISTINCT conversation_id AS id FROM conversation_branches
         WHERE source_session_id IN (${sourcePlaceholders})
       `).all(...sourceArtifactIDValues) as Array<{ id: number }>).map((row) =>
         Number(row.id)
       );
+      // SAFETY: The static SQL projection and migrated schema define this row contract.
       const target = this.#prepare(`
         SELECT id FROM conversations WHERE source_id = ? AND external_id = ?
       `).get(family.sourceID, family.externalID) as { id: number } | undefined;
@@ -485,6 +491,7 @@ export class ConversationWriteRepository {
         Array<{ modelCallID: number; toolEventID: number }>
       >();
       for (const subagent of family.subagents ?? []) {
+        // SAFETY: The static SQL projection and migrated schema define this row contract.
         const sourceArtifact = this.#prepare(`
           SELECT id FROM source_sessions
           WHERE source_id = ? AND external_id = ?
@@ -499,6 +506,7 @@ export class ConversationWriteRepository {
           Number(sourceArtifact.id),
         );
         const subagentConversationID = Number(
+          // SAFETY: The static SQL projection and migrated schema define this row contract.
           (this.#prepare(`
           INSERT INTO conversations (
             source_id, external_id, title, working_directory, updated_at,
@@ -590,6 +598,7 @@ export class ConversationWriteRepository {
       }
 
       const conversationID = Number(
+        // SAFETY: The static SQL projection and migrated schema define this row contract.
         (this.#prepare(`
         INSERT INTO conversations (
           source_id, external_id, title, working_directory, updated_at,
@@ -616,6 +625,7 @@ export class ConversationWriteRepository {
       const branchIDs = new Map<string, number>();
       for (const artifact of ordered) {
         const branchID = Number(
+          // SAFETY: The static SQL projection and migrated schema define this row contract.
           (this.#prepare(`
           INSERT INTO conversation_branches (
             conversation_id, source_session_id, external_id,
@@ -670,15 +680,16 @@ export class ConversationWriteRepository {
         if (parent === undefined) return "unknown";
         return keys.get(parent.externalID)?.has(key) ? "copied" : "executed";
       };
-      const evidence = (artifact: SourceArtifactFamilyMemberImport) =>
-        JSON.stringify({
-          ...(artifact.sourceIdentity === undefined
-            ? {}
-            : { sourceIdentity: artifact.sourceIdentity }),
-          ...(artifact.parentSourceIdentity === undefined
-            ? {}
-            : { parentSourceIdentity: artifact.parentSourceIdentity }),
-        });
+      const evidence = (artifact: SourceArtifactFamilyMemberImport) => {
+        const value: JsonObject = {};
+        if (artifact.sourceIdentity !== undefined) {
+          value.sourceIdentity = artifact.sourceIdentity;
+        }
+        if (artifact.parentSourceIdentity !== undefined) {
+          value.parentSourceIdentity = artifact.parentSourceIdentity;
+        }
+        return JSON.stringify(value);
+      };
 
       const insertEntry = (options: {
         parentEntryID: number | null;
@@ -694,6 +705,7 @@ export class ConversationWriteRepository {
         nativeMetadata?: unknown;
       }) =>
         Number(
+          // SAFETY: The static SQL projection and migrated schema define this row contract.
           (this.#prepare(`
         INSERT INTO conversation_entries (
           conversation_id, parent_entry_id, producer_model_call_id,
@@ -900,6 +912,7 @@ export class ConversationWriteRepository {
             turnOrdinal++;
             canonicalTurnValues.push({ ...turn, number: turnOrdinal });
             const turnID: number = Number(
+              // SAFETY: The static SQL projection and migrated schema define this row contract.
               (this.#prepare(`
               INSERT INTO conversation_turns (
                 conversation_id, parent_turn_id, source_turn_id, ordinal,
@@ -943,6 +956,7 @@ export class ConversationWriteRepository {
               if (callID === undefined) {
                 callOrdinal++;
                 callID = Number(
+                  // SAFETY: The static SQL projection and migrated schema define this row contract.
                   (this.#prepare(`
                   INSERT INTO conversation_model_calls (
                     conversation_id, turn_id, source_call_id, ordinal,
@@ -1006,6 +1020,7 @@ export class ConversationWriteRepository {
               });
               call.activity.tools.forEach((tool, index) => {
                 const toolEventID = Number(
+                  // SAFETY: The static SQL projection and migrated schema define this row contract.
                   (this.#prepare(`
                   INSERT INTO conversation_tool_events (
                     model_call_id, source_tool_id, ordinal, name, status,
@@ -1258,6 +1273,7 @@ export class ConversationWriteRepository {
       }
 
       for (const [childExternalID, launches] of launchTools) {
+        // SAFETY: The static SQL projection and migrated schema define this row contract.
         const child = this.#prepare(`
           SELECT id FROM conversations
           WHERE source_id = ? AND external_id = ?
@@ -1421,6 +1437,7 @@ export class ConversationWriteRepository {
       parentExternalID: undefined,
     }]);
     const branchID = Number(
+      // SAFETY: The static SQL projection and migrated schema define this row contract.
       (this.#prepare(`
       INSERT INTO conversation_branches (
         conversation_id, source_session_id, external_id,
@@ -1455,6 +1472,7 @@ export class ConversationWriteRepository {
       sourceOrder?: number;
     }) => {
       const entryID = Number(
+        // SAFETY: The static SQL projection and migrated schema define this row contract.
         (this.#prepare(`
         INSERT INTO conversation_entries (
           conversation_id, parent_entry_id, producer_model_call_id,
@@ -1504,6 +1522,7 @@ export class ConversationWriteRepository {
 
     for (const turn of value.session.turns) {
       const turnID: number = Number(
+        // SAFETY: The static SQL projection and migrated schema define this row contract.
         (this.#prepare(`
         INSERT INTO conversation_turns (
           conversation_id, parent_turn_id, source_turn_id, ordinal, started_at,
@@ -1538,6 +1557,7 @@ export class ConversationWriteRepository {
       for (const call of turn.calls) {
         callOrdinal++;
         const callID = Number(
+          // SAFETY: The static SQL projection and migrated schema define this row contract.
           (this.#prepare(`
           INSERT INTO conversation_model_calls (
             conversation_id, turn_id, source_call_id, ordinal,
@@ -1608,6 +1628,7 @@ export class ConversationWriteRepository {
 
         call.activity.tools.forEach((tool, index) => {
           const toolEventID = Number(
+            // SAFETY: The static SQL projection and migrated schema define this row contract.
             (this.#prepare(`
             INSERT INTO conversation_tool_events (
               model_call_id, source_tool_id, ordinal, name, status,
@@ -1721,6 +1742,7 @@ export class ConversationWriteRepository {
     knownTurnIDs?: Map<number, number>,
     knownPredecessors?: Map<number, number | undefined>,
   ) {
+    // SAFETY: The static SQL branch projects the call and turn columns below.
     const callRows = knownCallIDs === undefined
       ? this.#prepare(`
         SELECT call.id, call.call_within_turn, turn.id AS turn_id,
@@ -1755,25 +1777,28 @@ export class ConversationWriteRepository {
       ),
     );
     const cacheCalls: CacheAnalysisCall[] = session.turns.flatMap((turn) =>
-      turn.calls.map((call) => ({
-        id: `${turn.number}:${call.callWithinTurn}`,
-        ...(knownPredecessors === undefined ? {} : {
-          previousCallID: callKeysByID.get(
+      turn.calls.map((call) => {
+        const analyzed: CacheAnalysisCall = {
+          id: `${turn.number}:${call.callWithinTurn}`,
+          provider: call.provider,
+          model: call.model,
+          startedAt: call.startedAt,
+          tokens: call.tokens,
+          reasoningSetting: call.reasoningSetting ?? turn.reasoningSetting,
+          followsCompaction: compactionCallKeys.has(
+            `${turn.number}:${call.callWithinTurn}`,
+          ),
+        };
+        if (knownPredecessors !== undefined) {
+          analyzed.previousCallID = callKeysByID.get(
             knownPredecessors.get(
               callIDs.get(`${turn.number}:${call.callWithinTurn}`)!,
             )!,
-          ),
-          predecessorResolved: true,
-        }),
-        provider: call.provider,
-        model: call.model,
-        startedAt: call.startedAt,
-        tokens: call.tokens,
-        reasoningSetting: call.reasoningSetting ?? turn.reasoningSetting,
-        followsCompaction: compactionCallKeys.has(
-          `${turn.number}:${call.callWithinTurn}`,
-        ),
-      }))
+          );
+          analyzed.predecessorResolved = true;
+        }
+        return analyzed;
+      })
     );
     const callsByID = new Map(cacheCalls.map((call) => [call.id, call]));
     const insert = this.#prepare(`
@@ -1827,16 +1852,17 @@ export class ConversationWriteRepository {
     detail: Parameters<typeof enrichSessionSummary>[0],
     rollup: SessionRollup,
   ) {
-    const summary = sessionListItemSchema.parse({
-      ...enrichSessionSummary(detail),
-      ...(rollup.thinkingClassifiedCalls === 0 ? {} : {
+    const enriched = enrichSessionSummary(detail);
+    const summary = sessionListItemSchema.parse(
+      rollup.thinkingClassifiedCalls === 0 ? enriched : {
+        ...enriched,
         thinking: {
           latest: rollup.thinkingLatest,
           values: rollup.thinkingValues,
           classifiedCalls: rollup.thinkingClassifiedCalls,
         },
-      }),
-    });
+      },
+    );
     this.#prepare(`
       UPDATE conversation_rollups SET summary_json = ?
       WHERE conversation_id = ?
@@ -1844,6 +1870,7 @@ export class ConversationWriteRepository {
   }
 
   #sourceHarness(sourceID: number) {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const row = this.#prepare(
       "SELECT harness FROM sources WHERE id = ?",
     ).get(sourceID) as { harness: SessionSummary["harness"] } | undefined;

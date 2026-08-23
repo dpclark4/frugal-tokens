@@ -1,5 +1,10 @@
 import type { DatabaseSync } from "node:sqlite";
 import {
+  jsonObjectSchema,
+  jsonStringValue,
+  jsonValueSchema,
+} from "../shared/json.ts";
+import {
   type CacheIssue,
   type ContextEvent,
   type ModelCall,
@@ -48,7 +53,7 @@ export type InitialInputSample = {
   input: number;
 };
 
-export type StoredSessionShapeRollup = StoredOverviewRollup & {
+export type StoredSessionDistributionRollup = StoredOverviewRollup & {
   initialInput?: number;
 };
 
@@ -203,9 +208,11 @@ export function conciseSessionPreview(value?: string) {
 export function sessionToolTarget(value?: string) {
   if (value === undefined) return undefined;
   try {
-    const parsed = JSON.parse(value);
-    if (typeof parsed === "string") return conciseSessionPreview(parsed);
-    if (parsed && typeof parsed === "object") {
+    const parsed = jsonValueSchema.parse(JSON.parse(value));
+    const direct = jsonStringValue(parsed);
+    if (direct !== undefined) return conciseSessionPreview(direct);
+    const object = jsonObjectSchema.safeParse(parsed);
+    if (object.success) {
       for (
         const key of [
           "description",
@@ -218,10 +225,8 @@ export function sessionToolTarget(value?: string) {
           "query",
         ]
       ) {
-        const candidate = (parsed as Record<string, unknown>)[key];
-        if (typeof candidate === "string") {
-          return conciseSessionPreview(candidate);
-        }
+        const candidate = jsonStringValue(object.data[key]);
+        if (candidate !== undefined) return conciseSessionPreview(candidate);
       }
     }
   } catch {
@@ -320,6 +325,7 @@ export class ConversationRepository {
   constructor(private db: DatabaseSync) {}
 
   listHarnesses(): Harness[] {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     return (this.db.prepare(`
       SELECT DISTINCT so.harness
       FROM sources so
@@ -372,6 +378,7 @@ export class ConversationRepository {
     const predicates = candidates.map(() =>
       "(so.harness = ? AND COALESCE(c.public_id, c.external_id) = ?)"
     ).join(" OR ");
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.db.prepare(`
       SELECT so.harness,
         COALESCE(c.public_id, c.external_id) AS public_id,
@@ -398,6 +405,7 @@ export class ConversationRepository {
   }
 
   getSession(harness: Harness, id: string): SessionDetail | undefined {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const row = this.db.prepare(`
       SELECT ${conversationColumns}
       FROM conversations c
@@ -416,6 +424,7 @@ export class ConversationRepository {
   }
 
   listUsageCalls(startedAt?: number, harness?: Harness): UsageCall[] {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.db.prepare(`
       WITH RECURSIVE tree(conversation_id, root_id, parent_id) AS (
         SELECT c.id, c.id, NULL
@@ -546,7 +555,7 @@ export class ConversationRepository {
         reasoning_observed_at: row.turn_reasoning_observed_at,
         reasoning_provenance: row.turn_reasoning_provenance,
       });
-      return {
+      const call: UsageCall = {
         modelCallID: row.id,
         previousModelCallID: optional(row.previous_model_call_id),
         turnRowID: row.turn_id,
@@ -564,14 +573,15 @@ export class ConversationRepository {
         provider: row.provider,
         model: row.model,
         startedAt: row.started_at,
-        ...(effectiveReasoning === undefined
-          ? {}
-          : { reasoningSetting: effectiveReasoning }),
         tokens: tokens(row),
         reportedCost: optional(row.reported_cost),
         computedCost: optional(row.computed_cost),
         followsCompaction: row.follows_compaction === 1,
       };
+      if (effectiveReasoning !== undefined) {
+        call.reasoningSetting = effectiveReasoning;
+      }
+      return call;
     });
   }
 
@@ -580,6 +590,7 @@ export class ConversationRepository {
     endedAt: number,
     harness?: Harness,
   ): ToolCallObservation[] {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.db.prepare(`
       SELECT tool.model_call_id, tool.name, tool.input_preview,
         tool.started_at AS tool_started_at,
@@ -632,6 +643,7 @@ export class ConversationRepository {
       root_started_at: number | null;
       root_updated_at: number;
     };
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.db.prepare(`
       WITH RECURSIVE tree(conversation_id, root_id) AS (
         SELECT c.id, c.id FROM conversations c
@@ -721,6 +733,7 @@ export class ConversationRepository {
       root_started_at: number | null;
       root_updated_at: number;
     };
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.db.prepare(`
       WITH RECURSIVE tree(conversation_id, root_id) AS (
         SELECT c.id, c.id FROM conversations c
@@ -751,43 +764,44 @@ export class ConversationRepository {
       harness ?? null,
       harness ?? null,
     ) as Row[];
-    return rows.map((row) => ({
-      harness: row.harness,
-      sessionID: row.session_public_id,
-      rootID: row.root_public_id,
-      sessionStartedAt: row.root_started_at ?? row.root_updated_at,
-      modelCallID: row.model_call_id,
-      ...(row.previous_model_call_id === null ? {} : {
-        previousModelCallID: row.previous_model_call_id,
-      }),
-      turnID: row.turn_id,
-      gap: row.gap_ms,
-      status: row.status,
-      ...(row.reason === null ? {} : { reason: row.reason }),
-      ...(row.cause === null ? {} : { cause: row.cause }),
-      ...(row.retained_ratio === null ? {} : {
-        retainedRatio: row.retained_ratio,
-      }),
-      ...(row.previous_reusable_tokens === null ? {} : {
-        previousReusableTokens: row.previous_reusable_tokens,
-      }),
-      previousContextTokens: row.previous_context_tokens,
-      currentContextTokens: row.current_context_tokens,
-      actualCacheReadTokens: row.actual_cache_read_tokens,
-      missedTokens: row.missed_tokens,
-      ...(row.model_call_cost === null ? {} : {
-        modelCallCost: row.model_call_cost,
-      }),
-      ...(row.actual_missed_cost === null ? {} : {
-        actualMissedCost: row.actual_missed_cost,
-      }),
-      ...(row.expected_read_cost === null ? {} : {
-        expectedReadCost: row.expected_read_cost,
-      }),
-      ...(row.estimated_extra_cost === null ? {} : {
-        estimatedExtraCost: row.estimated_extra_cost,
-      }),
-    }));
+    return rows.map((row) => {
+      const miss: StoredCacheMiss = {
+        harness: row.harness,
+        sessionID: row.session_public_id,
+        rootID: row.root_public_id,
+        sessionStartedAt: row.root_started_at ?? row.root_updated_at,
+        modelCallID: row.model_call_id,
+        turnID: row.turn_id,
+        gap: row.gap_ms,
+        status: row.status,
+        previousContextTokens: row.previous_context_tokens,
+        currentContextTokens: row.current_context_tokens,
+        actualCacheReadTokens: row.actual_cache_read_tokens,
+        missedTokens: row.missed_tokens,
+      };
+      if (row.previous_model_call_id !== null) {
+        miss.previousModelCallID = row.previous_model_call_id;
+      }
+      if (row.reason !== null) miss.reason = row.reason;
+      if (row.cause !== null) miss.cause = row.cause;
+      if (row.retained_ratio !== null) miss.retainedRatio = row.retained_ratio;
+      if (row.previous_reusable_tokens !== null) {
+        miss.previousReusableTokens = row.previous_reusable_tokens;
+      }
+      if (row.model_call_cost !== null) {
+        miss.modelCallCost = row.model_call_cost;
+      }
+      if (row.actual_missed_cost !== null) {
+        miss.actualMissedCost = row.actual_missed_cost;
+      }
+      if (row.expected_read_cost !== null) {
+        miss.expectedReadCost = row.expected_read_cost;
+      }
+      if (row.estimated_extra_cost !== null) {
+        miss.estimatedExtraCost = row.estimated_extra_cost;
+      }
+      return miss;
+    });
   }
 
   summarizeCacheMisses(
@@ -809,6 +823,7 @@ export class ConversationRepository {
       missed_tokens: number;
       unpriced: number;
     };
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.db.prepare(`
       WITH RECURSIVE tree(conversation_id, root_id) AS (
         SELECT c.id, c.id FROM conversations c
@@ -858,21 +873,24 @@ export class ConversationRepository {
       harness ?? null,
       harness ?? null,
     ) as Row[];
-    return rows.map((row) => ({
-      harness: row.harness,
-      rootID: row.root_public_id,
-      scope: row.scope,
-      status: row.status,
-      ...(row.reason === null ? {} : { reason: row.reason }),
-      ...(row.cause === null ? {} : { cause: row.cause }),
-      gapBucket: row.gap_bucket,
-      misses: Number(row.misses),
-      attributedCost: row.attributed_cost,
-      expectedReadCost: row.expected_read_cost,
-      estimatedExtraCost: row.estimated_extra_cost,
-      missedTokens: Number(row.missed_tokens),
-      unpriced: Number(row.unpriced),
-    }));
+    return rows.map((row) => {
+      const miss: StoredCacheMissAggregate = {
+        harness: row.harness,
+        rootID: row.root_public_id,
+        scope: row.scope,
+        status: row.status,
+        gapBucket: row.gap_bucket,
+        misses: Number(row.misses),
+        attributedCost: row.attributed_cost,
+        expectedReadCost: row.expected_read_cost,
+        estimatedExtraCost: row.estimated_extra_cost,
+        missedTokens: Number(row.missed_tokens),
+        unpriced: Number(row.unpriced),
+      };
+      if (row.reason !== null) miss.reason = row.reason;
+      if (row.cause !== null) miss.cause = row.cause;
+      return miss;
+    });
   }
 
   listOverviewRollups(
@@ -897,6 +915,7 @@ export class ConversationRepository {
     };
     const parameters = [startedAt, harness ?? null, harness ?? null] as const;
     const rows = measured("root-rollups", () =>
+      // SAFETY: The static SQL projection and migrated schema define this row contract.
       this.db.prepare(`
         SELECT c.id, ${effectiveConversationTitle} AS title, so.harness,
           c.started_at, c.ended_at, cr.overview_json,
@@ -922,6 +941,7 @@ export class ConversationRepository {
       }>);
     const spendRows = includeSubagentSpend
       ? measured("descendant-spend", () =>
+        // SAFETY: The static SQL projection and migrated schema define this row contract.
         this.db.prepare(`
         SELECT c.id, COALESCE((
           WITH RECURSIVE descendants(id) AS (
@@ -958,6 +978,7 @@ export class ConversationRepository {
       ? measured(
         "root-execution-intervals",
         () =>
+          // SAFETY: The static SQL projection and migrated schema define this row contract.
           this.db.prepare(`
           WITH selected_roots(id) AS MATERIALIZED (
             SELECT c.id
@@ -1021,32 +1042,34 @@ export class ConversationRepository {
           row.root_execution_intervals_json,
         ]),
       );
-      return rows.map((row) => ({
-        rootSessionID: row.id,
-        ...(includeRootExecutionIntervals
-          ? {
-            rootExecutionIntervals: JSON.parse(
-              intervalsByRoot.get(row.id) ?? "[]",
-            ),
-          }
-          : {}),
-        sessionID: row.session_public_id,
-        ...(row.started_at === null ? {} : { startedAt: row.started_at }),
-        ...(row.ended_at === null ? {} : { endedAt: row.ended_at }),
-        title: row.title,
-        harness: row.harness,
-        ...(includeSubagentSpend
-          ? { subagentSpend: spendByRoot.get(row.id) ?? 0 }
-          : {}),
-        overview: JSON.parse(row.overview_json),
-      }));
+      return rows.map((row) => {
+        const rollup: StoredOverviewRollup = {
+          rootSessionID: row.id,
+          sessionID: row.session_public_id,
+          title: row.title,
+          harness: row.harness,
+          overview: JSON.parse(row.overview_json),
+        };
+        if (includeRootExecutionIntervals) {
+          rollup.rootExecutionIntervals = JSON.parse(
+            intervalsByRoot.get(row.id) ?? "[]",
+          );
+        }
+        if (row.started_at !== null) rollup.startedAt = row.started_at;
+        if (row.ended_at !== null) rollup.endedAt = row.ended_at;
+        if (includeSubagentSpend) {
+          rollup.subagentSpend = spendByRoot.get(row.id) ?? 0;
+        }
+        return rollup;
+      });
     });
   }
 
-  listSessionShapeRollups(
+  listSessionDistributionRollups(
     startedAt: number,
     harness?: Harness,
-  ): StoredSessionShapeRollup[] {
+  ): StoredSessionDistributionRollup[] {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.db.prepare(`
       SELECT c.id, ${effectiveConversationTitle} AS title, so.harness,
         cr.overview_json,
@@ -1091,6 +1114,7 @@ export class ConversationRepository {
     startedAt?: number,
     harness?: Harness,
   ): StoredUsageRollup[] {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.db.prepare(`
       SELECT c.id, COALESCE(c.started_at, c.updated_at) AS session_started_at,
         cr.uncached_input_tokens + cr.cache_read_tokens +
@@ -1136,6 +1160,7 @@ export class ConversationRepository {
     startedAt?: number,
     harness?: Harness,
   ): StoredSubagentUsage[] {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.db.prepare(`
       WITH RECURSIVE tree(conversation_id, root_id, depth) AS (
         SELECT c.id, c.id, 0
@@ -1196,6 +1221,7 @@ export class ConversationRepository {
     startedAt?: number,
     harness?: Harness,
   ): InitialInputSample[] {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.db.prepare(`
       SELECT so.harness,
         COALESCE(c.started_at, c.updated_at) AS session_started_at,
@@ -1284,6 +1310,7 @@ export class ConversationRepository {
 
   #rootCount(harness?: Harness, missFilters?: SessionMissFilter[]) {
     const filter = this.#rootFilter(missFilters);
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const row = this.db.prepare(`
       ${filter.cte}
       SELECT COUNT(*) AS count
@@ -1310,6 +1337,7 @@ export class ConversationRepository {
     offset: number,
   ): ConversationRow[] {
     const filter = this.#rootFilter(missFilters);
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     return this.db.prepare(`
       ${filter.cte}
       SELECT ${conversationColumns}
@@ -1339,6 +1367,7 @@ export class ConversationRepository {
   #storedCacheIssues(rootIDs: number[]): Map<number, CacheIssue[]> {
     if (rootIDs.length === 0) return new Map();
     const placeholders = rootIDs.map(() => "?").join(", ");
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.db.prepare(`
       WITH RECURSIVE tree(conversation_id, root_id, nested) AS (
         SELECT c.id, c.id, 0 FROM conversations c
@@ -1376,13 +1405,11 @@ export class ConversationRepository {
         : `${row.agent}: ${row.title}`;
       const issue: CacheIssue = {
         status: row.status,
-        ...(row.cause === null ? {} : { cause: row.cause }),
-        ...(row.cause === null && row.reason !== null
-          ? { reason: row.reason }
-          : {}),
         turn: row.turn_ordinal,
-        ...(scope === undefined ? {} : { scope }),
       };
+      if (row.cause !== null) issue.cause = row.cause;
+      else if (row.reason !== null) issue.reason = row.reason;
+      if (scope !== undefined) issue.scope = scope;
       const key = `${row.root_id}:${JSON.stringify(issue)}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -1404,7 +1431,7 @@ export class ConversationRepository {
     thinking: SessionSummary["thinking"],
   ): SessionSummary {
     const workingDirectory = optional(row.working_directory);
-    return {
+    const summary: SessionSummary = {
       id: row.public_id ?? row.external_id,
       workingDirectory: workingDirectory === undefined
         ? undefined
@@ -1418,7 +1445,6 @@ export class ConversationRepository {
       models: JSON.parse(row.models_json),
       userTurns: row.user_turns,
       modelCalls: row.model_calls,
-      ...(row.fork_count > 0 ? { forkCount: row.fork_count } : {}),
       thinking: thinking ?? {
         latest: undefined,
         values: [],
@@ -1427,6 +1453,8 @@ export class ConversationRepository {
       reportedCost: optional(row.reported_cost),
       tokens: tokens(row),
     };
+    if (row.fork_count > 0) summary.forkCount = row.fork_count;
+    return summary;
   }
 
   #summary(row: ConversationRow): SessionSummary {
@@ -1439,6 +1467,7 @@ export class ConversationRepository {
   }
 
   #sourcePath(conversationID: number) {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const row = this.db.prepare(`
       SELECT ss.artifact_path
       FROM conversation_branches branch
@@ -1455,6 +1484,7 @@ export class ConversationRepository {
     const calls = this.#conversationCalls(row.id);
     const callIDs = calls.map((call) => call.id);
     const placeholders = callIDs.map(() => "?").join(", ");
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const contentRows = callIDs.length === 0 ? [] : this.db.prepare(`
       SELECT producer_model_call_id AS model_call_id,
         COALESCE(content_kind, kind) AS kind, content_preview,
@@ -1469,6 +1499,7 @@ export class ConversationRepository {
       original_length: number | null;
       truncated: number;
     }>;
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const tools = callIDs.length === 0 ? [] : this.db.prepare(`
       SELECT tool.id, tool.model_call_id, tool.name, tool.status,
         tool.started_at, tool.completed_at, tool.input_preview,
@@ -1498,6 +1529,7 @@ export class ConversationRepository {
     }>;
     const turnIDs = [...new Set(calls.map((call) => call.turn_id))];
     const turnPlaceholders = turnIDs.map(() => "?").join(", ");
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const inputs = turnIDs.length === 0 ? [] : this.db.prepare(`
       SELECT entry.turn_id, COALESCE(entry.content_kind, entry.kind) AS kind,
         entry.content_preview,
@@ -1562,20 +1594,12 @@ export class ConversationRepository {
         );
         const hydrated: ModelCall = {
           id: call.source_call_id ?? String(call.id),
-          ...(call.previous_model_call_id === null ? {} : {
-            previousCallID: publicCallIDs.get(call.previous_model_call_id),
-          }),
           predecessorResolved: Boolean(call.predecessor_resolved),
           callWithinTurn: call.call_within_turn ?? 1,
           preview: textPreview ??
             (previewTool !== undefined && toolTarget !== undefined
               ? conciseSessionPreview(`${previewTool.name}: ${toolTarget}`)
               : undefined),
-          ...(text === undefined ? {} : {
-            responsePreview: text.content_preview!,
-            responseOriginalLength: optional(text.original_length),
-            responseTruncated: Boolean(text.truncated),
-          }),
           provider: call.provider,
           model: call.model,
           startedAt: call.started_at,
@@ -1602,6 +1626,16 @@ export class ConversationRepository {
             })),
           },
         };
+        if (call.previous_model_call_id !== null) {
+          hydrated.previousCallID = publicCallIDs.get(
+            call.previous_model_call_id,
+          );
+        }
+        if (text !== undefined) {
+          hydrated.responsePreview = text.content_preview!;
+          hydrated.responseOriginalLength = optional(text.original_length);
+          hydrated.responseTruncated = Boolean(text.truncated);
+        }
         hydratedByCallID.set(call.id, hydrated);
         hydratedBySourceTurnCall.set(
           `${call.turn_ordinal}:${call.call_within_turn ?? 1}`,
@@ -1609,14 +1643,8 @@ export class ConversationRepository {
         );
         return hydrated;
       });
-      return {
+      const hydrated: SessionDetail["turns"][number] = {
         number: turnIndex + 1,
-        ...(branchNumbers.has(first.branch_id)
-          ? { branchNumber: branchNumbers.get(first.branch_id)! }
-          : {}),
-        ...(publicBranchIDs.has(first.branch_id)
-          ? { branchID: publicBranchIDs.get(first.branch_id)! }
-          : {}),
         startedAt: first.turn_started_at,
         inputs: inputs.filter((input) => input.turn_id === turnID).map((
           input,
@@ -1637,8 +1665,14 @@ export class ConversationRepository {
         }),
         calls: hydratedCalls,
       };
+      const branchNumber = branchNumbers.get(first.branch_id);
+      if (branchNumber !== undefined) hydrated.branchNumber = branchNumber;
+      const branchID = publicBranchIDs.get(first.branch_id);
+      if (branchID !== undefined) hydrated.branchID = branchID;
+      return hydrated;
     });
 
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const contextRows = this.db.prepare(`
       SELECT entry.native_metadata_json, occurrence.source_order_start,
         occurrence.branch_id
@@ -1656,6 +1690,7 @@ export class ConversationRepository {
     }>;
     const sessionContextEvents: ContextEvent[] = [];
     for (const contextRow of contextRows) {
+      // SAFETY: This column contains ConversationContextEventImport JSON written by the projection owner.
       const raw = JSON.parse(contextRow.native_metadata_json) as
         & ContextEvent
         & {
@@ -1684,6 +1719,7 @@ export class ConversationRepository {
         ];}
     }
 
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const children = this.db.prepare(`
       SELECT ${conversationColumns}
       FROM conversation_subagent_launches launch
@@ -1700,22 +1736,23 @@ export class ConversationRepository {
       );
       const firstText = branchTurns.flatMap((turn) => turn.inputs ?? [])
         .find((input) => input.kind === "text" && input.preview)?.preview;
-      return {
+      const hydrated: NonNullable<SessionDetail["branches"]>[number] = {
         id: branch.external_id,
-        ...(branch.parent_external_id === null
-          ? {}
-          : { parentID: branch.parent_external_id }),
-        ...(branch.fork_turn_id === null
-          ? {}
-          : { forkedFromTurn: turnNumbersByID.get(branch.fork_turn_id) }),
         turnNumbers: branchTurns.map((turn) => turn.number),
         label: index === 0
           ? "Original path"
           : conciseSessionPreview(firstText) ?? `Path ${index + 1}`,
         updatedAt: branch.updated_at,
       };
+      if (branch.parent_external_id !== null) {
+        hydrated.parentID = branch.parent_external_id;
+      }
+      if (branch.fork_turn_id !== null) {
+        hydrated.forkedFromTurn = turnNumbersByID.get(branch.fork_turn_id);
+      }
+      return hydrated;
     });
-    return {
+    const detail: SessionDetail = {
       ...summary,
       sourcePath: this.#sourcePath(row.id),
       agent: optional(row.agent),
@@ -1723,13 +1760,15 @@ export class ConversationRepository {
       userTurns: turns.length,
       modelCalls: turns.reduce((sum, turn) => sum + turn.calls.length, 0),
       turns,
-      ...(branches.length > 1 ? { branches } : {}),
       contextEvents: sessionContextEvents,
       subagents: children.map((child) => this.#detail(child, nextVisited)),
     };
+    if (branches.length > 1) detail.branches = branches;
+    return detail;
   }
 
   #conversationBranches(conversationID: number) {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     return this.db.prepare(`
       SELECT branch.id, branch.external_id, branch.updated_at,
         parent.external_id AS parent_external_id,
@@ -1758,6 +1797,7 @@ export class ConversationRepository {
   // The transcript remains chronological by default; branch topology lets the
   // client focus one conversational path without duplicating stored usage.
   #conversationCalls(conversationID: number): CallRow[] {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     return this.db.prepare(`
       WITH ordered_path_calls AS (
         SELECT occurrence.*,
@@ -1830,6 +1870,7 @@ export class ConversationRepository {
   }
 
   #parentPublicID(conversationID: number) {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const row = this.db.prepare(`
       SELECT COALESCE(parent.public_id, parent.external_id) AS id
       FROM conversation_subagent_launches launch

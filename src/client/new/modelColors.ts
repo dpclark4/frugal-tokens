@@ -12,7 +12,7 @@ type ProviderPalette = {
   hue: readonly number[];
 };
 
-const providers: Record<CompositionModel["provider"], ProviderPalette> = {
+const providers = {
   openai: {
     lightness: [0.52, 0.63, 0.74, 0.82],
     chroma: [0.104, 0.095, 0.078, 0.062],
@@ -38,7 +38,7 @@ const providers: Record<CompositionModel["provider"], ProviderPalette> = {
     chroma: [0.025, 0.025, 0.022, 0.02],
     hue: [210, 210, 210, 210],
   },
-};
+} satisfies Record<CompositionModel["provider"], ProviderPalette>;
 
 function generationValue(value?: string) {
   if (!value) return Number.NEGATIVE_INFINITY;

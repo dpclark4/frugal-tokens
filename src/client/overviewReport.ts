@@ -1,7 +1,7 @@
 import { displayModelName } from "../shared/modelNames.ts";
 import type {
   ActivityOverviewResponse,
-  SessionShapeResponse,
+  SessionDistributionResponse,
   TtlMissMetrics,
   WorkRhythmOverviewResponse,
 } from "../shared/sessionSchemas.ts";
@@ -38,15 +38,22 @@ function duration(minutes: number) {
 }
 
 function harnessLabel(harness: string) {
-  const labels: Record<string, string> = {
-    all: "All harnesses",
-    "claude-code": "Claude Code",
-    codex: "Codex",
-    cursor: "Cursor",
-    opencode: "OpenCode",
-    pi: "Pi",
-  };
-  return labels[harness] ?? harness;
+  switch (harness) {
+    case "all":
+      return "All harnesses";
+    case "claude-code":
+      return "Claude Code";
+    case "codex":
+      return "Codex";
+    case "cursor":
+      return "Cursor";
+    case "opencode":
+      return "OpenCode";
+    case "pi":
+      return "Pi";
+    default:
+      return harness;
+  }
 }
 
 function hourLabel(hour: number) {
@@ -56,10 +63,7 @@ function hourLabel(hour: number) {
   return `${hour - 12}pm`;
 }
 
-const shapeLabels: Record<
-  SessionShapeResponse["metrics"][number]["key"],
-  string
-> = {
+const distributionLabels = {
   cost: "Cost",
   observedSpan: "Duration",
   peakContext: "Peak context",
@@ -67,10 +71,13 @@ const shapeLabels: Record<
   startingContext: "Starting context",
   tokenReuse: "Token reuse",
   userTurns: "Turns",
-};
+} satisfies Record<
+  SessionDistributionResponse["metrics"][number]["key"],
+  string
+>;
 
-function shapeValue(
-  key: SessionShapeResponse["metrics"][number]["key"],
+function distributionValue(
+  key: SessionDistributionResponse["metrics"][number]["key"],
   value: number,
 ) {
   if (key === "cost") return money.format(value);
@@ -119,13 +126,13 @@ function cacheRows(metrics: TtlMissMetrics) {
 export function buildOverviewReport({
   overview,
   workRhythmOverview,
-  sessionShape,
+  sessionDistributions,
   cacheMisses,
   harness,
 }: {
   overview: ActivityOverviewResponse;
   workRhythmOverview: WorkRhythmOverviewResponse;
-  sessionShape: SessionShapeResponse;
+  sessionDistributions: SessionDistributionResponse;
   cacheMisses: TtlMissMetrics;
   harness: string;
 }) {
@@ -163,25 +170,29 @@ export function buildOverviewReport({
   ]));
 
   sections.push(
-    `## Session shape\n\n${integer.format(sessionShape.sampleSize)} sessions; ${
-      integer.format(sessionShape.multiDaySessions)
-    } span multiple days (${percent(sessionShape.multiDaySessionRate)}); ${
-      integer.format(sessionShape.unpricedSessions)
+    `## Session shape\n\n${
+      integer.format(sessionDistributions.sampleSize)
+    } sessions; ${
+      integer.format(sessionDistributions.multiDaySessions)
+    } span multiple days (${
+      percent(sessionDistributions.multiDaySessionRate)
+    }); ${
+      integer.format(sessionDistributions.unpricedSessions)
     } include unpriced usage.\n\n` + table(
       ["Metric", "P10", "P25", "Median", "Mean", "P75", "P90"],
-      sessionShape.metrics.map((metric) => {
+      sessionDistributions.metrics.map((metric) => {
         const distribution = metric.distribution;
         return distribution
           ? [
-            shapeLabels[metric.key],
-            shapeValue(metric.key, distribution.p10),
-            shapeValue(metric.key, distribution.p25),
-            shapeValue(metric.key, distribution.median),
-            shapeValue(metric.key, distribution.average),
-            shapeValue(metric.key, distribution.p75),
-            shapeValue(metric.key, distribution.p90),
+            distributionLabels[metric.key],
+            distributionValue(metric.key, distribution.p10),
+            distributionValue(metric.key, distribution.p25),
+            distributionValue(metric.key, distribution.median),
+            distributionValue(metric.key, distribution.average),
+            distributionValue(metric.key, distribution.p75),
+            distributionValue(metric.key, distribution.p90),
           ]
-          : [shapeLabels[metric.key], "—", "—", "—", "—", "—", "—"];
+          : [distributionLabels[metric.key], "—", "—", "—", "—", "—", "—"];
       }),
     ),
   );

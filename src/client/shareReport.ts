@@ -73,15 +73,22 @@ function rangeLabel(range: ReportRange) {
 }
 
 function harnessLabel(harness: string) {
-  const labels: Record<string, string> = {
-    all: "All",
-    "claude-code": "Claude Code",
-    codex: "Codex",
-    opencode: "OpenCode",
-    pi: "Pi",
-    cursor: "Cursor",
-  };
-  return labels[harness] ?? harness;
+  switch (harness) {
+    case "all":
+      return "All";
+    case "claude-code":
+      return "Claude Code";
+    case "codex":
+      return "Codex";
+    case "opencode":
+      return "OpenCode";
+    case "pi":
+      return "Pi";
+    case "cursor":
+      return "Cursor";
+    default:
+      return harness;
+  }
 }
 
 function modelTotals(usage: UsageResponse) {

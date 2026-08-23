@@ -36,34 +36,35 @@ export function usageCallsFromSession(
 ): UsageCall[] {
   return [
     ...session.turns.flatMap((turn) =>
-      turn.calls.map((call) => ({
-        harness: session.harness,
-        session: {
-          id: session.id,
-          rootID: root.id,
-          parentID: session.parentID,
-        },
-        cacheChainID: session.id,
-        turnID: `${session.id}:${turn.number}`,
-        turnOrdinal: turn.number,
-        images: call.activity.images,
-        sessionStartedAt: root.startedAt ?? root.updatedAt,
-        provider: call.provider,
-        model: call.model,
-        startedAt: call.startedAt,
-        ...(call.reasoningSetting === undefined &&
-            turn.reasoningSetting === undefined
-          ? {}
-          : {
-            reasoningSetting: call.reasoningSetting ?? turn.reasoningSetting,
-          }),
-        tokens: call.tokens,
-        reportedCost: call.reportedCost,
-        computedCost: call.computedCost,
-        followsCompaction: (call.contextEventsBefore ?? []).some((event) =>
-          event.type === "compaction"
-        ),
-      }))
+      turn.calls.map((call) => {
+        const usage: UsageCall = {
+          harness: session.harness,
+          session: {
+            id: session.id,
+            rootID: root.id,
+            parentID: session.parentID,
+          },
+          cacheChainID: session.id,
+          turnID: `${session.id}:${turn.number}`,
+          turnOrdinal: turn.number,
+          images: call.activity.images,
+          sessionStartedAt: root.startedAt ?? root.updatedAt,
+          provider: call.provider,
+          model: call.model,
+          startedAt: call.startedAt,
+          tokens: call.tokens,
+          reportedCost: call.reportedCost,
+          computedCost: call.computedCost,
+          followsCompaction: (call.contextEventsBefore ?? []).some((event) =>
+            event.type === "compaction"
+          ),
+        };
+        const reasoningSetting = call.reasoningSetting ?? turn.reasoningSetting;
+        if (reasoningSetting !== undefined) {
+          usage.reasoningSetting = reasoningSetting;
+        }
+        return usage;
+      })
     ),
     ...session.subagents.flatMap((subagent) =>
       usageCallsFromSession(subagent, root)

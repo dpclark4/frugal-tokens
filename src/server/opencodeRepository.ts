@@ -1,11 +1,17 @@
 import { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import {
+  type SessionDetail,
   sessionDetailSchema,
   sessionListResponseSchema,
   type SessionSummary,
   type TokenUsage,
 } from "../shared/sessionSchemas.ts";
+import {
+  type JsonObject,
+  type JsonValue,
+  jsonValueSchema,
+} from "../shared/json.ts";
 import type { UsageCall } from "./usage.ts";
 import type {
   CompactionCheckpointItemImport,
@@ -23,6 +29,8 @@ import {
   numberCheckpointItems,
   objectValue,
   referenceCheckpointItem,
+  serializedJsonValue,
+  stringArray,
   stringValue,
 } from "./compactionImport.ts";
 
@@ -52,18 +60,18 @@ const messageDataSchema = z.object({
 
 const partDataSchema = z.object({
   type: z.string(),
-  text: z.unknown().optional(),
+  text: z.string().optional().catch(undefined),
   synthetic: z.boolean().optional(),
   mime: z.string().optional(),
   callID: z.string().optional(),
   tool: z.string().optional(),
-  auto: z.unknown().optional(),
-  overflow: z.unknown().optional(),
-  tail_start_id: z.unknown().optional(),
+  auto: jsonValueSchema.optional(),
+  overflow: jsonValueSchema.optional(),
+  tail_start_id: jsonValueSchema.optional(),
   state: z.object({
     status: z.string().optional(),
-    input: z.unknown().optional(),
-    output: z.unknown().optional(),
+    input: jsonValueSchema.optional(),
+    output: jsonValueSchema.optional(),
     metadata: z.object({
       sessionId: z.string().optional(),
     }).optional(),
@@ -75,7 +83,6 @@ const partDataSchema = z.object({
 }).passthrough();
 
 export type OpenCodeSessionRow = {
-  [column: string]: unknown;
   id: string;
   parent_id: string | null;
   title: string;
@@ -119,9 +126,9 @@ type DecodedParts = {
   content: ConversationContentImport[];
   compaction?: {
     sourceID: string;
-    auto?: unknown;
-    overflow?: unknown;
-    tailStartID?: unknown;
+    auto?: JsonValue;
+    overflow?: JsonValue;
+    tailStartID?: JsonValue;
   };
 };
 
@@ -164,9 +171,9 @@ function preview(value: string): ConversationContentImport {
   };
 }
 
-function serializedPreview(value: unknown) {
+function serializedPreview(value: JsonValue | undefined) {
   if (value === undefined) return undefined;
-  const text = typeof value === "string" ? value : JSON.stringify(value);
+  const text = serializedJsonValue(value);
   if (text === undefined) return undefined;
   const valuePreview = preview(text);
   return {
@@ -201,10 +208,8 @@ function decodeParts(rows: OpenCodePartRow[], strict = false) {
       content: [],
     };
     if (part.type === "text" && !part.synthetic) {
-      current.activity.hasText = typeof part.text === "string";
-      if (typeof part.text === "string") {
-        current.content.push(preview(part.text));
-      }
+      current.activity.hasText = part.text !== undefined;
+      if (part.text !== undefined) current.content.push(preview(part.text));
     }
     if (part.type === "reasoning") {
       current.activity.hasReasoning = true;
@@ -223,7 +228,7 @@ function decodeParts(rows: OpenCodePartRow[], strict = false) {
     if (part.type === "tool" && part.tool) {
       const input = serializedPreview(part.state?.input);
       const output = serializedPreview(part.state?.output);
-      current.activity.tools.push({
+      const tool: ConversationToolImport = {
         sourceID: part.callID,
         name: part.tool,
         status: part.state?.status ?? "unknown",
@@ -232,13 +237,10 @@ function decodeParts(rows: OpenCodePartRow[], strict = false) {
         childExternalID: part.state?.metadata?.sessionId,
         input,
         output,
-        ...(input?.preview === undefined
-          ? {}
-          : { inputPreview: input.preview }),
-        ...(output?.preview === undefined
-          ? {}
-          : { outputPreview: output.preview }),
-      });
+      };
+      if (input?.preview !== undefined) tool.inputPreview = input.preview;
+      if (output?.preview !== undefined) tool.outputPreview = output.preview;
+      current.activity.tools.push(tool);
     }
     if (part.type === "compaction") {
       current.compaction = {
@@ -270,11 +272,10 @@ function openCodeCheckpointItem(
   const text = parts?.content.find((item) =>
     item.kind === "text" && item.preview !== undefined
   );
-  const nativeMetadata = {
-    ...(parts?.activity.tools.length
-      ? { toolCount: parts.activity.tools.length }
-      : {}),
-  };
+  const nativeMetadata: JsonObject = {};
+  if (parts?.activity.tools.length) {
+    nativeMetadata.toolCount = parts.activity.tools.length;
+  }
   if (text?.preview !== undefined) {
     return {
       sourceEntryID: row.id,
@@ -334,6 +335,11 @@ function openCodeCompactionDetails(
   ) {
     issues.push("retained-message-unsupported");
   }
+  const nativeMetadata: JsonObject = { markerMessageID: markerRow.id };
+  if (tailStartID !== undefined) nativeMetadata.tailStartID = tailStartID;
+  if (auto !== undefined) nativeMetadata.auto = auto;
+  if (overflow !== undefined) nativeMetadata.overflow = overflow;
+  if (issues.length > 0) nativeMetadata.captureIssues = issues;
   return {
     sourceID: marker.sourceID,
     trigger: overflow === true
@@ -351,13 +357,7 @@ function openCodeCompactionDetails(
     droppedItemCount: retainedValues === undefined
       ? undefined
       : Math.max(0, markerIndex - retainedValues.length),
-    nativeMetadata: {
-      markerMessageID: markerRow.id,
-      ...(tailStartID === undefined ? {} : { tailStartID }),
-      ...(auto === undefined ? {} : { auto }),
-      ...(overflow === undefined ? {} : { overflow }),
-      ...(issues.length === 0 ? {} : { captureIssues: issues }),
-    },
+    nativeMetadata,
     checkpointItems: retainedItems,
   };
 }
@@ -371,11 +371,7 @@ function completeOpenCodeCompaction(
     item.kind === "text" && item.preview !== undefined
   );
   const metadata = objectValue(compaction.nativeMetadata) ?? {};
-  const issues = Array.isArray(metadata.captureIssues)
-    ? metadata.captureIssues.filter((issue): issue is string =>
-      typeof issue === "string"
-    )
-    : [];
+  const issues = stringArray(metadata.captureIssues) ?? [];
   if (summary?.preview === undefined) {
     issues.push("summary-text-missing");
     compaction.checkpointCompleteness = compaction.checkpointItems.length > 0
@@ -400,11 +396,10 @@ function completeOpenCodeCompaction(
       truncated: summary.truncated ?? false,
     });
   }
-  compaction.nativeMetadata = {
-    ...metadata,
-    summaryMessageID: summaryRow.id,
-    ...(issues.length === 0 ? {} : { captureIssues: issues }),
-  };
+  metadata.summaryMessageID = summaryRow.id;
+  if (issues.length > 0) metadata.captureIssues = issues;
+  else delete metadata.captureIssues;
+  compaction.nativeMetadata = metadata;
   numberCheckpointItems(compaction);
 }
 
@@ -555,7 +550,6 @@ function decodeMessages(
     const call: ConversationCallImport = {
       id: row.id,
       callWithinTurn: turn.calls.length + 1,
-      ...(textPreview === undefined ? {} : { preview: textPreview }),
       provider,
       model,
       startedAt: message.time?.created ?? row.time_created,
@@ -566,6 +560,7 @@ function decodeMessages(
       activity,
       content: compactionOperation ? [] : decodedParts?.content ?? [],
     };
+    if (textPreview !== undefined) call.preview = textPreview;
     turn.calls.push(call);
     if (!compactionOperation) {
       for (let index = pendingContextEvents.length - 1; index >= 0; index--) {
@@ -610,7 +605,7 @@ function decodeMessages(
 }
 
 function decodeUsageMessage(
-  row: MessageRow,
+  row: UsageMessageRow,
   session: {
     id: string;
     rootID: string;
@@ -658,7 +653,7 @@ function decodeUsageMessage(
         rootID: session.rootID,
         parentID: session.parentID,
       },
-      cacheChainID: (row as UsageMessageRow).session_id,
+      cacheChainID: row.session_id,
       turnID: "unassigned",
       turnOrdinal: 0,
       sessionStartedAt: session.rootStartedAt,
@@ -754,12 +749,11 @@ export function normalizeOpenCodeSessionTree(options: {
       true,
     );
     const summary = summaryFromDecoded(row, decoded);
-    return {
+    const imported: LinearConversationImport = {
       sourceID: options.sourceID,
       externalID: row.id,
       parentExternalID: row.parent_id ?? undefined,
       artifactPath: `session:${row.id}`,
-      ...(row.directory ? { workingDirectory: row.directory } : {}),
       observedAt: options.observedAt,
       checkpoint: options.checkpoint,
       session: {
@@ -778,6 +772,8 @@ export function normalizeOpenCodeSessionTree(options: {
         contextEvents: decoded.contextEvents,
       },
     };
+    if (row.directory) imported.workingDirectory = row.directory;
+    return imported;
   });
 }
 
@@ -794,12 +790,14 @@ export class OpenCodeRepository {
 
   listSessions(page: number, pageSize: number) {
     const totalItems = Number(
+      // SAFETY: The static SQL projection and migrated schema define this row contract.
       (this.#db
         .prepare(
           "SELECT COUNT(*) AS count FROM session WHERE parent_id IS NULL",
         )
         .get() as { count: number }).count,
     );
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.#db.prepare(`
       SELECT id, parent_id, title, model, agent, time_updated
       FROM session
@@ -821,6 +819,7 @@ export class OpenCodeRepository {
   }
 
   getSession(id: string) {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const row = this.#db.prepare(`
       SELECT id, parent_id, title, model, agent, time_updated
       FROM session
@@ -828,10 +827,11 @@ export class OpenCodeRepository {
     `).get(id) as SessionRow | undefined;
     if (!row) return undefined;
 
-    return sessionDetailSchema.parse(this.#detail(row, new Set()));
+    return this.#detail(row, new Set());
   }
 
   listUsageCalls(startedAt?: number) {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const sessionRows = this.#db.prepare(`
       SELECT id, parent_id, time_created
       FROM session
@@ -857,6 +857,7 @@ export class OpenCodeRepository {
         rootStartedAt: root.time_created,
       });
     }
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const imageRows = this.#db.prepare(`
       SELECT message_id, COUNT(*) AS count
       FROM part
@@ -873,6 +874,7 @@ export class OpenCodeRepository {
     const activeTurnOrdinals = new Map<string, number>();
     const pendingTurnImages = new Map<string, number>();
     if (startedAt !== undefined) {
+      // SAFETY: The static SQL projection and migrated schema define this row contract.
       const priorSessions = this.#db.prepare(`
         SELECT id, session_id
         FROM message
@@ -891,6 +893,7 @@ export class OpenCodeRepository {
         pendingTurnImages.set(session_id, imagesByMessage.get(id) ?? 0);
       });
     }
+    // SAFETY: Both static SQL branches project the UsageMessageRow columns.
     const rows = startedAt === undefined
       ? this.#db.prepare(`
         SELECT id, session_id, time_created, data
@@ -924,14 +927,15 @@ export class OpenCodeRepository {
       }
       if (decoded.call && sessionsWithUserTurn.has(row.session_id)) {
         const images = pendingTurnImages.get(row.session_id) ?? 0;
-        calls.push({
+        const call: UsageCall = {
           ...decoded.call,
           turnID: `${row.session_id}:${
             activeTurnIDs.get(row.session_id) ?? "prior"
           }`,
           turnOrdinal: activeTurnOrdinals.get(row.session_id) ?? 0,
-          ...(images > 0 ? { images } : {}),
-        });
+        };
+        if (images > 0) call.images = images;
+        calls.push(call);
         pendingTurnImages.set(row.session_id, 0);
       }
     }
@@ -942,9 +946,10 @@ export class OpenCodeRepository {
     return this.#toSummary(row, this.#decodeSession(row));
   }
 
-  #detail(row: SessionRow, visited: Set<string>): unknown {
+  #detail(row: SessionRow, visited: Set<string>): SessionDetail {
     visited.add(row.id);
     const decoded = this.#decodeSession(row, true);
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const children = this.#db.prepare(`
       SELECT id, parent_id, title, model, agent, time_updated
       FROM session
@@ -961,7 +966,7 @@ export class OpenCodeRepository {
         ).map(({ affectedCall: _affectedCall, ...event }) => event),
       })),
     }));
-    return {
+    return sessionDetailSchema.parse({
       ...this.#toSummary(row, decoded),
       parentID: row.parent_id ?? undefined,
       agent: row.agent ?? undefined,
@@ -972,10 +977,11 @@ export class OpenCodeRepository {
       subagents: children
         .filter((child) => !visited.has(child.id))
         .map((child) => this.#detail(child, new Set(visited))),
-    };
+    });
   }
 
   #decodeSession(row: SessionRow, includeActivity = false) {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const messages = this.#db.prepare(`
       SELECT id, time_created, data
       FROM message
@@ -985,6 +991,7 @@ export class OpenCodeRepository {
     if (!includeActivity) {
       return decodeMessages(messages, undefined, false);
     }
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const parts = this.#db.prepare(`
       SELECT message_id, data
       FROM part

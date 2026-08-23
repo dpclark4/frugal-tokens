@@ -7,13 +7,27 @@ import piIcon from "./assets/icons/pi-logo.svg";
 
 type Harness = SessionSummary["harness"];
 
-const harnesses: Record<Harness, { icon: string; name: string }> = {
+const harnesses = {
   "claude-code": { icon: claudeCodeIcon, name: "Claude Code" },
   codex: { icon: codexIcon, name: "Codex" },
   cursor: { icon: cursorIcon, name: "Cursor" },
   opencode: { icon: openCodeIcon, name: "OpenCode" },
   pi: { icon: piIcon, name: "PI" },
-};
+} satisfies Record<Harness, { icon: string; name: string }>;
+
+export function parseHarnessFilter(value: string): Harness | "all" | undefined {
+  switch (value) {
+    case "all":
+    case "claude-code":
+    case "codex":
+    case "cursor":
+    case "opencode":
+    case "pi":
+      return value;
+    default:
+      return undefined;
+  }
+}
 
 export function harnessName(harness: Harness) {
   return harnesses[harness].name;

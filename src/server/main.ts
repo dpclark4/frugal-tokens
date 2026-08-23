@@ -14,6 +14,7 @@ import type { SessionSummary } from "../shared/sessionSchemas.ts";
 import {
   parseSessionMissFilters,
   sessionMissFilterSchema,
+  titleGenerationSettingSchema,
 } from "../shared/sessionSchemas.ts";
 import { aggregateUsageRollups } from "./usageAnalytics.ts";
 import { aggregateTtlMisses, sumCacheMissCost } from "./ttlMissAnalytics.ts";
@@ -32,7 +33,7 @@ import {
   aggregateWorkRhythmOverview,
 } from "./activityOverview.ts";
 import { workRhythmRange } from "./workRhythm.ts";
-import { aggregateSessionShape } from "./sessionShapeAnalytics.ts";
+import { aggregateSessionDistributions } from "./sessionShapeAnalytics.ts";
 import { expandHomePath, openArchiveDatabase, sqlitePath } from "./database.ts";
 import { SourceArtifactRepository } from "./sourceArtifactRepository.ts";
 import { ConversationRepository } from "./conversationRepository.ts";
@@ -137,11 +138,39 @@ const readRepository = new ConversationRepository(archiveDatabase);
 const harnesses = ["opencode", "claude-code", "pi", "codex", "cursor"] as const;
 
 function isHarness(value: string): value is SessionSummary["harness"] {
-  return (harnesses as readonly string[]).includes(value);
+  return harnesses.some((harness) => harness === value);
 }
 
 function isHarnessFilter(value: string) {
   return value === "all" || isHarness(value);
+}
+
+function harnessSelection(value: string) {
+  return isHarness(value) ? value : undefined;
+}
+
+function toolCallRange(value: string): 7 | 30 | 90 | undefined {
+  switch (value) {
+    case "7":
+      return 7;
+    case "30":
+      return 30;
+    case "90":
+      return 90;
+    default:
+      return undefined;
+  }
+}
+
+function dashboardRange(value: string): 30 | 90 | undefined {
+  switch (value) {
+    case "30":
+      return 30;
+    case "90":
+      return 90;
+    default:
+      return undefined;
+  }
 }
 
 const syncIntervalSeconds = (() => {
@@ -328,14 +357,14 @@ app.get(
 );
 
 app.put("/api/settings/title-generation", async (context) => {
-  const body = await context.req.json().catch(() => undefined) as
-    | { enabled?: unknown }
-    | undefined;
-  if (typeof body?.enabled !== "boolean") {
+  const body = titleGenerationSettingSchema.safeParse(
+    await context.req.json().catch(() => undefined),
+  );
+  if (!body.success) {
     return context.json({ error: "enabled must be a boolean" }, 400);
   }
-  setTitleGenerationEnabled(archiveDatabase, body.enabled);
-  return context.json({ enabled: body.enabled });
+  setTitleGenerationEnabled(archiveDatabase, body.data.enabled);
+  return context.json({ enabled: body.data.enabled });
 });
 
 // Settings and sync routes stay uncached; data reads below are invalidated by
@@ -375,14 +404,14 @@ app.get("/api/tool-calls", (context) => {
     return context.json({ error: "Invalid harness" }, 400);
   }
   const rangeParam = context.req.query("range") ?? "30";
-  if (!["7", "30", "90"].includes(rangeParam)) {
+  const range = toolCallRange(rangeParam);
+  if (range === undefined) {
     return context.json({ error: "Invalid range; expected 7, 30, or 90" }, 400);
   }
   const expandParam = context.req.query("expand") ?? "false";
   if (!["true", "false"].includes(expandParam)) {
     return context.json({ error: "Invalid expand value" }, 400);
   }
-  const range = Number(rangeParam) as 7 | 30 | 90;
   const end = Date.now();
   const start = new Date(
     new Date(end).setHours(0, 0, 0, 0) - (range - 1) * 86_400_000,
@@ -390,7 +419,7 @@ app.get("/api/tool-calls", (context) => {
   const calls = readRepository.listToolCalls(
     start,
     end,
-    harness === "all" ? undefined : harness as SessionSummary["harness"],
+    harnessSelection(harness),
   );
   return context.json(
     aggregateToolCalls(calls, range, start, end, expandParam === "true"),
@@ -406,15 +435,11 @@ app.get("/api/performance", (context) => {
   const anthropicModel = context.req.query("anthropic") ?? "all";
   if (
     openaiModel !== "all" &&
-    !PERFORMANCE_MODELS.openai.includes(
-      openaiModel as (typeof PERFORMANCE_MODELS.openai)[number],
-    )
+    !PERFORMANCE_MODELS.openai.some((model) => model === openaiModel)
   ) return context.json({ error: "Invalid OpenAI model" }, 400);
   if (
     anthropicModel !== "all" &&
-    !PERFORMANCE_MODELS.anthropic.includes(
-      anthropicModel as (typeof PERFORMANCE_MODELS.anthropic)[number],
-    )
+    !PERFORMANCE_MODELS.anthropic.some((model) => model === anthropicModel)
   ) return context.json({ error: "Invalid Anthropic model" }, 400);
 
   const end = Date.now();
@@ -427,7 +452,7 @@ app.get("/api/performance", (context) => {
   const cacheStart = start - CACHE_TTL_1H_MS;
   const calls = readRepository.listUsageCalls(
     cacheStart,
-    harness === "all" ? undefined : harness as SessionSummary["harness"],
+    harnessSelection(harness),
   );
   return context.json(
     aggregatePerformance(calls, start, end, openaiModel, anthropicModel),
@@ -451,11 +476,11 @@ const cacheMissOverview = (context: Context) => {
   const sourceStartedAt = performance.now();
   const storedMisses = readRepository.summarizeCacheMisses(
     start,
-    harness === "all" ? undefined : harness as SessionSummary["harness"],
+    harnessSelection(harness),
   );
   const storedCosts = readRepository.summarizeModelCallCosts(
     start,
-    harness === "all" ? undefined : harness as SessionSummary["harness"],
+    harnessSelection(harness),
   );
   sourceDurations.set("database", performance.now() - sourceStartedAt);
   const sourceDuration = [...sourceDurations.values()].reduce(
@@ -503,25 +528,28 @@ app.get("/api/session-shape", (context) => {
     return context.json({ error: "Invalid harness" }, 400);
   }
   const rangeParam = context.req.query("range") ?? "30";
-  if (rangeParam !== "30" && rangeParam !== "90") {
+  const range = dashboardRange(rangeParam);
+  if (range === undefined) {
     return context.json({ error: "Invalid range; expected 30 or 90" }, 400);
   }
-  const range = Number(rangeParam) as 30 | 90;
   const end = Date.now();
   const start = new Date(
     new Date(end).setHours(0, 0, 0, 0) - (range - 1) * 86_400_000,
   ).getTime();
-  const selectedHarness = harness === "all"
-    ? undefined
-    : harness as SessionSummary["harness"];
+  const selectedHarness = harnessSelection(harness);
   const loadStartedAt = performance.now();
-  const loaded = readRepository.listSessionShapeRollups(
+  const loaded = readRepository.listSessionDistributionRollups(
     start,
     selectedHarness,
   );
   const loadDuration = performance.now() - loadStartedAt;
   const aggregationStartedAt = performance.now();
-  const shape = aggregateSessionShape(loaded, start, end, range);
+  const distributions = aggregateSessionDistributions(
+    loaded,
+    start,
+    end,
+    range,
+  );
   const aggregationDuration = performance.now() - aggregationStartedAt;
   const totalDuration = performance.now() - requestStartedAt;
   context.header(
@@ -531,13 +559,13 @@ app.get("/api/session-shape", (context) => {
     }, total;dur=${totalDuration.toFixed(1)}`,
   );
   console.info(
-    `[session-shape] harness=${harness} range=${range} roots=${loaded.length} samples=${shape.sampleSize} database=${
+    `[session-shape] harness=${harness} range=${range} roots=${loaded.length} samples=${distributions.sampleSize} database=${
       formatTiming(loadDuration)
     } aggregate=${formatTiming(aggregationDuration)} total=${
       formatTiming(totalDuration)
     }`,
   );
-  return context.json(shape);
+  return context.json(distributions);
 });
 
 app.get("/api/activity-overview", (context) => {
@@ -547,10 +575,10 @@ app.get("/api/activity-overview", (context) => {
     return context.json({ error: "Invalid harness" }, 400);
   }
   const rangeParam = context.req.query("range") ?? "30";
-  if (rangeParam !== "30" && rangeParam !== "90") {
+  const range = dashboardRange(rangeParam);
+  if (range === undefined) {
     return context.json({ error: "Invalid range; expected 30 or 90" }, 400);
   }
-  const range = Number(rangeParam) as 30 | 90;
   const timeZone = context.req.query("timeZone") ??
     Intl.DateTimeFormat().resolvedOptions().timeZone;
   let boundaries: { start: number; end: number };
@@ -560,9 +588,7 @@ app.get("/api/activity-overview", (context) => {
     return context.json({ error: "Invalid IANA timezone" }, 400);
   }
   const { start, end } = boundaries;
-  const selectedHarness = harness === "all"
-    ? undefined
-    : harness as SessionSummary["harness"];
+  const selectedHarness = harnessSelection(harness);
   const databaseTimings = new Map<string, number>();
   const loadStartedAt = performance.now();
   const loaded = readRepository.listOverviewRollups(
@@ -629,10 +655,10 @@ app.get("/api/work-rhythm", (context) => {
     return context.json({ error: "Invalid harness" }, 400);
   }
   const rangeParam = context.req.query("range") ?? "30";
-  if (rangeParam !== "30" && rangeParam !== "90") {
+  const range = dashboardRange(rangeParam);
+  if (range === undefined) {
     return context.json({ error: "Invalid range; expected 30 or 90" }, 400);
   }
-  const range = Number(rangeParam) as 30 | 90;
   const timeZone = context.req.query("timeZone") ??
     Intl.DateTimeFormat().resolvedOptions().timeZone;
   let boundaries: { start: number; end: number };
@@ -642,9 +668,7 @@ app.get("/api/work-rhythm", (context) => {
     return context.json({ error: "Invalid IANA timezone" }, 400);
   }
   const { start, end } = boundaries;
-  const selectedHarness = harness === "all"
-    ? undefined
-    : harness as SessionSummary["harness"];
+  const selectedHarness = harnessSelection(harness);
   const databaseTimings = new Map<string, number>();
   const databaseStartedAt = performance.now();
   const loaded = readRepository.listOverviewRollups(
@@ -715,13 +739,13 @@ app.get("/api/overview", (context) => {
   const initialInputStartedAt = performance.now();
   const initialInput = readRepository.initialInputDistribution(
     start,
-    harness === "all" ? undefined : harness as SessionSummary["harness"],
+    harnessSelection(harness),
   );
   const initialInputDuration = performance.now() - initialInputStartedAt;
   const loadStartedAt = performance.now();
   const loaded = readRepository.listOverviewRollups(
     start - ROTATION_INACTIVITY_MINUTES * 60_000,
-    harness === "all" ? undefined : harness as SessionSummary["harness"],
+    harnessSelection(harness),
     {
       includeSubagentSpend: false,
       includeRootExecutionIntervals: false,
@@ -776,9 +800,7 @@ app.get("/api/usage", (context) => {
       .getTime();
   const sourceDurations = new Map<string, number>();
   const sourceStartedAt = performance.now();
-  const selectedHarness = harness === "all"
-    ? undefined
-    : harness as SessionSummary["harness"];
+  const selectedHarness = harnessSelection(harness);
   const rollups = readRepository.listUsageRollups(start, selectedHarness);
   const subagentUsage = rollups.some((rollup) => rollup.subagentModelCalls > 0)
     ? readRepository.listSubagentUsage(start, selectedHarness)
@@ -856,7 +878,7 @@ app.get("/api/sessions", (context) => {
   const result = readRepository.listSessions(
     page,
     pageSize,
-    harness === "all" ? undefined : harness as SessionSummary["harness"],
+    harnessSelection(harness),
     missFilters,
   );
   const queryDuration = performance.now() - queryStartedAt;
@@ -890,7 +912,7 @@ app.get("/api/sessions/:id/cost-scenario", (context) => {
     return context.json({ error: "Invalid harness" }, 400);
   }
   if (
-    !model || !(counterfactualModelIDs as readonly string[]).includes(model)
+    !model || !counterfactualModelIDs.some((candidate) => candidate === model)
   ) {
     return context.json({ error: "Invalid model" }, 400);
   }
@@ -898,7 +920,7 @@ app.get("/api/sessions/:id/cost-scenario", (context) => {
     return context.json({ error: "Invalid cache TTL" }, 400);
   }
   const session = readRepository.getSession(
-    harness as SessionSummary["harness"],
+    harness,
     context.req.param("id"),
   );
   return session
@@ -916,7 +938,7 @@ app.get("/api/sessions/:id", (context) => {
     return context.json({ error: "Invalid harness" }, 400);
   }
   const session = readRepository.getSession(
-    harness as SessionSummary["harness"],
+    harness,
     context.req.param("id"),
   );
   return session

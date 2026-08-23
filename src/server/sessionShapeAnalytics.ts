@@ -1,7 +1,8 @@
-import type { SessionShapeResponse } from "../shared/sessionSchemas.ts";
-import type { StoredSessionShapeRollup } from "./conversationRepository.ts";
+import type { SessionDistributionResponse } from "../shared/sessionSchemas.ts";
+import type { StoredSessionDistributionRollup } from "./conversationRepository.ts";
 
-type Distribution = SessionShapeResponse["metrics"][number]["distribution"];
+type Distribution =
+  SessionDistributionResponse["metrics"][number]["distribution"];
 
 function percentile(values: number[], quantile: number) {
   const index = (values.length - 1) * quantile;
@@ -24,12 +25,12 @@ function distribution(values: number[]): Distribution | undefined {
   };
 }
 
-export function aggregateSessionShape(
-  roots: StoredSessionShapeRollup[],
+export function aggregateSessionDistributions(
+  roots: StoredSessionDistributionRollup[],
   start: number,
   end: number,
   rangeDays: 30 | 90,
-): SessionShapeResponse {
+): SessionDistributionResponse {
   const costs: number[] = [];
   const inputs: number[] = [];
   const turns: number[] = [];

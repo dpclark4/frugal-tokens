@@ -11,7 +11,15 @@ export type ModelRateCard = {
   cacheWrite1h?: number;
 };
 
-const standard: Record<string, ModelRateCard> = {
+type ModelRateRegistry = {
+  readonly [model: string]: ModelRateCard | undefined;
+};
+
+function registeredRate(registry: ModelRateRegistry, model: string) {
+  return registry[model];
+}
+
+const standard = {
   "claude-fable-5": {
     input: 10,
     cacheWrite5m: 12.5,
@@ -214,9 +222,9 @@ const standard: Record<string, ModelRateCard> = {
   "gpt-5.4-mini": { input: 0.75, cacheRead: 0.075, output: 4.5 },
   "gpt-5.4-nano": { input: 0.2, cacheRead: 0.02, output: 1.25 },
   "gpt-5.4-pro": { input: 30, cacheRead: 0, output: 180 },
-};
+} satisfies ModelRateRegistry;
 
-const longContext: Record<string, ModelRateCard> = {
+const longContext = {
   "gpt-5.3-codex": { input: 1.75, cacheRead: 0.175, output: 14 },
   "gpt-5.2-codex": { input: 1.75, cacheRead: 0.175, output: 14 },
   "gpt-5.1-codex-max": { input: 1.25, cacheRead: 0.125, output: 10 },
@@ -281,27 +289,27 @@ const longContext: Record<string, ModelRateCard> = {
     output: 4,
   },
   "minimax-m3": { input: 0.6, cacheRead: 0.12, cacheWrite: 0.6, output: 2.4 },
-};
+} satisfies ModelRateRegistry;
 
-const reducedSolRates: Record<string, ModelRateCard> = {
+const reducedSolRates = {
   "gpt-5.6-sol": {
     input: 4,
     cacheRead: 0.4,
     cacheWrite: 5,
     output: 20,
   },
-};
+} satisfies ModelRateRegistry;
 
-const reducedSolLongContextRates: Record<string, ModelRateCard> = {
+const reducedSolLongContextRates = {
   "gpt-5.6-sol": {
     input: 8,
     cacheRead: 0.8,
     cacheWrite: 10,
     output: 30,
   },
-};
+} satisfies ModelRateRegistry;
 
-const reducedLunaTerraRates: Record<string, ModelRateCard> = {
+const reducedLunaTerraRates = {
   "gpt-5.6-terra": {
     input: 2,
     cacheRead: 0.2,
@@ -314,9 +322,9 @@ const reducedLunaTerraRates: Record<string, ModelRateCard> = {
     cacheWrite: 0.25,
     output: 1.2,
   },
-};
+} satisfies ModelRateRegistry;
 
-const reducedLunaTerraLongContextRates: Record<string, ModelRateCard> = {
+const reducedLunaTerraLongContextRates = {
   "gpt-5.6-terra": {
     input: 4,
     cacheRead: 0.4,
@@ -329,7 +337,7 @@ const reducedLunaTerraLongContextRates: Record<string, ModelRateCard> = {
     cacheWrite: 0.5,
     output: 1.8,
   },
-};
+} satisfies ModelRateRegistry;
 
 const LONG_CONTEXT_THRESHOLD = 272_000;
 const GROK_LONG_CONTEXT_THRESHOLD = 200_000;
@@ -421,19 +429,21 @@ export function modelRateCard(
   );
   const long = usesLongContextRates(normalized, inputTokens);
   if (timestamp >= OPENAI_SOL_PRICE_CUT) {
-    const reducedRates = long
-      ? reducedSolLongContextRates[normalized]
-      : reducedSolRates[normalized];
+    const reducedRates = registeredRate(
+      long ? reducedSolLongContextRates : reducedSolRates,
+      normalized,
+    );
     if (reducedRates) return reducedRates;
   }
   if (timestamp >= OPENAI_LUNA_TERRA_PRICE_CUT) {
-    const reducedRates = long
-      ? reducedLunaTerraLongContextRates[normalized]
-      : reducedLunaTerraRates[normalized];
+    const reducedRates = registeredRate(
+      long ? reducedLunaTerraLongContextRates : reducedLunaTerraRates,
+      normalized,
+    );
     if (reducedRates) return reducedRates;
   }
-  if (long) return longContext[normalized];
-  return standard[normalized];
+  if (long) return registeredRate(longContext, normalized);
+  return registeredRate(standard, normalized);
 }
 
 export type ModelCallCostBreakdown = {

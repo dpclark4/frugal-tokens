@@ -25,7 +25,7 @@ type ChartPoint = SessionPoint & {
   highestValueLabel?: string;
   highlighted: boolean;
 };
-type SessionDotShapeProps = {
+type SessionDotGeometryProps = {
   cx?: number;
   cy?: number;
   payload?: ChartPoint;
@@ -33,10 +33,10 @@ type SessionDotShapeProps = {
 
 const chartMono = '"SFMono-Regular", Consolas, monospace';
 const decimal = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
-const SCALE_PIVOT: Record<Metric, number> = {
+const SCALE_PIVOT = {
   spend: 0.1,
   input: 10_000,
-};
+} satisfies Record<Metric, number>;
 
 function duration(minutes?: number) {
   if (minutes === undefined || !Number.isFinite(minutes)) return "—";
@@ -129,7 +129,7 @@ function SessionDot({
   cy,
   payload,
   onOpen,
-}: SessionDotShapeProps & { onOpen: (session: ChartPoint) => void }) {
+}: SessionDotGeometryProps & { onOpen: (session: ChartPoint) => void }) {
   if (cx === undefined || cy === undefined || !payload) return <g />;
   const canOpen = payload.harness !== undefined;
   const open = () => {
@@ -203,18 +203,17 @@ export function SessionDiagnostics({ data }: { data: SessionDiagnosticsData }) {
     const key = `${session.harness ?? "unknown"}:${session.id}`;
     const highlighted = highestValueKeys.has(key);
     const value = metricValue(metric, session);
-    return {
+    const point: ChartPoint = {
       ...session,
       plotValue: scaleValue(metric, value),
       highlighted,
-      ...(highlighted
-        ? {
-          highestValueLabel: `${formatMetric(metric, value)}${
-            metric === "spend" && session.hasUnpricedSpend ? "+" : ""
-          }`,
-        }
-        : {}),
     };
+    if (highlighted) {
+      point.highestValueLabel = `${formatMetric(metric, value)}${
+        metric === "spend" && session.hasUnpricedSpend ? "+" : ""
+      }`;
+    }
+    return point;
   });
   const metricLabel = metric === "spend" ? "Spend" : "Processed input";
 
@@ -233,6 +232,12 @@ export function SessionDiagnostics({ data }: { data: SessionDiagnosticsData }) {
       },
     });
   }
+
+  const scatterDotProps = {
+    "shape": (geometry: SessionDotGeometryProps) => (
+      <SessionDot {...geometry} onOpen={openSession} />
+    ),
+  };
 
   return (
     <section
@@ -370,15 +375,16 @@ export function SessionDiagnostics({ data }: { data: SessionDiagnosticsData }) {
                   content={(props) => (
                     <SessionTooltip
                       active={props.active}
-                      payload={props.payload as Array<{ payload?: ChartPoint }>}
+                      payload={
+                        /* SAFETY: Recharts wraps rows from this chart data in tooltip payload entries. */
+                        props.payload as Array<{ payload?: ChartPoint }>
+                      }
                     />
                   )}
                 />
                 <Scatter
                   data={points}
-                  shape={(props: SessionDotShapeProps) => (
-                    <SessionDot {...props} onOpen={openSession} />
-                  )}
+                  {...scatterDotProps}
                   isAnimationActive={false}
                 />
               </ScatterChart>

@@ -41,6 +41,17 @@ export type SourceArtifactProjectionRecord = {
   lastError?: string;
 };
 
+export type ArtifactImportFailure = {
+  name?: string;
+  message: string;
+};
+
+export function artifactImportFailure(cause: unknown): ArtifactImportFailure {
+  return cause instanceof Error
+    ? { name: cause.name, message: cause.message }
+    : { message: String(cause) };
+}
+
 function optional<T>(value: T | null): T | undefined {
   return value === null ? undefined : value;
 }
@@ -65,6 +76,7 @@ export class SourceArtifactRepository {
     location: string,
   ) {
     return Number(
+      // SAFETY: The static SQL projection and migrated schema define this row contract.
       (this.#prepare(`
       INSERT INTO sources (harness, kind, label, location, created_at)
       VALUES (?, ?, ?, ?, ?)
@@ -80,6 +92,7 @@ export class SourceArtifactRepository {
     externalID: string,
     projectionName = "conversation",
   ): ProjectionCheckpoint | undefined {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const row = this.#prepare(`
       SELECT ss.source_size, ss.source_modified_at, aip.source_checksum,
         aip.source_change_hint, aip.parser_version, aip.dependency_digest,
@@ -128,7 +141,7 @@ export class SourceArtifactRepository {
     sourceID: number,
     externalID: string,
     projectionName: string,
-    error: unknown,
+    failure: ArtifactImportFailure,
   ) {
     this.#prepare(`
       INSERT INTO artifact_import_projections (
@@ -139,7 +152,7 @@ export class SourceArtifactRepository {
     `).run(
       this.#sourceArtifactID(sourceID, externalID),
       projectionName,
-      error instanceof Error ? error.message : String(error),
+      failure.message,
     );
   }
 
@@ -188,7 +201,7 @@ export class SourceArtifactRepository {
     externalID: string,
     artifactPath: string,
     observedAt: number,
-    error: unknown,
+    failure: ArtifactImportFailure,
     projectionName = "conversation",
   ) {
     this.recordUnchangedArtifact(
@@ -197,7 +210,7 @@ export class SourceArtifactRepository {
       artifactPath,
       observedAt,
     );
-    this.recordProjectionError(sourceID, externalID, projectionName, error);
+    this.recordProjectionError(sourceID, externalID, projectionName, failure);
   }
 
   markArtifactsSeen(
@@ -294,6 +307,7 @@ export class SourceArtifactRepository {
     identityNamespace: string,
     relationship: string,
   ): SourceArtifactProjectionRecord[] {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.#prepare(`
       SELECT ss.id AS source_session_id, ss.external_id, ss.artifact_path,
         ss.availability, ss.source_size, ss.source_modified_at,
@@ -382,6 +396,7 @@ export class SourceArtifactRepository {
   }
 
   #sourceArtifactID(sourceID: number, externalID: string) {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const row = this.#prepare(`
       SELECT id FROM source_sessions WHERE source_id = ? AND external_id = ?
     `).get(sourceID, externalID) as { id: number } | undefined;

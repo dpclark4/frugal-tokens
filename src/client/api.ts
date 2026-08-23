@@ -1,3 +1,4 @@
+import { z } from "zod";
 import {
   activityOverviewResponseSchema,
   costScenarioResponseSchema,
@@ -5,15 +6,17 @@ import {
   overviewResponseSchema,
   performanceResponseSchema,
   sessionDetailSchema,
+  sessionDistributionResponseSchema,
   sessionListResponseSchema,
   type SessionMissFilter,
-  sessionShapeResponseSchema,
+  titleGenerationSettingSchema,
   toolCallsResponseSchema,
   ttlMissMetricsSchema,
   usageResponseSchema,
   workRhythmOverviewResponseSchema,
 } from "../shared/sessionSchemas.ts";
 
+// SAFETY: Vite injects the typed env object into import.meta for client builds.
 const apiBaseUrl = (import.meta as ImportMeta & {
   env: { VITE_API_BASE_URL?: string };
 }).env.VITE_API_BASE_URL?.replace(/\/+$/, "") ?? "";
@@ -41,13 +44,9 @@ export async function getHarnesses() {
 }
 
 export async function getTitleGenerationSetting() {
-  const value = await getJson("/api/settings/title-generation") as {
-    enabled?: unknown;
-  };
-  if (typeof value.enabled !== "boolean") {
-    throw new Error("Invalid title generation setting response");
-  }
-  return value.enabled;
+  return titleGenerationSettingSchema.parse(
+    await getJson("/api/settings/title-generation"),
+  ).enabled;
 }
 
 export async function setTitleGenerationSetting(enabled: boolean) {
@@ -93,11 +92,11 @@ export async function getWorkRhythm(
   );
 }
 
-export async function getSessionShape(
+export async function getSessionDistributions(
   range: 30 | 90,
   harness: string,
 ) {
-  return sessionShapeResponseSchema.parse(
+  return sessionDistributionResponseSchema.parse(
     await getJson(`/api/session-shape?range=${range}&harness=${harness}`),
   );
 }
@@ -200,8 +199,11 @@ export async function openSessionInGhostty(id: string, harness: string) {
     { method: "POST" },
   );
   if (response.ok) return;
-  const body = await response.json().catch(() => undefined) as
-    | { error?: string }
-    | undefined;
-  throw new Error(body?.error ?? `Request failed (${response.status})`);
+  const body = z.object({ error: z.string().optional() }).safeParse(
+    await response.json().catch(() => undefined),
+  );
+  throw new Error(
+    (body.success ? body.data.error : undefined) ??
+      `Request failed (${response.status})`,
+  );
 }

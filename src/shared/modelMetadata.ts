@@ -22,23 +22,46 @@ function versionAfter(value: string, marker: RegExp) {
   return value.match(marker)?.[1]?.replaceAll("-", ".");
 }
 
+function anthropicTierRank(family?: string) {
+  switch (family) {
+    case "fable":
+    case "mythos":
+      return 0;
+    case "opus":
+      return 1;
+    case "haiku":
+      return 3;
+    default:
+      return 2;
+  }
+}
+
+function openAITierRank(tier: string) {
+  switch (tier) {
+    case "pro":
+    case "sol":
+    case "max":
+      return 0;
+    case "luna":
+    case "mini":
+      return 2;
+    case "nano":
+      return 3;
+    default:
+      return 1;
+  }
+}
+
 /** Normalize model identity for analytics without assigning presentation colors. */
 export function modelMetadata(model: string): ModelMetadata {
   const id = canonicalModelId(model);
 
   if (id.startsWith("claude-")) {
     const family = id.match(/^claude-(fable|mythos|opus|sonnet|haiku)-/)?.[1];
-    const tierRanks: Record<string, number> = {
-      fable: 0,
-      mythos: 0,
-      opus: 1,
-      sonnet: 2,
-      haiku: 3,
-    };
     return {
       provider: "anthropic",
       tier: family ?? "other",
-      tierRank: tierRanks[family ?? ""] ?? 2,
+      tierRank: anthropicTierRank(family),
       generation: versionAfter(
         id,
         /^claude-(?:fable|mythos|opus|sonnet|haiku)-(\d+(?:-\d+)?)/,
@@ -51,21 +74,10 @@ export function modelMetadata(model: string): ModelMetadata {
     const variant = id.match(/-(pro|max|mini|nano)(?:-|$)/)?.[1];
     const tier = namedTier ?? variant ??
       (id.includes("codex") ? "codex" : "standard");
-    const tierRanks: Record<string, number> = {
-      pro: 0,
-      sol: 0,
-      max: 0,
-      standard: 1,
-      codex: 1,
-      terra: 1,
-      luna: 2,
-      mini: 2,
-      nano: 3,
-    };
     return {
       provider: "openai",
       tier,
-      tierRank: tierRanks[tier] ?? 1,
+      tierRank: openAITierRank(tier),
       generation: versionAfter(id, /^(?:gpt|o|chatgpt)-?(\d+(?:[.-]\d+)?)/),
       variant,
     };

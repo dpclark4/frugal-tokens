@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { jsonObjectSchema } from "./json.ts";
 import { modelProviderValues } from "./modelMetadata.ts";
 
 export const harnessSchema = z.enum([
@@ -45,6 +46,10 @@ export const tokenUsageSchema = z.object({
   output: z.number().int().nonnegative(),
   reasoning: z.number().int().nonnegative(),
   processed: z.number().int().nonnegative(),
+});
+
+export const titleGenerationSettingSchema = z.object({
+  enabled: z.boolean(),
 });
 
 export const toolEventSchema = z.object({
@@ -200,7 +205,7 @@ export const compactionCheckpointItemSchema = z.object({
   originalLength: z.number().int().nonnegative().optional(),
   truncated: z.boolean(),
   contentHash: z.string().optional(),
-  nativeMetadata: z.record(z.string(), z.unknown()).optional(),
+  nativeMetadata: jsonObjectSchema.optional(),
 });
 
 export const compactionDetailSchema = z.object({
@@ -222,7 +227,7 @@ export const compactionDetailSchema = z.object({
   droppedContextTokens: z.number().int().nonnegative().optional(),
   retainedItemCount: z.number().int().nonnegative().optional(),
   droppedItemCount: z.number().int().nonnegative().optional(),
-  nativeMetadata: z.record(z.string(), z.unknown()).optional(),
+  nativeMetadata: jsonObjectSchema.optional(),
   checkpointItems: z.array(compactionCheckpointItemSchema),
 });
 
@@ -974,7 +979,7 @@ export type SessionListResponse = z.infer<typeof sessionListResponseSchema>;
 export type SessionSummary = z.infer<typeof sessionSummarySchema>;
 export type TokenUsage = z.infer<typeof tokenUsageSchema>;
 export type UsageResponse = z.infer<typeof usageResponseSchema>;
-export const sessionShapeMetricKeySchema = z.enum([
+export const sessionDistributionMetricKeySchema = z.enum([
   "cost",
   "processedInput",
   "userTurns",
@@ -984,14 +989,14 @@ export const sessionShapeMetricKeySchema = z.enum([
   "tokenReuse",
 ]);
 
-export const sessionShapeResponseSchema = z.object({
+export const sessionDistributionResponseSchema = z.object({
   rangeDays: z.union([z.literal(30), z.literal(90)]),
   sampleSize: z.number().int().nonnegative(),
   unpricedSessions: z.number().int().nonnegative(),
   multiDaySessions: z.number().int().nonnegative(),
   multiDaySessionRate: z.number().min(0).max(1),
   metrics: z.array(z.object({
-    key: sessionShapeMetricKeySchema,
+    key: sessionDistributionMetricKeySchema,
     distribution: z.object({
       p10: z.number().nonnegative(),
       p25: z.number().nonnegative(),
@@ -1014,7 +1019,9 @@ export type WorkRhythmOverviewResponse = z.infer<
 >;
 export type SpendCompositionData = z.infer<typeof spendCompositionSchema>;
 export type OverviewResponse = z.infer<typeof overviewResponseSchema>;
-export type SessionShapeResponse = z.infer<typeof sessionShapeResponseSchema>;
+export type SessionDistributionResponse = z.infer<
+  typeof sessionDistributionResponseSchema
+>;
 export type PerformanceResponse = z.infer<typeof performanceResponseSchema>;
 export type ToolCallsResponse = z.infer<typeof toolCallsResponseSchema>;
 export type TtlMissMetrics = z.infer<typeof ttlMissMetricsSchema>;

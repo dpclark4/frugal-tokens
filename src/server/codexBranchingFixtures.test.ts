@@ -37,23 +37,23 @@ function artifacts(name: string): FixtureArtifact[] {
   return [...Deno.readDirSync(fixturePath(name))]
     .filter((entry) => entry.isFile && entry.name.endsWith(".jsonl"))
     .map((entry) => {
+      // SAFETY: These checked-in JSONL fixtures follow the FixtureRecord event contract.
       const records = Deno.readTextFileSync(`${fixturePath(name)}${entry.name}`)
         .trim().split("\n").map((line) => JSON.parse(line) as FixtureRecord);
       const metadata = records.find((record) => record.type === "session_meta")
         ?.payload;
       if (!metadata?.id) throw new Error(`Missing fixture ID: ${entry.name}`);
-      return {
+      const fixture: FixtureArtifact = {
         name: entry.name,
         id: metadata.id,
-        ...(metadata.forked_from_id
-          ? { parentID: metadata.forked_from_id }
-          : {}),
         records,
         turns: records.filter((record) =>
           record.type === "event_msg" &&
           record.payload?.type === "task_started"
         ).map((record) => record.payload!.turn_id!),
       };
+      if (metadata.forked_from_id) fixture.parentID = metadata.forked_from_id;
+      return fixture;
     }).sort((a, b) => a.name.localeCompare(b.name));
 }
 

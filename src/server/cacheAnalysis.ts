@@ -60,14 +60,14 @@ export function assessCache(
   return { status, retainedRatio, previousReusableTokens };
 }
 
-const severity: Record<CacheAssessment["status"], number> = {
+const severity = {
   baseline: 0,
   unknown: 0,
   "not-comparable": 0,
   hit: 1,
   "partial-hit": 3,
   "full-miss": 4,
-};
+} satisfies Record<CacheAssessment["status"], number>;
 
 function assessmentSeverity(assessment: CacheAssessment): number {
   if (assessment.cause === "compaction") return 0;
@@ -198,28 +198,29 @@ function cacheMissRecord(
     current.startedAt,
     current.provider,
   );
-  return {
+  const result: CacheMissRecord = {
     gap: current.startedAt - previous.startedAt,
     status: assessment.status === "full-miss" ? "full-miss" : "partial-hit",
-    ...(assessment.reason === undefined ? {} : { reason: assessment.reason }),
-    ...(assessment.cause === undefined ? {} : { cause: assessment.cause }),
-    ...(assessment.retainedRatio === undefined
-      ? {}
-      : { retainedRatio: assessment.retainedRatio }),
-    ...(assessment.previousReusableTokens === undefined
-      ? {}
-      : { previousReusableTokens: assessment.previousReusableTokens }),
     previousContextTokens: tokenEstimate.previousContext,
     currentContextTokens: tokenEstimate.currentContext,
     actualCacheReadTokens: tokenEstimate.actualCacheRead,
     missedTokens: tokenEstimate.missedTokens,
-    ...(modelCallCost === undefined ? {} : { modelCallCost }),
-    ...(costEstimate === undefined ? {} : {
-      actualMissedCost: costEstimate.actualMissedCost,
-      expectedReadCost: costEstimate.expectedReadCost,
-      estimatedExtraCost: costEstimate.estimatedExtraCost,
-    }),
   };
+  if (assessment.reason !== undefined) result.reason = assessment.reason;
+  if (assessment.cause !== undefined) result.cause = assessment.cause;
+  if (assessment.retainedRatio !== undefined) {
+    result.retainedRatio = assessment.retainedRatio;
+  }
+  if (assessment.previousReusableTokens !== undefined) {
+    result.previousReusableTokens = assessment.previousReusableTokens;
+  }
+  if (modelCallCost !== undefined) result.modelCallCost = modelCallCost;
+  if (costEstimate !== undefined) {
+    result.actualMissedCost = costEstimate.actualMissedCost;
+    result.expectedReadCost = costEstimate.expectedReadCost;
+    result.estimatedExtraCost = costEstimate.estimatedExtraCost;
+  }
+  return result;
 }
 
 export type CacheAnalysisCall = CacheComparableCall & {
@@ -314,11 +315,12 @@ export function categorizeUsageCallCache(
         call.followsCompaction ?? false,
         initialCacheReads.get(baselineKey),
       );
-      categorized.push({
+      const categorizedCall: AssessedUsageCall = {
         ...call,
         cacheAssessment,
-        ...(comparable ? { previousComparableCall: comparable } : {}),
-      });
+      };
+      if (comparable) categorizedCall.previousComparableCall = comparable;
+      categorized.push(categorizedCall);
       if (hasInputContext(call.tokens)) {
         if (!initialCacheReads.has(baselineKey)) {
           initialCacheReads.set(baselineKey, call.tokens.cacheRead);
@@ -444,11 +446,8 @@ export function analyzeSessionCache(session: SessionDetail): SessionDetail {
           cacheAssessment.previousReusableTokens,
         )?.actualMissedCost
         : undefined;
-      return {
-        ...call,
-        cacheAssessment,
-        ...(cacheMissCost === undefined ? {} : { cacheMissCost }),
-      };
+      if (cacheMissCost === undefined) return { ...call, cacheAssessment };
+      return { ...call, cacheAssessment, cacheMissCost };
     });
     const cacheAssessment = calls.reduce<CacheAssessment | undefined>(
       (worst, call) => {
@@ -584,13 +583,14 @@ export function sessionCacheIssues(
           if (!misses.some((call) => call.cacheAssessment?.status === status)) {
             continue;
           }
-          issues.push({
+          const issue: CacheIssue = {
             status,
-            ...(cause === undefined ? {} : { cause }),
-            ...(reason === undefined ? {} : { reason }),
             turn: turn.number,
             scope,
-          });
+          };
+          if (cause !== undefined) issue.cause = cause;
+          if (reason !== undefined) issue.reason = reason;
+          issues.push(issue);
         }
       }
       addIssues(

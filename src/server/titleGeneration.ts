@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import { z } from "zod";
 import { importedTitleNeedsGeneration } from "./sessionTitles.ts";
 import { formatTiming } from "./timing.ts";
 
@@ -22,7 +23,21 @@ type Usage = {
   outputTokens?: number;
 };
 
+const codexOutputEventSchema = z.object({
+  type: z.string(),
+  item: z.object({
+    type: z.string(),
+    text: z.string().optional(),
+  }).optional(),
+  usage: z.object({
+    input_tokens: z.number().optional(),
+    cached_input_tokens: z.number().optional(),
+    output_tokens: z.number().optional(),
+  }).optional(),
+});
+
 function setting(db: DatabaseSync, key: string) {
+  // SAFETY: The static SQL projection and migrated schema define this row contract.
   return (db.prepare("SELECT value FROM app_settings WHERE key = ?").get(key) as
     | { value: string }
     | undefined)?.value;
@@ -56,6 +71,7 @@ function candidateRows(
 ): Candidate[] {
   const enabledAt = Number(setting(db, enabledAtKey) ?? Date.now());
   const comparison = period === "backfill" ? "<" : ">=";
+  // SAFETY: The static SQL projection and migrated schema define this row contract.
   return db.prepare(`
     SELECT ss.id, so.harness, c.title AS imported_title,
       (
@@ -96,6 +112,7 @@ function candidateRows(
 
 function completedBackfillCount(db: DatabaseSync) {
   const enabledAt = Number(setting(db, enabledAtKey) ?? Date.now());
+  // SAFETY: The static SQL projection and migrated schema define this row contract.
   const row = db.prepare(`
     SELECT COUNT(*) AS count
     FROM source_sessions ss
@@ -125,26 +142,28 @@ function parseCodexOutput(stdout: string) {
   const usage: Usage = {};
   for (const line of stdout.split("\n")) {
     if (!line.trim()) continue;
-    let event: Record<string, unknown>;
+    let event: z.infer<typeof codexOutputEventSchema>;
     try {
-      event = JSON.parse(line);
+      const parsed = codexOutputEventSchema.safeParse(JSON.parse(line));
+      if (!parsed.success) continue;
+      event = parsed.data;
     } catch {
       continue;
     }
-    const item = event.item as Record<string, unknown> | undefined;
+    const item = event.item;
     if (
       event.type === "item.completed" && item?.type === "agent_message" &&
-      typeof item.text === "string"
+      item.text !== undefined
     ) title = item.text;
     if (event.type === "turn.completed") {
-      const tokens = event.usage as Record<string, unknown> | undefined;
-      if (typeof tokens?.input_tokens === "number") {
+      const tokens = event.usage;
+      if (tokens?.input_tokens !== undefined) {
         usage.inputTokens = tokens.input_tokens;
       }
-      if (typeof tokens?.cached_input_tokens === "number") {
+      if (tokens?.cached_input_tokens !== undefined) {
         usage.cachedInputTokens = tokens.cached_input_tokens;
       }
-      if (typeof tokens?.output_tokens === "number") {
+      if (tokens?.output_tokens !== undefined) {
         usage.outputTokens = tokens.output_tokens;
       }
     }
@@ -205,6 +224,7 @@ async function generateCandidateTitle(db: DatabaseSync, candidate: Candidate) {
 
   const startedAt = Date.now();
   const runID = Number(
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     (db.prepare(`
       INSERT INTO title_generation_runs (
         source_session_id, started_at, status, model, reasoning_effort,
@@ -253,6 +273,7 @@ async function generateCandidateTitle(db: DatabaseSync, candidate: Candidate) {
       } runtime=${formatTiming(Date.now() - startedAt)}`,
     );
   } catch (error) {
+    // SAFETY: Deno.Command failures extend Error with the captured exit and usage metadata.
     const detail = error as Error & { exitCode?: number; usage?: Usage };
     db.prepare(`
       UPDATE title_generation_runs

@@ -54,6 +54,7 @@ export async function copyElementScreenshot(element: HTMLElement) {
       )),
     height,
     pixelRatio: 2,
+    // SAFETY: html-to-image accepts partial CSS declarations plus inherited custom properties.
     style: {
       ...inheritedCustomProperties(element),
       backgroundColor: pageBackground,

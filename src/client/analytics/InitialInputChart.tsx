@@ -142,12 +142,12 @@ export function InitialInputChart({
     ? []
     : datesBetween(observedDates[0], observedDates.at(-1)!).map((date) => {
       const dateCohorts = cohortsByDate.get(date) ?? [];
-      const row: ChartRow = { date, cohorts: dateCohorts };
-      for (const { value } of harnesses) row[lineKey(value)] = null;
+      const values: Record<string, number | null> = {};
+      for (const { value } of harnesses) values[lineKey(value)] = null;
       for (const cohort of dateCohorts) {
-        row[lineKey(cohort.harness)] = cohort.median;
+        values[lineKey(cohort.harness)] = cohort.median;
       }
-      return row;
+      return { date, cohorts: dateCohorts, ...values };
     });
   const availableHarnesses = harnesses.filter(({ value }) =>
     cohorts.some((cohort) => cohort.harness === value)
@@ -231,9 +231,12 @@ export function InitialInputChart({
                   content={(props) => (
                     <InitialInputTooltip
                       active={props.active}
-                      payload={props.payload as Array<{
-                        payload?: ChartRow;
-                      }>}
+                      payload={
+                        /* SAFETY: Recharts wraps rows from this chart data in tooltip payload entries. */
+                        props.payload as Array<{
+                          payload?: ChartRow;
+                        }>
+                      }
                       enabledHarnesses={enabledHarnesses}
                       label={label}
                     />

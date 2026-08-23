@@ -1,10 +1,16 @@
 import { z } from "zod";
 import {
+  type SessionDetail,
   sessionDetailSchema,
   sessionListResponseSchema,
   type SessionSummary,
   type TokenUsage,
 } from "../shared/sessionSchemas.ts";
+import {
+  type JsonObject,
+  type JsonValue,
+  jsonValueSchema,
+} from "../shared/json.ts";
 import { usageCallsFromSession } from "./usage.ts";
 import type {
   CompactionDetailImport,
@@ -21,6 +27,7 @@ import {
   nonnegativeInteger,
   numberCheckpointItems,
   objectValue,
+  serializedJsonValue,
   stringValue,
   textCheckpointItem,
 } from "./compactionImport.ts";
@@ -36,7 +43,7 @@ const contentBlockSchema = z.object({
   isError: z.boolean().optional(),
   mime: z.string().optional(),
   mediaType: z.string().optional(),
-  arguments: z.unknown().optional(),
+  arguments: jsonValueSchema.optional(),
 }).passthrough();
 
 const recordSchema = z.object({
@@ -46,13 +53,14 @@ const recordSchema = z.object({
   parentId: z.string().nullable().optional(),
   timestamp: z.string().optional(),
   cwd: z.string().optional(),
-  summary: z.unknown().optional(),
-  firstKeptEntryId: z.unknown().optional(),
-  retainedTail: z.unknown().optional(),
-  tokensBefore: z.unknown().optional(),
-  fromHook: z.unknown().optional(),
-  details: z.unknown().optional(),
-  usage: z.unknown().optional(),
+  name: z.string().optional().catch(undefined),
+  summary: jsonValueSchema.optional(),
+  firstKeptEntryId: jsonValueSchema.optional(),
+  retainedTail: jsonValueSchema.optional(),
+  tokensBefore: jsonValueSchema.optional(),
+  fromHook: jsonValueSchema.optional(),
+  details: jsonValueSchema.optional(),
+  usage: jsonValueSchema.optional(),
   message: z.object({
     role: z.string().optional(),
     content: z.array(contentBlockSchema).optional(),
@@ -80,6 +88,20 @@ const recordSchema = z.object({
 }).passthrough();
 
 type Record = z.infer<typeof recordSchema>;
+const checkpointEntrySchema = z.object({
+  id: z.string().optional(),
+  type: z.string().optional(),
+  role: z.string().optional(),
+  content: jsonValueSchema.optional(),
+  customType: z.string().optional(),
+  summary: z.string().optional(),
+  message: z.object({
+    role: z.string().optional(),
+    content: jsonValueSchema.optional(),
+  }).optional(),
+});
+type CheckpointEntry = z.infer<typeof checkpointEntrySchema>;
+
 export type PiSessionCandidate = {
   id: string;
   path: string;
@@ -165,9 +187,9 @@ function contentMetadata(
   });
 }
 
-function serializedPreview(value: unknown) {
+function serializedPreview(value: JsonValue | undefined) {
   if (value === undefined) return undefined;
-  const text = typeof value === "string" ? value : JSON.stringify(value);
+  const text = serializedJsonValue(value);
   if (text === undefined) return undefined;
   const metadata = preview(text);
   return {
@@ -203,45 +225,43 @@ function basename(path: string | undefined) {
   return path.split("/").filter(Boolean).at(-1);
 }
 
-function piEntryCheckpointItem(value: unknown) {
-  const entry = objectValue(value);
-  if (entry === undefined) return undefined;
-  const sourceEntryID = stringValue(entry.id);
-  if (entry.type === "message") {
-    const message = objectValue(entry.message);
-    if (message === undefined) return undefined;
+function piEntryCheckpointItem(entry: CheckpointEntry) {
+  const sourceEntryID = entry.id;
+  if (entry.type === "message" && entry.message !== undefined) {
+    const message = entry.message;
     return messageCheckpointItem({
       sourceEntryID,
-      role: stringValue(message.role),
+      role: message.role,
       content: message.content,
     });
   }
   // retainedTail stores materialized messages rather than session entries.
-  if (typeof entry.role === "string") {
+  const retainedRole = stringValue(entry.role);
+  if (retainedRole !== undefined) {
     return messageCheckpointItem({
       sourceEntryID,
-      role: entry.role,
+      role: retainedRole,
       content: entry.content,
     });
   }
   if (entry.type === "custom_message") {
+    const nativeMetadata: JsonObject = {};
+    const customType = stringValue(entry.customType);
+    if (customType !== undefined) nativeMetadata.customType = customType;
     return messageCheckpointItem({
       sourceEntryID,
       role: "user",
       content: entry.content,
-      nativeMetadata: {
-        ...(typeof entry.customType === "string"
-          ? { customType: entry.customType }
-          : {}),
-      },
+      nativeMetadata,
     });
   }
-  if (entry.type === "branch_summary" && typeof entry.summary === "string") {
+  const branchSummary = stringValue(entry.summary);
+  if (entry.type === "branch_summary" && branchSummary !== undefined) {
     return textCheckpointItem({
       sourceEntryID,
       kind: "message",
       role: "user",
-      text: entry.summary,
+      text: branchSummary,
       nativeMetadata: { sourceKind: "branch-summary" },
     });
   }
@@ -286,11 +306,11 @@ function piCompactionDetails(
   }
   branch.reverse();
 
-  let retainedValues: unknown[] | undefined;
+  let retainedCandidates: Array<JsonValue | Record> | undefined;
   let droppedItemCount: number | undefined;
   let boundaryKind = "unknown";
   if (Array.isArray(record.retainedTail)) {
-    retainedValues = record.retainedTail;
+    retainedCandidates = record.retainedTail;
     boundaryKind = "retained-tail";
   } else {
     if (record.retainedTail !== undefined) {
@@ -307,7 +327,7 @@ function piCompactionDetails(
         entry.id === firstKeptEntryID
       );
       if (firstKeptIndex >= 0) {
-        retainedValues = branch.slice(firstKeptIndex);
+        retainedCandidates = branch.slice(firstKeptIndex);
         droppedItemCount = firstKeptIndex;
         boundaryKind = "first-kept-entry";
       } else {
@@ -316,13 +336,15 @@ function piCompactionDetails(
     }
   }
 
-  const retainedItems = (retainedValues ?? []).flatMap((entry) => {
-    const item = piEntryCheckpointItem(entry);
+  const retainedItems = (retainedCandidates ?? []).flatMap((entry) => {
+    const parsed = checkpointEntrySchema.safeParse(entry);
+    if (!parsed.success) return [];
+    const item = piEntryCheckpointItem(parsed.data);
     return item === undefined ? [] : [item];
   });
   if (
-    retainedValues !== undefined &&
-    retainedItems.length !== retainedValues.length
+    retainedCandidates !== undefined &&
+    retainedItems.length !== retainedCandidates.length
   ) {
     issues.push("retained-entry-unsupported");
   }
@@ -338,13 +360,24 @@ function piCompactionDetails(
   const resultKind = summary === undefined
     ? "unavailable" as const
     : "plaintext-summary" as const;
-  const checkpointCompleteness = retainedValues !== undefined
+  const checkpointCompleteness = retainedCandidates !== undefined
     ? summary === undefined ? "partial" as const : "complete" as const
     : summary === undefined
     ? "unknown" as const
     : "summary-only" as const;
   const usage = objectValue(record.usage);
   const fromHook = booleanValue(record.fromHook);
+  const firstKeptEntryID = stringValue(record.firstKeptEntryId);
+  const nativeMetadata: JsonObject = { boundaryKind };
+  if (firstKeptEntryID !== undefined) {
+    nativeMetadata.firstKeptEntryID = firstKeptEntryID;
+  }
+  if (Array.isArray(record.retainedTail)) {
+    nativeMetadata.retainedTailCount = record.retainedTail.length;
+  }
+  if (fromHook !== undefined) nativeMetadata.fromHook = fromHook;
+  if (usage !== undefined) nativeMetadata.summaryUsage = usage;
+  if (issues.length > 0) nativeMetadata.captureIssues = issues;
   return {
     sourceID: record.id,
     trigger: "unknown",
@@ -353,18 +386,7 @@ function piCompactionDetails(
     preContextTokens: tokensBefore,
     retainedItemCount: retainedItems.length,
     droppedItemCount,
-    nativeMetadata: {
-      boundaryKind,
-      ...(stringValue(record.firstKeptEntryId) === undefined
-        ? {}
-        : { firstKeptEntryID: record.firstKeptEntryId }),
-      ...(Array.isArray(record.retainedTail)
-        ? { retainedTailCount: record.retainedTail.length }
-        : {}),
-      ...(fromHook === undefined ? {} : { fromHook }),
-      ...(usage === undefined ? {} : { summaryUsage: usage }),
-      ...(issues.length === 0 ? {} : { captureIssues: issues }),
-    },
+    nativeMetadata,
     checkpointItems,
   };
 }
@@ -413,13 +435,14 @@ function decodeRecords(records: Record[]) {
         record.type !== "thinking_level_change" ||
         record.thinkingLevel === undefined
       ) return [];
-      return [{
+      const change: ReasoningSettingState = {
         settingName: "thinkingLevel",
         settingValue: record.thinkingLevel,
         sourceFieldPath: "thinkingLevel",
         sourceOrder: recordIndex + 1,
-        ...(timestamp === 0 ? {} : { observedAt: timestamp }),
-      }];
+      };
+      if (timestamp !== 0) change.observedAt = timestamp;
+      return [change];
     },
   );
   const reasoningSettingAt = (
@@ -448,11 +471,11 @@ function decodeRecords(records: Record[]) {
       const event: PendingContextEvent = {
         type: "compaction",
         sourceOrder: recordIndex + 1,
-        ...(timestamp === 0 ? {} : { occurredAt: timestamp }),
         compaction: numberCheckpointItems(
           piCompactionDetails(record, records),
         ),
       };
+      if (timestamp !== 0) event.occurredAt = timestamp;
       contextEvents.push(event);
       pendingContextEvents.push(event);
       continue;
@@ -468,19 +491,20 @@ function decodeRecords(records: Record[]) {
           messageTimestamp,
           recordIndex + 1,
         );
-        turns.push({
+        const turn: ConversationTurnImport & { images?: number } = {
           number: turns.length + 1,
           startedAt: messageTimestamp,
           calls: [],
           inputs: contentMetadata(record.message?.content ?? []),
-          ...(reasoningSetting === undefined ? {} : {
-            reasoningSetting: {
-              ...reasoningSetting,
-              provenance: "inherited" as const,
-            },
-          }),
           images: userImages(record),
-        });
+        };
+        if (reasoningSetting !== undefined) {
+          turn.reasoningSetting = {
+            ...reasoningSetting,
+            provenance: "inherited",
+          };
+        }
+        turns.push(turn);
       }
       continue;
     }
@@ -540,50 +564,45 @@ function decodeRecords(records: Record[]) {
     const call: ConversationCallImport = {
       id: record.id ?? `${turn.number}-${turn.calls.length + 1}`,
       callWithinTurn: turn.calls.length + 1,
-      ...(content.find((item) => item.kind === "text")?.preview === undefined
-        ? {}
-        : {
-          preview: content.find((item) => item.kind === "text")!.preview,
-        }),
       provider,
       model,
       startedAt: messageTimestamp,
       completedAt: timestamp,
       reportedCost: cost,
       tokens: callTokens,
-      ...(reasoningSetting === undefined ? {} : {
-        reasoningSetting: {
-          ...reasoningSetting,
-          provenance: "inherited" as const,
-        },
-      }),
       activity: {
         finishReason: message.stopReason,
-        ...(turn.images && turn.calls.length === 0
-          ? { images: turn.images }
-          : {}),
         hasText: false,
         hasReasoning: source.reasoning > 0,
         tools: [],
       },
       content,
     };
+    const text = content.find((item) => item.kind === "text")?.preview;
+    if (text !== undefined) call.preview = text;
+    if (reasoningSetting !== undefined) {
+      call.reasoningSetting = {
+        ...reasoningSetting,
+        provenance: "inherited",
+      };
+    }
+    if (turn.images && turn.calls.length === 0) {
+      call.activity.images = turn.images;
+    }
 
     for (const block of message.content ?? []) {
       if (block.type === "text") call.activity.hasText = true;
       if (block.type === "thinking") call.activity.hasReasoning = true;
       if (block.type === "toolCall" && block.id && block.name) {
         const input = serializedPreview(block.arguments);
-        const tool = {
+        const tool: ConversationToolImport = {
           sourceID: block.id,
           name: block.name,
           status: "pending",
           startedAt: timestamp,
           input,
-          ...(input?.preview === undefined
-            ? {}
-            : { inputPreview: input.preview }),
         };
+        if (input?.preview !== undefined) tool.inputPreview = input.preview;
         call.activity.tools.push(tool);
         tools.set(block.id, tool);
       }
@@ -658,22 +677,22 @@ export class PiRepository {
   getSession(id: string) {
     const file = this.#files().find((entry) => entry.id === id);
     if (!file) return undefined;
-    return sessionDetailSchema.parse(this.#detail(file));
+    return this.#detail(file);
   }
 
   listUsageCalls(startedAt?: number) {
     return this.#files().filter((file) =>
       startedAt === undefined || file.updatedAt >= startedAt
-    ).flatMap((file) =>
-      usageCallsFromSession(sessionDetailSchema.parse(this.#detail(file)))
-    ).filter((call) => startedAt === undefined || call.startedAt >= startedAt);
+    ).flatMap((file) => usageCallsFromSession(this.#detail(file))).filter((
+      call,
+    ) => startedAt === undefined || call.startedAt >= startedAt);
   }
 
   #summary(id: string, path: string, updatedAt: number): SessionSummary {
     return piSession(readRecords(path), id, updatedAt).summary;
   }
 
-  #detail(file: PiSessionCandidate): unknown {
+  #detail(file: PiSessionCandidate): SessionDetail {
     const normalized = piSession(
       readRecords(file.path),
       file.id,
@@ -689,7 +708,7 @@ export class PiRepository {
         ).map(({ affectedCall: _affectedCall, ...event }) => event),
       })),
     }));
-    return {
+    return sessionDetailSchema.parse({
       ...normalized.summary,
       parentID: undefined,
       turns,
@@ -697,7 +716,7 @@ export class PiRepository {
         event.affectedCall === undefined
       ),
       subagents: [],
-    };
+    });
   }
 }
 
@@ -751,9 +770,7 @@ function piSession(records: Record[], id: string, updatedAt: number) {
   const sessionInfo = [...records].reverse().find((record) =>
     record.type === "session_info"
   );
-  const customTitle = typeof sessionInfo?.name === "string"
-    ? sessionInfo.name.trim() || undefined
-    : undefined;
+  const customTitle = sessionInfo?.name?.trim() || undefined;
   const title = customTitle ?? promptTitle ??
     `Pi session ${basename(header?.cwd) ?? id.split("/").at(-1)?.slice(0, 8)}`;
   const transcriptUpdatedAt = [...records].reverse().find((record) =>

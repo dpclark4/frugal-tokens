@@ -167,7 +167,10 @@ function WeekdayChart({ data }: { data: WorkRhythmData["weekdayActivity"] }) {
             content={(props) => (
               <WeekdayTooltip
                 active={props.active}
-                payload={props.payload as Array<{ payload?: WeekdayRow }>}
+                payload={
+                  /* SAFETY: Recharts wraps rows from this chart data in tooltip payload entries. */
+                  props.payload as Array<{ payload?: WeekdayRow }>
+                }
               />
             )}
           />
@@ -233,7 +236,10 @@ function HourlyChart({ data }: { data: WorkRhythmData["hourlyActivity"] }) {
             content={(props) => (
               <HourlyTooltip
                 active={props.active}
-                payload={props.payload as Array<{ payload?: HourlyRow }>}
+                payload={
+                  /* SAFETY: Recharts wraps rows from this chart data in tooltip payload entries. */
+                  props.payload as Array<{ payload?: HourlyRow }>
+                }
               />
             )}
           />
@@ -360,13 +366,13 @@ function CompactCalendar({ data, selectedDate, onSelect }: {
   );
 }
 
-const harnessNames: Record<WorkRhythmSession["harness"], string> = {
+const harnessNames = {
   "claude-code": "Claude Code",
   codex: "Codex",
   cursor: "Cursor",
   pi: "Pi",
   opencode: "OpenCode",
-};
+} satisfies Record<WorkRhythmSession["harness"], string>;
 
 function sessionName(session: WorkRhythmSession) {
   const title = session.title?.trim();

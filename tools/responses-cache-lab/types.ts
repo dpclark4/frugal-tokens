@@ -3,7 +3,48 @@ export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue =
   | JsonPrimitive
   | JsonValue[]
-  | { [key: string]: JsonValue };
+  | JsonObject;
+
+export type JsonObject = { [key: string]: JsonValue };
+
+function isNonArrayObject<Value>(value: Value): value is Value & object {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+export function isJsonValue(value: unknown): value is JsonValue {
+  if (value === null) return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value === "string" || typeof value === "boolean") return true;
+  if (Array.isArray(value)) return value.every(isJsonValue);
+  return isJsonObject(value);
+}
+
+export function isJsonObject(value: unknown): value is JsonObject {
+  if (!isNonArrayObject(value)) return false;
+  return Object.values(value).every(isJsonValue);
+}
+
+export type ObservedValue =
+  | JsonPrimitive
+  | undefined
+  | ObservedValue[]
+  | ObservedObject;
+
+export type ObservedObject = { [key: string]: ObservedValue };
+
+export function isObservedValue(value: unknown): value is ObservedValue {
+  if (value === undefined) return true;
+  if (value === null) return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value === "string" || typeof value === "boolean") return true;
+  if (Array.isArray(value)) return value.every(isObservedValue);
+  return isObservedObject(value);
+}
+
+export function isObservedObject(value: unknown): value is ObservedObject {
+  if (!isNonArrayObject(value)) return false;
+  return Object.values(value).every(isObservedValue);
+}
 
 export type ScenarioInput = string | JsonValue[];
 
@@ -35,7 +76,7 @@ export type RawField =
   | { state: "missing" }
   | { state: "undefined" }
   | { state: "null"; value: null }
-  | { state: "value"; value: unknown };
+  | { state: "value"; value: Exclude<ObservedValue, undefined> };
 
 export interface UsageShape {
   classification: CacheClassification;

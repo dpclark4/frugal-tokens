@@ -1,7 +1,7 @@
 import { deepStrictEqual, strictEqual } from "node:assert";
-import { sessionShapeResponseSchema } from "../shared/sessionSchemas.ts";
-import type { StoredSessionShapeRollup } from "./conversationRepository.ts";
-import { aggregateSessionShape } from "./sessionShapeAnalytics.ts";
+import { sessionDistributionResponseSchema } from "../shared/sessionSchemas.ts";
+import type { StoredSessionDistributionRollup } from "./conversationRepository.ts";
+import { aggregateSessionDistributions } from "./sessionShapeAnalytics.ts";
 
 function day(
   date: string,
@@ -30,7 +30,7 @@ function day(
 Deno.test("aggregates compact rollups into in-range session distributions", () => {
   const start = new Date(2026, 6, 1).getTime();
   const end = new Date(2026, 6, 2, 23, 59).getTime();
-  const roots: StoredSessionShapeRollup[] = [{
+  const roots: StoredSessionDistributionRollup[] = [{
     rootSessionID: 1,
     initialInput: 20,
     overview: {
@@ -49,9 +49,9 @@ Deno.test("aggregates compact rollups into in-range session distributions", () =
     },
   }];
 
-  const result = aggregateSessionShape(roots, start, end, 30);
+  const result = aggregateSessionDistributions(roots, start, end, 30);
 
-  sessionShapeResponseSchema.parse(result);
+  sessionDistributionResponseSchema.parse(result);
   strictEqual(result.sampleSize, 2);
   strictEqual(result.unpricedSessions, 0);
   strictEqual(result.multiDaySessions, 0);
@@ -139,7 +139,7 @@ Deno.test("aggregates compact rollups into in-range session distributions", () =
 
 Deno.test("keeps the root sample when token reuse is unavailable", () => {
   const start = new Date(2026, 6, 1).getTime();
-  const result = aggregateSessionShape(
+  const result = aggregateSessionDistributions(
     [{
       rootSessionID: 1,
       overview: {

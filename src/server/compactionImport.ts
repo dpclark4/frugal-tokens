@@ -1,53 +1,81 @@
+import { z } from "zod";
 import type {
   CompactionCheckpointItemImport,
   CompactionDetailImport,
 } from "./conversationImportTypes.ts";
+import {
+  type JsonObject,
+  jsonObjectSchema,
+  type JsonValue,
+} from "../shared/json.ts";
 
 export const compactionPreviewLimit = 2_048;
 
+const stringSchema = z.string();
+const booleanSchema = z.boolean();
+const nonnegativeIntegerSchema = z.number().int().nonnegative();
+const stringArraySchema = z.array(stringSchema);
+
 export function objectValue(
-  value: unknown,
-): Record<string, unknown> | undefined {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
+  value: JsonValue | undefined,
+): JsonObject | undefined {
+  const parsed = jsonObjectSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
-export function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
+export function stringValue(value: JsonValue | undefined): string | undefined {
+  const parsed = stringSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
-export function booleanValue(value: unknown): boolean | undefined {
-  return typeof value === "boolean" ? value : undefined;
+export function booleanValue(
+  value: JsonValue | undefined,
+): boolean | undefined {
+  const parsed = booleanSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
-export function nonnegativeInteger(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0
-    ? value
-    : undefined;
+export function nonnegativeInteger(
+  value: JsonValue | undefined,
+): number | undefined {
+  const parsed = nonnegativeIntegerSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
-export function stringArray(value: unknown): string[] | undefined {
-  return Array.isArray(value) && value.every((item) => typeof item === "string")
-    ? value
-    : undefined;
+export function stringArray(
+  value: JsonValue | undefined,
+): string[] | undefined {
+  const parsed = stringArraySchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
-export function contentText(value: unknown): string | undefined {
-  if (typeof value === "string") return value;
+export function serializedJsonValue(
+  value: JsonValue | undefined,
+): string | undefined {
+  if (value === undefined) return undefined;
+  return stringValue(value) ?? JSON.stringify(value);
+}
+
+export function contentText(value: JsonValue | undefined): string | undefined {
+  const directText = stringValue(value);
+  if (directText !== undefined) return directText;
   if (!Array.isArray(value)) return undefined;
   const text = value.flatMap((block) => {
     const object = objectValue(block);
-    return typeof object?.text === "string" ? [object.text] : [];
+    const text = stringValue(object?.text);
+    return text === undefined ? [] : [text];
   }).join("");
   return text.length > 0 ? text : undefined;
 }
 
-export function contentBlockTypes(value: unknown): string[] | undefined {
+export function contentBlockTypes(
+  value: JsonValue | undefined,
+): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const types = value.flatMap((block) => {
     const object = objectValue(block);
-    return typeof object?.type === "string" ? [object.type] : [];
+    const type = stringValue(object?.type);
+    return type === undefined ? [] : [type];
   });
   return types.length > 0 ? types : undefined;
 }
@@ -57,7 +85,7 @@ export function textCheckpointItem(options: {
   text: string;
   sourceEntryID?: string;
   role?: string;
-  nativeMetadata?: Record<string, unknown>;
+  nativeMetadata?: JsonObject;
 }): CompactionCheckpointItemImport {
   return {
     sourceEntryID: options.sourceEntryID,
@@ -75,7 +103,7 @@ export function referenceCheckpointItem(options: {
   kind: string;
   sourceEntryID?: string;
   role?: string;
-  nativeMetadata?: Record<string, unknown>;
+  nativeMetadata?: JsonObject;
 }): CompactionCheckpointItemImport {
   return {
     sourceEntryID: options.sourceEntryID,
@@ -90,15 +118,13 @@ export function referenceCheckpointItem(options: {
 export function messageCheckpointItem(options: {
   sourceEntryID?: string;
   role?: string;
-  content?: unknown;
+  content?: JsonValue;
   kind?: string;
-  nativeMetadata?: Record<string, unknown>;
+  nativeMetadata?: JsonObject;
 }): CompactionCheckpointItemImport {
   const blockTypes = contentBlockTypes(options.content);
-  const nativeMetadata = {
-    ...options.nativeMetadata,
-    ...(blockTypes === undefined ? {} : { contentBlockTypes: blockTypes }),
-  };
+  const nativeMetadata: JsonObject = { ...options.nativeMetadata };
+  if (blockTypes !== undefined) nativeMetadata.contentBlockTypes = blockTypes;
   const kind = options.kind ??
     (options.role === "toolResult" ? "tool-result" : "message");
   const text = contentText(options.content);

@@ -1,9 +1,9 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import type {
-  SessionShapeResponse,
+  SessionDistributionResponse,
   UsageResponse,
 } from "../../shared/sessionSchemas.ts";
-import { getSessionShape, getUsage } from "../api.ts";
+import { getSessionDistributions, getUsage } from "../api.ts";
 const InitialInputChart = lazy(() =>
   import("../analytics/InitialInputChart.tsx").then((
     { InitialInputChart },
@@ -14,16 +14,16 @@ const InitialInputChart = lazy(() =>
 import { compact, currency, decimal, integer } from "./formatters.ts";
 import "./SessionShape.css";
 
-type DistributionMetric = SessionShapeResponse["metrics"][number];
+type DistributionMetric = SessionDistributionResponse["metrics"][number];
 type MetricKey = DistributionMetric["key"];
 
-type SessionShapeProps = {
+type SessionDistributionsProps = {
   range: 30 | 90;
   harness: string;
-  onDataChange?: (data: SessionShapeResponse | undefined) => void;
+  onDataChange?: (data: SessionDistributionResponse | undefined) => void;
 };
 
-const metricLabels: Record<MetricKey, string> = {
+const metricLabels = {
   cost: "Cost",
   processedInput: "Processed input",
   userTurns: "Turns",
@@ -31,15 +31,18 @@ const metricLabels: Record<MetricKey, string> = {
   startingContext: "Starting context",
   peakContext: "Peak context",
   tokenReuse: "Token reuse",
-};
+} satisfies Record<MetricKey, string>;
 
-const metricDefinitions: Partial<Record<MetricKey, string>> = {
+const metricDefinitions = {
+  cost: undefined,
+  processedInput: undefined,
+  userTurns: undefined,
   observedSpan:
     "Time between the first and last observed calls, not active working time.",
   startingContext: "Context present at the session’s first model call.",
   peakContext: "Largest context processed by a single model call.",
   tokenReuse: "Share of processed input served from cache.",
-};
+} satisfies Record<MetricKey, string | undefined>;
 
 function formatDuration(milliseconds: number) {
   const minutes = milliseconds / 60_000;
@@ -71,7 +74,7 @@ function position(value: number, minimum: number, maximum: number) {
     90 * Math.max(0, Math.min(1, (value - minimum) / (maximum - minimum)));
 }
 
-function ShapeLoadingRows() {
+function DistributionLoadingRows() {
   return Object.values(metricLabels).map((label) => (
     <tr className="shape-loading-row" key={label}>
       <th scope="row">{label}</th>
@@ -262,12 +265,12 @@ function DistributionStrip({
   );
 }
 
-export function SessionShape({
+export function SessionDistributions({
   range,
   harness,
   onDataChange,
-}: SessionShapeProps) {
-  const [data, setData] = useState<SessionShapeResponse>();
+}: SessionDistributionsProps) {
+  const [data, setData] = useState<SessionDistributionResponse>();
   const [error, setError] = useState<string>();
   const [initialInputUsage, setInitialInputUsage] = useState<UsageResponse>();
   const [initialInputError, setInitialInputError] = useState<string>();
@@ -279,7 +282,7 @@ export function SessionShape({
     setInitialInputError(undefined);
     setInitialInputUsage(undefined);
     onDataChange?.(undefined);
-    getSessionShape(range, harness).then((result) => {
+    getSessionDistributions(range, harness).then((result) => {
       if (active) {
         setData(result);
         onDataChange?.(result);
@@ -379,7 +382,7 @@ export function SessionShape({
                   key={metric.key}
                 />
               ))
-              : !error && <ShapeLoadingRows />}
+              : !error && <DistributionLoadingRows />}
           </tbody>
         </table>
       </div>

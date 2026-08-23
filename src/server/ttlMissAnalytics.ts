@@ -30,11 +30,9 @@ type CacheMiss = {
 };
 
 function storedCacheMiss(miss: StoredCacheMiss): CacheMiss {
-  return {
+  const result: CacheMiss = {
     gap: miss.gap,
     status: miss.status,
-    ...(miss.reason === undefined ? {} : { reason: miss.reason }),
-    ...(miss.cause === undefined ? {} : { cause: miss.cause }),
     missedTokens: miss.missedTokens,
     actualMissedCost: miss.actualMissedCost,
     expectedReadCost: miss.expectedReadCost,
@@ -42,15 +40,16 @@ function storedCacheMiss(miss: StoredCacheMiss): CacheMiss {
     count: 1,
     unpriced: miss.actualMissedCost === undefined ? 1 : 0,
   };
+  if (miss.reason !== undefined) result.reason = miss.reason;
+  if (miss.cause !== undefined) result.cause = miss.cause;
+  return result;
 }
 
 function aggregatedCacheMiss(miss: StoredCacheMissAggregate): CacheMiss {
-  return {
+  const result: CacheMiss = {
     gap: 0,
     gapBucket: miss.gapBucket,
     status: miss.status,
-    ...(miss.reason === undefined ? {} : { reason: miss.reason }),
-    ...(miss.cause === undefined ? {} : { cause: miss.cause }),
     missedTokens: miss.missedTokens,
     actualMissedCost: miss.attributedCost,
     expectedReadCost: miss.expectedReadCost,
@@ -58,6 +57,9 @@ function aggregatedCacheMiss(miss: StoredCacheMissAggregate): CacheMiss {
     count: miss.misses,
     unpriced: miss.unpriced,
   };
+  if (miss.reason !== undefined) result.reason = miss.reason;
+  if (miss.cause !== undefined) result.cause = miss.cause;
+  return result;
 }
 
 function categorizedMisses(misses: CacheMiss[]) {
@@ -97,18 +99,19 @@ function cacheMisses(calls: UsageCall[]) {
       call.provider,
       assessment.previousReusableTokens,
     );
-    misses.push({
+    const miss: CacheMiss = {
       gap: call.startedAt - previous.startedAt,
       status: assessment.status,
-      ...(assessment.reason === undefined ? {} : { reason: assessment.reason }),
-      ...(assessment.cause === undefined ? {} : { cause: assessment.cause }),
       missedTokens: estimate?.missedTokens ?? 0,
       actualMissedCost: estimate?.actualMissedCost,
       expectedReadCost: estimate?.expectedReadCost,
       estimatedExtraCost: estimate?.estimatedExtraCost,
       count: 1,
       unpriced: estimate === undefined ? 1 : 0,
-    });
+    };
+    if (assessment.reason !== undefined) miss.reason = assessment.reason;
+    if (assessment.cause !== undefined) miss.cause = assessment.cause;
+    misses.push(miss);
   }
   return misses;
 }

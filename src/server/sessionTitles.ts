@@ -25,8 +25,7 @@ export function importedTitleNeedsGeneration(
 export function firstImportedUserText(value: LinearConversationImport) {
   for (const turn of value.session.turns) {
     const input = turn.inputs?.find((candidate) =>
-      candidate.kind === "text" &&
-      typeof candidate.preview === "string" &&
+      candidate.kind === "text" && candidate.preview !== undefined &&
       candidate.preview.trim() !== ""
     );
     if (input?.preview !== undefined) return input.preview;

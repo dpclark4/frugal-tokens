@@ -280,6 +280,7 @@ function removeIfExists(path: string) {
 
 function tableCount(db: DatabaseSync, table: string) {
   return Number(
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     (db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get() as {
       count: number;
     }).count,
@@ -316,9 +317,11 @@ function redact(db: DatabaseSync) {
   db.exec("BEGIN IMMEDIATE");
   try {
     const redactPath = createPathRedactor();
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const sourceLocations = db.prepare(
       "SELECT id, location FROM sources",
     ).all() as Array<{ id: number; location: string }>;
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const conversationWorkingDirectories = db.prepare(`
       SELECT id, working_directory
       FROM conversations
@@ -476,6 +479,7 @@ function redact(db: DatabaseSync) {
       );
     }
 
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
     const conversationTitles = db.prepare(
       "SELECT id FROM conversations ORDER BY id",
     ).all() as Array<{ id: number }>;
@@ -653,6 +657,7 @@ function audit(db: DatabaseSync) {
   const failures = checks.map(([table, predicate]) => ({
     table,
     count: Number(
+      // SAFETY: The static SQL projection and migrated schema define this row contract.
       (db.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE ${predicate}`)
         .get() as { count: number }).count,
     ),

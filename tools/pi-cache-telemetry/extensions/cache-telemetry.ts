@@ -58,7 +58,30 @@ const WEBSOCKET_COUNTER_KEYS = [
   "sseFallbacks",
 ] as const;
 
-type JsonRecord = Record<string, unknown>;
+type RuntimeScalar =
+  | string
+  | number
+  | boolean
+  | bigint
+  | symbol
+  | null
+  | undefined;
+type RuntimeCallable = (...args: never[]) => RuntimeValue;
+type RuntimeRecord = { [key: string]: RuntimeValue };
+type RuntimeValue =
+  | RuntimeScalar
+  | RuntimeValue[]
+  | RuntimeRecord
+  | RuntimeCallable;
+type StableRecord = { [key: string]: StableValue };
+type StableValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | StableValue[]
+  | StableRecord;
 
 type RequestObservation = {
   sequence: number;
@@ -79,24 +102,34 @@ type PreviousRequest = {
   inputItemHashes: string[];
 };
 
-function stableValue(value: unknown): unknown {
+function stableValue(value: unknown): StableValue {
   if (Array.isArray(value)) return value.map(stableValue);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value as JsonRecord)
-        .filter(([, child]) => child !== undefined)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, child]) => [key, stableValue(child)]),
-    );
+  switch (typeof value) {
+    case "object":
+      if (value === null) return null;
+      return Object.fromEntries(
+        Object.entries(value as RuntimeRecord)
+          .filter(([, child]) => child !== undefined)
+          .sort(([left], [right]) => left.localeCompare(right))
+          .map(([key, child]) => [key, stableValue(child)]),
+      );
+    case "string":
+    case "number":
+    case "boolean":
+    case "undefined":
+      return value;
+    default:
+      return undefined;
   }
-  return value;
 }
 
 function serialized(value: unknown): string {
+  const fallback = () =>
+    JSON.stringify({ unserializable: true, type: typeof value });
   try {
-    return JSON.stringify(stableValue(value));
+    return JSON.stringify(stableValue(value)) ?? fallback();
   } catch {
-    return JSON.stringify({ unserializable: true, type: typeof value });
+    return fallback();
   }
 }
 
@@ -108,9 +141,9 @@ function byteLength(value: unknown): number {
   return Buffer.byteLength(serialized(value));
 }
 
-function asRecord(value: unknown): JsonRecord {
+function asRecord(value: unknown): RuntimeRecord {
   return value && typeof value === "object" && !Array.isArray(value)
-    ? value as JsonRecord
+    ? value as RuntimeRecord
     : {};
 }
 
@@ -135,7 +168,7 @@ function countTaggedTypes(value: unknown, counts = new Map<string, number>()): M
     return counts;
   }
   if (!value || typeof value !== "object") return counts;
-  const record = value as JsonRecord;
+  const record = value as RuntimeRecord;
   if (typeof record.type === "string") {
     counts.set(record.type, (counts.get(record.type) ?? 0) + 1);
   }
@@ -257,7 +290,10 @@ function safeHeaders(headers: Record<string, string>): Record<string, string> {
   );
 }
 
-function safeDiagnosticDetailValue(key: string, value: unknown): unknown {
+function safeDiagnosticDetailValue(
+  key: string,
+  value: unknown,
+): string | boolean | number | undefined {
   switch (key) {
     case "configuredTransport":
     case "fallbackTransport":
@@ -274,14 +310,14 @@ function safeDiagnosticDetailValue(key: string, value: unknown): unknown {
   }
 }
 
-function safeDiagnosticDetails(value: unknown): JsonRecord | undefined {
+function safeDiagnosticDetails(value: unknown): StableRecord | undefined {
   if (value === undefined) return undefined;
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return { omittedDetailKeys: ["<non-object>"] };
   }
 
-  const details = value as JsonRecord;
-  const safe: JsonRecord = {};
+  const details = value as RuntimeRecord;
+  const safe: StableRecord = {};
   const omittedDetailKeys: string[] = [];
   for (const key of Object.keys(details).sort()) {
     if (!SAFE_DIAGNOSTIC_DETAIL_KEYS.has(key)) {
@@ -377,13 +413,18 @@ export default async function cacheTelemetry(pi: ExtensionAPI) {
   let pendingCheckpointReasons = new Set<string>();
   let firstCheckpointReason = "session_start";
 
-  const writeEvent = (event: JsonRecord) => {
+  const writeEvent = (event: RuntimeRecord) => {
     try {
       if (statSync(logPath, { throwIfNoEntry: false })?.size >= MAX_LOG_BYTES) {
         fileIndex++;
         logPath = join(baseDir, `${logStem}.${fileIndex}.jsonl`);
       }
-      appendFileSync(logPath, `${JSON.stringify({ schemaVersion: SCHEMA_VERSION, ...event })}\n`, {
+      const stableEvent = stableValue(event);
+      if (
+        stableEvent === null || typeof stableEvent !== "object" ||
+        Array.isArray(stableEvent)
+      ) return;
+      appendFileSync(logPath, `${JSON.stringify({ schemaVersion: SCHEMA_VERSION, ...stableEvent })}\n`, {
         encoding: "utf8",
         mode: 0o600,
       });

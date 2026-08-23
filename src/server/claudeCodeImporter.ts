@@ -6,6 +6,7 @@ import {
   normalizeClaudeCodeSessionTree,
 } from "./claudeCodeRepository.ts";
 import {
+  artifactImportFailure,
   type ProjectionCheckpoint,
   type SourceArtifactMetadata,
   type SourceArtifactProjectionRecord,
@@ -255,6 +256,7 @@ export async function syncClaudeCodeSessions(
         projectionName,
       );
     } catch (error) {
+      const failure = artifactImportFailure(error);
       console.warn(
         `[sync] harness=claude-code source=${candidate.path} failed`,
         error,
@@ -264,7 +266,7 @@ export async function syncClaudeCodeSessions(
         candidate.id,
         candidate.artifactPath,
         observedAt,
-        error,
+        failure,
         projectionName,
       );
       failed++;
@@ -371,6 +373,7 @@ export async function syncClaudeCodeSessions(
         }
         imported += available.length;
       } catch (error) {
+        const failure = artifactImportFailure(error);
         console.warn(
           `[sync] harness=claude-code projection=${projectionName} family failed`,
           error,
@@ -380,13 +383,14 @@ export async function syncClaudeCodeSessions(
             sourceID,
             record.externalID,
             projectionName,
-            error,
+            failure,
           );
         }
         failed += available.length;
       }
     }
   } catch (error) {
+    const failure = artifactImportFailure(error);
     console.warn(
       `[sync] harness=claude-code projection=${projectionName} metadata failed`,
       error,
@@ -396,7 +400,7 @@ export async function syncClaudeCodeSessions(
         sourceID,
         candidate.id,
         projectionName,
-        error,
+        failure,
       );
     }
     failed += candidates.length;

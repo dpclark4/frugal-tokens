@@ -26,6 +26,7 @@ export type ConversationToolImport =
     sourceOrderStart?: number;
     sourceOrderEnd?: number;
     childExternalID?: string;
+    sourceChildSessionID?: string;
     input?: Omit<
       ConversationContentImport,
       "kind" | "mimeType" | "contentHash"
