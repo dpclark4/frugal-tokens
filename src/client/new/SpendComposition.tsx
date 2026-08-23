@@ -20,7 +20,6 @@ import { minorModelColor, modelColor, otherModelColor } from "./modelColors.ts";
 import "./SpendComposition.css";
 
 type Metric = "spend" | "tokens";
-type CompositionModel = SpendCompositionData["models"][number];
 type CompositionDay = SpendCompositionData["days"][number];
 type ChartRow = {
   date: string;

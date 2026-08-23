@@ -187,7 +187,7 @@ async function generateTitle(input: string) {
       "--model",
       model,
       "--config",
-      `model_reasoning_effort=\"${reasoningEffort}\"`,
+      `model_reasoning_effort="${reasoningEffort}"`,
       "--ephemeral",
       "--ignore-user-config",
       "--ignore-rules",

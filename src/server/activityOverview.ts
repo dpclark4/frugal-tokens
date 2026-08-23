@@ -394,7 +394,11 @@ export function aggregateActivityOverview(
           models: [...day.models.values()].toSorted((a, b) =>
             b.spend - a.spend || b.input - a.input ||
             a.model.localeCompare(b.model)
-          ).slice(0, 3).map(({ hasUnpricedCost: _, ...model }) => model),
+          ).slice(0, 3).map((model) => ({
+            model: model.model,
+            input: model.input,
+            spend: model.spend,
+          })),
           topSessions: day.topSessions.toSorted((a, b) =>
             b.spend - a.spend || b.processedInput - a.processedInput ||
             a.id - b.id
