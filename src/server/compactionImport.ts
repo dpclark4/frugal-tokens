@@ -2,38 +2,48 @@ import type {
   CompactionCheckpointItemImport,
   CompactionDetailImport,
 } from "./conversationImportTypes.ts";
-import { type JsonObject, jsonObjectSchema } from "../shared/json.ts";
+import {
+  type JsonObject,
+  jsonObjectSchema,
+  type JsonValue,
+} from "../shared/json.ts";
 
 export const compactionPreviewLimit = 2_048;
 
 export function objectValue(
-  value: unknown,
+  value: JsonValue | undefined,
 ): JsonObject | undefined {
   const parsed = jsonObjectSchema.safeParse(value);
   return parsed.success ? parsed.data : undefined;
 }
 
-export function stringValue(value: unknown): string | undefined {
+export function stringValue(value: JsonValue | undefined): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-export function booleanValue(value: unknown): boolean | undefined {
+export function booleanValue(
+  value: JsonValue | undefined,
+): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
 }
 
-export function nonnegativeInteger(value: unknown): number | undefined {
+export function nonnegativeInteger(
+  value: JsonValue | undefined,
+): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value >= 0
     ? value
     : undefined;
 }
 
-export function stringArray(value: unknown): string[] | undefined {
+export function stringArray(
+  value: JsonValue | undefined,
+): string[] | undefined {
   return Array.isArray(value) && value.every((item) => typeof item === "string")
     ? value
     : undefined;
 }
 
-export function contentText(value: unknown): string | undefined {
+export function contentText(value: JsonValue | undefined): string | undefined {
   if (typeof value === "string") return value;
   if (!Array.isArray(value)) return undefined;
   const text = value.flatMap((block) => {
@@ -43,7 +53,9 @@ export function contentText(value: unknown): string | undefined {
   return text.length > 0 ? text : undefined;
 }
 
-export function contentBlockTypes(value: unknown): string[] | undefined {
+export function contentBlockTypes(
+  value: JsonValue | undefined,
+): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const types = value.flatMap((block) => {
     const object = objectValue(block);
@@ -90,7 +102,7 @@ export function referenceCheckpointItem(options: {
 export function messageCheckpointItem(options: {
   sourceEntryID?: string;
   role?: string;
-  content?: unknown;
+  content?: JsonValue;
   kind?: string;
   nativeMetadata?: JsonObject;
 }): CompactionCheckpointItemImport {

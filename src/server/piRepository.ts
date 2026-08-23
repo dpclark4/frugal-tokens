@@ -6,6 +6,7 @@ import {
   type SessionSummary,
   type TokenUsage,
 } from "../shared/sessionSchemas.ts";
+import { type JsonValue, jsonValueSchema } from "../shared/json.ts";
 import { usageCallsFromSession } from "./usage.ts";
 import type {
   CompactionDetailImport,
@@ -37,7 +38,7 @@ const contentBlockSchema = z.object({
   isError: z.boolean().optional(),
   mime: z.string().optional(),
   mediaType: z.string().optional(),
-  arguments: z.unknown().optional(),
+  arguments: jsonValueSchema.optional(),
 }).passthrough();
 
 const recordSchema = z.object({
@@ -47,13 +48,13 @@ const recordSchema = z.object({
   parentId: z.string().nullable().optional(),
   timestamp: z.string().optional(),
   cwd: z.string().optional(),
-  summary: z.unknown().optional(),
-  firstKeptEntryId: z.unknown().optional(),
-  retainedTail: z.unknown().optional(),
-  tokensBefore: z.unknown().optional(),
-  fromHook: z.unknown().optional(),
-  details: z.unknown().optional(),
-  usage: z.unknown().optional(),
+  summary: jsonValueSchema.optional(),
+  firstKeptEntryId: jsonValueSchema.optional(),
+  retainedTail: jsonValueSchema.optional(),
+  tokensBefore: jsonValueSchema.optional(),
+  fromHook: jsonValueSchema.optional(),
+  details: jsonValueSchema.optional(),
+  usage: jsonValueSchema.optional(),
   message: z.object({
     role: z.string().optional(),
     content: z.array(contentBlockSchema).optional(),
@@ -81,6 +82,20 @@ const recordSchema = z.object({
 }).passthrough();
 
 type Record = z.infer<typeof recordSchema>;
+const checkpointEntrySchema = z.object({
+  id: z.string().optional(),
+  type: z.string().optional(),
+  role: z.string().optional(),
+  content: jsonValueSchema.optional(),
+  customType: z.string().optional(),
+  summary: z.string().optional(),
+  message: z.object({
+    role: z.string().optional(),
+    content: jsonValueSchema.optional(),
+  }).optional(),
+});
+type CheckpointEntry = z.infer<typeof checkpointEntrySchema>;
+
 export type PiSessionCandidate = {
   id: string;
   path: string;
@@ -166,7 +181,7 @@ function contentMetadata(
   });
 }
 
-function serializedPreview(value: unknown) {
+function serializedPreview(value: JsonValue | undefined) {
   if (value === undefined) return undefined;
   const text = typeof value === "string" ? value : JSON.stringify(value);
   if (text === undefined) return undefined;
@@ -204,16 +219,13 @@ function basename(path: string | undefined) {
   return path.split("/").filter(Boolean).at(-1);
 }
 
-function piEntryCheckpointItem(value: unknown) {
-  const entry = objectValue(value);
-  if (entry === undefined) return undefined;
-  const sourceEntryID = stringValue(entry.id);
-  if (entry.type === "message") {
-    const message = objectValue(entry.message);
-    if (message === undefined) return undefined;
+function piEntryCheckpointItem(entry: CheckpointEntry) {
+  const sourceEntryID = entry.id;
+  if (entry.type === "message" && entry.message !== undefined) {
+    const message = entry.message;
     return messageCheckpointItem({
       sourceEntryID,
-      role: stringValue(message.role),
+      role: message.role,
       content: message.content,
     });
   }
@@ -287,11 +299,11 @@ function piCompactionDetails(
   }
   branch.reverse();
 
-  let retainedValues: unknown[] | undefined;
+  let retainedCandidates: Array<JsonValue | Record> | undefined;
   let droppedItemCount: number | undefined;
   let boundaryKind = "unknown";
   if (Array.isArray(record.retainedTail)) {
-    retainedValues = record.retainedTail;
+    retainedCandidates = record.retainedTail;
     boundaryKind = "retained-tail";
   } else {
     if (record.retainedTail !== undefined) {
@@ -308,7 +320,7 @@ function piCompactionDetails(
         entry.id === firstKeptEntryID
       );
       if (firstKeptIndex >= 0) {
-        retainedValues = branch.slice(firstKeptIndex);
+        retainedCandidates = branch.slice(firstKeptIndex);
         droppedItemCount = firstKeptIndex;
         boundaryKind = "first-kept-entry";
       } else {
@@ -317,13 +329,15 @@ function piCompactionDetails(
     }
   }
 
-  const retainedItems = (retainedValues ?? []).flatMap((entry) => {
-    const item = piEntryCheckpointItem(entry);
+  const retainedItems = (retainedCandidates ?? []).flatMap((entry) => {
+    const parsed = checkpointEntrySchema.safeParse(entry);
+    if (!parsed.success) return [];
+    const item = piEntryCheckpointItem(parsed.data);
     return item === undefined ? [] : [item];
   });
   if (
-    retainedValues !== undefined &&
-    retainedItems.length !== retainedValues.length
+    retainedCandidates !== undefined &&
+    retainedItems.length !== retainedCandidates.length
   ) {
     issues.push("retained-entry-unsupported");
   }
@@ -339,7 +353,7 @@ function piCompactionDetails(
   const resultKind = summary === undefined
     ? "unavailable" as const
     : "plaintext-summary" as const;
-  const checkpointCompleteness = retainedValues !== undefined
+  const checkpointCompleteness = retainedCandidates !== undefined
     ? summary === undefined ? "partial" as const : "complete" as const
     : summary === undefined
     ? "unknown" as const

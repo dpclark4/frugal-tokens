@@ -6,6 +6,7 @@ import {
   type SessionSummary,
   type TokenUsage,
 } from "../shared/sessionSchemas.ts";
+import { type JsonValue, jsonValueSchema } from "../shared/json.ts";
 import { usageCallsFromSession } from "./usage.ts";
 import type {
   CompactionCheckpointItemImport,
@@ -61,20 +62,20 @@ const recordSchema = z.object({
     role: z.string().optional(),
     phase: z.string().nullable().optional(),
     name: z.string().optional(),
-    input: z.unknown().optional(),
-    output: z.unknown().optional(),
+    input: jsonValueSchema.optional(),
+    output: jsonValueSchema.optional(),
     call_id: z.string().optional(),
     id: z.string().optional(),
     turn_id: z.string().optional(),
     forked_from_id: z.string().optional(),
     cwd: z.string().optional(),
-    message: z.unknown().optional(),
-    summary: z.unknown().optional(),
-    replacement_history: z.unknown().optional(),
-    first_window_id: z.unknown().optional(),
-    previous_window_id: z.unknown().optional(),
-    window_id: z.unknown().optional(),
-    window_number: z.unknown().optional(),
+    message: jsonValueSchema.optional(),
+    summary: jsonValueSchema.optional(),
+    replacement_history: jsonValueSchema.optional(),
+    first_window_id: jsonValueSchema.optional(),
+    previous_window_id: jsonValueSchema.optional(),
+    window_id: jsonValueSchema.optional(),
+    window_number: jsonValueSchema.optional(),
     status: z.string().optional(),
     started_at: z.number().nonnegative().optional(),
     completed_at: z.number().nonnegative().optional(),
@@ -192,7 +193,7 @@ function preview(value: string): ConversationContentImport {
   };
 }
 
-function serializedPreview(value: unknown) {
+function serializedPreview(value: JsonValue | undefined) {
   if (value === undefined) return undefined;
   const text = typeof value === "string" ? value : JSON.stringify(value);
   if (text === undefined) return undefined;

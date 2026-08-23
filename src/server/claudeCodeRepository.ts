@@ -6,6 +6,7 @@ import {
   type SessionSummary,
   type TokenUsage,
 } from "../shared/sessionSchemas.ts";
+import { type JsonValue, jsonValueSchema } from "../shared/json.ts";
 import { usageCallsFromSession } from "./usage.ts";
 import type {
   CompactionCheckpointItemImport,
@@ -39,12 +40,12 @@ const contentBlockSchema = z.object({
   name: z.string().optional(),
   tool_use_id: z.string().optional(),
   is_error: z.boolean().optional(),
-  input: z.unknown().optional(),
-  content: z.unknown().optional(),
+  input: jsonValueSchema.optional(),
+  content: jsonValueSchema.optional(),
   source: z.object({
     media_type: z.string().optional(),
-  }).passthrough().optional(),
-}).passthrough();
+  }).catchall(jsonValueSchema).optional(),
+}).catchall(jsonValueSchema);
 
 const recordSchema = z.object({
   type: z.string(),
@@ -58,9 +59,9 @@ const recordSchema = z.object({
   customTitle: z.string().optional(),
   isMeta: z.boolean().optional(),
   isSidechain: z.boolean().optional(),
-  isCompactSummary: z.unknown().optional(),
-  compactMetadata: z.unknown().optional(),
-  content: z.unknown().optional(),
+  isCompactSummary: jsonValueSchema.optional(),
+  compactMetadata: jsonValueSchema.optional(),
+  content: jsonValueSchema.optional(),
   promptSource: z.string().optional(),
   promptId: z.string().nullable().optional(),
   userType: z.string().optional(),
@@ -88,7 +89,7 @@ const recordSchema = z.object({
     z.array(contentBlockSchema),
     z.object({
       agentId: z.string().optional(),
-    }).passthrough(),
+    }).catchall(jsonValueSchema),
   ]).optional(),
 }).passthrough();
 
@@ -215,7 +216,7 @@ function preview(value: string): ConversationContentImport {
   };
 }
 
-function serializedPreview(value: unknown) {
+function serializedPreview(value: JsonValue | undefined) {
   if (value === undefined) return undefined;
   const text = typeof value === "string" ? value : JSON.stringify(value);
   if (text === undefined) return undefined;

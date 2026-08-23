@@ -7,6 +7,7 @@ import {
   type SessionSummary,
   type TokenUsage,
 } from "../shared/sessionSchemas.ts";
+import { type JsonValue, jsonValueSchema } from "../shared/json.ts";
 import type { UsageCall } from "./usage.ts";
 import type {
   CompactionCheckpointItemImport,
@@ -52,18 +53,18 @@ const messageDataSchema = z.object({
 
 const partDataSchema = z.object({
   type: z.string(),
-  text: z.unknown().optional(),
+  text: jsonValueSchema.optional(),
   synthetic: z.boolean().optional(),
   mime: z.string().optional(),
   callID: z.string().optional(),
   tool: z.string().optional(),
-  auto: z.unknown().optional(),
-  overflow: z.unknown().optional(),
-  tail_start_id: z.unknown().optional(),
+  auto: jsonValueSchema.optional(),
+  overflow: jsonValueSchema.optional(),
+  tail_start_id: jsonValueSchema.optional(),
   state: z.object({
     status: z.string().optional(),
-    input: z.unknown().optional(),
-    output: z.unknown().optional(),
+    input: jsonValueSchema.optional(),
+    output: jsonValueSchema.optional(),
     metadata: z.object({
       sessionId: z.string().optional(),
     }).optional(),
@@ -118,9 +119,9 @@ type DecodedParts = {
   content: ConversationContentImport[];
   compaction?: {
     sourceID: string;
-    auto?: unknown;
-    overflow?: unknown;
-    tailStartID?: unknown;
+    auto?: JsonValue;
+    overflow?: JsonValue;
+    tailStartID?: JsonValue;
   };
 };
 
@@ -163,7 +164,7 @@ function preview(value: string): ConversationContentImport {
   };
 }
 
-function serializedPreview(value: unknown) {
+function serializedPreview(value: JsonValue | undefined) {
   if (value === undefined) return undefined;
   const text = typeof value === "string" ? value : JSON.stringify(value);
   if (text === undefined) return undefined;
