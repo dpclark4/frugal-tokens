@@ -24,11 +24,11 @@ Initial state:
 
 Current state:
 
-- 285 findings across 48 files and 2 ungated anti-slop rules in the current
+- 139 findings across 33 files and 1 ungated anti-slop rule in the current
   migration scope
 - `no-unknown-returns`, `no-known-value-widening`, `no-unsafe-dictionary-type`,
-  `no-unknown-parameters`, `no-shape-in-symbol-names`, and `no-runtime-typeof`
-  are clean and enforced by the gate
+  `no-unknown-parameters`, `no-shape-in-symbol-names`, `no-runtime-typeof`, and
+  `no-conditional-empty-object-spread` are clean and enforced by the gate
 - The dictionary migration also reduced overlapping findings:
   `require-safety-comment-for-type-assertion` from 173 to 159,
   `no-runtime-typeof` from 103 to 92, and `no-unknown-parameters` from 60 to 55
@@ -46,18 +46,21 @@ Current state:
 - Parsing primitive JSON values, title settings, Cursor metadata, tool inputs,
   and external command output cleared all 46 scoped `no-runtime-typeof`
   findings. The same changes reduced assertion findings from 146 to 139.
+- Explicit construction across session hydration, harness importers,
+  repositories, and analytics cleared all 146 scoped
+  `no-conditional-empty-object-spread` findings while preserving absent optional
+  properties.
 
 Current scoped rule counts:
 
 | Rule                                        | Findings |
 | ------------------------------------------- | -------: |
 | `require-safety-comment-for-type-assertion` |      139 |
-| `no-conditional-empty-object-spread`        |      146 |
 
 | Rule                                        | Initial findings | Files | Status             |
 | ------------------------------------------- | ---------------: | ----: | ------------------ |
 | `require-safety-comment-for-type-assertion` |              173 |    41 | Not started        |
-| `no-conditional-empty-object-spread`        |              166 |    24 | Not started        |
+| `no-conditional-empty-object-spread`        |              166 |    24 | Complete and gated |
 | `no-shape-in-symbol-names`                  |              130 |    15 | Complete and gated |
 | `no-runtime-typeof`                         |              103 |    23 | Complete and gated |
 | `no-unknown-parameters`                     |               60 |    14 | Complete and gated |
@@ -143,9 +146,9 @@ Expected rules reduced by this unit:
 
 ### 3. Structural object construction
 
-- [ ] Replace conditional empty-object spreads with explicit construction
-- [ ] Handle shared builders before repetitive call sites
-- [ ] Keep optional-property semantics unchanged
+- [x] Replace conditional empty-object spreads with explicit construction
+- [x] Handle shared builders before repetitive call sites
+- [x] Keep optional-property semantics unchanged
 
 Expected rule reduced by this unit:
 

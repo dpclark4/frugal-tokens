@@ -187,20 +187,27 @@ function cursorStore(options: {
     `);
     const rootID = "aa".repeat(32);
     db.prepare("INSERT INTO meta (key, value) VALUES ('0', ?)").run(
-      JSON.stringify({
-        agentId: options.id,
-        latestRootBlobId: rootID,
-        name: `Agent ${options.id}`,
-        createdAt: 1_000,
-        ...(options.parentID === undefined ? {} : {
-          subagentInfo: {
-            parentAgentId: options.parentID,
-            rootParentAgentId: options.parentID,
-            toolCallId: options.toolCallID,
-            typeName: "cursor-subagent",
+      JSON.stringify(
+        options.parentID === undefined
+          ? {
+            agentId: options.id,
+            latestRootBlobId: rootID,
+            name: `Agent ${options.id}`,
+            createdAt: 1_000,
+          }
+          : {
+            agentId: options.id,
+            latestRootBlobId: rootID,
+            name: `Agent ${options.id}`,
+            createdAt: 1_000,
+            subagentInfo: {
+              parentAgentId: options.parentID,
+              rootParentAgentId: options.parentID,
+              toolCallId: options.toolCallID,
+              typeName: "cursor-subagent",
+            },
           },
-        }),
-      }),
+      ),
     );
     const references = options.messages.map((_, index) =>
       (index + 1).toString(16).padStart(64, "0")

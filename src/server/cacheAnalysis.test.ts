@@ -35,22 +35,23 @@ function call(
   provider = "anthropic",
   thinking?: string,
 ): ModelCall {
-  return {
+  const result: ModelCall = {
     id,
     callWithinTurn: 1,
     provider,
     model,
     startedAt: 1,
-    ...(thinking === undefined ? {} : {
-      reasoningSetting: {
-        settingName: "thinkingLevel",
-        settingValue: thinking,
-        provenance: "inherited" as const,
-      },
-    }),
     tokens: tokens(cacheRead, cacheWrite),
     activity: { hasText: true, hasReasoning: false, tools: [] },
   };
+  if (thinking !== undefined) {
+    result.reasoningSetting = {
+      settingName: "thinkingLevel",
+      settingValue: thinking,
+      provenance: "inherited",
+    };
+  }
+  return result;
 }
 
 Deno.test("assesses cache retention from the preceding comparable call", () => {

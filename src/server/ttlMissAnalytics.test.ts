@@ -22,7 +22,7 @@ function call(
   } = {},
 ): UsageCall {
   const root = options.root ?? session;
-  return {
+  const result: UsageCall = {
     harness: "claude-code",
     session: { id: session, rootID: root },
     cacheChainID: options.chain ?? session,
@@ -33,13 +33,6 @@ function call(
     model: options.model ?? "claude-sonnet-4-5",
     startedAt,
     followsCompaction: options.followsCompaction,
-    ...(options.thinking === undefined ? {} : {
-      reasoningSetting: {
-        settingName: "thinkingLevel",
-        settingValue: options.thinking,
-        provenance: "inherited" as const,
-      },
-    }),
     tokens: {
       uncachedInput: 0,
       cacheRead: 0,
@@ -52,6 +45,14 @@ function call(
       processed: 100,
     },
   };
+  if (options.thinking !== undefined) {
+    result.reasoningSetting = {
+      settingName: "thinkingLevel",
+      settingValue: options.thinking,
+      provenance: "inherited",
+    };
+  }
+  return result;
 }
 
 function emptyCategory() {

@@ -154,11 +154,9 @@ Deno.test("Codex rewind with a queued prompt projects as one branched conversati
   const metadata = (id: string, forkedFrom?: string) => ({
     timestamp: "2026-08-06T23:00:00.000Z",
     type: "session_meta",
-    payload: {
-      id,
-      cwd: "/workspace/project",
-      ...(forkedFrom === undefined ? {} : { forked_from_id: forkedFrom }),
-    },
+    payload: forkedFrom === undefined
+      ? { id, cwd: "/workspace/project" }
+      : { id, cwd: "/workspace/project", forked_from_id: forkedFrom },
   });
   const task = (id: string, second: number) => ({
     timestamp: `2026-08-06T23:00:0${second}.000Z`,
@@ -453,11 +451,9 @@ Deno.test("Codex lineage changes rebuild both the prior and new families", async
   const sessionMeta = (id: string, parentID?: string) => ({
     timestamp: "2026-04-01T10:00:00.000Z",
     type: "session_meta",
-    payload: {
-      id,
-      cwd: "/workspace/project",
-      ...(parentID === undefined ? {} : { forked_from_id: parentID }),
-    },
+    payload: parentID === undefined
+      ? { id, cwd: "/workspace/project" }
+      : { id, cwd: "/workspace/project", forked_from_id: parentID },
   });
   writeJsonl(`${source}/rollout-root-a.jsonl`, [sessionMeta("root-a")]);
   writeJsonl(`${source}/rollout-root-b.jsonl`, [sessionMeta("root-b")]);

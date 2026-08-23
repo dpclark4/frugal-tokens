@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import type { JsonObject } from "../shared/json.ts";
 import type {
   ConversationContentImport,
   LinearConversationImport,
@@ -670,15 +671,16 @@ export class ConversationWriteRepository {
         if (parent === undefined) return "unknown";
         return keys.get(parent.externalID)?.has(key) ? "copied" : "executed";
       };
-      const evidence = (artifact: SourceArtifactFamilyMemberImport) =>
-        JSON.stringify({
-          ...(artifact.sourceIdentity === undefined
-            ? {}
-            : { sourceIdentity: artifact.sourceIdentity }),
-          ...(artifact.parentSourceIdentity === undefined
-            ? {}
-            : { parentSourceIdentity: artifact.parentSourceIdentity }),
-        });
+      const evidence = (artifact: SourceArtifactFamilyMemberImport) => {
+        const value: JsonObject = {};
+        if (artifact.sourceIdentity !== undefined) {
+          value.sourceIdentity = artifact.sourceIdentity;
+        }
+        if (artifact.parentSourceIdentity !== undefined) {
+          value.parentSourceIdentity = artifact.parentSourceIdentity;
+        }
+        return JSON.stringify(value);
+      };
 
       const insertEntry = (options: {
         parentEntryID: number | null;
@@ -1755,25 +1757,28 @@ export class ConversationWriteRepository {
       ),
     );
     const cacheCalls: CacheAnalysisCall[] = session.turns.flatMap((turn) =>
-      turn.calls.map((call) => ({
-        id: `${turn.number}:${call.callWithinTurn}`,
-        ...(knownPredecessors === undefined ? {} : {
-          previousCallID: callKeysByID.get(
+      turn.calls.map((call) => {
+        const analyzed: CacheAnalysisCall = {
+          id: `${turn.number}:${call.callWithinTurn}`,
+          provider: call.provider,
+          model: call.model,
+          startedAt: call.startedAt,
+          tokens: call.tokens,
+          reasoningSetting: call.reasoningSetting ?? turn.reasoningSetting,
+          followsCompaction: compactionCallKeys.has(
+            `${turn.number}:${call.callWithinTurn}`,
+          ),
+        };
+        if (knownPredecessors !== undefined) {
+          analyzed.previousCallID = callKeysByID.get(
             knownPredecessors.get(
               callIDs.get(`${turn.number}:${call.callWithinTurn}`)!,
             )!,
-          ),
-          predecessorResolved: true,
-        }),
-        provider: call.provider,
-        model: call.model,
-        startedAt: call.startedAt,
-        tokens: call.tokens,
-        reasoningSetting: call.reasoningSetting ?? turn.reasoningSetting,
-        followsCompaction: compactionCallKeys.has(
-          `${turn.number}:${call.callWithinTurn}`,
-        ),
-      }))
+          );
+          analyzed.predecessorResolved = true;
+        }
+        return analyzed;
+      })
     );
     const callsByID = new Map(cacheCalls.map((call) => [call.id, call]));
     const insert = this.#prepare(`
@@ -1827,16 +1832,17 @@ export class ConversationWriteRepository {
     detail: Parameters<typeof enrichSessionSummary>[0],
     rollup: SessionRollup,
   ) {
-    const summary = sessionListItemSchema.parse({
-      ...enrichSessionSummary(detail),
-      ...(rollup.thinkingClassifiedCalls === 0 ? {} : {
+    const enriched = enrichSessionSummary(detail);
+    const summary = sessionListItemSchema.parse(
+      rollup.thinkingClassifiedCalls === 0 ? enriched : {
+        ...enriched,
         thinking: {
           latest: rollup.thinkingLatest,
           values: rollup.thinkingValues,
           classifiedCalls: rollup.thinkingClassifiedCalls,
         },
-      }),
-    });
+      },
+    );
     this.#prepare(`
       UPDATE conversation_rollups SET summary_json = ?
       WHERE conversation_id = ?

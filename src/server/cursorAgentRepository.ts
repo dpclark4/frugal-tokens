@@ -825,15 +825,10 @@ function callForRequest(options: {
     ? undefined
     : preview(responseText);
   const userText = messageText(options.request);
-  return {
+  const call: ConversationCallImport = {
     id: options.usage?.requestId ?? `unmeasured:${options.requestId}`,
     callWithinTurn: 1,
     preview: userText === undefined ? undefined : conciseTitle(userText),
-    ...(response === undefined ? {} : {
-      responsePreview: response.preview,
-      responseOriginalLength: response.originalLength,
-      responseTruncated: response.truncated,
-    }),
     provider: "cursor",
     model,
     startedAt,
@@ -850,6 +845,12 @@ function callForRequest(options: {
     },
     content: response === undefined ? [] : [response],
   };
+  if (response !== undefined) {
+    call.responsePreview = response.preview;
+    call.responseOriginalLength = response.originalLength;
+    call.responseTruncated = response.truncated;
+  }
+  return call;
 }
 
 function candidateTime(candidate: CursorAgentCandidate) {
