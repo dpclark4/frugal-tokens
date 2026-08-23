@@ -14,11 +14,11 @@ import type {
   ScenarioCall,
   ScenarioMode,
 } from "./types.ts";
+import { isJsonObject, type JsonObject } from "./types.ts";
 
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_FORMAT = "human";
 
-type JsonRecord = Record<string, unknown>;
 type OutputFormat = "human" | "json";
 
 interface RequestBody {
@@ -50,7 +50,7 @@ interface CliOptions {
 }
 
 interface ParsedResponse {
-  payload: unknown;
+  payload: JsonValue | undefined;
   responseId: string | null;
   responseStatus: string | null;
   incompleteReason: string | null;
@@ -59,13 +59,9 @@ interface ParsedResponse {
 
 interface RequestResult {
   record: RunCallRecord;
-  payload: unknown;
+  payload: JsonValue | undefined;
   responseId: string | null;
   successful: boolean;
-}
-
-function isRecord(value: unknown): value is JsonRecord {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function parseNumber(value: string, name: string): number {
@@ -239,8 +235,8 @@ function asString(value: unknown): string | null {
 }
 
 function safeError(value: unknown): ErrorSummary | undefined {
-  if (!isRecord(value)) return undefined;
-  const error = isRecord(value.error) ? value.error : value;
+  if (!isJsonObject(value)) return undefined;
+  const error = isJsonObject(value.error) ? value.error : value;
   const code = asString(error.code);
   const type = asString(error.type);
   const message = asString(error.message);
@@ -252,8 +248,8 @@ function safeError(value: unknown): ErrorSummary | undefined {
   return Object.keys(summary).length > 0 ? summary : undefined;
 }
 
-function parsedResponse(payload: unknown): ParsedResponse {
-  if (!isRecord(payload)) {
+function parsedResponse(payload: JsonValue | undefined): ParsedResponse {
+  if (!isJsonObject(payload)) {
     return {
       payload,
       responseId: null,
@@ -261,7 +257,7 @@ function parsedResponse(payload: unknown): ParsedResponse {
       incompleteReason: null,
     };
   }
-  const incompleteDetails = isRecord(payload.incomplete_details)
+  const incompleteDetails = isJsonObject(payload.incomplete_details)
     ? payload.incomplete_details
     : undefined;
   return {
@@ -309,8 +305,8 @@ function rawFieldText(value: RawField): string {
   return JSON.stringify(value.value);
 }
 
-function responseOutput(payload: unknown): JsonValue[] {
-  if (!isRecord(payload) || !Array.isArray(payload.output)) return [];
+function responseOutput(payload: JsonValue | undefined): JsonValue[] {
+  if (!isJsonObject(payload) || !Array.isArray(payload.output)) return [];
   return payload.output.filter((item): item is JsonValue => {
     try {
       JSON.stringify(item);
@@ -333,17 +329,17 @@ async function resolveCallInput(call: ScenarioCall): Promise<JsonValue[]> {
   return normalizeInput(call.input);
 }
 
-function functionCalls(payload: unknown): JsonRecord[] {
-  const calls: JsonRecord[] = [];
+function functionCalls(payload: JsonValue | undefined): JsonObject[] {
+  const calls: JsonObject[] = [];
   for (const item of responseOutput(payload)) {
-    if (isRecord(item) && item.type === "function_call") calls.push(item);
+    if (isJsonObject(item) && item.type === "function_call") calls.push(item);
   }
   return calls;
 }
 
 function deterministicToolOutput(value: JsonValue): string {
   if (
-    isRecord(value) && typeof value.text === "string" &&
+    isJsonObject(value) && typeof value.text === "string" &&
     value.repeat !== undefined
   ) {
     if (
@@ -359,7 +355,7 @@ function deterministicToolOutput(value: JsonValue): string {
     return value.text.repeat(value.repeat);
   }
   if (
-    isRecord(value) && Object.prototype.hasOwnProperty.call(value, "output")
+    isJsonObject(value) && Object.prototype.hasOwnProperty.call(value, "output")
   ) {
     return typeof value.output === "string"
       ? value.output
@@ -368,7 +364,7 @@ function deterministicToolOutput(value: JsonValue): string {
   return typeof value === "string" ? value : JSON.stringify(value) ?? "";
 }
 
-function toolOutputItems(calls: JsonRecord[], scenario: Scenario): JsonValue[] {
+function toolOutputItems(calls: JsonObject[], scenario: Scenario): JsonValue[] {
   return calls.map((call) => {
     const name = asString(call.name);
     const callId = asString(call.call_id);
@@ -604,10 +600,6 @@ async function run(
     };
   };
 
-  const appendResponseOutput = (payload: unknown) => {
-    logicalInput.push(...responseOutput(payload));
-  };
-
   const runToolRounds = async (
     parentCall: ScenarioCall,
     first: RequestResult,
@@ -624,7 +616,7 @@ async function run(
         "deterministic-tool",
         scenario.mode === "full-replay" ? logicalInput : outputs,
       );
-      appendResponseOutput(current.payload);
+      logicalInput.push(...responseOutput(current.payload));
       if (!current.successful) return current;
     }
     throw new Error(
@@ -647,7 +639,7 @@ async function run(
         "scenario",
         scenario.mode === "full-replay" ? logicalInput : newInput,
       );
-      appendResponseOutput(result.payload);
+      logicalInput.push(...responseOutput(result.payload));
       if (!result.successful) {
         manifest.warnings.push(
           `stopped after unsuccessful response at call ${result.record.callOrdinal}`,

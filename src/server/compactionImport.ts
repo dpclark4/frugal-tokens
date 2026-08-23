@@ -2,15 +2,15 @@ import type {
   CompactionCheckpointItemImport,
   CompactionDetailImport,
 } from "./conversationImportTypes.ts";
+import { type JsonObject, jsonObjectSchema } from "../shared/json.ts";
 
 export const compactionPreviewLimit = 2_048;
 
 export function objectValue(
   value: unknown,
-): Record<string, unknown> | undefined {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : undefined;
+): JsonObject | undefined {
+  const parsed = jsonObjectSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
 export function stringValue(value: unknown): string | undefined {
@@ -57,7 +57,7 @@ export function textCheckpointItem(options: {
   text: string;
   sourceEntryID?: string;
   role?: string;
-  nativeMetadata?: Record<string, unknown>;
+  nativeMetadata?: JsonObject;
 }): CompactionCheckpointItemImport {
   return {
     sourceEntryID: options.sourceEntryID,
@@ -75,7 +75,7 @@ export function referenceCheckpointItem(options: {
   kind: string;
   sourceEntryID?: string;
   role?: string;
-  nativeMetadata?: Record<string, unknown>;
+  nativeMetadata?: JsonObject;
 }): CompactionCheckpointItemImport {
   return {
     sourceEntryID: options.sourceEntryID,
@@ -92,7 +92,7 @@ export function messageCheckpointItem(options: {
   role?: string;
   content?: unknown;
   kind?: string;
-  nativeMetadata?: Record<string, unknown>;
+  nativeMetadata?: JsonObject;
 }): CompactionCheckpointItemImport {
   const blockTypes = contentBlockTypes(options.content);
   const nativeMetadata = {

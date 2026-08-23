@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import { z } from "zod";
 import { importedTitleNeedsGeneration } from "./sessionTitles.ts";
 import { formatTiming } from "./timing.ts";
 
@@ -21,6 +22,19 @@ type Usage = {
   cachedInputTokens?: number;
   outputTokens?: number;
 };
+
+const codexOutputEventSchema = z.object({
+  type: z.string(),
+  item: z.object({
+    type: z.string(),
+    text: z.string().optional(),
+  }).optional(),
+  usage: z.object({
+    input_tokens: z.number().optional(),
+    cached_input_tokens: z.number().optional(),
+    output_tokens: z.number().optional(),
+  }).optional(),
+});
 
 function setting(db: DatabaseSync, key: string) {
   return (db.prepare("SELECT value FROM app_settings WHERE key = ?").get(key) as
@@ -125,26 +139,28 @@ function parseCodexOutput(stdout: string) {
   const usage: Usage = {};
   for (const line of stdout.split("\n")) {
     if (!line.trim()) continue;
-    let event: Record<string, unknown>;
+    let event: z.infer<typeof codexOutputEventSchema>;
     try {
-      event = JSON.parse(line);
+      const parsed = codexOutputEventSchema.safeParse(JSON.parse(line));
+      if (!parsed.success) continue;
+      event = parsed.data;
     } catch {
       continue;
     }
-    const item = event.item as Record<string, unknown> | undefined;
+    const item = event.item;
     if (
       event.type === "item.completed" && item?.type === "agent_message" &&
       typeof item.text === "string"
     ) title = item.text;
     if (event.type === "turn.completed") {
-      const tokens = event.usage as Record<string, unknown> | undefined;
-      if (typeof tokens?.input_tokens === "number") {
+      const tokens = event.usage;
+      if (tokens?.input_tokens !== undefined) {
         usage.inputTokens = tokens.input_tokens;
       }
-      if (typeof tokens?.cached_input_tokens === "number") {
+      if (tokens?.cached_input_tokens !== undefined) {
         usage.cachedInputTokens = tokens.cached_input_tokens;
       }
-      if (typeof tokens?.output_tokens === "number") {
+      if (tokens?.output_tokens !== undefined) {
         usage.outputTokens = tokens.output_tokens;
       }
     }

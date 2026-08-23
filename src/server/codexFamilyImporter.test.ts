@@ -1,4 +1,10 @@
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
+import { z } from "zod";
+import {
+  type JsonObject,
+  jsonObjectSchema,
+  parseJsonObject,
+} from "../shared/json.ts";
 import { syncCodexSessions } from "./codexImporter.ts";
 import { ConversationRepository } from "./conversationRepository.ts";
 import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
@@ -33,10 +39,10 @@ function copyFixture(name: string, destination: string, files?: string[]) {
 
 function rewriteFirstRecord(
   path: string,
-  update: (record: Record<string, unknown>) => void,
+  update: (record: JsonObject) => void,
 ) {
   const lines = Deno.readTextFileSync(path).trim().split("\n");
-  const first = JSON.parse(lines[0]) as Record<string, unknown>;
+  const first = parseJsonObject(lines[0]);
   update(first);
   lines[0] = JSON.stringify(first);
   Deno.writeTextFileSync(path, `${lines.join("\n")}\n`);
@@ -522,8 +528,9 @@ Deno.test("Codex ancestry cycle failure preserves the last good family", async (
     await syncCodexSessions(source, sessions, conversations);
     const conversationID = db.prepare("SELECT id FROM conversations").get()!.id;
     rewriteFirstRecord(rootPath, (record) => {
-      const payload = record.payload as Record<string, unknown>;
+      const payload = jsonObjectSchema.parse(record.payload);
       payload.forked_from_id = "00000000-0000-4000-8000-000000000102";
+      record.payload = payload;
     });
     const failed = await syncCodexSessions(source, sessions, conversations);
     strictEqual(failed.failed, 2);
@@ -562,18 +569,20 @@ Deno.test("Codex transactional replacement retains the prior canonical family", 
     await syncCodexSessions(source, sessions, conversations);
     const conversationID = db.prepare("SELECT id FROM conversations").get()!.id;
     const records = Deno.readTextFileSync(childPath).trim().split("\n").map(
-      (line) =>
-        JSON.parse(line) as {
-          payload?: { id?: string; content?: Array<Record<string, unknown>> };
-        },
+      parseJsonObject,
     );
-    const sharedResponse = records.find((record) =>
-      record.payload?.id === "response-nested-root-1"
-    )!;
-    sharedResponse.payload!.content!.push({
+    const sharedResponse = records.find((record) => {
+      const payload = jsonObjectSchema.safeParse(record.payload);
+      return payload.success && payload.data.id === "response-nested-root-1";
+    })!;
+    const payload = jsonObjectSchema.parse(sharedResponse.payload);
+    const content = z.array(jsonObjectSchema).parse(payload.content);
+    content.push({
       type: "output_text",
       text: "Conflicting copied shape",
     });
+    payload.content = content;
+    sharedResponse.payload = payload;
     writeJsonl(childPath, records);
     const changedAt = new Date(Date.now() + 2_000);
     Deno.utimeSync(childPath, changedAt, changedAt);

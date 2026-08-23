@@ -1,4 +1,13 @@
 import type { ToolCallsResponse } from "../shared/sessionSchemas.ts";
+import { z } from "zod";
+
+const commandInputSchema = z.union([
+  z.string(),
+  z.object({
+    command: z.string().optional(),
+    cmd: z.string().optional(),
+  }),
+]);
 
 export type ToolCallObservation = {
   modelCallID: number;
@@ -14,12 +23,11 @@ function commandFromInput(input?: string) {
   if (!input) return undefined;
   let command: string | undefined;
   try {
-    const parsed = JSON.parse(input);
-    if (typeof parsed === "string") command = parsed;
-    else if (parsed && typeof parsed === "object") {
-      const values = parsed as Record<string, unknown>;
-      const value = values.command ?? values.cmd;
-      if (typeof value === "string") command = value;
+    const parsed = commandInputSchema.safeParse(JSON.parse(input));
+    if (parsed.success) {
+      command = typeof parsed.data === "string"
+        ? parsed.data
+        : parsed.data.command ?? parsed.data.cmd;
     }
   } catch {
     // Truncated JSON and Codex's JavaScript wrapper are handled below.
@@ -41,7 +49,8 @@ export function toolGroupName(
   expandTools: boolean,
 ) {
   const normalized = name.toLowerCase();
-  const expandable = normalized === "bash" || normalized.includes("exec_command");
+  const expandable = normalized === "bash" ||
+    normalized.includes("exec_command");
   if (!expandable) return name;
   const command = expandTools ? commandFromInput(inputPreview) : undefined;
   const baseName = normalized === "bash" ? "bash" : name;

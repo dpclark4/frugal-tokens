@@ -1,35 +1,19 @@
-import type {
-  JsonValue,
-  ReasoningConfig,
-  ReasoningEffort,
-  Scenario,
-  ScenarioCall,
-  ScenarioInput,
-  ScenarioMode,
+import {
+  isJsonObject,
+  isJsonValue,
+  type JsonObject,
+  type JsonValue,
+  type ReasoningConfig,
+  type ReasoningEffort,
+  type Scenario,
+  type ScenarioCall,
+  type ScenarioInput,
+  type ScenarioMode,
 } from "./types.ts";
-
-type JsonRecord = Record<string, unknown>;
 
 export const DEFAULT_MODEL = "gpt-5.6-luna";
 
-function isRecord(value: unknown): value is JsonRecord {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function isJsonValue(value: unknown): value is JsonValue {
-  if (value === null) return true;
-  if (
-    typeof value === "string" || typeof value === "number" ||
-    typeof value === "boolean"
-  ) {
-    return Number.isFinite(value as number) || typeof value !== "number";
-  }
-  if (Array.isArray(value)) return value.every(isJsonValue);
-  if (isRecord(value)) return Object.values(value).every(isJsonValue);
-  return false;
-}
-
-function stringField(record: JsonRecord, key: string): string | undefined {
+function stringField(record: JsonObject, key: string): string | undefined {
   const value = record[key];
   return value === undefined
     ? undefined
@@ -39,7 +23,7 @@ function stringField(record: JsonRecord, key: string): string | undefined {
 }
 
 function requiredString(
-  record: JsonRecord,
+  record: JsonObject,
   key: string,
   source: string,
 ): string {
@@ -85,7 +69,7 @@ function parseReasoning(
   source: string,
 ): ReasoningConfig | undefined {
   if (value === undefined) return undefined;
-  if (!isRecord(value)) {
+  if (!isJsonObject(value)) {
     throw new Error(`${source}: reasoning must be an object`);
   }
 
@@ -138,7 +122,7 @@ function parseCall(
   index: number,
   source: string,
 ): ScenarioCall {
-  if (!isRecord(value)) {
+  if (!isJsonObject(value)) {
     throw new Error(`${source}: calls[${index}] must be an object`);
   }
   const inputFile = stringField(value, "input_file");
@@ -172,7 +156,7 @@ function parseTools(value: unknown, source: string): JsonValue[] | undefined {
     throw new Error(`${source}: tools must be an array of JSON values`);
   }
   for (const [index, tool] of value.entries()) {
-    if (!isRecord(tool) || tool.type !== "function") {
+    if (!isJsonObject(tool) || tool.type !== "function") {
       throw new Error(
         `${source}: tools[${index}] must be a function tool; built-in or filesystem tools are not supported`,
       );
@@ -186,15 +170,13 @@ function parseToolOutputs(
   source: string,
 ): Record<string, JsonValue> {
   if (value === undefined) return {};
-  if (!isRecord(value) || !Object.values(value).every(isJsonValue)) {
+  if (!isJsonObject(value)) {
     throw new Error(`${source}: tool_outputs must map names to JSON values`);
   }
-  return Object.fromEntries(
-    Object.entries(value).map(([name, output]) => [name, output as JsonValue]),
-  );
+  return value;
 }
 
-function parseCalls(record: JsonRecord, source: string): ScenarioCall[] {
+function parseCalls(record: JsonObject, source: string): ScenarioCall[] {
   if (record.calls !== undefined) {
     if (!Array.isArray(record.calls)) {
       throw new Error(`${source}: calls must be an array`);
@@ -226,7 +208,7 @@ export function parseScenario(text: string, source = "scenario"): Scenario {
       })`,
     );
   }
-  if (!isRecord(parsed)) {
+  if (!isJsonObject(parsed)) {
     throw new Error(`${source}: top-level value must be an object`);
   }
 

@@ -6,6 +6,7 @@ import {
   RefreshCw,
   Split,
 } from "lucide-react";
+import { jsonObjectSchema } from "../shared/json.ts";
 import type {
   CacheAssessment,
   CacheIssue,
@@ -1194,7 +1195,8 @@ function toolTargetPreview(value?: string) {
   try {
     const parsed = JSON.parse(value);
     if (typeof parsed === "string") return parsed;
-    if (parsed && typeof parsed === "object") {
+    const object = jsonObjectSchema.safeParse(parsed);
+    if (object.success) {
       for (
         const key of [
           "description",
@@ -1207,7 +1209,7 @@ function toolTargetPreview(value?: string) {
           "query",
         ]
       ) {
-        const candidate = (parsed as Record<string, unknown>)[key];
+        const candidate = object.data[key];
         if (typeof candidate === "string") return candidate;
       }
     }

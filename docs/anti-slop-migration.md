@@ -24,9 +24,12 @@ Initial state:
 
 Current state:
 
-- 656 findings
-- `no-unknown-returns` and `no-known-value-widening` are clean and enforced by
-  the gate
+- 602 findings across 5 ungated anti-slop rules
+- `no-unknown-returns`, `no-known-value-widening`, and
+  `no-unsafe-dictionary-type` are clean and enforced by the gate
+- The dictionary migration also reduced overlapping findings:
+  `require-safety-comment-for-type-assertion` from 173 to 159,
+  `no-runtime-typeof` from 103 to 92, and `no-unknown-parameters` from 60 to 55
 
 | Rule                                        | Initial findings | Files | Status             |
 | ------------------------------------------- | ---------------: | ----: | ------------------ |
@@ -36,7 +39,7 @@ Current state:
 | `no-runtime-typeof`                         |              103 |    23 | Not started        |
 | `no-unknown-parameters`                     |               60 |    14 | Not started        |
 | `no-known-value-widening`                   |               42 |    23 | Complete and gated |
-| `no-unsafe-dictionary-type`                 |               25 |    14 | Not started        |
+| `no-unsafe-dictionary-type`                 |               25 |    14 | Complete and gated |
 | `no-unknown-returns`                        |                6 |     5 | Complete and gated |
 
 Rules already clean:
@@ -48,6 +51,27 @@ Rules already clean:
 - `no-reflect-get`
 - `no-unknown-type-aliases`
 - `no-widen-then-assert`
+
+## Type modeling conventions
+
+Choose the structure that matches the lookup contract rather than replacing one
+broad type with another:
+
+- For a finite key union, preserve exact keys and verify completeness with
+  `satisfies Record<FiniteKey, Value>`.
+- For lookup by an arbitrary string where absence is expected, use a direct
+  `Map<string, Value>` with tuple entries so `.get()` accurately returns
+  `Value | undefined`.
+- Use a `switch` when a small mapping is primarily control flow.
+- Use a named registry or owner contract when an object must support dynamic
+  lookup as part of its domain API; its indexed result must include `undefined`.
+- Do not use `new Map(Object.entries({...}))` merely to evade a rule. Prefer
+  direct map entries when map semantics are intended.
+
+These conventions are relevant to `no-unsafe-dictionary-type`: a dictionary
+should remain only when the owning domain has a concrete value contract. Parse
+external payloads before insertion rather than replacing `unknown` with another
+broad value type.
 
 ## Work units
 
@@ -85,7 +109,7 @@ Expected rules reduced by this unit:
 
 - [x] Replace open dictionary annotations with inference, `satisfies`, maps, or
       named owner contracts
-- [ ] Replace unsafe dictionary value contracts with parsed or domain-specific
+- [x] Replace unsafe dictionary value contracts with parsed or domain-specific
       values
 - [ ] Verify shared contracts before migrating leaf modules
 

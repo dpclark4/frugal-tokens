@@ -659,6 +659,9 @@ function codexCompactionDetails(record: Record): CompactionDetailImport {
     : replacementItems.length - checkpointItems.length +
       (payloadMessage?.trim() ? 1 : 0);
   const windowNumber = nonnegativeInteger(payload?.window_number);
+  const firstWindowID = stringValue(payload?.first_window_id);
+  const previousWindowID = stringValue(payload?.previous_window_id);
+  const windowID = stringValue(payload?.window_id);
   if (payload?.window_number !== undefined && windowNumber === undefined) {
     issues.push("window-number-invalid");
   }
@@ -678,15 +681,9 @@ function codexCompactionDetails(record: Record): CompactionDetailImport {
     retainedItemCount: checkpointItems.length,
     nativeMetadata: {
       replacementItemCount: replacementItems?.length ?? 0,
-      ...(stringValue(payload?.first_window_id) === undefined
-        ? {}
-        : { firstWindowID: payload!.first_window_id }),
-      ...(stringValue(payload?.previous_window_id) === undefined
-        ? {}
-        : { previousWindowID: payload!.previous_window_id }),
-      ...(stringValue(payload?.window_id) === undefined
-        ? {}
-        : { windowID: payload!.window_id }),
+      ...(firstWindowID === undefined ? {} : { firstWindowID }),
+      ...(previousWindowID === undefined ? {} : { previousWindowID }),
+      ...(windowID === undefined ? {} : { windowID }),
       ...(windowNumber === undefined ? {} : { windowNumber }),
       ...(payloadMessage === undefined
         ? {}

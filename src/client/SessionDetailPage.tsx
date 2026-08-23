@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { getRouteApi } from "@tanstack/react-router";
+import { jsonObjectSchema } from "../shared/json.ts";
 import {
   ArrowLeft,
   Bot,
@@ -1038,7 +1039,8 @@ function toolTarget(value?: string) {
   try {
     const parsed = JSON.parse(value);
     if (typeof parsed === "string") return parsed;
-    if (parsed && typeof parsed === "object") {
+    const object = jsonObjectSchema.safeParse(parsed);
+    if (object.success) {
       for (
         const key of [
           "description",
@@ -1052,7 +1054,7 @@ function toolTarget(value?: string) {
           "query",
         ]
       ) {
-        const candidate = (parsed as Record<string, unknown>)[key];
+        const candidate = object.data[key];
         if (typeof candidate === "string") return candidate;
       }
     }

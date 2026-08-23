@@ -1,20 +1,21 @@
-import type { CacheClassification, RawField, UsageShape } from "./types.ts";
+import {
+  type CacheClassification,
+  isObservedObject,
+  type ObservedObject,
+  type RawField,
+  type UsageShape,
+} from "./types.ts";
 
-type JsonRecord = Record<string, unknown>;
 type CacheFieldClassification = {
   classification: CacheClassification;
   malformedFields: string[];
 };
 
-function isRecord(value: unknown): value is JsonRecord {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function hasOwn(record: JsonRecord, key: string): boolean {
+function hasOwn(record: ObservedObject, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, key);
 }
 
-function field(record: JsonRecord | undefined, key: string): RawField {
+function field(record: ObservedObject | undefined, key: string): RawField {
   if (!record || !hasOwn(record, key)) return { state: "missing" };
   const value = record[key];
   if (value === undefined) return { state: "undefined" };
@@ -23,7 +24,7 @@ function field(record: JsonRecord | undefined, key: string): RawField {
 }
 
 function fieldKeys(value: unknown): string[] {
-  return isRecord(value) ? Object.keys(value).sort() : [];
+  return isObservedObject(value) ? Object.keys(value).sort() : [];
 }
 
 function validTokenCount(value: RawField): boolean {
@@ -41,7 +42,7 @@ function classifyCacheFields(
   if (!detailsPresent) {
     return { classification: "omitted-cache-details", malformedFields: [] };
   }
-  if (!isRecord(details)) {
+  if (!isObservedObject(details)) {
     return {
       classification: "malformed/unexpected",
       malformedFields: ["input_tokens_details"],
@@ -84,14 +85,14 @@ function classifyCacheFields(
  * normalization, so an absent field remains different from an explicit zero.
  */
 export function extractUsageShape(response: unknown): UsageShape {
-  const responseRecord = isRecord(response) ? response : undefined;
+  const responseRecord = isObservedObject(response) ? response : undefined;
   const usageKeyPresent = responseRecord
     ? hasOwn(responseRecord, "usage")
     : false;
   const usageValue = responseRecord?.usage;
   const usagePresent = usageKeyPresent && usageValue !== null &&
     usageValue !== undefined;
-  const usage = isRecord(usageValue) ? usageValue : undefined;
+  const usage = isObservedObject(usageValue) ? usageValue : undefined;
   const detailsPresent = Boolean(
     usage && hasOwn(usage, "input_tokens_details"),
   );
@@ -112,18 +113,18 @@ export function extractUsageShape(response: unknown): UsageShape {
     inputTokensDetailsPresent: detailsPresent,
     inputTokensDetailsKeys: fieldKeys(details),
     cachedTokens: field(
-      isRecord(details) ? details : undefined,
+      isObservedObject(details) ? details : undefined,
       "cached_tokens",
     ),
     cacheWriteTokens: field(
-      isRecord(details) ? details : undefined,
+      isObservedObject(details) ? details : undefined,
       "cache_write_tokens",
     ),
     inputTokens: field(usage, "input_tokens"),
     outputTokens: field(usage, "output_tokens"),
     totalTokens: field(usage, "total_tokens"),
     reasoningTokens: field(
-      isRecord(usage?.output_tokens_details)
+      isObservedObject(usage?.output_tokens_details)
         ? usage.output_tokens_details
         : undefined,
       "reasoning_tokens",

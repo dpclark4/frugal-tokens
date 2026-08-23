@@ -346,6 +346,7 @@ function piCompactionDetails(
     : "summary-only" as const;
   const usage = objectValue(record.usage);
   const fromHook = booleanValue(record.fromHook);
+  const firstKeptEntryID = stringValue(record.firstKeptEntryId);
   return {
     sourceID: record.id,
     trigger: "unknown",
@@ -356,9 +357,7 @@ function piCompactionDetails(
     droppedItemCount,
     nativeMetadata: {
       boundaryKind,
-      ...(stringValue(record.firstKeptEntryId) === undefined
-        ? {}
-        : { firstKeptEntryID: record.firstKeptEntryId }),
+      ...(firstKeptEntryID === undefined ? {} : { firstKeptEntryID }),
       ...(Array.isArray(record.retainedTail)
         ? { retainedTailCount: record.retainedTail.length }
         : {}),

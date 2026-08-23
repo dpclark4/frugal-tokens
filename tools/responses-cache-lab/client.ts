@@ -1,7 +1,7 @@
-type JsonRecord = Record<string, unknown>;
+import { isJsonObject, isJsonValue, type JsonValue } from "./types.ts";
 
 type ParsedResponse = {
-  payload: unknown;
+  payload: JsonValue | undefined;
   parseError?: string;
 };
 
@@ -26,14 +26,10 @@ export interface RawHttpResult {
   headers: Record<string, string>;
   bytes: Uint8Array;
   text: string;
-  payload: unknown;
+  payload: JsonValue | undefined;
   responseParse: "json" | "sse" | "invalid" | "not-present";
   parseError?: string;
   transportError?: string;
-}
-
-function isRecord(value: unknown): value is JsonRecord {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function safeHeaders(headers: Headers): Record<string, string> {
@@ -54,14 +50,17 @@ function parseJson(text: string): ParsedResponse {
     return { payload: undefined, parseError: "empty response body" };
   }
   try {
-    return { payload: JSON.parse(text) };
+    const payload: unknown = JSON.parse(text);
+    return isJsonValue(payload)
+      ? { payload }
+      : { payload: undefined, parseError: "response body is not JSON data" };
   } catch (error) {
     return { payload: undefined, parseError: errorText(error) };
   }
 }
 
 function parseSse(text: string): ParsedResponse {
-  const events: unknown[] = [];
+  const events: JsonValue[] = [];
   const parseErrors: string[] = [];
   let dataLines: string[] = [];
 
@@ -71,7 +70,9 @@ function parseSse(text: string): ParsedResponse {
     dataLines = [];
     if (!data || data === "[DONE]") return;
     try {
-      events.push(JSON.parse(data));
+      const event: unknown = JSON.parse(data);
+      if (!isJsonValue(event)) throw new Error("event is not JSON data");
+      events.push(event);
     } catch (error) {
       parseErrors.push(errorText(error));
     }
@@ -88,12 +89,12 @@ function parseSse(text: string): ParsedResponse {
   }
   flush();
 
-  let payload: unknown;
+  let payload: JsonValue | undefined;
   for (let index = events.length - 1; index >= 0; index--) {
     const event = events[index];
-    if (!isRecord(event) || typeof event.type !== "string") continue;
+    if (!isJsonObject(event) || typeof event.type !== "string") continue;
     if (TERMINAL_STREAM_EVENTS.has(event.type)) {
-      payload = isRecord(event.response) ? event.response : event;
+      payload = isJsonObject(event.response) ? event.response : event;
       break;
     }
   }

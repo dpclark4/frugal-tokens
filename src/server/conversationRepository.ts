@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import { jsonObjectSchema } from "../shared/json.ts";
 import {
   type CacheIssue,
   type ContextEvent,
@@ -205,7 +206,8 @@ export function sessionToolTarget(value?: string) {
   try {
     const parsed = JSON.parse(value);
     if (typeof parsed === "string") return conciseSessionPreview(parsed);
-    if (parsed && typeof parsed === "object") {
+    const object = jsonObjectSchema.safeParse(parsed);
+    if (object.success) {
       for (
         const key of [
           "description",
@@ -218,7 +220,7 @@ export function sessionToolTarget(value?: string) {
           "query",
         ]
       ) {
-        const candidate = (parsed as Record<string, unknown>)[key];
+        const candidate = object.data[key];
         if (typeof candidate === "string") {
           return conciseSessionPreview(candidate);
         }

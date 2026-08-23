@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { jsonObjectSchema } from "./json.ts";
 import { modelProviderValues } from "./modelMetadata.ts";
 
 export const harnessSchema = z.enum([
@@ -200,7 +201,7 @@ export const compactionCheckpointItemSchema = z.object({
   originalLength: z.number().int().nonnegative().optional(),
   truncated: z.boolean(),
   contentHash: z.string().optional(),
-  nativeMetadata: z.record(z.string(), z.unknown()).optional(),
+  nativeMetadata: jsonObjectSchema.optional(),
 });
 
 export const compactionDetailSchema = z.object({
@@ -222,7 +223,7 @@ export const compactionDetailSchema = z.object({
   droppedContextTokens: z.number().int().nonnegative().optional(),
   retainedItemCount: z.number().int().nonnegative().optional(),
   droppedItemCount: z.number().int().nonnegative().optional(),
-  nativeMetadata: z.record(z.string(), z.unknown()).optional(),
+  nativeMetadata: jsonObjectSchema.optional(),
   checkpointItems: z.array(compactionCheckpointItemSchema),
 });
 

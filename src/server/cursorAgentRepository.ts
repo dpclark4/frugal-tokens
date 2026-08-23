@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
+import { type JsonObject, jsonObjectSchema } from "../shared/json.ts";
 import type { TokenUsage } from "../shared/sessionSchemas.ts";
 import type {
   ConversationCallImport,
@@ -18,8 +19,6 @@ const contentPreviewLimit = 2_048;
 const projectionName = "conversation";
 
 export const cursorParserVersion = "cursor-conversation-1";
-
-type JsonObject = Record<string, unknown>;
 
 type CursorFileMeta = {
   schemaVersion?: number;
@@ -46,7 +45,7 @@ type CursorStoreMeta = {
   subagentInfo?: CursorSubagentInfo;
 };
 
-type CursorMessage = JsonObject & { role?: string };
+type CursorMessage = JsonObject;
 
 type CursorSnapshot = {
   storeMeta: CursorStoreMeta;
@@ -95,9 +94,8 @@ export type CursorAgentCandidate = {
 };
 
 function objectValue(value: unknown): JsonObject | undefined {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as JsonObject
-    : undefined;
+  const parsed = jsonObjectSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
 function stringValue(value: unknown): string | undefined {
@@ -264,15 +262,6 @@ function candidateStats(storePath: string, metaPath: string) {
     ),
     files: values,
   };
-}
-
-function captureRevision(path?: string) {
-  if (path === undefined) return "missing";
-  try {
-    return createHash("sha256").update(Deno.readFileSync(path)).digest("hex");
-  } catch {
-    return "missing";
-  }
 }
 
 export function readCursorCapture(path?: string): CursorCaptureIndex {
@@ -443,7 +432,7 @@ function blobReferences(data: Uint8Array) {
 function blobJSON(data: Uint8Array): CursorMessage | undefined {
   try {
     const value = JSON.parse(new TextDecoder().decode(data));
-    return objectValue(value) as CursorMessage | undefined;
+    return objectValue(value);
   } catch {
     return undefined;
   }
