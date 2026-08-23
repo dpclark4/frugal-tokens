@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
-import { type JsonObject, jsonObjectSchema } from "../shared/json.ts";
+import { z } from "zod";
+import {
+  type JsonObject,
+  jsonObjectSchema,
+  type JsonValue,
+} from "../shared/json.ts";
 import type { TokenUsage } from "../shared/sessionSchemas.ts";
 import type {
   ConversationCallImport,
@@ -55,6 +60,25 @@ type CursorSnapshot = {
   messages: CursorMessage[];
 };
 
+const cursorStoreValueSchema = z.union([
+  z.string(),
+  z.number(),
+  z.bigint(),
+  z.instanceof(Uint8Array),
+  z.null(),
+]);
+type CursorStoreValue = z.infer<typeof cursorStoreValueSchema>;
+
+const cursorMetaRowSchema = z.object({
+  key: cursorStoreValueSchema,
+  value: cursorStoreValueSchema,
+});
+
+const cursorBlobRowSchema = z.object({
+  id: z.union([z.string(), z.instanceof(Uint8Array)]),
+  data: z.instanceof(Uint8Array),
+});
+
 type CursorUsageRecord = {
   requestId: string;
   flowId?: string;
@@ -94,29 +118,29 @@ export type CursorAgentCandidate = {
   storeMeta: CursorStoreMeta;
 };
 
-function objectValue(value: unknown): JsonObject | undefined {
+function objectValue(value: JsonValue | undefined): JsonObject | undefined {
   const parsed = jsonObjectSchema.safeParse(value);
   return parsed.success ? parsed.data : undefined;
 }
 
-function stringValue(value: unknown): string | undefined {
+function stringValue(value: JsonValue | undefined): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-function integerValue(value: unknown): number | undefined {
+function integerValue(value: JsonValue | undefined): number | undefined {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
     ? value
     : undefined;
 }
 
-function numberValue(value: unknown): number | undefined {
+function numberValue(value: JsonValue | undefined): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? value
     : undefined;
 }
 
-function digest(value: unknown) {
-  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+function digestJson(serialized: string) {
+  return createHash("sha256").update(serialized).digest("hex");
 }
 
 function bytesToHex(value: Uint8Array) {
@@ -124,25 +148,19 @@ function bytesToHex(value: Uint8Array) {
     .join("");
 }
 
-function asBytes(value: unknown): Uint8Array | undefined {
-  if (value instanceof Uint8Array) return value;
-  if (
-    Array.isArray(value) &&
-    value.every((item) =>
-      typeof item === "number" && Number.isInteger(item) && item >= 0 &&
-      item <= 255
-    )
-  ) return Uint8Array.from(value);
-  return undefined;
+function asBytes(value: CursorStoreValue | undefined): Uint8Array | undefined {
+  return value instanceof Uint8Array ? value : undefined;
 }
 
-function asBlobID(value: unknown): string | undefined {
+function asBlobID(value: CursorStoreValue | undefined): string | undefined {
   if (typeof value === "string") return value;
   const bytes = asBytes(value);
   return bytes === undefined ? undefined : bytesToHex(bytes);
 }
 
-function epochMilliseconds(value: unknown): number | undefined {
+function epochMilliseconds(
+  value: JsonValue | undefined,
+): number | undefined {
   const number = numberValue(value);
   if (number === undefined) return undefined;
   return number < 100_000_000_000
@@ -152,8 +170,10 @@ function epochMilliseconds(value: unknown): number | undefined {
 
 function readJSONFile(path: string): JsonObject | undefined {
   try {
-    const value = JSON.parse(Deno.readTextFileSync(path));
-    return objectValue(value);
+    const parsed = jsonObjectSchema.safeParse(
+      JSON.parse(Deno.readTextFileSync(path)),
+    );
+    return parsed.success ? parsed.data : undefined;
   } catch {
     return undefined;
   }
@@ -172,7 +192,9 @@ function fileMeta(path: string): CursorFileMeta {
   };
 }
 
-function decodeHexJSON(value: unknown): JsonObject | undefined {
+function decodeHexJSON(
+  value: CursorStoreValue | undefined,
+): JsonObject | undefined {
   let text: string | undefined;
   if (typeof value === "string") {
     const raw = value.trim();
@@ -193,17 +215,17 @@ function decodeHexJSON(value: unknown): JsonObject | undefined {
   }
   if (text === undefined) return undefined;
   try {
-    return objectValue(JSON.parse(text));
+    const parsed = jsonObjectSchema.safeParse(JSON.parse(text));
+    return parsed.success ? parsed.data : undefined;
   } catch {
     return undefined;
   }
 }
 
 function readStoreMeta(db: DatabaseSync): CursorStoreMeta {
-  const rows = db.prepare("SELECT key, value FROM meta").all() as Array<{
-    key: unknown;
-    value: unknown;
-  }>;
+  const rows = z.array(cursorMetaRowSchema).parse(
+    db.prepare("SELECT key, value FROM meta").all(),
+  );
   const row = rows.find((item) => String(item.key) === "0");
   const value = decodeHexJSON(row?.value);
   if (value === undefined) {
@@ -289,16 +311,14 @@ export function readCursorCapture(path?: string): CursorCaptureIndex {
   let malformedLines = 0;
   for (const line of text.split(/\r?\n/)) {
     if (line.trim().length === 0) continue;
-    let value: unknown;
+    let object: JsonObject;
     try {
-      value = JSON.parse(line);
+      object = jsonObjectSchema.parse(JSON.parse(line));
     } catch {
       // A partial final JSONL line is expected while mitmproxy is writing.
       malformedLines++;
       continue;
     }
-    const object = objectValue(value);
-    if (object === undefined) continue;
     const flowID = stringValue(object.flowId);
     if (flowID !== undefined && object.kind === "response-start") {
       const timing = timings.get(flowID) ?? {};
@@ -432,8 +452,10 @@ function blobReferences(data: Uint8Array) {
 
 function blobJSON(data: Uint8Array): CursorMessage | undefined {
   try {
-    const value = JSON.parse(new TextDecoder().decode(data));
-    return objectValue(value);
+    const parsed = jsonObjectSchema.safeParse(
+      JSON.parse(new TextDecoder().decode(data)),
+    );
+    return parsed.success ? parsed.data : undefined;
   } catch {
     return undefined;
   }
@@ -441,9 +463,11 @@ function blobJSON(data: Uint8Array): CursorMessage | undefined {
 
 function readBlobRows(db: DatabaseSync, IDs: string[]) {
   if (IDs.length === 0) return new Map<string, Uint8Array>();
-  const rows = db.prepare(`
+  const rows = z.array(cursorBlobRowSchema).parse(
+    db.prepare(`
     SELECT id, data FROM blobs WHERE id IN (${IDs.map(() => "?").join(",")})
-  `).all(...IDs) as Array<{ id: unknown; data: unknown }>;
+  `).all(...IDs),
+  );
   const result = new Map<string, Uint8Array>();
   for (const row of rows) {
     const id = asBlobID(row.id);
@@ -454,10 +478,9 @@ function readBlobRows(db: DatabaseSync, IDs: string[]) {
 }
 
 function readAllBlobRows(db: DatabaseSync) {
-  const rows = db.prepare("SELECT id, data FROM blobs").all() as Array<{
-    id: unknown;
-    data: unknown;
-  }>;
+  const rows = z.array(cursorBlobRowSchema).parse(
+    db.prepare("SELECT id, data FROM blobs").all(),
+  );
   return new Map(
     rows.flatMap((row) => {
       const id = asBlobID(row.id);
@@ -556,13 +579,13 @@ export function discoverCursorSessions(
         updatedAt,
         sourceModifiedAt: stats.modifiedAt,
         size: stats.size,
-        changeHint: digest({
+        changeHint: digestJson(JSON.stringify({
           id,
           rootBlobId: storeMeta.latestRootBlobId,
           fileMeta: metadata,
           storeStats: stats.files,
           captureRevision,
-        }),
+        })),
         parentExternalID: storeMeta.subagentInfo?.parentAgentId,
         fileMeta: metadata,
         storeMeta,
@@ -583,7 +606,7 @@ function preview(text: string): ConversationContentImport {
   };
 }
 
-function serializedPreview(value: unknown) {
+function serializedPreview(value: JsonValue | undefined) {
   if (value === undefined) return undefined;
   const text = typeof value === "string" ? value : JSON.stringify(value);
   return text === undefined ? undefined : preview(text);
@@ -843,11 +866,11 @@ function snapshotChecksum(
     const id = requestID(message);
     return id === undefined ? [] : [id];
   });
-  return digest({
+  return digestJson(JSON.stringify({
     rootBlobId: snapshot.rootBlobId,
     messages: snapshot.messages,
     captures: requestIDs.map((id) => captures.get(id) ?? null),
-  });
+  }));
 }
 
 export function normalizeCursorSession(options: {

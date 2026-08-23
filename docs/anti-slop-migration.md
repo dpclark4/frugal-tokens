@@ -24,10 +24,11 @@ Initial state:
 
 Current state:
 
-- 466 findings across 58 files and 5 ungated anti-slop rules in the current
+- 437 findings across 58 files and 4 ungated anti-slop rules in the current
   migration scope
 - `no-unknown-returns`, `no-known-value-widening`, and
-  `no-unsafe-dictionary-type` are clean and enforced by the gate
+  `no-unsafe-dictionary-type`, and `no-unknown-parameters` are clean and
+  enforced by the gate
 - The dictionary migration also reduced overlapping findings:
   `require-safety-comment-for-type-assertion` from 173 to 159,
   `no-runtime-typeof` from 103 to 92, and `no-unknown-parameters` from 60 to 55
@@ -35,16 +36,19 @@ Current state:
   from the active baseline: 20 `no-conditional-empty-object-spread`, 45
   `no-runtime-typeof`, 31 `no-shape-in-symbol-names`, 30
   `no-unknown-parameters`, and 10 assertion findings
+- Parsing compaction, artifact failure, Cursor JSON, and Cursor SQLite
+  boundaries cleared all 25 scoped `no-unknown-parameters` findings. The same
+  changes reduced `no-runtime-typeof` from 47 to 46 and assertion findings from
+  149 to 146.
 
 Current scoped rule counts:
 
 | Rule                                        | Findings |
 | ------------------------------------------- | -------: |
-| `require-safety-comment-for-type-assertion` |      149 |
+| `require-safety-comment-for-type-assertion` |      146 |
 | `no-conditional-empty-object-spread`        |      146 |
 | `no-shape-in-symbol-names`                  |       99 |
-| `no-runtime-typeof`                         |       47 |
-| `no-unknown-parameters`                     |       25 |
+| `no-runtime-typeof`                         |       46 |
 
 | Rule                                        | Initial findings | Files | Status             |
 | ------------------------------------------- | ---------------: | ----: | ------------------ |
@@ -52,7 +56,7 @@ Current scoped rule counts:
 | `no-conditional-empty-object-spread`        |              166 |    24 | Not started        |
 | `no-shape-in-symbol-names`                  |              130 |    15 | Not started        |
 | `no-runtime-typeof`                         |              103 |    23 | Not started        |
-| `no-unknown-parameters`                     |               60 |    14 | Not started        |
+| `no-unknown-parameters`                     |               60 |    14 | Complete and gated |
 | `no-known-value-widening`                   |               42 |    23 | Complete and gated |
 | `no-unsafe-dictionary-type`                 |               25 |    14 | Complete and gated |
 | `no-unknown-returns`                        |                6 |     5 | Complete and gated |
@@ -96,14 +100,14 @@ Start here because the `unknown` and `typeof` findings frequently describe the
 same missing parsing boundary. Prefer Zod schemas or existing domain parsers
 over collections of ad hoc narrowing helpers.
 
-- [ ] Shared compaction imports and repository schemas
+- [x] Shared compaction imports and repository schemas
   - `src/server/compactionImport.ts`
 - [x] Parse Claude Code, Codex, OpenCode, and Pi session details before
       returning
 - [x] Give stable telemetry and diagnostic values concrete return contracts
-- [ ] Cursor artifact parsing
+- [x] Cursor artifact parsing
   - `src/server/cursorAgentRepository.ts`
-- [ ] Source artifact and file import errors
+- [x] Source artifact and file import errors
   - `src/server/sourceArtifactRepository.ts`
   - `src/server/fileSessionImporter.ts`
 - [ ] Responses cache lab parsing (deferred from the Oxlint migration scope)
@@ -199,7 +203,6 @@ Recommended workflow for each work unit:
 | -------: | -------------------------------------------------------- |
 |       63 | `src/server/conversationRepository.ts`                   |
 |       32 | `src/server/opencodeRepository.ts`                       |
-|       31 | `src/server/cursorAgentRepository.ts`                    |
 |       30 | `src/server/main.ts`                                     |
 |       28 | `src/server/codexRepository.ts`                          |
 |       26 | `src/server/claudeCodeRepository.ts`                     |
