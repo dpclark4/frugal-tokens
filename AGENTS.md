@@ -9,6 +9,9 @@ Conserve tool calls and tokens during implementation.
 - Run relevant verification once, after the requested work appears complete.
 - Prefer the smallest targeted verification that provides useful confidence.
 - Batch independent verification commands when possible.
+- Run Deno tests with `--reporter=dot` by default to minimize captured output.
+  If tests fail, rerun only the failing file or test with `--reporter=pretty`
+  when detailed diagnostics are needed.
 - Run intermediate verification only when needed to diagnose an error or guide
   the implementation.
 - Do not run Git commands unless the user requests Git work, repository state is
@@ -21,16 +24,16 @@ Conserve tool calls and tokens during implementation.
 ## UI Descriptions
 
 - Do not add subtitles, helper text, or descriptive copy beneath headings,
-  labels, cards, or settings by default. Prefer one concise,
-  self-explanatory heading or label. Only add supporting copy when the user
-  explicitly asks for it or when it is necessary to prevent misunderstanding
-  or error, and never use it to restate the heading.
+  labels, cards, or settings by default. Prefer one concise, self-explanatory
+  heading or label. Only add supporting copy when the user explicitly asks for
+  it or when it is necessary to prevent misunderstanding or error, and never use
+  it to restate the heading.
 - Do not add eyebrows, kickers, preheadings, subtitles, or helper text that
-  repeats a nearby heading or label. Positioning text above rather than below
-  a heading does not make repetition useful.
+  repeats a nearby heading or label. Positioning text above rather than below a
+  heading does not make repetition useful.
 - Modals should default to one concise heading, only the body copy required to
-  explain consequences or prevent error, and actions. Do not add a section
-  label or eyebrow unless it communicates distinct information.
+  explain consequences or prevent error, and actions. Do not add a section label
+  or eyebrow unless it communicates distinct information.
 - Omit headings, legends, labels, and instructions when their meaning can be
   reliably inferred from the surrounding context, layout, axes, or controls.
 - Treat supplemental text as an attention and space cost. Before adding it,
@@ -50,18 +53,18 @@ Conserve tool calls and tokens during implementation.
 - Prefer distributions for skewed per-session measures, trends for change over
   time, ranked tables for categorical comparison, and composition charts only
   when part-to-whole comparison is meaningful.
-- Use color semantically and sparingly: do not imply that more usage,
-  subagents, longer sessions, or cache misses are inherently good or bad.
-- Distinguish observed data, derived metrics, likely explanations, and
-  confirmed causes. Do not claim avoidable cost or inefficiency without
-  supporting evidence.
-- Preserve information density by removing redundancy before reducing type
-  size, and do not truncate primary labels or values.
+- Use color semantically and sparingly: do not imply that more usage, subagents,
+  longer sessions, or cache misses are inherently good or bad.
+- Distinguish observed data, derived metrics, likely explanations, and confirmed
+  causes. Do not claim avoidable cost or inefficiency without supporting
+  evidence.
+- Preserve information density by removing redundancy before reducing type size,
+  and do not truncate primary labels or values.
 
 ## Dashboard Typography And Tooltips
 
-Treat the homepage dashboard typography as a small role-based design system.
-Use the semantic custom properties defined on `.new-page` in
+Treat the homepage dashboard typography as a small role-based design system. Use
+the semantic custom properties defined on `.new-page` in
 `src/client/NewPage.css` rather than introducing one-off sizes.
 
 - Use the sans-serif application face for page and section headings. Use
@@ -79,9 +82,9 @@ Use the semantic custom properties defined on `.new-page` in
   values.
 - Apply `--dashboard-type-label` (`10px`) to controls, table headings,
   subsection headings, chart axes, tooltip body text, and supporting metadata.
-  Apply `--dashboard-type-micro` (`9px`) only to dense annotations such as
-  chart callouts, calendar weekdays, and tertiary paths. Do not use dashboard
-  text smaller than `9px`.
+  Apply `--dashboard-type-micro` (`9px`) only to dense annotations such as chart
+  callouts, calendar weekdays, and tertiary paths. Do not use dashboard text
+  smaller than `9px`.
 - Keep uppercase mono labels concise, semibold, and lightly tracked. Do not use
   uppercase treatment for prose, values, session names, or tooltip content.
 - Use `dashboardChartFont` and `dashboardChartLabelSize` from
@@ -111,5 +114,5 @@ bullet-point body:
 - Outcome: the resulting behavior or user-facing effect.
 
 Keep each bullet to one sentence. Use only established facts; do not invent
-backstory. Apply this format to every commit, including when the user only
-says "commit."
+backstory. Apply this format to every commit, including when the user only says
+"commit."

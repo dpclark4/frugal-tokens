@@ -5,8 +5,8 @@ import {
   hasInputContext,
 } from "../shared/contextMetrics.ts";
 import {
-  categorizeUsageCallCache,
   type AssessedUsageCall,
+  categorizeUsageCallCache,
 } from "./cacheAnalysis.ts";
 import type { UsageCall } from "./usage.ts";
 
@@ -40,7 +40,8 @@ export const PERFORMANCE_MODELS = {
 } as const;
 
 type Vendor = keyof typeof PERFORMANCE_MODELS;
-type ImageCohort = PerformanceResponse[Vendor]["imageCohorts"][number]["cohort"];
+type ImageCohort =
+  PerformanceResponse[Vendor]["imageCohorts"][number]["cohort"];
 type Week = PerformanceResponse[Vendor]["weeks"][number];
 
 const CACHE_LOSS_BUCKETS = ["0-16k", "16-64k", "64-128k", "128k+"] as const;
@@ -51,6 +52,13 @@ type CacheLossBucketTotals = {
   unretainedTokens: number;
 };
 
+type CacheLossBuckets = {
+  "0-16k": CacheLossBucketTotals;
+  "16-64k": CacheLossBucketTotals;
+  "64-128k": CacheLossBucketTotals;
+  "128k+": CacheLossBucketTotals;
+};
+
 function cacheLossBucket(tokens: number): CacheLossBucket {
   if (tokens < 16_000) return "0-16k";
   if (tokens < 64_000) return "16-64k";
@@ -58,7 +66,7 @@ function cacheLossBucket(tokens: number): CacheLossBucket {
   return "128k+";
 }
 
-function emptyCacheLossBuckets(): Record<CacheLossBucket, CacheLossBucketTotals> {
+function emptyCacheLossBuckets(): CacheLossBuckets {
   return {
     "0-16k": { requests: 0, unretainedTokens: 0 },
     "16-64k": { requests: 0, unretainedTokens: 0 },
@@ -244,7 +252,9 @@ function providerResult(
       sessionsWithMiss++;
       bucket.sessionsWithMiss++;
     }
-    const sessionKey = `${sessionCalls[0].harness}:${sessionCalls[0].session.rootID}`;
+    const sessionKey = `${sessionCalls[0].harness}:${
+      sessionCalls[0].session.rootID
+    }`;
     const imageResult = imageResults.find((result) =>
       result.cohort === (cohorts.get(sessionKey) ?? "no-image")
     )!;
@@ -257,11 +267,13 @@ function providerResult(
     turns += sessionTurns.size;
     bucket.turns += sessionTurns.size;
     for (const turnCalls of sessionTurns.values()) {
-      if (turnCalls.some((call) =>
-        call.cacheAssessment.cause === undefined &&
-        (call.cacheAssessment.status === "partial-hit" ||
-          call.cacheAssessment.status === "full-miss")
-      )) {
+      if (
+        turnCalls.some((call) =>
+          call.cacheAssessment.cause === undefined &&
+          (call.cacheAssessment.status === "partial-hit" ||
+            call.cacheAssessment.status === "full-miss")
+        )
+      ) {
         turnsWithMiss++;
         bucket.turnsWithMiss++;
       }
@@ -329,9 +341,15 @@ function providerResult(
       fullMisses: retention.fullMisses,
       retainedTokens: retention.retainedTokens,
       unretainedTokens: retention.unretainedTokens,
-      retainedShare: totalReusable === 0 ? 0 : retention.retainedTokens / totalReusable,
-      lossRequestRate: retention.requestsWithLoss / retention.comparableRequests,
-      p90UnretainedTokens: percentile(retention.losses.toSorted((a, b) => a - b), 0.9),
+      retainedShare: totalReusable === 0
+        ? 0
+        : retention.retainedTokens / totalReusable,
+      lossRequestRate: retention.requestsWithLoss /
+        retention.comparableRequests,
+      p90UnretainedTokens: percentile(
+        retention.losses.toSorted((a, b) => a - b),
+        0.9,
+      ),
       lossBuckets: CACHE_LOSS_BUCKETS.map((bucket) => ({
         bucket,
         ...retention.lossBuckets[bucket],

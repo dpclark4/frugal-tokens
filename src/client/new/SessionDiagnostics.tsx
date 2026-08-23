@@ -33,10 +33,10 @@ type SessionDotShapeProps = {
 
 const chartMono = '"SFMono-Regular", Consolas, monospace';
 const decimal = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
-const SCALE_PIVOT: Record<Metric, number> = {
+const SCALE_PIVOT = {
   spend: 0.1,
   input: 10_000,
-};
+} satisfies Record<Metric, number>;
 
 function duration(minutes?: number) {
   if (minutes === undefined || !Number.isFinite(minutes)) return "—";

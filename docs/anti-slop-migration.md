@@ -24,9 +24,9 @@ Initial state:
 
 Current state:
 
-- 695 findings
-- `no-unknown-returns` is clean and enforced by the gate
-- Returning parsed session details also removed 4 known-value widening findings
+- 656 findings
+- `no-unknown-returns` and `no-known-value-widening` are clean and enforced by
+  the gate
 
 | Rule                                        | Initial findings | Files | Status             |
 | ------------------------------------------- | ---------------: | ----: | ------------------ |
@@ -35,7 +35,7 @@ Current state:
 | `no-shape-in-symbol-names`                  |              130 |    15 | Not started        |
 | `no-runtime-typeof`                         |              103 |    23 | Not started        |
 | `no-unknown-parameters`                     |               60 |    14 | Not started        |
-| `no-known-value-widening`                   |               42 |    23 | Not started        |
+| `no-known-value-widening`                   |               42 |    23 | Complete and gated |
 | `no-unsafe-dictionary-type`                 |               25 |    14 | Not started        |
 | `no-unknown-returns`                        |                6 |     5 | Complete and gated |
 
@@ -83,8 +83,8 @@ Expected rules reduced by this unit:
 
 ### 2. Preserve inferred evidence
 
-- [ ] Replace open dictionary annotations with inference, `satisfies`, or named
-      owner contracts
+- [x] Replace open dictionary annotations with inference, `satisfies`, maps, or
+      named owner contracts
 - [ ] Replace unsafe dictionary value contracts with parsed or domain-specific
       values
 - [ ] Verify shared contracts before migrating leaf modules

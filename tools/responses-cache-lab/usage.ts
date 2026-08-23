@@ -1,6 +1,10 @@
 import type { CacheClassification, RawField, UsageShape } from "./types.ts";
 
 type JsonRecord = Record<string, unknown>;
+type CacheFieldClassification = {
+  classification: CacheClassification;
+  malformedFields: string[];
+};
 
 function isRecord(value: unknown): value is JsonRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -33,7 +37,7 @@ function validTokenCount(value: RawField): boolean {
 function classifyCacheFields(
   details: unknown,
   detailsPresent: boolean,
-): { classification: CacheClassification; malformedFields: string[] } {
+): CacheFieldClassification {
   if (!detailsPresent) {
     return { classification: "omitted-cache-details", malformedFields: [] };
   }

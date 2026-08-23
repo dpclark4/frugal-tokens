@@ -38,15 +38,22 @@ function duration(minutes: number) {
 }
 
 function harnessLabel(harness: string) {
-  const labels: Record<string, string> = {
-    all: "All harnesses",
-    "claude-code": "Claude Code",
-    codex: "Codex",
-    cursor: "Cursor",
-    opencode: "OpenCode",
-    pi: "Pi",
-  };
-  return labels[harness] ?? harness;
+  switch (harness) {
+    case "all":
+      return "All harnesses";
+    case "claude-code":
+      return "Claude Code";
+    case "codex":
+      return "Codex";
+    case "cursor":
+      return "Cursor";
+    case "opencode":
+      return "OpenCode";
+    case "pi":
+      return "Pi";
+    default:
+      return harness;
+  }
 }
 
 function hourLabel(hour: number) {
@@ -56,10 +63,7 @@ function hourLabel(hour: number) {
   return `${hour - 12}pm`;
 }
 
-const shapeLabels: Record<
-  SessionShapeResponse["metrics"][number]["key"],
-  string
-> = {
+const shapeLabels = {
   cost: "Cost",
   observedSpan: "Duration",
   peakContext: "Peak context",
@@ -67,7 +71,10 @@ const shapeLabels: Record<
   startingContext: "Starting context",
   tokenReuse: "Token reuse",
   userTurns: "Turns",
-};
+} satisfies Record<
+  SessionShapeResponse["metrics"][number]["key"],
+  string
+>;
 
 function shapeValue(
   key: SessionShapeResponse["metrics"][number]["key"],

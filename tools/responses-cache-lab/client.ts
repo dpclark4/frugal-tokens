@@ -1,5 +1,10 @@
 type JsonRecord = Record<string, unknown>;
 
+type ParsedResponse = {
+  payload: unknown;
+  parseError?: string;
+};
+
 const SAFE_RESPONSE_HEADERS = new Set([
   "cf-ray",
   "openai-processing-ms",
@@ -44,7 +49,7 @@ function errorText(error: unknown): string {
   return String(error).slice(0, 500);
 }
 
-function parseJson(text: string): { payload: unknown; parseError?: string } {
+function parseJson(text: string): ParsedResponse {
   if (text.length === 0) {
     return { payload: undefined, parseError: "empty response body" };
   }
@@ -55,7 +60,7 @@ function parseJson(text: string): { payload: unknown; parseError?: string } {
   }
 }
 
-function parseSse(text: string): { payload: unknown; parseError?: string } {
+function parseSse(text: string): ParsedResponse {
   const events: unknown[] = [];
   const parseErrors: string[] = [];
   let dataLines: string[] = [];

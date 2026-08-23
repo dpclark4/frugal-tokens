@@ -23,7 +23,7 @@ type SessionShapeProps = {
   onDataChange?: (data: SessionShapeResponse | undefined) => void;
 };
 
-const metricLabels: Record<MetricKey, string> = {
+const metricLabels = {
   cost: "Cost",
   processedInput: "Processed input",
   userTurns: "Turns",
@@ -31,15 +31,18 @@ const metricLabels: Record<MetricKey, string> = {
   startingContext: "Starting context",
   peakContext: "Peak context",
   tokenReuse: "Token reuse",
-};
+} satisfies Record<MetricKey, string>;
 
-const metricDefinitions: Partial<Record<MetricKey, string>> = {
+const metricDefinitions = {
+  cost: undefined,
+  processedInput: undefined,
+  userTurns: undefined,
   observedSpan:
     "Time between the first and last observed calls, not active working time.",
   startingContext: "Context present at the session’s first model call.",
   peakContext: "Largest context processed by a single model call.",
   tokenReuse: "Share of processed input served from cache.",
-};
+} satisfies Record<MetricKey, string | undefined>;
 
 function formatDuration(milliseconds: number) {
   const minutes = milliseconds / 60_000;

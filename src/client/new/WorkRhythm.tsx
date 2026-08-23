@@ -360,13 +360,13 @@ function CompactCalendar({ data, selectedDate, onSelect }: {
   );
 }
 
-const harnessNames: Record<WorkRhythmSession["harness"], string> = {
+const harnessNames = {
   "claude-code": "Claude Code",
   codex: "Codex",
   cursor: "Cursor",
   pi: "Pi",
   opencode: "OpenCode",
-};
+} satisfies Record<WorkRhythmSession["harness"], string>;
 
 function sessionName(session: WorkRhythmSession) {
   const title = session.title?.trim();

@@ -21,6 +21,18 @@ const DEFAULT_FORMAT = "human";
 type JsonRecord = Record<string, unknown>;
 type OutputFormat = "human" | "json";
 
+interface RequestBody {
+  model: string;
+  store: boolean;
+  stream: boolean;
+  input: JsonValue[];
+  instructions?: string;
+  reasoning?: ReasoningConfig;
+  tools?: JsonValue[];
+  prompt_cache_key?: string;
+  previous_response_id?: string;
+}
+
 interface CliOptions {
   command: "run" | "help";
   scenarioPath?: string;
@@ -382,8 +394,8 @@ function buildRequestBody(
   input: JsonValue[],
   previousResponseId: string | null,
   mode: ScenarioMode,
-): JsonRecord {
-  const body: JsonRecord = {
+): RequestBody {
+  const body: RequestBody = {
     model: scenario.model,
     store: scenario.store,
     stream: scenario.stream,
@@ -502,7 +514,7 @@ async function run(
     return { ...manifest, runDirectory: store.runDirectory };
   }
 
-  let logicalInput: JsonValue[] = [];
+  const logicalInput: JsonValue[] = [];
   let previousResponseId: string | null = null;
   let ordinal = 0;
   let stop = false;

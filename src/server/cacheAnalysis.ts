@@ -60,14 +60,14 @@ export function assessCache(
   return { status, retainedRatio, previousReusableTokens };
 }
 
-const severity: Record<CacheAssessment["status"], number> = {
+const severity = {
   baseline: 0,
   unknown: 0,
   "not-comparable": 0,
   hit: 1,
   "partial-hit": 3,
   "full-miss": 4,
-};
+} satisfies Record<CacheAssessment["status"], number>;
 
 function assessmentSeverity(assessment: CacheAssessment): number {
   if (assessment.cause === "compaction") return 0;
