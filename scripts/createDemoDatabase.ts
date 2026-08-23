@@ -434,11 +434,18 @@ function redact(db: DatabaseSync) {
           END,
           evidence_json = NULL;
 
-      -- Summary payloads contain bounded source previews, but overview rollups
-      -- contain only numeric, model, and timestamp aggregates. Keep overviews so
-      -- the source-less demo snapshot can still power range-based analytics.
+      -- Keep the numeric and model-setting materialization used by session
+      -- lists, but remove fields that can contain source content or stale
+      -- source-derived labels. Identity fields are rewritten below after the
+      -- conversations themselves have been anonymized.
       UPDATE conversation_rollups
-      SET summary_json = NULL;
+      SET summary_json = json_remove(
+        summary_json,
+        '$.turns', '$.subagents', '$.contextEvents', '$.agent',
+        '$.sourcePath', '$.internalID', '$.subagentModelCalls',
+        '$.cacheIssues'
+      )
+      WHERE summary_json IS NOT NULL;
 
       UPDATE source_artifact_identities
       SET identity_value = 'demo-identity-' || source_session_id || '-' || identity_namespace;
@@ -479,6 +486,41 @@ function redact(db: DatabaseSync) {
     for (const { id } of conversationTitles) {
       updateConversationTitle.run(`Demo ${generatedTitle(usedTitles)}`, id);
     }
+
+    // Summary rows are disposable list projections, but they carry the
+    // requested thinking level. Preserve that safe analytics data while making
+    // the projection's copied identity fields agree with the redacted rows.
+    db.exec(`
+      UPDATE conversation_rollups AS rollup
+      SET summary_json = json_set(
+        summary_json,
+        '$.id', (
+          SELECT public_id FROM conversations
+          WHERE id = rollup.conversation_id
+        ),
+        '$.title', (
+          SELECT title FROM conversations
+          WHERE id = rollup.conversation_id
+        )
+      )
+      WHERE summary_json IS NOT NULL;
+
+      UPDATE conversation_rollups AS rollup
+      SET summary_json = CASE
+        WHEN (
+          SELECT working_directory FROM conversations
+          WHERE id = rollup.conversation_id
+        ) IS NULL THEN json_remove(summary_json, '$.workingDirectory')
+        ELSE json_set(
+          summary_json,
+          '$.workingDirectory', (
+            SELECT working_directory FROM conversations
+            WHERE id = rollup.conversation_id
+          )
+        )
+      END
+      WHERE summary_json IS NOT NULL;
+    `);
 
     db.exec("COMMIT");
   } catch (error) {
@@ -573,7 +615,31 @@ function audit(db: DatabaseSync) {
           AND source_call_id NOT GLOB 'demo-call-occurrence-*')
         OR evidence_json IS NOT NULL`,
     ],
-    ["conversation_rollups", "summary_json IS NOT NULL"],
+    [
+      "conversation_rollups",
+      `summary_json IS NOT NULL AND (
+        json_type(summary_json, '$.turns') IS NOT NULL
+        OR json_type(summary_json, '$.subagents') IS NOT NULL
+        OR json_type(summary_json, '$.contextEvents') IS NOT NULL
+        OR json_type(summary_json, '$.agent') IS NOT NULL
+        OR json_type(summary_json, '$.sourcePath') IS NOT NULL
+        OR json_type(summary_json, '$.internalID') IS NOT NULL
+        OR json_type(summary_json, '$.subagentModelCalls') IS NOT NULL
+        OR json_type(summary_json, '$.cacheIssues') IS NOT NULL
+        OR json_extract(summary_json, '$.id') IS NOT (
+          SELECT public_id FROM conversations
+          WHERE id = conversation_rollups.conversation_id
+        )
+        OR json_extract(summary_json, '$.title') IS NOT (
+          SELECT title FROM conversations
+          WHERE id = conversation_rollups.conversation_id
+        )
+        OR json_extract(summary_json, '$.workingDirectory') IS NOT (
+          SELECT working_directory FROM conversations
+          WHERE id = conversation_rollups.conversation_id
+        )
+      )`,
+    ],
     [
       "source_artifact_identities",
       "identity_value NOT GLOB 'demo-identity-*'",
