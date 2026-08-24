@@ -720,29 +720,29 @@
   }
 
   .recent-sessions-table {
-    min-width: 780px;
+    min-width: 1080px;
   }
 
   .recent-session-name-column {
-    width: 35%;
+    width: 40%;
   }
   .recent-session-model-column {
-    width: 15%;
+    width: 13%;
   }
   .recent-session-activity-column {
-    width: 10%;
+    width: 8%;
   }
   .recent-session-usage-column {
-    width: 19%;
+    width: 14%;
   }
   .recent-session-output-column {
-    width: 10%;
+    width: 7%;
   }
   .recent-session-cache-column {
-    width: 11%;
+    width: 12%;
   }
   .recent-session-cost-column {
-    width: 0;
+    width: 6%;
   }
 
   .recent-sessions-table th.recent-session-cache-heading:nth-child(6) {
@@ -751,10 +751,5 @@
 
   .recent-session-cache-summary {
     left: 0;
-  }
-
-  .recent-session-cost-cell,
-  .recent-sessions-table th:last-child {
-    display: none;
   }
 }
