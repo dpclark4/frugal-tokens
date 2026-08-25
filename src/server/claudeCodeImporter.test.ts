@@ -420,15 +420,70 @@ ${sharedCall.replace(`"sessionId":"${parent}"`, `"sessionId":"${child}"`)}
     );
     deepStrictEqual(
       db.prepare(`
-        SELECT occurrence_kind, COUNT(*) AS count
-        FROM artifact_model_call_occurrences
-        GROUP BY occurrence_kind ORDER BY occurrence_kind
+        SELECT call.source_call_id, occurrence.occurrence_kind, COUNT(*) AS count
+        FROM artifact_model_call_occurrences occurrence
+        JOIN conversation_model_calls call ON call.id = occurrence.model_call_id
+        GROUP BY call.source_call_id, occurrence.occurrence_kind
+        ORDER BY call.source_call_id, occurrence.occurrence_kind
       `).all().map((row) => ({ ...row })),
       [
-        { occurrence_kind: "copied", count: 1 },
-        { occurrence_kind: "executed", count: 2 },
+        {
+          source_call_id: "continued-call",
+          occurrence_kind: "executed",
+          count: 1,
+        },
+        { source_call_id: "shared-call", occurrence_kind: "copied", count: 1 },
+        {
+          source_call_id: "shared-call",
+          occurrence_kind: "executed",
+          count: 1,
+        },
       ],
     );
+  } finally {
+    db.close();
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
+Deno.test("rejects a divergent Claude continuation of a copied turn", async () => {
+  const directory = Deno.makeTempDirSync();
+  const sessions = `${directory}/projects`;
+  const project = `${sessions}/project`;
+  const parent = "00000000-0000-4000-8000-000000000013";
+  const child = "00000000-0000-4000-8000-000000000014";
+  const sharedUser =
+    `{"type":"user","uuid":"shared-user","sessionId":"${parent}","timestamp":"2026-08-01T10:00:00Z","promptSource":"typed","origin":{"kind":"human"},"message":{"content":"Continue this turn"}}`;
+  write(
+    `${project}/${parent}.jsonl`,
+    `
+{"type":"ai-title","sessionId":"${parent}","aiTitle":"Divergent handoff"}
+${sharedUser}
+{"type":"assistant","uuid":"shared-assistant","sessionId":"${parent}","session_id":"${parent}","timestamp":"2026-08-01T10:00:01Z","message":{"id":"shared-call","model":"claude-sonnet","content":[{"type":"text","text":"First response"}],"usage":{"input_tokens":1,"cache_read_input_tokens":2,"cache_creation_input_tokens":3,"output_tokens":4}}}
+    `,
+  );
+  write(
+    `${project}/${child}.jsonl`,
+    `
+{"type":"ai-title","sessionId":"${child}","aiTitle":"Divergent handoff"}
+${sharedUser.replaceAll(`"${parent}"`, `"${child}"`)}
+{"type":"assistant","uuid":"other-assistant","sessionId":"${child}","session_id":"${parent}","timestamp":"2026-08-01T10:00:01Z","message":{"id":"other-call","model":"claude-sonnet","content":[{"type":"text","text":"Different first response"}],"usage":{"input_tokens":1,"cache_read_input_tokens":2,"cache_creation_input_tokens":3,"output_tokens":4}}}
+{"type":"assistant","uuid":"continued-assistant","sessionId":"${child}","session_id":"${child}","timestamp":"2026-08-01T10:00:02Z","message":{"id":"continued-call","model":"claude-sonnet","content":[{"type":"text","text":"Continued in background"}],"usage":{"input_tokens":1,"cache_read_input_tokens":2,"cache_creation_input_tokens":3,"output_tokens":4}}}
+    `,
+  );
+
+  const db = openArchiveDatabase(`${directory}/archive.sqlite`);
+  migrateTestDatabase(db);
+  const repository = new SourceArtifactRepository(db);
+  const conversations = new ConversationWriteRepository(db);
+  try {
+    const result = await syncClaudeCodeSessions(
+      sessions,
+      repository,
+      conversations,
+    );
+    strictEqual(result.imported, 0);
+    strictEqual(result.failed, 2);
   } finally {
     db.close();
     Deno.removeSync(directory, { recursive: true });

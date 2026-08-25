@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { JsonObject } from "../shared/json.ts";
 import type {
+  ConversationCallImport,
   ConversationContentImport,
   ConversationTurnImport,
   LinearConversationImport,
@@ -98,7 +99,9 @@ function entrySignature(
   ]);
 }
 
-function turnEntrySources(turn: ConversationTurnImport): CanonicalEntrySource[] {
+function turnEntrySources(
+  turn: ConversationTurnImport,
+): CanonicalEntrySource[] {
   const sources: CanonicalEntrySource[] = [];
   for (const input of turn.inputs ?? []) {
     sources.push({
@@ -140,27 +143,82 @@ function turnEntrySources(turn: ConversationTurnImport): CanonicalEntrySource[] 
   return sources;
 }
 
-function isStrictTurnPrefix(
-  prefix: ConversationTurnImport,
-  extension: ConversationTurnImport,
+type TurnRelation =
+  | "equal"
+  | "current-is-prefix"
+  | "current-is-extension"
+  | "conflict";
+
+function sameEntrySources(
+  left: CanonicalEntrySource[],
+  right: CanonicalEntrySource[],
 ) {
-  if (
-    prefix.calls.length > extension.calls.length ||
-    (prefix.calls.length === extension.calls.length &&
-      turnEntrySources(prefix).length >= turnEntrySources(extension).length)
-  ) return false;
-  if (!prefix.calls.every((call, index) => {
-    const candidate = extension.calls[index];
+  return left.length === right.length &&
+    left.every((source, index) =>
+      source.sourceID === right[index].sourceID &&
+      source.signature === right[index].signature
+    );
+}
+
+function overlappingCallIdentitiesAlign(
+  left: ConversationTurnImport,
+  right: ConversationTurnImport,
+) {
+  const overlap = Math.min(left.calls.length, right.calls.length);
+  return left.calls.slice(0, overlap).every((call, index) => {
+    const candidate = right.calls[index];
     return candidate !== undefined && call.id === candidate.id &&
       call.sourceID === candidate.sourceID;
-  })) return false;
-  const prefixEntries = turnEntrySources(prefix);
-  const extensionEntries = turnEntrySources(extension);
-  return prefixEntries.every((source, index) => {
-    const candidate = extensionEntries[index];
-    return candidate !== undefined && source.sourceID === candidate.sourceID &&
-      source.signature === candidate.signature;
   });
+}
+
+function turnCallPrefix(turn: ConversationTurnImport, callCount: number) {
+  return { ...turn, calls: turn.calls.slice(0, callCount) };
+}
+
+// Same-call content/tool growth is conflict until nested row updates exist.
+// current-is-extension is whole new calls on a descendant, overlapping calls unchanged.
+function compareTurnObservation(
+  canonical: ConversationTurnImport,
+  observed: ConversationTurnImport,
+): TurnRelation {
+  if (!overlappingCallIdentitiesAlign(canonical, observed)) return "conflict";
+  const canonicalEntries = turnEntrySources(canonical);
+  const observedEntries = turnEntrySources(observed);
+  if (
+    canonical.calls.length === observed.calls.length &&
+    sameEntrySources(canonicalEntries, observedEntries)
+  ) return "equal";
+  if (
+    observed.calls.length < canonical.calls.length &&
+    sameEntrySources(
+      observedEntries,
+      turnEntrySources(turnCallPrefix(canonical, observed.calls.length)),
+    )
+  ) return "current-is-prefix";
+  if (
+    observed.calls.length > canonical.calls.length &&
+    sameEntrySources(
+      canonicalEntries,
+      turnEntrySources(turnCallPrefix(observed, canonical.calls.length)),
+    )
+  ) return "current-is-extension";
+  return "conflict";
+}
+
+function isSourceDescendant(
+  artifact: SourceArtifactFamilyMemberImport,
+  ancestor: SourceArtifactFamilyMemberImport,
+  byIdentity: Map<string, SourceArtifactFamilyMemberImport>,
+) {
+  let current = artifact;
+  while (current.parentSourceIdentity !== undefined) {
+    const parent = byIdentity.get(current.parentSourceIdentity);
+    if (parent === undefined) return false;
+    if (parent.externalID === ancestor.externalID) return true;
+    current = parent;
+  }
+  return false;
 }
 
 function confirmedIdentity(basis: IdentityBasis | undefined) {
@@ -490,41 +548,6 @@ export class ConversationWriteRepository {
       throw new Error("A source artifact family has no root");
     }
 
-    // Claude can copy an in-progress stable turn into a descendant and finish
-    // it there. Preselect that strict extension before materializing its parent.
-    const canonicalTurnImports = new Map<string, {
-      artifact: SourceArtifactFamilyMemberImport;
-      turn: ConversationTurnImport;
-    }>();
-    const isDescendant = (
-      artifact: SourceArtifactFamilyMemberImport,
-      ancestor: SourceArtifactFamilyMemberImport,
-    ) => {
-      let current = artifact;
-      while (current.parentSourceIdentity !== undefined) {
-        const parent = byIdentity.get(current.parentSourceIdentity);
-        if (parent === undefined) return false;
-        if (parent.externalID === ancestor.externalID) return true;
-        current = parent;
-      }
-      return false;
-    };
-    for (const artifact of ordered) {
-      for (const turn of artifact.value.session.turns) {
-        const basis: IdentityBasis = turn.identityBasis ?? "unresolved";
-        if (!confirmedIdentity(basis) || turn.sourceID === undefined) continue;
-        const key = `${basis}:${turn.sourceID}`;
-        const canonical = canonicalTurnImports.get(key);
-        if (
-          canonical === undefined ||
-          (isDescendant(artifact, canonical.artifact) &&
-            isStrictTurnPrefix(canonical.turn, turn))
-        ) {
-          canonicalTurnImports.set(key, { artifact, turn });
-        }
-      }
-    }
-
     const allCalls = ordered.flatMap((artifact) =>
       artifact.value.session.turns.flatMap((turn) => turn.calls)
     );
@@ -748,6 +771,9 @@ export class ConversationWriteRepository {
       const canonicalTurns = new Map<string, {
         id: number;
         parentID: number | null;
+        owner: SourceArtifactFamilyMemberImport;
+        payload: ConversationTurnImport;
+        valueIndex: number;
         entryIDs: number[];
         entrySources: CanonicalEntrySource[];
         callIDs: number[];
@@ -866,6 +892,143 @@ export class ConversationWriteRepository {
             evidence(options.artifact),
           );
 
+      const appendTurnCalls = (
+        artifact: SourceArtifactFamilyMemberImport,
+        turnKey: string,
+        turnID: number,
+        calls: ConversationCallImport[],
+        entryIDs: number[],
+        callIDs: number[],
+        cursor: { entryID: number | null },
+      ) => {
+        for (const call of calls) {
+          const callBasis: IdentityBasis = call.identityBasis ?? "unresolved";
+          const callKey =
+            confirmedIdentity(callBasis) && call.sourceID !== undefined
+              ? `${callBasis}:${call.sourceID}`
+              : `${artifact.externalID}:${turnKey}:call:${call.callWithinTurn}`;
+          let callID = canonicalCalls.get(callKey);
+          if (callID === undefined) {
+            callOrdinal++;
+            callID = Number(
+              // SAFETY: The static SQL projection and migrated schema define this row contract.
+              (this.#prepare(`
+                  INSERT INTO conversation_model_calls (
+                    conversation_id, turn_id, source_call_id, ordinal,
+                    call_within_turn, provider, model, started_at, completed_at,
+                    reported_cost, computed_cost, uncached_input_tokens,
+                    cache_read_tokens, cache_write_tokens, cache_write_5m_tokens,
+                    cache_write_1h_tokens, fresh_prompt_tokens, output_tokens,
+                    reasoning_tokens, processed_tokens, finish_reason, images,
+                    has_text, has_reasoning, reasoning_setting_name,
+                    reasoning_setting_value, reasoning_source_field_path,
+                    reasoning_source_order, reasoning_observed_at,
+                    reasoning_provenance
+                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  RETURNING id
+                `).get(
+                conversationID,
+                turnID,
+                call.sourceID ?? call.id,
+                callOrdinal,
+                call.callWithinTurn,
+                call.provider,
+                call.model,
+                call.startedAt,
+                call.completedAt ?? null,
+                call.reportedCost ?? null,
+                computeModelCallCost(
+                  call.tokens,
+                  call.model,
+                  call.startedAt,
+                ) ?? null,
+                ...tokenValues(call.tokens),
+                call.activity.finishReason ?? null,
+                call.activity.images ?? null,
+                Number(call.activity.hasText),
+                Number(call.activity.hasReasoning),
+                ...reasoningValues(call.reasoningSetting),
+              ) as { id: number }).id,
+            );
+            canonicalCalls.set(callKey, callID);
+            canonicalCallValues.set(callID, call);
+          }
+          callIDs.push(callID);
+
+          (call.content ?? []).forEach((content, index) => {
+            const entryID = insertEntry({
+              parentEntryID: cursor.entryID,
+              turnID,
+              stableSourceID: content.sourceID,
+              kind: "message",
+              role: content.kind === "reasoning" ? "reasoning" : "assistant",
+              occurredAt: call.completedAt ?? call.startedAt,
+              content,
+              producerModelCallID: callID,
+              outputOrdinal: index + 1,
+            });
+            cursor.entryID = entryID;
+            entryIDs.push(entryID);
+          });
+          call.activity.tools.forEach((tool, index) => {
+            const toolEventID = Number(
+              // SAFETY: The static SQL projection and migrated schema define this row contract.
+              (this.#prepare(`
+                  INSERT INTO conversation_tool_events (
+                    model_call_id, source_tool_id, ordinal, name, status,
+                    started_at, completed_at, input_preview,
+                    input_original_length, input_truncated, output_preview,
+                    output_original_length, output_truncated
+                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  RETURNING id
+                `).get(
+                callID,
+                tool.sourceID ?? null,
+                index + 1,
+                tool.name,
+                tool.status,
+                tool.startedAt ?? null,
+                tool.completedAt ?? null,
+                tool.input?.preview ?? tool.inputPreview ?? null,
+                tool.input?.originalLength ?? null,
+                Number(tool.input?.truncated ?? false),
+                tool.output?.preview ?? tool.outputPreview ?? null,
+                tool.output?.originalLength ?? null,
+                Number(tool.output?.truncated ?? false),
+              ) as { id: number }).id,
+            );
+            if (tool.childExternalID !== undefined) {
+              const launches = launchTools.get(tool.childExternalID) ?? [];
+              launches.push({ modelCallID: callID, toolEventID });
+              launchTools.set(tool.childExternalID, launches);
+            }
+            if (
+              tool.output !== undefined || tool.outputPreview !== undefined
+            ) {
+              const entryID = insertEntry({
+                parentEntryID: cursor.entryID,
+                turnID,
+                stableSourceID: tool.outputSourceEntryID,
+                kind: "tool-result",
+                role: "tool",
+                occurredAt: tool.completedAt,
+                content: {
+                  kind: "text",
+                  preview: tool.output?.preview ?? tool.outputPreview,
+                  originalLength: tool.output?.originalLength ??
+                    tool.outputPreview?.length,
+                  truncated: tool.output?.truncated,
+                },
+                producerToolEventID: toolEventID,
+                outputOrdinal: 1,
+              });
+              cursor.entryID = entryID;
+              entryIDs.push(entryID);
+            }
+          });
+        }
+      };
+
       for (const artifact of ordered) {
         const branchID = branchIDs.get(artifact.externalID)!;
         const parentArtifact = artifact.parentSourceIdentity === undefined
@@ -966,8 +1129,6 @@ export class ConversationWriteRepository {
               : `${unresolvedTurnKey}:${unresolvedAppearance}`;
           let canonicalTurn = canonicalTurns.get(turnKey);
           const currentEntrySources = turnEntrySources(turn);
-          const canonicalTurnImport = canonicalTurnImports.get(turnKey)?.turn ??
-            turn;
           let entryMatches: Array<{
             canonicalIndex: number;
             source: CanonicalEntrySource;
@@ -975,10 +1136,7 @@ export class ConversationWriteRepository {
 
           if (canonicalTurn === undefined) {
             turnOrdinal++;
-            canonicalTurnValues.push({
-              ...canonicalTurnImport,
-              number: turnOrdinal,
-            });
+            canonicalTurnValues.push({ ...turn, number: turnOrdinal });
             const turnID: number = Number(
               // SAFETY: The static SQL projection and migrated schema define this row contract.
               (this.#prepare(`
@@ -992,161 +1150,48 @@ export class ConversationWriteRepository {
             `).get(
                   conversationID,
                   previousTurnID,
-                  canonicalTurnImport.sourceID ?? null,
+                  turn.sourceID ?? null,
                   turnOrdinal,
-                  canonicalTurnImport.startedAt,
-                  ...reasoningValues(canonicalTurnImport.reasoningSetting),
+                  turn.startedAt,
+                  ...reasoningValues(turn.reasoningSetting),
                 ) as { id: number }).id,
             );
             const entryIDs: number[] = [];
-            for (const input of canonicalTurnImport.inputs ?? []) {
+            for (const input of turn.inputs ?? []) {
               const entryID = insertEntry({
                 parentEntryID: previousEntryID,
                 turnID,
                 stableSourceID: input.sourceID,
                 kind: "message",
                 role: "user",
-                occurredAt: canonicalTurnImport.startedAt,
+                occurredAt: turn.startedAt,
                 content: input,
               });
               previousEntryID = entryID;
               entryIDs.push(entryID);
             }
             const callIDs: number[] = [];
-            for (const call of canonicalTurnImport.calls) {
-              const callBasis: IdentityBasis = call.identityBasis ??
-                "unresolved";
-              const callKey =
-                confirmedIdentity(callBasis) && call.sourceID !== undefined
-                  ? `${callBasis}:${call.sourceID}`
-                  : `${artifact.externalID}:${turnKey}:call:${call.callWithinTurn}`;
-              let callID = canonicalCalls.get(callKey);
-              if (callID === undefined) {
-                callOrdinal++;
-                callID = Number(
-                  // SAFETY: The static SQL projection and migrated schema define this row contract.
-                  (this.#prepare(`
-                  INSERT INTO conversation_model_calls (
-                    conversation_id, turn_id, source_call_id, ordinal,
-                    call_within_turn, provider, model, started_at, completed_at,
-                    reported_cost, computed_cost, uncached_input_tokens,
-                    cache_read_tokens, cache_write_tokens, cache_write_5m_tokens,
-                    cache_write_1h_tokens, fresh_prompt_tokens, output_tokens,
-                    reasoning_tokens, processed_tokens, finish_reason, images,
-                    has_text, has_reasoning, reasoning_setting_name,
-                    reasoning_setting_value, reasoning_source_field_path,
-                    reasoning_source_order, reasoning_observed_at,
-                    reasoning_provenance
-                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                  RETURNING id
-                `).get(
-                      conversationID,
-                      turnID,
-                      call.sourceID ?? call.id,
-                      callOrdinal,
-                      call.callWithinTurn,
-                      call.provider,
-                      call.model,
-                      call.startedAt,
-                      call.completedAt ?? null,
-                      call.reportedCost ?? null,
-                      computeModelCallCost(
-                        call.tokens,
-                        call.model,
-                        call.startedAt,
-                      ) ?? null,
-                      ...tokenValues(call.tokens),
-                      call.activity.finishReason ?? null,
-                      call.activity.images ?? null,
-                      Number(call.activity.hasText),
-                      Number(call.activity.hasReasoning),
-                      ...reasoningValues(call.reasoningSetting),
-                    ) as { id: number }).id,
-                );
-                canonicalCalls.set(callKey, callID);
-                canonicalCallValues.set(callID, call);
-              }
-              callIDs.push(callID);
-
-              (call.content ?? []).forEach((content, index) => {
-                const entryID = insertEntry({
-                  parentEntryID: previousEntryID,
-                  turnID,
-                  stableSourceID: content.sourceID,
-                  kind: "message",
-                  role: content.kind === "reasoning"
-                    ? "reasoning"
-                    : "assistant",
-                  occurredAt: call.completedAt ?? call.startedAt,
-                  content,
-                  producerModelCallID: callID,
-                  outputOrdinal: index + 1,
-                });
-                previousEntryID = entryID;
-                entryIDs.push(entryID);
-              });
-              call.activity.tools.forEach((tool, index) => {
-                const toolEventID = Number(
-                  // SAFETY: The static SQL projection and migrated schema define this row contract.
-                  (this.#prepare(`
-                  INSERT INTO conversation_tool_events (
-                    model_call_id, source_tool_id, ordinal, name, status,
-                    started_at, completed_at, input_preview,
-                    input_original_length, input_truncated, output_preview,
-                    output_original_length, output_truncated
-                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                  RETURNING id
-                `).get(
-                      callID,
-                      tool.sourceID ?? null,
-                      index + 1,
-                      tool.name,
-                      tool.status,
-                      tool.startedAt ?? null,
-                      tool.completedAt ?? null,
-                      tool.input?.preview ?? tool.inputPreview ?? null,
-                      tool.input?.originalLength ?? null,
-                      Number(tool.input?.truncated ?? false),
-                      tool.output?.preview ?? tool.outputPreview ?? null,
-                      tool.output?.originalLength ?? null,
-                      Number(tool.output?.truncated ?? false),
-                    ) as { id: number }).id,
-                );
-                if (tool.childExternalID !== undefined) {
-                  const launches = launchTools.get(tool.childExternalID) ?? [];
-                  launches.push({ modelCallID: callID, toolEventID });
-                  launchTools.set(tool.childExternalID, launches);
-                }
-                if (
-                  tool.output !== undefined || tool.outputPreview !== undefined
-                ) {
-                  const entryID = insertEntry({
-                    parentEntryID: previousEntryID,
-                    turnID,
-                    stableSourceID: tool.outputSourceEntryID,
-                    kind: "tool-result",
-                    role: "tool",
-                    occurredAt: tool.completedAt,
-                    content: {
-                      kind: "text",
-                      preview: tool.output?.preview ?? tool.outputPreview,
-                      originalLength: tool.output?.originalLength ??
-                        tool.outputPreview?.length,
-                      truncated: tool.output?.truncated,
-                    },
-                    producerToolEventID: toolEventID,
-                    outputOrdinal: 1,
-                  });
-                  previousEntryID = entryID;
-                  entryIDs.push(entryID);
-                }
-              });
-            }
+            const cursor: { entryID: number | null } = {
+              entryID: previousEntryID,
+            };
+            appendTurnCalls(
+              artifact,
+              turnKey,
+              turnID,
+              turn.calls,
+              entryIDs,
+              callIDs,
+              cursor,
+            );
+            previousEntryID = cursor.entryID;
             canonicalTurn = {
               id: turnID,
               parentID: previousTurnID,
+              owner: artifact,
+              payload: turn,
+              valueIndex: canonicalTurnValues.length - 1,
               entryIDs,
-              entrySources: turnEntrySources(canonicalTurnImport),
+              entrySources: currentEntrySources,
               callIDs,
               lastEntryID: previousEntryID,
             };
@@ -1158,9 +1203,6 @@ export class ConversationWriteRepository {
               canonicalIndex,
               source,
             }));
-            previousEntryID = entryMatches.at(-1) === undefined
-              ? canonicalTurn.lastEntryID
-              : canonicalTurn.entryIDs[entryMatches.at(-1)!.canonicalIndex];
           } else {
             const currentCanonicalTurn = canonicalTurn;
             if (currentCanonicalTurn.parentID !== previousTurnID) {
@@ -1169,6 +1211,38 @@ export class ConversationWriteRepository {
                   turn.sourceID ?? turnKey
                 }`,
               );
+            }
+            if (
+              compareTurnObservation(currentCanonicalTurn.payload, turn) ===
+                "current-is-extension" &&
+              isSourceDescendant(
+                artifact,
+                currentCanonicalTurn.owner,
+                byIdentity,
+              )
+            ) {
+              // Append descendant-only calls; do not rewrite overlapping calls.
+              const cursor: { entryID: number | null } = {
+                entryID: currentCanonicalTurn.lastEntryID,
+              };
+              appendTurnCalls(
+                artifact,
+                turnKey,
+                currentCanonicalTurn.id,
+                turn.calls.slice(currentCanonicalTurn.payload.calls.length),
+                currentCanonicalTurn.entryIDs,
+                currentCanonicalTurn.callIDs,
+                cursor,
+              );
+              currentCanonicalTurn.lastEntryID = cursor.entryID;
+              currentCanonicalTurn.payload = turn;
+              currentCanonicalTurn.owner = artifact;
+              currentCanonicalTurn.entrySources = turnEntrySources(turn);
+              canonicalTurnValues[currentCanonicalTurn.valueIndex] = {
+                ...turn,
+                number:
+                  canonicalTurnValues[currentCanonicalTurn.valueIndex].number,
+              };
             }
             const unmatchedCanonicalEntries = new Set(
               currentCanonicalTurn.entrySources.map((_, index) => index),
