@@ -96,6 +96,7 @@ function entrySignature(
     content.originalLength ?? null,
     content.truncated ?? false,
     content.mimeType ?? null,
+    content.contentHash ?? null,
   ]);
 }
 
@@ -143,67 +144,92 @@ function turnEntrySources(
   return sources;
 }
 
-type TurnRelation =
-  | "equal"
-  | "current-is-prefix"
-  | "current-is-extension"
-  | "conflict";
-
 function sameEntrySources(
   left: CanonicalEntrySource[],
   right: CanonicalEntrySource[],
 ) {
   return left.length === right.length &&
-    left.every((source, index) =>
-      source.sourceID === right[index].sourceID &&
-      source.signature === right[index].signature
-    );
+    left.every((source, index) => {
+      const candidate = right[index];
+      return candidate !== undefined &&
+        source.sourceID === candidate.sourceID &&
+        source.signature === candidate.signature;
+    });
 }
 
-function overlappingCallIdentitiesAlign(
-  left: ConversationTurnImport,
-  right: ConversationTurnImport,
-) {
-  const overlap = Math.min(left.calls.length, right.calls.length);
-  return left.calls.slice(0, overlap).every((call, index) => {
-    const candidate = right.calls[index];
-    return candidate !== undefined && call.id === candidate.id &&
-      call.sourceID === candidate.sourceID;
-  });
+function persistedCallState(call: ConversationCallImport) {
+  return JSON.stringify([
+    call.id,
+    call.sourceID ?? null,
+    call.identityBasis ?? null,
+    call.callWithinTurn,
+    call.provider,
+    call.model,
+    call.startedAt,
+    call.completedAt ?? null,
+    call.reportedCost ?? null,
+    call.tokens.uncachedInput,
+    call.tokens.cacheRead,
+    call.tokens.cacheWrite ?? null,
+    call.tokens.cacheWrite5m ?? null,
+    call.tokens.cacheWrite1h ?? null,
+    call.tokens.freshPrompt,
+    call.tokens.output,
+    call.tokens.reasoning,
+    call.tokens.processed,
+    call.activity.finishReason ?? null,
+    call.activity.images ?? null,
+    Number(call.activity.hasText),
+    Number(call.activity.hasReasoning),
+    call.reasoningSetting ?? null,
+    (call.content ?? []).map((content) => [
+      content.sourceID ?? null,
+      entrySignature(
+        "message",
+        content.kind === "reasoning" ? "reasoning" : "assistant",
+        content,
+      ),
+    ]),
+    call.activity.tools.map((tool) => [
+      tool.sourceID ?? null,
+      tool.name,
+      tool.status,
+      tool.startedAt ?? null,
+      tool.completedAt ?? null,
+      tool.childExternalID ?? null,
+      tool.input?.preview ?? tool.inputPreview ?? null,
+      tool.input?.originalLength ?? null,
+      Number(tool.input?.truncated ?? false),
+      tool.output?.preview ?? tool.outputPreview ?? null,
+      tool.output?.originalLength ?? tool.outputPreview?.length ?? null,
+      Number(tool.output?.truncated ?? false),
+      tool.outputSourceEntryID ?? null,
+    ]),
+  ]);
 }
 
 function turnCallPrefix(turn: ConversationTurnImport, callCount: number) {
   return { ...turn, calls: turn.calls.slice(0, callCount) };
 }
 
-// Same-call content/tool growth is conflict until nested row updates exist.
-// current-is-extension is whole new calls on a descendant, overlapping calls unchanged.
-function compareTurnObservation(
+// Whole new descendant calls only. Extra content or tool results on an
+// existing call stay conflicts; those need nested row updates.
+function isWholeCallExtension(
   canonical: ConversationTurnImport,
   observed: ConversationTurnImport,
-): TurnRelation {
-  if (!overlappingCallIdentitiesAlign(canonical, observed)) return "conflict";
-  const canonicalEntries = turnEntrySources(canonical);
-  const observedEntries = turnEntrySources(observed);
+) {
+  if (observed.calls.length <= canonical.calls.length) return false;
   if (
-    canonical.calls.length === observed.calls.length &&
-    sameEntrySources(canonicalEntries, observedEntries)
-  ) return "equal";
-  if (
-    observed.calls.length < canonical.calls.length &&
-    sameEntrySources(
-      observedEntries,
-      turnEntrySources(turnCallPrefix(canonical, observed.calls.length)),
-    )
-  ) return "current-is-prefix";
-  if (
-    observed.calls.length > canonical.calls.length &&
-    sameEntrySources(
-      canonicalEntries,
-      turnEntrySources(turnCallPrefix(observed, canonical.calls.length)),
-    )
-  ) return "current-is-extension";
-  return "conflict";
+    !canonical.calls.every((call, index) => {
+      const candidate = observed.calls[index];
+      return candidate !== undefined &&
+        persistedCallState(call) === persistedCallState(candidate);
+    })
+  ) return false;
+  return sameEntrySources(
+    turnEntrySources(canonical),
+    turnEntrySources(turnCallPrefix(observed, canonical.calls.length)),
+  );
 }
 
 function isSourceDescendant(
@@ -788,7 +814,6 @@ export class ConversationWriteRepository {
         string,
         Array<{ modelCallID: number; toolEventID: number }>
       >();
-      const artifactTurnKeys = new Map<string, Set<string>>();
       const artifactCallKeys = new Map<string, Set<string>>();
       const artifactEntryKeys = new Map<string, Set<string>>();
       const artifactPaths = new Map<string, number[]>();
@@ -1043,7 +1068,6 @@ export class ConversationWriteRepository {
           : artifactCallPaths.get(parentArtifact.externalID);
         let implicitParentCallPrefix: number[] = [];
         const callKeys = new Set<string>();
-        const turnKeys = new Set<string>();
         const entryKeys = new Set<string>();
         let previousTurnKey: string | undefined;
         const unresolvedTurnAppearances = new Map<string, number>();
@@ -1213,15 +1237,16 @@ export class ConversationWriteRepository {
               );
             }
             if (
-              compareTurnObservation(currentCanonicalTurn.payload, turn) ===
-                "current-is-extension" &&
+              isWholeCallExtension(currentCanonicalTurn.payload, turn) &&
               isSourceDescendant(
                 artifact,
                 currentCanonicalTurn.owner,
                 byIdentity,
               )
             ) {
-              // Append descendant-only calls; do not rewrite overlapping calls.
+              const extraCalls = turn.calls.slice(
+                currentCanonicalTurn.payload.calls.length,
+              );
               const cursor: { entryID: number | null } = {
                 entryID: currentCanonicalTurn.lastEntryID,
               };
@@ -1229,17 +1254,25 @@ export class ConversationWriteRepository {
                 artifact,
                 turnKey,
                 currentCanonicalTurn.id,
-                turn.calls.slice(currentCanonicalTurn.payload.calls.length),
+                extraCalls,
                 currentCanonicalTurn.entryIDs,
                 currentCanonicalTurn.callIDs,
                 cursor,
               );
               currentCanonicalTurn.lastEntryID = cursor.entryID;
-              currentCanonicalTurn.payload = turn;
+              currentCanonicalTurn.payload = {
+                ...currentCanonicalTurn.payload,
+                calls: [
+                  ...currentCanonicalTurn.payload.calls,
+                  ...extraCalls,
+                ],
+              };
               currentCanonicalTurn.owner = artifact;
-              currentCanonicalTurn.entrySources = turnEntrySources(turn);
+              currentCanonicalTurn.entrySources = turnEntrySources(
+                currentCanonicalTurn.payload,
+              );
               canonicalTurnValues[currentCanonicalTurn.valueIndex] = {
-                ...turn,
+                ...currentCanonicalTurn.payload,
                 number:
                   canonicalTurnValues[currentCanonicalTurn.valueIndex].number,
               };
@@ -1248,22 +1281,31 @@ export class ConversationWriteRepository {
               currentCanonicalTurn.entrySources.map((_, index) => index),
             );
             entryMatches = currentEntrySources.map((source) => {
-              const canonicalIndex = currentCanonicalTurn.entrySources
+              if (source.sourceID !== undefined) {
+                const byID = currentCanonicalTurn.entrySources.findIndex(
+                  (candidate, index) =>
+                    unmatchedCanonicalEntries.has(index) &&
+                    candidate.sourceID === source.sourceID,
+                );
+                if (byID !== -1) {
+                  const matched = currentCanonicalTurn.entrySources[byID];
+                  if (matched.signature !== source.signature) {
+                    throw new Error(
+                      `Conflicting canonical entry shape: ${
+                        turn.sourceID ?? turnKey
+                      }`,
+                    );
+                  }
+                  unmatchedCanonicalEntries.delete(byID);
+                  return { canonicalIndex: byID, source };
+                }
+              }
+              const fallbackIndex = currentCanonicalTurn.entrySources
                 .findIndex(
                   (candidate, index) =>
                     unmatchedCanonicalEntries.has(index) &&
-                    source.sourceID !== undefined &&
-                    source.sourceID === candidate.sourceID,
+                    source.signature === candidate.signature,
                 );
-              const fallbackIndex = canonicalIndex === -1
-                ? currentCanonicalTurn.entrySources.findIndex((
-                  candidate,
-                  index,
-                ) =>
-                  unmatchedCanonicalEntries.has(index) &&
-                  source.signature === candidate.signature
-                )
-                : canonicalIndex;
               if (fallbackIndex === -1) {
                 throw new Error(
                   `Conflicting canonical entry shape: ${
@@ -1280,17 +1322,14 @@ export class ConversationWriteRepository {
                 .entryIDs[entryMatches.at(-1)!.canonicalIndex];
           }
 
-          const turnKind = occurrenceKind(
-            artifact,
-            turnKey,
-            artifactTurnKeys,
-            turnBasis,
-          );
           for (const { canonicalIndex, source } of entryMatches) {
             const entryID = canonicalTurn.entryIDs[canonicalIndex];
             const entryKey = source.sourceID === undefined
               ? `${turnKey}:entry:${canonicalIndex + 1}`
               : `stable:${source.sourceID}`;
+            const entryBasis: IdentityBasis = source.sourceID === undefined
+              ? turnBasis
+              : "stable-id";
             insertEntryOccurrence({
               artifact,
               branchID,
@@ -1298,8 +1337,13 @@ export class ConversationWriteRepository {
               sourceEntryID: source.sourceID,
               sourceOrderStart: source.sourceOrder ?? turn.sourceOrderStart,
               sourceOrderEnd: source.sourceOrder ?? turn.sourceOrderEnd,
-              kind: turnKind,
-              basis: source.sourceID === undefined ? turnBasis : "stable-id",
+              kind: occurrenceKind(
+                artifact,
+                entryKey,
+                artifactEntryKeys,
+                entryBasis,
+              ),
+              basis: entryBasis,
             });
             pathEntryIDs.push(entryID);
             entryKeys.add(entryKey);
@@ -1368,7 +1412,6 @@ export class ConversationWriteRepository {
           }
           previousTurnID = canonicalTurn.id;
           previousTurnKey = turnKey;
-          turnKeys.add(turnKey);
         }
         insertContextsBefore(Number.MAX_SAFE_INTEGER);
 
@@ -1406,7 +1449,6 @@ export class ConversationWriteRepository {
           forkPointProvenance,
           branchID,
         );
-        artifactTurnKeys.set(artifact.externalID, turnKeys);
         artifactCallKeys.set(artifact.externalID, callKeys);
         artifactEntryKeys.set(artifact.externalID, entryKeys);
         artifactPaths.set(artifact.externalID, pathEntryIDs);
