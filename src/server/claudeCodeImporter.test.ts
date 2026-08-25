@@ -359,6 +359,82 @@ ${
   }
 });
 
+Deno.test("extends a copied Claude turn continued by a descendant", async () => {
+  const directory = Deno.makeTempDirSync();
+  const sessions = `${directory}/projects`;
+  const project = `${sessions}/project`;
+  const parent = "00000000-0000-4000-8000-000000000011";
+  const child = "00000000-0000-4000-8000-000000000012";
+  const sharedUser =
+    `{"type":"user","uuid":"shared-user","sessionId":"${parent}","timestamp":"2026-08-01T10:00:00Z","promptSource":"typed","origin":{"kind":"human"},"message":{"content":"Continue this turn"}}`;
+  const sharedCall =
+    `{"type":"assistant","uuid":"shared-assistant","sessionId":"${parent}","session_id":"${parent}","timestamp":"2026-08-01T10:00:01Z","message":{"id":"shared-call","model":"claude-sonnet","content":[{"type":"text","text":"First response"}],"usage":{"input_tokens":1,"cache_read_input_tokens":2,"cache_creation_input_tokens":3,"output_tokens":4}}}`;
+  write(
+    `${project}/${parent}.jsonl`,
+    `
+{"type":"ai-title","sessionId":"${parent}","aiTitle":"Background handoff"}
+${sharedUser}
+${sharedCall}
+    `,
+  );
+  write(
+    `${project}/${child}.jsonl`,
+    `
+{"type":"ai-title","sessionId":"${child}","aiTitle":"Background handoff"}
+${sharedUser.replaceAll(`"${parent}"`, `"${child}"`)}
+${sharedCall.replace(`"sessionId":"${parent}"`, `"sessionId":"${child}"`)}
+{"type":"assistant","uuid":"continued-assistant","sessionId":"${child}","session_id":"${child}","timestamp":"2026-08-01T10:00:02Z","message":{"id":"continued-call","model":"claude-sonnet","content":[{"type":"text","text":"Continued in background"}],"usage":{"input_tokens":1,"cache_read_input_tokens":2,"cache_creation_input_tokens":3,"output_tokens":4}}}
+    `,
+  );
+
+  const db = openArchiveDatabase(`${directory}/archive.sqlite`);
+  migrateTestDatabase(db);
+  const repository = new SourceArtifactRepository(db);
+  const conversations = new ConversationWriteRepository(db);
+  try {
+    const result = await syncClaudeCodeSessions(
+      sessions,
+      repository,
+      conversations,
+    );
+    strictEqual(result.imported, 2);
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM conversation_turns").get()!
+        .count,
+      1,
+    );
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM conversation_model_calls")
+        .get()!.count,
+      2,
+    );
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM conversation_entries").get()!
+        .count,
+      3,
+    );
+    strictEqual(
+      db.prepare("SELECT model_calls FROM conversation_rollups").get()!
+        .model_calls,
+      2,
+    );
+    deepStrictEqual(
+      db.prepare(`
+        SELECT occurrence_kind, COUNT(*) AS count
+        FROM artifact_model_call_occurrences
+        GROUP BY occurrence_kind ORDER BY occurrence_kind
+      `).all().map((row) => ({ ...row })),
+      [
+        { occurrence_kind: "copied", count: 1 },
+        { occurrence_kind: "executed", count: 2 },
+      ],
+    );
+  } finally {
+    db.close();
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
 Deno.test("Claude lineage changes rebuild both the prior and new families", async () => {
   const directory = Deno.makeTempDirSync();
   const sessions = `${directory}/projects`;

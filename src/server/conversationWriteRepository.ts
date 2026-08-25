@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { JsonObject } from "../shared/json.ts";
 import type {
   ConversationContentImport,
+  ConversationTurnImport,
   LinearConversationImport,
   ReasoningSettingImport,
 } from "./conversationImportTypes.ts";
@@ -95,6 +96,71 @@ function entrySignature(
     content.truncated ?? false,
     content.mimeType ?? null,
   ]);
+}
+
+function turnEntrySources(turn: ConversationTurnImport): CanonicalEntrySource[] {
+  const sources: CanonicalEntrySource[] = [];
+  for (const input of turn.inputs ?? []) {
+    sources.push({
+      sourceID: input.sourceID,
+      sourceOrder: input.sourceOrder,
+      signature: entrySignature("message", "user", input),
+    });
+  }
+  for (const call of turn.calls) {
+    for (const content of call.content ?? []) {
+      sources.push({
+        sourceID: content.sourceID,
+        sourceOrder: content.sourceOrder,
+        signature: entrySignature(
+          "message",
+          content.kind === "reasoning" ? "reasoning" : "assistant",
+          content,
+        ),
+      });
+    }
+    for (const tool of call.activity.tools) {
+      if (tool.output === undefined && tool.outputPreview === undefined) {
+        continue;
+      }
+      const content: ConversationContentImport = {
+        kind: "text",
+        preview: tool.output?.preview ?? tool.outputPreview,
+        originalLength: tool.output?.originalLength ??
+          tool.outputPreview?.length,
+        truncated: tool.output?.truncated,
+      };
+      sources.push({
+        sourceID: tool.outputSourceEntryID,
+        sourceOrder: tool.sourceOrderEnd,
+        signature: entrySignature("tool-result", "tool", content),
+      });
+    }
+  }
+  return sources;
+}
+
+function isStrictTurnPrefix(
+  prefix: ConversationTurnImport,
+  extension: ConversationTurnImport,
+) {
+  if (
+    prefix.calls.length > extension.calls.length ||
+    (prefix.calls.length === extension.calls.length &&
+      turnEntrySources(prefix).length >= turnEntrySources(extension).length)
+  ) return false;
+  if (!prefix.calls.every((call, index) => {
+    const candidate = extension.calls[index];
+    return candidate !== undefined && call.id === candidate.id &&
+      call.sourceID === candidate.sourceID;
+  })) return false;
+  const prefixEntries = turnEntrySources(prefix);
+  const extensionEntries = turnEntrySources(extension);
+  return prefixEntries.every((source, index) => {
+    const candidate = extensionEntries[index];
+    return candidate !== undefined && source.sourceID === candidate.sourceID &&
+      source.signature === candidate.signature;
+  });
 }
 
 function confirmedIdentity(basis: IdentityBasis | undefined) {
@@ -422,6 +488,41 @@ export class ConversationWriteRepository {
       )[0];
     if (root === undefined) {
       throw new Error("A source artifact family has no root");
+    }
+
+    // Claude can copy an in-progress stable turn into a descendant and finish
+    // it there. Preselect that strict extension before materializing its parent.
+    const canonicalTurnImports = new Map<string, {
+      artifact: SourceArtifactFamilyMemberImport;
+      turn: ConversationTurnImport;
+    }>();
+    const isDescendant = (
+      artifact: SourceArtifactFamilyMemberImport,
+      ancestor: SourceArtifactFamilyMemberImport,
+    ) => {
+      let current = artifact;
+      while (current.parentSourceIdentity !== undefined) {
+        const parent = byIdentity.get(current.parentSourceIdentity);
+        if (parent === undefined) return false;
+        if (parent.externalID === ancestor.externalID) return true;
+        current = parent;
+      }
+      return false;
+    };
+    for (const artifact of ordered) {
+      for (const turn of artifact.value.session.turns) {
+        const basis: IdentityBasis = turn.identityBasis ?? "unresolved";
+        if (!confirmedIdentity(basis) || turn.sourceID === undefined) continue;
+        const key = `${basis}:${turn.sourceID}`;
+        const canonical = canonicalTurnImports.get(key);
+        if (
+          canonical === undefined ||
+          (isDescendant(artifact, canonical.artifact) &&
+            isStrictTurnPrefix(canonical.turn, turn))
+        ) {
+          canonicalTurnImports.set(key, { artifact, turn });
+        }
+      }
     }
 
     const allCalls = ordered.flatMap((artifact) =>
@@ -864,45 +965,9 @@ export class ConversationWriteRepository {
               ? `${artifact.externalID}:turn:${turnIndex + 1}`
               : `${unresolvedTurnKey}:${unresolvedAppearance}`;
           let canonicalTurn = canonicalTurns.get(turnKey);
-          const currentEntrySources: CanonicalEntrySource[] = [];
-          for (const input of turn.inputs ?? []) {
-            currentEntrySources.push({
-              sourceID: input.sourceID,
-              sourceOrder: input.sourceOrder,
-              signature: entrySignature("message", "user", input),
-            });
-          }
-          for (const call of turn.calls) {
-            for (const content of call.content ?? []) {
-              currentEntrySources.push({
-                sourceID: content.sourceID,
-                sourceOrder: content.sourceOrder,
-                signature: entrySignature(
-                  "message",
-                  content.kind === "reasoning" ? "reasoning" : "assistant",
-                  content,
-                ),
-              });
-            }
-            for (const tool of call.activity.tools) {
-              if (
-                tool.output !== undefined || tool.outputPreview !== undefined
-              ) {
-                const content: ConversationContentImport = {
-                  kind: "text",
-                  preview: tool.output?.preview ?? tool.outputPreview,
-                  originalLength: tool.output?.originalLength ??
-                    tool.outputPreview?.length,
-                  truncated: tool.output?.truncated,
-                };
-                currentEntrySources.push({
-                  sourceID: tool.outputSourceEntryID,
-                  sourceOrder: tool.sourceOrderEnd,
-                  signature: entrySignature("tool-result", "tool", content),
-                });
-              }
-            }
-          }
+          const currentEntrySources = turnEntrySources(turn);
+          const canonicalTurnImport = canonicalTurnImports.get(turnKey)?.turn ??
+            turn;
           let entryMatches: Array<{
             canonicalIndex: number;
             source: CanonicalEntrySource;
@@ -910,7 +975,10 @@ export class ConversationWriteRepository {
 
           if (canonicalTurn === undefined) {
             turnOrdinal++;
-            canonicalTurnValues.push({ ...turn, number: turnOrdinal });
+            canonicalTurnValues.push({
+              ...canonicalTurnImport,
+              number: turnOrdinal,
+            });
             const turnID: number = Number(
               // SAFETY: The static SQL projection and migrated schema define this row contract.
               (this.#prepare(`
@@ -924,28 +992,28 @@ export class ConversationWriteRepository {
             `).get(
                   conversationID,
                   previousTurnID,
-                  turn.sourceID ?? null,
+                  canonicalTurnImport.sourceID ?? null,
                   turnOrdinal,
-                  turn.startedAt,
-                  ...reasoningValues(turn.reasoningSetting),
+                  canonicalTurnImport.startedAt,
+                  ...reasoningValues(canonicalTurnImport.reasoningSetting),
                 ) as { id: number }).id,
             );
             const entryIDs: number[] = [];
-            for (const input of turn.inputs ?? []) {
+            for (const input of canonicalTurnImport.inputs ?? []) {
               const entryID = insertEntry({
                 parentEntryID: previousEntryID,
                 turnID,
                 stableSourceID: input.sourceID,
                 kind: "message",
                 role: "user",
-                occurredAt: turn.startedAt,
+                occurredAt: canonicalTurnImport.startedAt,
                 content: input,
               });
               previousEntryID = entryID;
               entryIDs.push(entryID);
             }
             const callIDs: number[] = [];
-            for (const call of turn.calls) {
+            for (const call of canonicalTurnImport.calls) {
               const callBasis: IdentityBasis = call.identityBasis ??
                 "unresolved";
               const callKey =
@@ -999,7 +1067,6 @@ export class ConversationWriteRepository {
                 canonicalCallValues.set(callID, call);
               }
               callIDs.push(callID);
-              callKeys.add(callKey);
 
               (call.content ?? []).forEach((content, index) => {
                 const entryID = insertEntry({
@@ -1079,7 +1146,7 @@ export class ConversationWriteRepository {
               id: turnID,
               parentID: previousTurnID,
               entryIDs,
-              entrySources: currentEntrySources,
+              entrySources: turnEntrySources(canonicalTurnImport),
               callIDs,
               lastEntryID: previousEntryID,
             };
@@ -1091,6 +1158,9 @@ export class ConversationWriteRepository {
               canonicalIndex,
               source,
             }));
+            previousEntryID = entryMatches.at(-1) === undefined
+              ? canonicalTurn.lastEntryID
+              : canonicalTurn.entryIDs[entryMatches.at(-1)!.canonicalIndex];
           } else {
             const currentCanonicalTurn = canonicalTurn;
             if (currentCanonicalTurn.parentID !== previousTurnID) {
