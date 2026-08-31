@@ -183,18 +183,18 @@ type CacheLossWeek = ProviderResult["weeks"][number] & {
 const cacheLossModes = [
   {
     key: "tokens",
-    label: "Context lost %",
-    description: "Share of reusable context unexpectedly lost",
+    label: "Token loss %",
+    description: "Percentage of tokens lost to unexpected cache misses.",
   },
   {
     key: "rate",
-    label: "Miss rate %",
-    description: "Share of reusable calls with an unexpected miss",
+    label: "Cache miss rate",
+    description: "Percentage of calls with an unexpected cache miss.",
   },
   {
     key: "raw",
-    label: "Miss count",
-    description: "Number of unexpected cache misses",
+    label: "Cache misses",
+    description: "Number of calls with an unexpected cache miss.",
   },
 ] as const;
 
@@ -242,7 +242,7 @@ function cacheLossAxisMax(
 }
 
 function displayCacheLossValue(value: number | undefined, mode: CacheLossMode) {
-  if (value === undefined) return "—";
+  if (value === undefined) return "No data";
   if (mode === "raw") return integer.format(value);
   return `${value.toFixed(1)}%`;
 }
@@ -252,15 +252,45 @@ function cacheLossDifference(
   other: number | undefined,
   mode: CacheLossMode,
 ) {
-  if (other === undefined) return "—";
+  if (other === undefined) return "No data";
   const difference = value - other;
   if (Math.abs(difference) < 0.05) return "Same";
   if (mode !== "raw") {
-    return `${difference > 0 ? "+" : "−"}${Math.abs(difference).toFixed(1)} pp`;
+    return `${Math.abs(difference).toFixed(1)} points ${
+      difference > 0 ? "higher" : "lower"
+    }`;
   }
   return `${integer.format(Math.abs(difference))} ${
     difference > 0 ? "more" : "fewer"
   }`;
+}
+
+function cacheLossTotal(
+  week: ProviderResult["weeks"][number],
+  mode: CacheLossMode,
+) {
+  if (mode === "tokens" && week.reusableTokensAtRisk === 0) return undefined;
+  if (mode !== "tokens" && week.reuseOpportunities === 0) return undefined;
+  return cacheLossBuckets.reduce(
+    (total, bucket) => total + (cacheLossValue(week, bucket.bucket, mode) ?? 0),
+    0,
+  );
+}
+
+function cacheLossMisses(week: ProviderResult["weeks"][number]) {
+  return cacheLossBuckets.reduce(
+    (total, bucket) =>
+      total + (cacheLossEntry(week, bucket.bucket)?.requests ?? 0),
+    0,
+  );
+}
+
+function cacheLossTokens(week: ProviderResult["weeks"][number]) {
+  return cacheLossBuckets.reduce(
+    (total, bucket) =>
+      total + (cacheLossEntry(week, bucket.bucket)?.unretainedTokens ?? 0),
+    0,
+  );
 }
 
 function CacheLossTooltip({ active, payload, comparisonWeeks, mode }: {
@@ -275,22 +305,54 @@ function CacheLossTooltip({ active, payload, comparisonWeeks, mode }: {
     entry.date === week.date
   );
   const valueHeading = mode === "tokens"
-    ? "Context lost"
+    ? "Token loss"
     : mode === "rate"
     ? "Miss rate"
     : "Misses";
   const detailHeading = mode === "rate" ? "Misses" : "Lost tokens";
+  const showDetail = mode !== "raw";
+  const totalValue = cacheLossTotal(week, mode) ?? 0;
+  const otherTotal = comparisonWeek
+    ? cacheLossTotal(comparisonWeek, mode)
+    : undefined;
+  const totalDetail = mode === "rate"
+    ? integer.format(cacheLossMisses(week))
+    : compact.format(cacheLossTokens(week));
+  const coverage = mode === "tokens"
+    ? `Reusable input tokens · ${compact.format(week.reusableTokensAtRisk)}`
+    : `Cache-eligible calls · ${integer.format(week.reuseOpportunities)}`;
+  const otherHasCoverage = comparisonWeek &&
+    (mode === "tokens"
+      ? comparisonWeek.reusableTokensAtRisk > 0
+      : comparisonWeek.reuseOpportunities > 0);
+  const otherCoverage = !otherHasCoverage
+    ? "No data"
+    : mode === "tokens"
+    ? compact.format(comparisonWeek.reusableTokensAtRisk)
+    : integer.format(comparisonWeek.reuseOpportunities);
+  const rowClass = `cache-loss-tooltip-row${
+    showDetail ? "" : " cache-loss-tooltip-row-compact"
+  }`;
   return (
-    <div className="tooltip-surface usage-tooltip performance-tooltip comparison-tooltip cache-loss-comparison-tooltip">
+    <div
+      className={`tooltip-surface usage-tooltip performance-tooltip comparison-tooltip cache-loss-comparison-tooltip${
+        showDetail ? "" : " compact"
+      }`}
+    >
       <p>
         {date.format(new Date(`${week.date}T00:00:00`))}–
         {date.format(new Date(`${week.endDate}T00:00:00`))}
       </p>
-      <div className="cache-loss-tooltip-columns" aria-hidden="true">
-        <span>Loss size</span>
+      <div
+        className={`cache-loss-tooltip-columns${
+          showDetail ? "" : " cache-loss-tooltip-row-compact"
+        }`}
+        aria-hidden="true"
+      >
+        <span>Tokens lost per miss</span>
         <span>{valueHeading}</span>
-        <span>{detailHeading}</span>
-        <span>Other cohort</span>
+        {showDetail && <span>{detailHeading}</span>}
+        <span>Other</span>
         <span>Difference</span>
       </div>
       {[...cacheLossBuckets].reverse().map((definition) => {
@@ -306,16 +368,18 @@ function CacheLossTooltip({ active, payload, comparisonWeeks, mode }: {
           ? undefined
           : value - otherValue;
         return (
-          <div className="cache-loss-tooltip-row" key={definition.bucket}>
+          <div className={rowClass} key={definition.bucket}>
             <span>{definition.label}</span>
             <strong>{displayCacheLossValue(value, mode)}</strong>
-            <strong
-              title={mode === "rate" ? undefined : integer.format(tokens)}
-            >
-              {mode === "rate"
-                ? integer.format(misses)
-                : compact.format(tokens)}
-            </strong>
+            {showDetail && (
+              <strong
+                title={mode === "rate" ? undefined : integer.format(tokens)}
+              >
+                {mode === "rate"
+                  ? integer.format(misses)
+                  : compact.format(tokens)}
+              </strong>
+            )}
             <strong>{displayCacheLossValue(otherValue, mode)}</strong>
             <strong
               className={difference === undefined || Math.abs(difference) < 0.05
@@ -329,9 +393,24 @@ function CacheLossTooltip({ active, payload, comparisonWeeks, mode }: {
           </div>
         );
       })}
+      <div className={`${rowClass} cache-loss-tooltip-total`}>
+        <span>Total</span>
+        <strong>{displayCacheLossValue(totalValue, mode)}</strong>
+        {showDetail && <strong>{totalDetail}</strong>}
+        <strong>{displayCacheLossValue(otherTotal, mode)}</strong>
+        <strong
+          className={otherTotal === undefined ||
+              Math.abs(totalValue - otherTotal) < 0.05
+            ? "neutral"
+            : totalValue > otherTotal
+            ? "negative"
+            : "positive"}
+        >
+          {cacheLossDifference(totalValue, otherTotal, mode)}
+        </strong>
+      </div>
       <div className="cache-loss-tooltip-coverage">
-        <span>{integer.format(week.reuseOpportunities)} reusable calls</span>
-        <span>{compact.format(week.reusableTokensAtRisk)} reusable tokens</span>
+        <span>{coverage} · Other {otherCoverage}</span>
       </div>
     </div>
   );
@@ -829,7 +908,7 @@ export function PerformancePage() {
         </section>
         <section className="performance-comparison-section">
           <div className="performance-section-heading">
-            <h2>Impact of unexpected cache misses</h2>
+            <h2>Cache misses by token loss</h2>
             <div
               className="performance-view-toggle"
               role="group"
@@ -840,11 +919,18 @@ export function PerformancePage() {
                   className={cacheLossMode === mode.key ? "active" : undefined}
                   type="button"
                   aria-pressed={cacheLossMode === mode.key}
-                  title={mode.description}
+                  aria-describedby={`cache-loss-mode-${mode.key}`}
                   onClick={() => setCacheLossMode(mode.key)}
                   key={mode.key}
                 >
                   {mode.label}
+                  <span
+                    className="performance-mode-tooltip tooltip-surface"
+                    id={`cache-loss-mode-${mode.key}`}
+                    role="tooltip"
+                  >
+                    {mode.description}
+                  </span>
                 </button>
               ))}
             </div>

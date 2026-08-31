@@ -163,13 +163,13 @@
 
 .performance-view-toggle {
   display: flex;
-  overflow: hidden;
   border: 1px solid var(--dashboard-rule);
   border-radius: 5px;
   background: var(--dashboard-panel);
 }
 
 .performance-view-toggle button {
+  position: relative;
   padding: 7px 10px;
   border: 0;
   background: transparent;
@@ -179,6 +179,14 @@
   cursor: pointer;
 }
 
+.performance-view-toggle button:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.performance-view-toggle button:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
 .performance-view-toggle button + button {
   border-left: 1px solid var(--dashboard-rule);
 }
@@ -186,6 +194,43 @@
 .performance-view-toggle button.active {
   background: var(--dashboard-ink);
   color: var(--dashboard-panel);
+}
+
+.performance-mode-tooltip {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 7px);
+  left: 50%;
+  display: grid;
+  width: 260px;
+  gap: 5px;
+  visibility: hidden;
+  color: var(--tooltip-text);
+  font: var(--tooltip-type-body) var(--mono);
+  letter-spacing: 0;
+  opacity: 0;
+  pointer-events: none;
+  text-align: left;
+  transform: translateX(-50%);
+  transition: opacity 100ms ease;
+}
+
+.performance-view-toggle button:first-child .performance-mode-tooltip {
+  right: auto;
+  left: 0;
+  transform: none;
+}
+
+.performance-view-toggle button:last-child .performance-mode-tooltip {
+  right: 0;
+  left: auto;
+  transform: none;
+}
+
+.performance-view-toggle button:hover .performance-mode-tooltip,
+.performance-view-toggle button:focus-visible .performance-mode-tooltip {
+  visibility: visible;
+  opacity: 1;
 }
 
 .performance-comparison-section > p {
@@ -588,15 +633,24 @@
 }
 
 .performance-page .cache-loss-comparison-tooltip {
-  min-width: 480px;
+  min-width: 540px;
+}
+
+.performance-page .cache-loss-comparison-tooltip.compact {
+  min-width: 450px;
 }
 
 .cache-loss-tooltip-columns,
 .cache-loss-tooltip-row {
   display: grid !important;
-  grid-template-columns: minmax(76px, 1fr) 72px 72px 80px 80px;
+  grid-template-columns: minmax(125px, 1fr) 76px 76px 76px 116px;
   gap: 8px !important;
   text-align: right;
+}
+
+.cache-loss-tooltip-columns.cache-loss-tooltip-row-compact,
+.cache-loss-tooltip-row-compact {
+  grid-template-columns: minmax(125px, 1fr) 76px 76px 116px;
 }
 
 .cache-loss-tooltip-columns {
@@ -615,6 +669,11 @@
 
 .cache-loss-tooltip-row + .cache-loss-tooltip-row {
   border-top: 1px solid #e4ebe8;
+}
+
+.cache-loss-tooltip-total {
+  border-top: 1px solid var(--tooltip-rule) !important;
+  font-weight: 650;
 }
 
 .cache-loss-tooltip-columns > span:first-child,
@@ -646,8 +705,8 @@
 }
 
 .cache-loss-tooltip-coverage {
-  display: flex !important;
-  justify-content: space-between;
+  display: grid !important;
+  gap: 3px !important;
   margin-top: 3px;
   padding-top: 7px !important;
   border-top: 1px solid var(--tooltip-rule);
