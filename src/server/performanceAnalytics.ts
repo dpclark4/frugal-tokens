@@ -101,12 +101,22 @@ function emptyWeek(date: string): Week {
     date,
     endDate: Temporal.PlainDate.from(date).add({ days: 6 }).toString(),
     sessions: 0,
+    eligibleSessions: 0,
     sessionsWithMiss: 0,
     turns: 0,
+    eligibleTurns: 0,
     turnsWithMiss: 0,
     modelCalls: 0,
+    eligibleModelCalls: 0,
     modelCallsWithMiss: 0,
+    reuseOpportunities: 0,
+    reusableTokensAtRisk: 0,
   };
+}
+
+function isEligibleOpportunity(call: AssessedUsageCall) {
+  return call.cacheAssessment.status === "hit" ||
+    isUnexpectedMiss(call.cacheAssessment);
 }
 
 function weeksBetween(start: number, end: number) {
@@ -148,18 +158,27 @@ function providerResult(
     (call) => `${call.harness}:${call.session.rootID}`,
   );
   const cacheLossByWeek = new Map<string, CacheLossBuckets>();
+  let eligibleSessions = 0;
   let sessionsWithMiss = 0;
   let turns = 0;
+  let eligibleTurns = 0;
   let turnsWithMiss = 0;
   let modelCalls = 0;
+  let eligibleModelCalls = 0;
   let modelCallsWithMiss = 0;
+  let reusableTokensAtRisk = 0;
 
   for (const sessionCalls of sessions.values()) {
     const sessionWeek = weekKey(sessionCalls[0].sessionStartedAt);
     const bucket = weeks.get(sessionWeek);
     if (!bucket) continue;
     bucket.sessions++;
-    const sessionMiss = sessionCalls.some((call) =>
+    const eligibleSessionCalls = sessionCalls.filter(isEligibleOpportunity);
+    if (eligibleSessionCalls.length > 0) {
+      eligibleSessions++;
+      bucket.eligibleSessions++;
+    }
+    const sessionMiss = eligibleSessionCalls.some((call) =>
       isUnexpectedMiss(call.cacheAssessment)
     );
     if (sessionMiss) {
@@ -174,15 +193,21 @@ function providerResult(
     bucket.turns += sessionTurns.size;
     modelCalls += sessionCalls.length;
     bucket.modelCalls += sessionCalls.length;
-    for (const call of sessionCalls) {
+    eligibleModelCalls += eligibleSessionCalls.length;
+    bucket.eligibleModelCalls += eligibleSessionCalls.length;
+    for (const call of eligibleSessionCalls) {
       if (isUnexpectedMiss(call.cacheAssessment)) {
         modelCallsWithMiss++;
         bucket.modelCallsWithMiss++;
       }
     }
     for (const turnCalls of sessionTurns.values()) {
+      const eligibleTurnCalls = turnCalls.filter(isEligibleOpportunity);
+      if (eligibleTurnCalls.length === 0) continue;
+      eligibleTurns++;
+      bucket.eligibleTurns++;
       if (
-        turnCalls.some((call) => isUnexpectedMiss(call.cacheAssessment))
+        eligibleTurnCalls.some((call) => isUnexpectedMiss(call.cacheAssessment))
       ) {
         turnsWithMiss++;
         bucket.turnsWithMiss++;
@@ -191,21 +216,27 @@ function providerResult(
   }
 
   for (const call of lossCandidates) {
+    if (!isEligibleOpportunity(call)) continue;
     const assessment = call.cacheAssessment;
     const previousReusable = assessment.previousReusableTokens;
-    if (previousReusable === undefined || !isUnexpectedMiss(assessment)) {
-      continue;
-    }
+    if (previousReusable === undefined) continue;
 
     const expectedReusable = Math.min(
       previousReusable,
       contextSize(call.tokens),
     );
+    const date = weekKey(call.startedAt);
+    const week = weeks.get(date);
+    if (!week) continue;
+    reusableTokensAtRisk += expectedReusable;
+    week.reuseOpportunities++;
+    week.reusableTokensAtRisk += expectedReusable;
+    if (!isUnexpectedMiss(assessment)) continue;
+
     const retained = Math.min(call.tokens.cacheRead, expectedReusable);
     const unretained = Math.max(expectedReusable - retained, 0);
     if (unretained === 0) continue;
 
-    const date = weekKey(call.startedAt);
     const buckets = cacheLossByWeek.get(date) ?? emptyCacheLossBuckets();
     const bucket = buckets[cacheLossBucket(unretained)];
     bucket.requests++;
@@ -226,11 +257,15 @@ function providerResult(
     provider: vendor,
     selectedModel,
     sessions: sessions.size,
+    eligibleSessions,
     sessionsWithMiss,
     turns,
+    eligibleTurns,
     turnsWithMiss,
     modelCalls,
+    eligibleModelCalls,
     modelCallsWithMiss,
+    reusableTokensAtRisk,
     weeks: [...weeks.values()],
   };
 }

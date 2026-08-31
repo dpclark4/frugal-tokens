@@ -53,10 +53,13 @@ Deno.test("aggregates weekly session and turn cache miss rates by model", () => 
   );
 
   strictEqual(result.openai.sessions, 5);
+  strictEqual(result.openai.eligibleSessions, 2);
   strictEqual(result.openai.sessionsWithMiss, 2);
   strictEqual(result.openai.turns, 9);
+  strictEqual(result.openai.eligibleTurns, 2);
   strictEqual(result.openai.turnsWithMiss, 2);
   strictEqual(result.openai.modelCalls, 9);
+  strictEqual(result.openai.eligibleModelCalls, 2);
   strictEqual(result.openai.modelCallsWithMiss, 2);
   strictEqual(result.openai.weeks.length, 1);
   strictEqual(result.openai.weeks[0].sessions, 5);
@@ -85,6 +88,8 @@ Deno.test("buckets every partial and full cache loss", () => {
   strictEqual(buckets[0].requests, 2);
   strictEqual(buckets[0].unretainedTokens, 25);
   strictEqual(buckets[1].requests, 0);
+  strictEqual(result.openai.weeks[0].reuseOpportunities, 2);
+  strictEqual(result.openai.weeks[0].reusableTokensAtRisk, 200);
 });
 
 Deno.test("limits context loss to reusable overlap", () => {

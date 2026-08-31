@@ -141,11 +141,51 @@
   margin-top: 24px;
 }
 
-.performance-comparison-section > h2 {
-  margin: 0 0 12px;
+.performance-comparison-section > h2,
+.performance-section-heading h2 {
+  margin: 0;
   color: var(--dashboard-ink);
   font-size: var(--dashboard-type-section-title);
   letter-spacing: -.035em;
+}
+
+.performance-comparison-section > h2 {
+  margin-bottom: 12px;
+}
+
+.performance-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.performance-view-toggle {
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--dashboard-rule);
+  border-radius: 5px;
+  background: var(--dashboard-panel);
+}
+
+.performance-view-toggle button {
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--dashboard-muted);
+  font: 650 var(--dashboard-type-label) var(--mono);
+  letter-spacing: .025em;
+  cursor: pointer;
+}
+
+.performance-view-toggle button + button {
+  border-left: 1px solid var(--dashboard-rule);
+}
+
+.performance-view-toggle button.active {
+  background: var(--dashboard-ink);
+  color: var(--dashboard-panel);
 }
 
 .performance-comparison-section > p {
@@ -554,7 +594,7 @@
 .cache-loss-tooltip-columns,
 .cache-loss-tooltip-row {
   display: grid !important;
-  grid-template-columns: minmax(76px, 1fr) 48px 72px 72px 92px;
+  grid-template-columns: minmax(76px, 1fr) 72px 72px 80px 80px;
   gap: 8px !important;
   text-align: right;
 }
@@ -603,6 +643,16 @@
 
 .cache-loss-tooltip-row strong.neutral {
   color: var(--dashboard-muted);
+}
+
+.cache-loss-tooltip-coverage {
+  display: flex !important;
+  justify-content: space-between;
+  margin-top: 3px;
+  padding-top: 7px !important;
+  border-top: 1px solid var(--tooltip-rule);
+  color: var(--tooltip-muted);
+  font-size: var(--dashboard-type-label);
 }
 
 .performance-legend {
@@ -848,6 +898,16 @@
     grid-template-columns: 1fr;
   }
 
+  .performance-section-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .performance-view-toggle {
+    align-self: flex-start;
+    flex-wrap: wrap;
+  }
+
   .tool-calls-controls {
     flex-wrap: wrap;
     align-items: end;
@@ -874,5 +934,4 @@
   .performance-totals > div:nth-child(4) {
     border-top: 1px solid var(--row-border);
   }
-
 }

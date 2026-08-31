@@ -48,23 +48,29 @@ type Week = ProviderResult["weeks"][number] & {
 const missMetrics = [
   {
     key: "sessions",
-    label: "Sessions",
+    label: "Sessions affected",
+    description: "Sessions with at least one unexpected miss",
     rateKey: "sessionRate",
     missKey: "sessionsWithMiss",
+    eligibleKey: "eligibleSessions",
     color: "#b4522d",
   },
   {
     key: "turns",
-    label: "Turns",
+    label: "Turns affected",
+    description: "Turns with at least one unexpected miss",
     rateKey: "turnRate",
     missKey: "turnsWithMiss",
+    eligibleKey: "eligibleTurns",
     color: "#466244",
   },
   {
     key: "modelCalls",
-    label: "Model calls",
+    label: "Calls missed",
+    description: "Model calls with an unexpected miss",
     rateKey: "modelCallRate",
     missKey: "modelCallsWithMiss",
+    eligibleKey: "eligibleModelCalls",
     color: "#4d7180",
   },
 ] as const;
@@ -109,8 +115,8 @@ function MissTooltip({ active, payload, visible, comparisonRows }: {
       </p>
       <div className="comparison-tooltip-table-head" aria-hidden="true">
         <span>Category</span>
-        <span>Total</span>
-        <span>Misses</span>
+        <span>With reuse</span>
+        <span>Affected</span>
         <span>Rate</span>
         <span>Other</span>
         <span>Difference</span>
@@ -127,7 +133,7 @@ function MissTooltip({ active, payload, visible, comparisonRows }: {
         return (
           <div className="comparison-tooltip-row" key={metric.key}>
             <span>{metric.label}</span>
-            <span>{integer.format(week[metric.key])}</span>
+            <span>{integer.format(week[metric.eligibleKey])}</span>
             <span>{integer.format(week[metric.missKey])}</span>
             <strong>{displayRate(currentRate)}</strong>
             <strong>{otherRate === null ? "—" : displayRate(otherRate)}</strong>
@@ -166,6 +172,7 @@ const cacheLossBuckets = [
 ] as const;
 
 type CacheLossBucket = (typeof cacheLossBuckets)[number]["bucket"];
+type CacheLossMode = "tokens" | "rate" | "raw";
 type CacheLossWeek = ProviderResult["weeks"][number] & {
   loss0To16k: number | null;
   loss16To64k: number | null;
@@ -173,34 +180,106 @@ type CacheLossWeek = ProviderResult["weeks"][number] & {
   loss128kPlus: number | null;
 };
 
-function lossMisses(
-  buckets: ProviderResult["weeks"][number]["cacheLossBuckets"],
+const cacheLossModes = [
+  {
+    key: "tokens",
+    label: "Context lost %",
+    description: "Share of reusable context unexpectedly lost",
+  },
+  {
+    key: "rate",
+    label: "Miss rate %",
+    description: "Share of reusable calls with an unexpected miss",
+  },
+  {
+    key: "raw",
+    label: "Miss count",
+    description: "Number of unexpected cache misses",
+  },
+] as const;
+
+function cacheLossEntry(
+  week: ProviderResult["weeks"][number],
   bucket: CacheLossBucket,
 ) {
-  if (!buckets) return null;
-  return buckets.find((entry) => entry.bucket === bucket)?.requests ?? 0;
+  return week.cacheLossBuckets?.find((entry) => entry.bucket === bucket);
 }
 
-function cacheLossDifference(value: number, other?: number) {
+function cacheLossValue(
+  week: ProviderResult["weeks"][number],
+  bucket: CacheLossBucket,
+  mode: CacheLossMode,
+) {
+  const entry = cacheLossEntry(week, bucket);
+  if (mode === "raw") return entry?.requests ?? 0;
+  if (mode === "rate") {
+    return week.reuseOpportunities === 0
+      ? null
+      : (entry?.requests ?? 0) / week.reuseOpportunities * 100;
+  }
+  return week.reusableTokensAtRisk === 0
+    ? null
+    : (entry?.unretainedTokens ?? 0) / week.reusableTokensAtRisk * 100;
+}
+
+function cacheLossAxisMax(
+  results: Array<ProviderResult | undefined>,
+  mode: CacheLossMode,
+) {
+  const maximum = Math.max(
+    0,
+    ...results.flatMap((result) =>
+      (result?.weeks ?? []).map((week) =>
+        cacheLossBuckets.reduce(
+          (total, bucket) =>
+            total + (cacheLossValue(week, bucket.bucket, mode) ?? 0),
+          0,
+        )
+      )
+    ),
+  );
+  return maximum === 0 ? 1 : maximum * 1.1;
+}
+
+function displayCacheLossValue(value: number | undefined, mode: CacheLossMode) {
+  if (value === undefined) return "—";
+  if (mode === "raw") return integer.format(value);
+  return `${value.toFixed(1)}%`;
+}
+
+function cacheLossDifference(
+  value: number,
+  other: number | undefined,
+  mode: CacheLossMode,
+) {
   if (other === undefined) return "—";
   const difference = value - other;
-  if (difference === 0) return "Same";
+  if (Math.abs(difference) < 0.05) return "Same";
+  if (mode !== "raw") {
+    return `${difference > 0 ? "+" : "−"}${Math.abs(difference).toFixed(1)} pp`;
+  }
   return `${integer.format(Math.abs(difference))} ${
     difference > 0 ? "more" : "fewer"
   }`;
 }
 
-function CacheLossTooltip({ active, payload, comparisonWeeks }: {
+function CacheLossTooltip({ active, payload, comparisonWeeks, mode }: {
   active?: boolean;
   payload?: Array<{ payload?: CacheLossWeek }>;
   comparisonWeeks?: ProviderResult["weeks"];
+  mode: CacheLossMode;
 }) {
   const week = payload?.[0]?.payload;
-  const buckets = week?.cacheLossBuckets;
-  if (!active || !week || !buckets) return null;
-  const comparisonBuckets = comparisonWeeks?.find((entry) =>
+  if (!active || !week) return null;
+  const comparisonWeek = comparisonWeeks?.find((entry) =>
     entry.date === week.date
-  )?.cacheLossBuckets;
+  );
+  const valueHeading = mode === "tokens"
+    ? "Context lost"
+    : mode === "rate"
+    ? "Miss rate"
+    : "Misses";
+  const detailHeading = mode === "rate" ? "Misses" : "Lost tokens";
   return (
     <div className="tooltip-surface usage-tooltip performance-tooltip comparison-tooltip cache-loss-comparison-tooltip">
       <p>
@@ -208,69 +287,68 @@ function CacheLossTooltip({ active, payload, comparisonWeeks }: {
         {date.format(new Date(`${week.endDate}T00:00:00`))}
       </p>
       <div className="cache-loss-tooltip-columns" aria-hidden="true">
-        <span>Depth</span>
-        <span>Misses</span>
-        <span>Lost tokens</span>
-        <span>Other</span>
+        <span>Loss size</span>
+        <span>{valueHeading}</span>
+        <span>{detailHeading}</span>
+        <span>Other cohort</span>
         <span>Difference</span>
       </div>
       {[...cacheLossBuckets].reverse().map((definition) => {
-        const bucket = buckets.find((entry) =>
-          entry.bucket === definition.bucket
-        );
-        const other = comparisonBuckets?.find((entry) =>
-          entry.bucket === definition.bucket
-        );
+        const bucket = cacheLossEntry(week, definition.bucket);
         const misses = bucket?.requests ?? 0;
         const tokens = bucket?.unretainedTokens ?? 0;
-        const otherMisses = other?.requests;
-        const difference = otherMisses === undefined
+        if (misses === 0) return null;
+        const value = cacheLossValue(week, definition.bucket, mode) ?? 0;
+        const otherValue = comparisonWeek
+          ? cacheLossValue(comparisonWeek, definition.bucket, mode) ?? undefined
+          : undefined;
+        const difference = otherValue === undefined
           ? undefined
-          : misses - otherMisses;
-        if (misses === 0 && (otherMisses ?? 0) === 0) return null;
+          : value - otherValue;
         return (
           <div className="cache-loss-tooltip-row" key={definition.bucket}>
             <span>{definition.label}</span>
-            <strong>{integer.format(misses)}</strong>
-            <strong title={integer.format(tokens)}>
-              {compact.format(tokens)}
-            </strong>
+            <strong>{displayCacheLossValue(value, mode)}</strong>
             <strong
-              title={otherMisses === undefined
-                ? undefined
-                : integer.format(otherMisses)}
+              title={mode === "rate" ? undefined : integer.format(tokens)}
             >
-              {otherMisses === undefined ? "—" : integer.format(otherMisses)}
+              {mode === "rate"
+                ? integer.format(misses)
+                : compact.format(tokens)}
             </strong>
+            <strong>{displayCacheLossValue(otherValue, mode)}</strong>
             <strong
-              className={difference === undefined || difference === 0
+              className={difference === undefined || Math.abs(difference) < 0.05
                 ? "neutral"
                 : difference > 0
                 ? "negative"
                 : "positive"}
-              title={difference === undefined
-                ? undefined
-                : integer.format(Math.abs(difference))}
             >
-              {cacheLossDifference(misses, otherMisses)}
+              {cacheLossDifference(value, otherValue, mode)}
             </strong>
           </div>
         );
       })}
+      <div className="cache-loss-tooltip-coverage">
+        <span>{integer.format(week.reuseOpportunities)} reusable calls</span>
+        <span>{compact.format(week.reusableTokensAtRisk)} reusable tokens</span>
+      </div>
     </div>
   );
 }
 
-function CacheLossPanel({ result, comparisonResult }: {
+function CacheLossPanel({ result, comparisonResult, mode, axisMaximum }: {
   result?: ProviderResult;
   comparisonResult?: ProviderResult;
+  mode: CacheLossMode;
+  axisMaximum: number;
 }) {
   const rows: CacheLossWeek[] = (result?.weeks ?? []).map((week) => ({
     ...week,
-    loss0To16k: lossMisses(week.cacheLossBuckets, "0-16k"),
-    loss16To64k: lossMisses(week.cacheLossBuckets, "16-64k"),
-    loss64To128k: lossMisses(week.cacheLossBuckets, "64-128k"),
-    loss128kPlus: lossMisses(week.cacheLossBuckets, "128k+"),
+    loss0To16k: cacheLossValue(week, "0-16k", mode),
+    loss16To64k: cacheLossValue(week, "16-64k", mode),
+    loss64To128k: cacheLossValue(week, "64-128k", mode),
+    loss128kPlus: cacheLossValue(week, "128k+", mode),
   }));
   const hasData = rows.some((week) =>
     week.cacheLossBuckets?.some((bucket) => bucket.requests > 0)
@@ -306,17 +384,30 @@ function CacheLossPanel({ result, comparisonResult }: {
                     tickLine={false}
                     axisLine={false}
                     minTickGap={24}
+                    tick={{
+                      fontFamily: dashboardChartFont,
+                      fontSize: dashboardChartLabelSize,
+                    }}
                   />
                   <YAxis
-                    tickFormatter={(value) => compact.format(value)}
+                    domain={[0, axisMaximum]}
+                    tickFormatter={(value) =>
+                      mode === "raw"
+                        ? compact.format(value)
+                        : `${Number(value).toFixed(value < 10 ? 1 : 0)}%`}
                     tickLine={false}
                     axisLine={false}
+                    tick={{
+                      fontFamily: dashboardChartFont,
+                      fontSize: dashboardChartLabelSize,
+                    }}
                     width={48}
                   />
                   <Tooltip
                     content={
                       <CacheLossTooltip
                         comparisonWeeks={comparisonResult?.weeks}
+                        mode={mode}
                       />
                     }
                   />
@@ -324,7 +415,7 @@ function CacheLossPanel({ result, comparisonResult }: {
                     <Bar
                       key={bucket.key}
                       dataKey={bucket.key}
-                      name={`${bucket.label} misses`}
+                      name={bucket.label}
                       stackId="loss"
                       fill={bucket.color}
                       isAnimationActive={false}
@@ -336,8 +427,7 @@ function CacheLossPanel({ result, comparisonResult }: {
             <div className="performance-legend cache-loss-legend">
               {[...cacheLossBuckets].reverse().map((bucket) => (
                 <span key={bucket.key}>
-                  <i style={{ background: bucket.color }} /> {bucket.label}{" "}
-                  misses
+                  <i style={{ background: bucket.color }} /> {bucket.label} lost
                 </span>
               ))}
             </div>
@@ -362,9 +452,9 @@ type ComparisonCohort = {
 function comparisonRows(result?: ProviderResult): Week[] {
   return (result?.weeks ?? []).map((week) => ({
     ...week,
-    sessionRate: rate(week.sessionsWithMiss, week.sessions),
-    turnRate: rate(week.turnsWithMiss, week.turns),
-    modelCallRate: rate(week.modelCallsWithMiss, week.modelCalls),
+    sessionRate: rate(week.sessionsWithMiss, week.eligibleSessions),
+    turnRate: rate(week.turnsWithMiss, week.eligibleTurns),
+    modelCallRate: rate(week.modelCallsWithMiss, week.eligibleModelCalls),
   }));
 }
 
@@ -481,7 +571,7 @@ function ComparisonMetrics({
   return (
     <div className="comparison-metrics">
       {missMetrics.map((metric) => {
-        const total = result?.[metric.key] ?? 0;
+        const eligible = result?.[metric.eligibleKey] ?? 0;
         const misses = result?.[metric.missKey] ?? 0;
         const enabled = visible.has(metric.key);
         return (
@@ -489,13 +579,21 @@ function ComparisonMetrics({
             className={enabled ? "active" : undefined}
             type="button"
             aria-pressed={enabled}
+            aria-label={`${metric.description}: ${
+              displayRate(rate(misses, eligible))
+            }`}
+            title={metric.description}
             onClick={() => onToggle(metric.key)}
             key={metric.key}
           >
             <i style={{ background: metric.color }} />
-            <strong>{result ? displayRate(rate(misses, total)) : "–"}</strong>
+            <strong>
+              {result ? displayRate(rate(misses, eligible)) : "–"}
+            </strong>
             <span>{metric.label}</span>
-            <small>{integer.format(misses)} of {integer.format(total)}</small>
+            <small>
+              {integer.format(misses)} of {integer.format(eligible)} with reuse
+            </small>
           </button>
         );
       })}
@@ -644,6 +742,7 @@ export function PerformancePage() {
   const [visibleMetricsB, setVisibleMetricsB] = useState<Set<MissMetric>>(
     () => new Set(missMetrics.map((metric) => metric.key)),
   );
+  const [cacheLossMode, setCacheLossMode] = useState<CacheLossMode>("tokens");
   const comparisonARows = comparisonRows(comparisonA.result);
   const comparisonBRows = comparisonRows(comparisonB.result);
   const comparisonAAxisMaximum = missRateAxisMax(
@@ -653,6 +752,10 @@ export function PerformancePage() {
   const comparisonBAxisMaximum = missRateAxisMax(
     comparisonBRows,
     visibleMetricsB,
+  );
+  const contextLossAxisMaximum = cacheLossAxisMax(
+    [comparisonA.result, comparisonB.result],
+    cacheLossMode,
   );
 
   function toggleMetricA(metric: MissMetric) {
@@ -725,15 +828,39 @@ export function PerformancePage() {
           </div>
         </section>
         <section className="performance-comparison-section">
-          <h2>Unexpected misses by context lost</h2>
+          <div className="performance-section-heading">
+            <h2>Impact of unexpected cache misses</h2>
+            <div
+              className="performance-view-toggle"
+              role="group"
+              aria-label="Context loss measure"
+            >
+              {cacheLossModes.map((mode) => (
+                <button
+                  className={cacheLossMode === mode.key ? "active" : undefined}
+                  type="button"
+                  aria-pressed={cacheLossMode === mode.key}
+                  title={mode.description}
+                  onClick={() => setCacheLossMode(mode.key)}
+                  key={mode.key}
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="performance-grid">
             <CacheLossPanel
               result={comparisonA.result}
               comparisonResult={comparisonB.result}
+              mode={cacheLossMode}
+              axisMaximum={contextLossAxisMaximum}
             />
             <CacheLossPanel
               result={comparisonB.result}
               comparisonResult={comparisonA.result}
+              mode={cacheLossMode}
+              axisMaximum={contextLossAxisMaximum}
             />
           </div>
         </section>

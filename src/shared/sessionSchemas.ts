@@ -687,11 +687,16 @@ const performanceWeekSchema = z.object({
   date: z.string(),
   endDate: z.string(),
   sessions: z.number().int().nonnegative(),
+  eligibleSessions: z.number().int().nonnegative(),
   sessionsWithMiss: z.number().int().nonnegative(),
   turns: z.number().int().nonnegative(),
+  eligibleTurns: z.number().int().nonnegative(),
   turnsWithMiss: z.number().int().nonnegative(),
   modelCalls: z.number().int().nonnegative(),
+  eligibleModelCalls: z.number().int().nonnegative(),
   modelCallsWithMiss: z.number().int().nonnegative(),
+  reuseOpportunities: z.number().int().nonnegative(),
+  reusableTokensAtRisk: z.number().int().nonnegative(),
   cacheLossBuckets: z.array(cacheLossBucketSchema).optional(),
 });
 
@@ -699,11 +704,15 @@ const performanceProviderSchema = z.object({
   provider: z.enum(["openai", "anthropic"]),
   selectedModel: z.string(),
   sessions: z.number().int().nonnegative(),
+  eligibleSessions: z.number().int().nonnegative(),
   sessionsWithMiss: z.number().int().nonnegative(),
   turns: z.number().int().nonnegative(),
+  eligibleTurns: z.number().int().nonnegative(),
   turnsWithMiss: z.number().int().nonnegative(),
   modelCalls: z.number().int().nonnegative(),
+  eligibleModelCalls: z.number().int().nonnegative(),
   modelCallsWithMiss: z.number().int().nonnegative(),
+  reusableTokensAtRisk: z.number().int().nonnegative(),
   weeks: z.array(performanceWeekSchema),
 });
 
