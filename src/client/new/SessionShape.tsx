@@ -284,9 +284,11 @@ export function SessionDistributions({
     setInitialInputError(undefined);
     setInitialInputUsage(undefined);
     onDataChange?.(undefined);
-    if (!enabled) return () => {
-      active = false;
-    };
+    if (!enabled) {
+      return () => {
+        active = false;
+      };
+    }
     getSessionDistributions(range, harness).then((result) => {
       if (active) {
         setData(result);

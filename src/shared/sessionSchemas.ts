@@ -595,7 +595,9 @@ export const workRhythmOverviewResponseSchema = z.object({
   sessionDiagnostics: sessionDiagnosticsSchema,
 });
 
-export const workRhythmSummarySchema = workRhythmDataSchema.omit({ days: true });
+export const workRhythmSummarySchema = workRhythmDataSchema.omit({
+  days: true,
+});
 
 export const workRhythmSummaryResponseSchema = z.object({
   workRhythm: workRhythmSummarySchema,

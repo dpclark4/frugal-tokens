@@ -659,7 +659,9 @@ type WorkRhythmRequest = {
   selectedHarness: SessionSummary["harness"] | undefined;
 };
 
-function parseWorkRhythmRequest(context: Context): WorkRhythmRequest | Response {
+function parseWorkRhythmRequest(
+  context: Context,
+): WorkRhythmRequest | Response {
   const harness = context.req.query("harness") ?? "all";
   if (!isHarnessFilter(harness)) {
     return context.json({ error: "Invalid harness" }, 400);
@@ -749,17 +751,22 @@ function workRhythmResponse(context: Context, includeDays: boolean) {
     }, total;dur=${totalDuration.toFixed(1)}`,
   );
   console.info(
-    `[${includeDays ? "work-rhythm-days" : "work-rhythm"}] harness=${harness} range=${range} roots=${loaded.length} days=${dayCount} database=${formatTiming(databaseDuration)} ${detailTimingLog} aggregate=${formatTiming(aggregationDuration)} total=${formatTiming(totalDuration)}`,
+    `[${
+      includeDays ? "work-rhythm-days" : "work-rhythm"
+    }] harness=${harness} range=${range} roots=${loaded.length} days=${dayCount} database=${
+      formatTiming(databaseDuration)
+    } ${detailTimingLog} aggregate=${formatTiming(aggregationDuration)} total=${
+      formatTiming(totalDuration)
+    }`,
   );
   return context.json(response);
 }
 
-app.get("/api/work-rhythm/days", (context) =>
-  workRhythmResponse(context, true)
+app.get(
+  "/api/work-rhythm/days",
+  (context) => workRhythmResponse(context, true),
 );
-app.get("/api/work-rhythm", (context) =>
-  workRhythmResponse(context, false)
-);
+app.get("/api/work-rhythm", (context) => workRhythmResponse(context, false));
 
 app.get("/api/overview", (context) => {
   const requestStartedAt = performance.now();

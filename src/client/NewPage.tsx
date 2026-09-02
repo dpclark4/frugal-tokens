@@ -131,8 +131,9 @@ export function NewPage() {
   }>();
   const [error, setError] = useState<string>();
   const [workRhythmError, setWorkRhythmError] = useState<string>();
-  const [secondarySectionsEnabled, setSecondarySectionsEnabled] =
-    useState(false);
+  const [secondarySectionsEnabled, setSecondarySectionsEnabled] = useState(
+    false,
+  );
   const [harnesses, setHarnesses] = useState<SessionSummary["harness"][]>([]);
   const [screenshotState, setScreenshotState] = useState<ScreenshotState>(
     "idle",
@@ -150,7 +151,9 @@ export function NewPage() {
     harness: string;
     data: TtlMissMetrics;
   }>();
-  const [highlightedSpendDates, setHighlightedSpendDates] = useState<string[]>();
+  const [highlightedSpendDates, setHighlightedSpendDates] = useState<
+    string[]
+  >();
   const screenshotRef = useRef<HTMLDivElement>(null);
   const pendingScrollYRef = useRef<number | undefined>(undefined);
   const refreshScrollYRef = useRef<number | undefined>(

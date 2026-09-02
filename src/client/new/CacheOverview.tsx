@@ -279,9 +279,11 @@ export function CacheOverview({
     setMetrics(undefined);
     setError(undefined);
     onDataChange?.(undefined);
-    if (!enabled) return () => {
-      active = false;
-    };
+    if (!enabled) {
+      return () => {
+        active = false;
+      };
+    }
     getCacheMissOverview(range, harness).then((result) => {
       if (active) {
         setMetrics(result);

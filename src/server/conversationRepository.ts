@@ -920,7 +920,9 @@ export class ConversationRepository {
       includeRootExecutionIntervals = true,
       recordTiming,
     } = options;
-    const cacheKey = `${startedAt}:${harness ?? ""}:${includeSubagentSpend}:${includeRootExecutionIntervals}`;
+    const cacheKey = `${startedAt}:${
+      harness ?? ""
+    }:${includeSubagentSpend}:${includeRootExecutionIntervals}`;
     const now = performance.now();
     if (
       includeSubagentSpend && includeRootExecutionIntervals &&
