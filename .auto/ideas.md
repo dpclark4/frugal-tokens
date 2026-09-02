@@ -1,3 +1,0 @@
-- Measure whether replacing the root execution-interval SQL with persisted/root-only rollup data is worthwhile; current timing points to this query, but a schema/rollup migration is more invasive.
-- If the lightweight work-rhythm summary still needs root intervals, consider one simple cached materialization rather than a general SQLite worker pool.
-- Compare a minimal worker-thread SQLite reader against the complexity and overhead of a pool only after endpoint/query wins are measured.
