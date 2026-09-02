@@ -170,7 +170,7 @@ type CallRow = {
 const effectiveConversationTitle = `
   COALESCE((
     SELECT ss.generated_title
-    FROM conversation_branches title_branch
+    FROM conversation_branches title_branch INDEXED BY conversation_branches_title_idx
     JOIN source_sessions ss ON ss.id = title_branch.source_session_id
     WHERE title_branch.conversation_id = c.id
       AND ss.generated_title IS NOT NULL
