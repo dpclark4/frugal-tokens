@@ -5,9 +5,15 @@ import type {
   SessionDistributionResponse,
   SessionSummary,
   TtlMissMetrics,
-  WorkRhythmOverviewResponse,
+  WorkRhythmDaysResponse,
+  WorkRhythmSummaryOverviewResponse,
 } from "../shared/sessionSchemas.ts";
-import { getActivityOverview, getHarnesses, getWorkRhythm } from "./api.ts";
+import {
+  getActivityOverview,
+  getHarnesses,
+  getWorkRhythm,
+  getWorkRhythmDays,
+} from "./api.ts";
 import { SiteHeader } from "./SiteHeader.tsx";
 import "./NewPage.css";
 import {
@@ -113,10 +119,15 @@ export function NewPage() {
     harness: string;
     data: ActivityOverviewResponse;
   }>();
-  const [loadedWorkRhythm, setLoadedWorkRhythm] = useState<{
+  const [loadedWorkRhythmSummary, setLoadedWorkRhythmSummary] = useState<{
     range: 30 | 90;
     harness: string;
-    data: WorkRhythmOverviewResponse;
+    data: WorkRhythmSummaryOverviewResponse;
+  }>();
+  const [loadedWorkRhythmDays, setLoadedWorkRhythmDays] = useState<{
+    range: 30 | 90;
+    harness: string;
+    data: WorkRhythmDaysResponse;
   }>();
   const [error, setError] = useState<string>();
   const [workRhythmError, setWorkRhythmError] = useState<string>();
@@ -148,10 +159,22 @@ export function NewPage() {
       loadedOverview.harness === search.harness
     ? loadedOverview.data
     : undefined;
-  const workRhythmData = loadedWorkRhythm !== undefined &&
-      loadedWorkRhythm.range === search.range &&
-      loadedWorkRhythm.harness === search.harness
-    ? loadedWorkRhythm.data
+  const workRhythmSummary = loadedWorkRhythmSummary !== undefined &&
+      loadedWorkRhythmSummary.range === search.range &&
+      loadedWorkRhythmSummary.harness === search.harness
+    ? loadedWorkRhythmSummary.data
+    : undefined;
+  const workRhythmDaysAreCurrent = loadedWorkRhythmDays !== undefined &&
+    loadedWorkRhythmDays.range === search.range &&
+    loadedWorkRhythmDays.harness === search.harness;
+  const workRhythmDays = workRhythmDaysAreCurrent
+    ? loadedWorkRhythmDays?.data.days ?? {}
+    : {};
+  const workRhythmData = workRhythmSummary
+    ? {
+      ...workRhythmSummary,
+      workRhythm: { ...workRhythmSummary.workRhythm, days: workRhythmDays },
+    }
     : undefined;
   const sessionDistributionsAreCurrent =
     loadedSessionDistributions !== undefined &&
@@ -161,8 +184,8 @@ export function NewPage() {
     loadedCacheMisses.range === search.range &&
     loadedCacheMisses.harness === search.harness;
   const reportReady = Boolean(
-    data && workRhythmData && sessionDistributionsAreCurrent &&
-      cacheMissesAreCurrent,
+    data && workRhythmData && workRhythmDaysAreCurrent &&
+      sessionDistributionsAreCurrent && cacheMissesAreCurrent,
   );
 
   useEffect(() => {
@@ -225,7 +248,8 @@ export function NewPage() {
     let active = true;
     setError(undefined);
     setWorkRhythmError(undefined);
-    setLoadedWorkRhythm(undefined);
+    setLoadedWorkRhythmSummary(undefined);
+    setLoadedWorkRhythmDays(undefined);
     getActivityOverview(search.range, search.harness).then((result) => {
       if (!active) return;
       setLoadedOverview({
@@ -243,10 +267,26 @@ export function NewPage() {
     });
     getWorkRhythm(search.range, search.harness).then((workRhythm) => {
       if (!active) return;
-      setLoadedWorkRhythm({
+      setLoadedWorkRhythmSummary({
         range: search.range,
         harness: search.harness,
         data: workRhythm,
+      });
+      getWorkRhythmDays(search.range, search.harness).then((days) => {
+        if (!active) return;
+        setLoadedWorkRhythmDays({
+          range: search.range,
+          harness: search.harness,
+          data: days,
+        });
+      }).catch((reason) => {
+        if (active) {
+          setWorkRhythmError(
+            reason instanceof Error
+              ? reason.message
+              : "Unable to load estimated work details",
+          );
+        }
       });
     }).catch((reason) => {
       if (active) {
@@ -295,8 +335,9 @@ export function NewPage() {
 
   async function copyReport() {
     if (
-      !data || !workRhythmData || !loadedSessionDistributions ||
-      !sessionDistributionsAreCurrent || !loadedCacheMisses ||
+      !data || !workRhythmData || !workRhythmDaysAreCurrent ||
+      !loadedSessionDistributions || !sessionDistributionsAreCurrent ||
+      !loadedCacheMisses ||
       !cacheMissesAreCurrent
     ) return;
     try {
@@ -391,6 +432,7 @@ export function NewPage() {
                 <Suspense fallback={<WorkRhythmLoading />}>
                   <WorkRhythm
                     data={workRhythmData.workRhythm}
+                    calendarLoaded={workRhythmDaysAreCurrent}
                     selectedDate={selectedDate!}
                     onSelect={(date) => update({ date })}
                   />

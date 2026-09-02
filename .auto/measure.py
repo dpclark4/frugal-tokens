@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure the main dashboard's concurrent API load without using its response cache."""
+"""Measure the main dashboard's critical and deferred API load without its response cache."""
 
 from __future__ import annotations
 
@@ -19,9 +19,9 @@ SAMPLES = max(3, int(os.environ.get("FRUGAL_TOKENS_BENCHMARK_SAMPLES", "5")))
 TIMEOUT_SECONDS = float(os.environ.get("FRUGAL_TOKENS_BENCHMARK_TIMEOUT", "30"))
 REFERENCE_DIR = Path(__file__).with_name("reference")
 
-# These are the requests issued by NewPage and its immediately mounted sections.
-# Keep this list aligned with the browser's initial dashboard load.
-ENDPOINTS = (
+# NewPage starts the critical requests together. Calendar/detail data starts
+# after the lightweight work-rhythm response resolves.
+CRITICAL_ENDPOINTS = (
     ("harnesses", "/api/harnesses", {}, True),
     (
         "activity",
@@ -49,6 +49,15 @@ ENDPOINTS = (
         True,
     ),
 )
+DEFERRED_ENDPOINTS = (
+    (
+        "work_rhythm_days",
+        "/api/work-rhythm/days",
+        {"range": "30", "harness": "all", "timeZone": TIME_ZONE},
+        False,
+    ),
+)
+ENDPOINTS = CRITICAL_ENDPOINTS + DEFERRED_ENDPOINTS
 
 
 def canonical_json(body: bytes) -> str:
@@ -107,13 +116,32 @@ def fetch(endpoint: tuple[str, str, dict[str, str], bool], run_id: str) -> dict[
     }
 
 
-def run_sample(index: int) -> tuple[float, list[dict[str, object]]]:
+def run_sample(index: int) -> tuple[float, float, list[dict[str, object]]]:
     run_id = f"{time.time_ns()}-{index}"
     started = time.perf_counter()
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(ENDPOINTS)) as executor:
-        futures = [executor.submit(fetch, endpoint, run_id) for endpoint in ENDPOINTS]
-        results = [future.result() for future in futures]
-    return (time.perf_counter() - started) * 1_000, results
+        futures = {
+            endpoint[0]: executor.submit(fetch, endpoint, run_id)
+            for endpoint in CRITICAL_ENDPOINTS
+        }
+        # Match NewPage's dependency: start calendar/detail work only after
+        # the summary response has resolved, while other critical requests may
+        # still be running.
+        summary = futures["work_rhythm"].result()
+        deferred_futures = {
+            endpoint[0]: executor.submit(fetch, endpoint, run_id)
+            for endpoint in DEFERRED_ENDPOINTS
+        }
+        results = [futures[endpoint[0]].result() for endpoint in CRITICAL_ENDPOINTS]
+        critical_ms = (time.perf_counter() - started) * 1_000
+        results.extend(
+            deferred_futures[endpoint[0]].result() for endpoint in DEFERRED_ENDPOINTS
+        )
+        complete_ms = (time.perf_counter() - started) * 1_000
+    # Keep the summary in the result set even though result ordering is based
+    # on endpoint declarations; this makes the dependency explicit above.
+    assert summary in results
+    return critical_ms, complete_ms, results
 
 
 def median(values: list[float]) -> float:
@@ -121,7 +149,7 @@ def median(values: list[float]) -> float:
 
 
 def main() -> int:
-    samples: list[tuple[float, list[dict[str, object]]]] = []
+    samples: list[tuple[float, float, list[dict[str, object]]]] = []
     try:
         for index in range(SAMPLES):
             samples.append(run_sample(index))
@@ -132,7 +160,7 @@ def main() -> int:
     REFERENCE_DIR.mkdir(parents=True, exist_ok=True)
     regressions: list[str] = []
     by_name: dict[str, list[dict[str, object]]] = {name: [] for name, *_ in ENDPOINTS}
-    for _wall, results in samples:
+    for _critical_ms, _complete_ms, results in samples:
         for result in results:
             name = str(result["name"])
             by_name[name].append(result)
@@ -146,10 +174,14 @@ def main() -> int:
             elif reference.read_text() != canonical:
                 regressions.append(name)
 
-    walls = [wall for wall, _results in samples]
-    critical_names = [name for name, _path, _params, _compare in ENDPOINTS]
+    critical_walls = [critical for critical, _complete, _results in samples]
+    complete_walls = [complete for _critical, complete, _results in samples]
     critical_bytes = [
-        sum(int(result["bytes"]) for name in critical_names for result in [by_name[name][sample]])
+        sum(int(result["bytes"]) for endpoint in CRITICAL_ENDPOINTS for result in [by_name[endpoint[0]][sample]])
+        for sample in range(SAMPLES)
+    ]
+    complete_bytes = [
+        sum(int(result["bytes"]) for endpoint in ENDPOINTS for result in [by_name[endpoint[0]][sample]])
         for sample in range(SAMPLES)
     ]
     print(f"samples={SAMPLES} base={BASE_URL}")
@@ -159,6 +191,7 @@ def main() -> int:
             f"{name}={median([float(result['duration_ms']) for result in by_name[name]]):.2f}"
             for name, *_ in ENDPOINTS
         )
+        + f" critical={median(critical_walls):.2f} complete={median(complete_walls):.2f}"
     )
     print(
         "server_ms="
@@ -171,20 +204,21 @@ def main() -> int:
     if regressions:
         print(f"DATA_REGRESSION endpoints={','.join(sorted(set(regressions)))}")
     else:
-        print("data=ok (work_rhythm intentionally excluded from equality check)")
+        print("data=ok (work_rhythm and work_rhythm_days intentionally excluded from equality check)")
 
     metrics: dict[str, float] = {
-        "critical_ms": median(walls),
-        "complete_ms": median(walls),
+        "critical_ms": median(critical_walls),
+        "complete_ms": median(complete_walls),
         "critical_bytes": median([float(value) for value in critical_bytes]),
+        "complete_bytes": median([float(value) for value in complete_bytes]),
         "data_regressions": float(len(set(regressions))),
     }
     for name, *_ in ENDPOINTS:
         metrics[f"{name}_ms"] = median([float(result["duration_ms"]) for result in by_name[name]])
         metrics[f"{name}_bytes"] = median([float(result["bytes"]) for result in by_name[name]])
-    for name in ("activity", "work_rhythm"):
+    for name in ("activity", "work_rhythm", "work_rhythm_days"):
         timings = [result["timing"] for result in by_name[name]]
-        for timing_name in ("root-rollups", "root-execution-intervals", "cache-misses", "aggregate"):
+        for timing_name in ("root-rollups", "root-execution-intervals", "cache-misses", "work-rhythm", "work-rhythm-days", "session-diagnostics", "aggregate"):
             values = [float(timing.get(timing_name, 0)) for timing in timings]
             if any(values):
                 metrics[f"{name}_{timing_name.replace('-', '_')}_ms"] = median(values)

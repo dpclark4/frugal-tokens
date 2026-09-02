@@ -30,9 +30,9 @@ import {
 } from "./overviewAnalytics.ts";
 import {
   aggregateActivityOverview,
-  aggregateWorkRhythmOverview,
+  aggregateWorkRhythmSummaryOverview,
 } from "./activityOverview.ts";
-import { workRhythmRange } from "./workRhythm.ts";
+import { aggregateWorkRhythm, workRhythmRange } from "./workRhythm.ts";
 import { aggregateSessionDistributions } from "./sessionShapeAnalytics.ts";
 import { expandHomePath, openArchiveDatabase, sqlitePath } from "./database.ts";
 import { SourceArtifactRepository } from "./sourceArtifactRepository.ts";
@@ -648,8 +648,16 @@ app.get("/api/activity-overview", (context) => {
   return context.json(overview);
 });
 
-app.get("/api/work-rhythm", (context) => {
-  const requestStartedAt = performance.now();
+type WorkRhythmRequest = {
+  harness: string;
+  range: 30 | 90;
+  timeZone: string;
+  start: number;
+  end: number;
+  selectedHarness: SessionSummary["harness"] | undefined;
+};
+
+function parseWorkRhythmRequest(context: Context): WorkRhythmRequest | Response {
   const harness = context.req.query("harness") ?? "all";
   if (!isHarnessFilter(harness)) {
     return context.json({ error: "Invalid harness" }, 400);
@@ -667,8 +675,20 @@ app.get("/api/work-rhythm", (context) => {
   } catch {
     return context.json({ error: "Invalid IANA timezone" }, 400);
   }
-  const { start, end } = boundaries;
-  const selectedHarness = harnessSelection(harness);
+  return {
+    harness,
+    range,
+    timeZone,
+    ...boundaries,
+    selectedHarness: harnessSelection(harness),
+  };
+}
+
+function workRhythmResponse(context: Context, includeDays: boolean) {
+  const requestStartedAt = performance.now();
+  const request = parseWorkRhythmRequest(context);
+  if (request instanceof Response) return request;
+  const { harness, range, timeZone, start, end, selectedHarness } = request;
   const databaseTimings = new Map<string, number>();
   const databaseStartedAt = performance.now();
   const loaded = readRepository.listOverviewRollups(
@@ -682,13 +702,30 @@ app.get("/api/work-rhythm", (context) => {
   const databaseDuration = performance.now() - databaseStartedAt;
   const aggregationTimings = new Map<string, number>();
   const aggregationStartedAt = performance.now();
-  const overview = aggregateWorkRhythmOverview(
-    loaded,
-    start,
-    end,
-    timeZone,
-    (name, duration) => aggregationTimings.set(name, duration),
-  );
+  let response: object;
+  let dayCount = 0;
+  if (includeDays) {
+    const workRhythm = aggregateWorkRhythm(
+      loaded,
+      start,
+      end,
+      timeZone,
+    );
+    aggregationTimings.set(
+      "work-rhythm-days",
+      performance.now() - aggregationStartedAt,
+    );
+    dayCount = Object.keys(workRhythm.days).length;
+    response = { range: workRhythm.range, days: workRhythm.days };
+  } else {
+    response = aggregateWorkRhythmSummaryOverview(
+      loaded,
+      start,
+      end,
+      timeZone,
+      (name, duration) => aggregationTimings.set(name, duration),
+    );
+  }
   const aggregationDuration = performance.now() - aggregationStartedAt;
   const totalDuration = performance.now() - requestStartedAt;
   const detailTimingHeader = [
@@ -708,14 +745,17 @@ app.get("/api/work-rhythm", (context) => {
     }, total;dur=${totalDuration.toFixed(1)}`,
   );
   console.info(
-    `[work-rhythm] harness=${harness} range=${range} roots=${loaded.length} days=${
-      Object.keys(overview.workRhythm.days).length
-    } database=${formatTiming(databaseDuration)} ${detailTimingLog} aggregate=${
-      formatTiming(aggregationDuration)
-    } total=${formatTiming(totalDuration)}`,
+    `[${includeDays ? "work-rhythm-days" : "work-rhythm"}] harness=${harness} range=${range} roots=${loaded.length} days=${dayCount} database=${formatTiming(databaseDuration)} ${detailTimingLog} aggregate=${formatTiming(aggregationDuration)} total=${formatTiming(totalDuration)}`,
   );
-  return context.json(overview);
-});
+  return context.json(response);
+}
+
+app.get("/api/work-rhythm/days", (context) =>
+  workRhythmResponse(context, true)
+);
+app.get("/api/work-rhythm", (context) =>
+  workRhythmResponse(context, false)
+);
 
 app.get("/api/overview", (context) => {
   const requestStartedAt = performance.now();
