@@ -868,7 +868,6 @@ export class ConversationRepository {
         JOIN conversations root ON root.id = tree.root_id
         JOIN sources so ON so.id = root.source_id
         WHERE miss.started_at >= ?
-          AND COALESCE(root.started_at, root.updated_at) >= ?
           AND (? IS NULL OR so.harness = ?)
       )
       SELECT harness, root_public_id, scope, status, reason, cause, gap_bucket,
@@ -882,7 +881,6 @@ export class ConversationRepository {
       GROUP BY harness, root_public_id, scope, status, reason, cause, gap_bucket
       ORDER BY harness, root_public_id, scope, status, reason, cause, gap_bucket
     `).all(
-      startedAt,
       startedAt,
       startedAt,
       harness ?? null,
