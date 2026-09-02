@@ -321,8 +321,22 @@ function missPredicates(filters: SessionMissFilter[]) {
 }
 
 /** Existing session/analytics contracts reconstructed from conversation tables. */
+const OVERVIEW_ROLLUP_CACHE_TTL_MS = 25;
+
+type OverviewRollupCache = {
+  key: string;
+  expiresAt: number;
+  value: StoredOverviewRollup[];
+};
+
 export class ConversationRepository {
+  private overviewRollupCache?: OverviewRollupCache;
+
   constructor(private db: DatabaseSync) {}
+
+  clearTransientCaches() {
+    this.overviewRollupCache = undefined;
+  }
 
   listHarnesses(): Harness[] {
     // SAFETY: The static SQL projection and migrated schema define this row contract.
@@ -906,6 +920,15 @@ export class ConversationRepository {
       includeRootExecutionIntervals = true,
       recordTiming,
     } = options;
+    const cacheKey = `${startedAt}:${harness ?? ""}:${includeSubagentSpend}:${includeRootExecutionIntervals}`;
+    const now = performance.now();
+    if (
+      includeSubagentSpend && includeRootExecutionIntervals &&
+      this.overviewRollupCache?.key === cacheKey &&
+      this.overviewRollupCache.expiresAt > now
+    ) {
+      return this.overviewRollupCache.value;
+    }
     const measured = <T>(name: string, operation: () => T): T => {
       const started = performance.now();
       const result = operation();
@@ -1029,7 +1052,7 @@ export class ConversationRepository {
           }>,
       )
       : [];
-    return measured("hydrate-rollups", () => {
+    const result = measured("hydrate-rollups", () => {
       const spendByRoot = new Map(
         spendRows.map((row) => [row.id, row.subagent_spend]),
       );
@@ -1060,6 +1083,14 @@ export class ConversationRepository {
         return rollup;
       });
     });
+    if (includeSubagentSpend && includeRootExecutionIntervals) {
+      this.overviewRollupCache = {
+        key: cacheKey,
+        expiresAt: performance.now() + OVERVIEW_ROLLUP_CACHE_TTL_MS,
+        value: result,
+      };
+    }
+    return result;
   }
 
   listSessionDistributionRollups(

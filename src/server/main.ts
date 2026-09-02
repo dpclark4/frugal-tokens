@@ -290,6 +290,7 @@ let activeSourceSync: Promise<void> | undefined;
 function syncSourcesOnce() {
   if (activeSourceSync !== undefined) return activeSourceSync;
   const running = syncSources().then(() => {
+    readRepository.clearTransientCaches();
     apiResponseCache.clear();
   }).finally(() => {
     if (activeSourceSync === running) activeSourceSync = undefined;
@@ -596,7 +597,7 @@ app.get("/api/activity-overview", (context) => {
     start - 5 * 60_000,
     selectedHarness,
     {
-      includeRootExecutionIntervals: false,
+      includeRootExecutionIntervals: true,
       recordTiming: (name, duration) => databaseTimings.set(name, duration),
     },
   );
@@ -696,7 +697,7 @@ function workRhythmResponse(context: Context, includeDays: boolean) {
     start - 5 * 60_000,
     selectedHarness,
     {
-      includeSubagentSpend: false,
+      includeSubagentSpend: true,
       recordTiming: (name, duration) => databaseTimings.set(name, duration),
     },
   );
