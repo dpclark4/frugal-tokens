@@ -226,6 +226,7 @@ function sessionDiagnostics(
     const session:
       WorkRhythmOverviewResponse["sessionDiagnostics"]["sessions"][number] = {
         id: root.sessionID ?? String(root.rootSessionID),
+        dates: days.map((day) => day.date),
         title: root.title ?? `Session ${root.rootSessionID}`,
         primaryModel,
         estimatedActiveMinutes: intervals.reduce(

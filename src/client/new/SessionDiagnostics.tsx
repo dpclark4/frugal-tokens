@@ -129,7 +129,11 @@ function SessionDot({
   cy,
   payload,
   onOpen,
-}: SessionDotGeometryProps & { onOpen: (session: ChartPoint) => void }) {
+  onHoverChange,
+}: SessionDotGeometryProps & {
+  onOpen: (session: ChartPoint) => void;
+  onHoverChange: (session: ChartPoint, hovering: boolean) => void;
+}) {
   if (cx === undefined || cy === undefined || !payload) return <g />;
   const canOpen = payload.harness !== undefined;
   const open = () => {
@@ -144,6 +148,10 @@ function SessionDot({
       tabIndex={canOpen ? 0 : undefined}
       aria-label={canOpen ? `Open ${payload.title}` : undefined}
       onClick={open}
+      onMouseEnter={() => onHoverChange(payload, true)}
+      onMouseLeave={() => onHoverChange(payload, false)}
+      onFocus={() => onHoverChange(payload, true)}
+      onBlur={() => onHoverChange(payload, false)}
       onKeyDown={(event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
@@ -183,7 +191,13 @@ function SessionDot({
   );
 }
 
-export function SessionDiagnostics({ data }: { data: SessionDiagnosticsData }) {
+export function SessionDiagnostics({
+  data,
+  onHighlightDates,
+}: {
+  data: SessionDiagnosticsData;
+  onHighlightDates?: (dates: string[] | undefined) => void;
+}) {
   const navigate = useNavigate();
   const [metric, setMetric] = useState<Metric>("spend");
   const sessions = data.sessions;
@@ -217,6 +231,10 @@ export function SessionDiagnostics({ data }: { data: SessionDiagnosticsData }) {
   });
   const metricLabel = metric === "spend" ? "Spend" : "Processed input";
 
+  function setHover(session: ChartPoint, hovering: boolean) {
+    onHighlightDates?.(hovering ? session.dates : undefined);
+  }
+
   function openSession(session: ChartPoint) {
     if (!session.harness) return;
     saveOverviewReturnScroll();
@@ -235,7 +253,11 @@ export function SessionDiagnostics({ data }: { data: SessionDiagnosticsData }) {
 
   const scatterDotProps = {
     "shape": (geometry: SessionDotGeometryProps) => (
-      <SessionDot {...geometry} onOpen={openSession} />
+      <SessionDot
+        {...geometry}
+        onOpen={openSession}
+        onHoverChange={setHover}
+      />
     ),
   };
 
