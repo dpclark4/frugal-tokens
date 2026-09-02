@@ -27,11 +27,25 @@ const standard = {
     cacheRead: 1,
     output: 50,
   },
+  "claude-fable-5-1": {
+    input: 10,
+    cacheWrite5m: 12.5,
+    cacheWrite1h: 20,
+    cacheRead: 0.25,
+    output: 50,
+  },
   "claude-mythos-5": {
     input: 10,
     cacheWrite5m: 12.5,
     cacheWrite1h: 20,
     cacheRead: 1,
+    output: 50,
+  },
+  "claude-mythos-5-1": {
+    input: 10,
+    cacheWrite5m: 12.5,
+    cacheWrite1h: 20,
+    cacheRead: 0.25,
     output: 50,
   },
   "claude-opus-5": {
@@ -124,6 +138,16 @@ const standard = {
     cacheWrite1h: 1.6,
     cacheRead: 0.08,
     output: 4,
+  },
+  "gemini-3.8-flash": {
+    input: 0.75,
+    cacheRead: 0.075,
+    output: 3.75,
+  },
+  "gemini-3.7-flash": {
+    input: 0.75,
+    cacheRead: 0.075,
+    output: 3.75,
   },
   "grok-4-6": {
     input: 2,
@@ -309,6 +333,19 @@ const reducedSolLongContextRates = {
   },
 } satisfies ModelRateRegistry;
 
+const geminiFutureRates = {
+  "gemini-3.8-flash": {
+    input: 1.5,
+    cacheRead: 0.15,
+    output: 7.5,
+  },
+  "gemini-3.7-flash": {
+    input: 1.5,
+    cacheRead: 0.15,
+    output: 7.5,
+  },
+} satisfies ModelRateRegistry;
+
 const reducedLunaTerraRates = {
   "gpt-5.6-terra": {
     input: 2,
@@ -342,6 +379,7 @@ const reducedLunaTerraLongContextRates = {
 const LONG_CONTEXT_THRESHOLD = 272_000;
 const GROK_LONG_CONTEXT_THRESHOLD = 200_000;
 const MINIMAX_M3_LONG_CONTEXT_THRESHOLD = 512_000;
+const GEMINI_PRICE_CUT = Date.parse("2027-01-01T00:00:00Z");
 const OPENAI_LUNA_TERRA_PRICE_CUT = Date.parse("2026-07-30T20:00:00Z");
 const OPENAI_SOL_PRICE_CUT = Date.parse("2026-08-21T21:00:00Z");
 
@@ -367,7 +405,9 @@ export const counterfactualModelIDs = [
   "gpt-5-mini",
   "gpt-5-nano",
   "claude-fable-5",
+  "claude-fable-5-1",
   "claude-mythos-5",
+  "claude-mythos-5-1",
   "claude-opus-5",
   "claude-opus-4-8",
   "claude-opus-4-7",
@@ -379,6 +419,8 @@ export const counterfactualModelIDs = [
   "claude-sonnet-4-5",
   "claude-haiku-4-5",
   "claude-haiku-3-5",
+  "gemini-3.8-flash",
+  "gemini-3.7-flash",
   "grok-4-6",
   "grok-4-5",
   "grok-build-0.1",
@@ -428,6 +470,10 @@ export function modelRateCard(
     provider?.toLowerCase() === "cursor" ? cursorPricingModel(model) : model,
   );
   const long = usesLongContextRates(normalized, inputTokens);
+  if (timestamp >= GEMINI_PRICE_CUT) {
+    const futureRates = registeredRate(geminiFutureRates, normalized);
+    if (futureRates) return futureRates;
+  }
   if (timestamp >= OPENAI_SOL_PRICE_CUT) {
     const reducedRates = registeredRate(
       long ? reducedSolLongContextRates : reducedSolRates,

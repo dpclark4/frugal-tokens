@@ -163,6 +163,40 @@ Deno.test("prices Claude Opus 5 at its published rates", () => {
   );
 });
 
+Deno.test("prices Claude Fable and Mythos 5.1 at published rates", () => {
+  for (const model of ["claude-fable-5-1", "claude-mythos-5.1"]) {
+    closeTo(
+      computeModelCallCost(
+        tokens({
+          uncachedInput: 1_000_000,
+          cacheRead: 1_000_000,
+          cacheWrite: 2_000_000,
+          cacheWrite5m: 1_000_000,
+          cacheWrite1h: 1_000_000,
+          output: 1_000_000,
+        }),
+        model,
+        timestamp,
+      ),
+      92.75,
+    );
+  }
+});
+
+Deno.test("prices Gemini Flash models before and after the 2027 rate change", () => {
+  const before = Date.parse("2026-12-31T23:59:59.999Z");
+  const effectiveAt = Date.parse("2027-01-01T00:00:00Z");
+  for (const model of ["gemini-3.8-flash", "google/gemini-3.7-flash"]) {
+    const usage = tokens({
+      uncachedInput: 1_000_000,
+      cacheRead: 1_000_000,
+      output: 1_000_000,
+    });
+    closeTo(computeModelCallCost(usage, model, before), 4.575);
+    closeTo(computeModelCallCost(usage, model, effectiveAt), 9.15);
+  }
+});
+
 Deno.test("normalizes OpenRouter Anthropic model IDs for pricing", () => {
   closeTo(
     computeModelCallCost(

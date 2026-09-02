@@ -1,6 +1,8 @@
 const modelDisplayNames = new Map<string, string>([
   ["claude-fable-5", "Claude Fable 5"],
+  ["claude-fable-5-1", "Claude Fable 5.1"],
   ["claude-mythos-5", "Claude Mythos 5"],
+  ["claude-mythos-5-1", "Claude Mythos 5.1"],
   ["claude-opus-5", "Claude Opus 5"],
   ["claude-opus-4-8", "Claude Opus 4.8"],
   ["claude-opus-4-7", "Claude Opus 4.7"],
@@ -12,6 +14,8 @@ const modelDisplayNames = new Map<string, string>([
   ["claude-sonnet-4-5", "Claude Sonnet 4.5"],
   ["claude-haiku-4-5", "Claude Haiku 4.5"],
   ["claude-haiku-3-5", "Claude Haiku 3.5"],
+  ["gemini-3.8-flash", "Gemini 3.8 Flash"],
+  ["gemini-3.7-flash", "Gemini 3.7 Flash"],
   ["gpt-5.6-terra", "GPT 5.6 Terra"],
   ["gpt-5.6-sol", "GPT 5.6 Sol"],
   ["gpt-5.6-luna", "GPT 5.6 Luna"],
@@ -57,7 +61,7 @@ function withoutProviderPrefix(model: string) {
   // "us.anthropic.claude-opus-4-7". Keep the model portion for display and
   // grouping without changing the persisted ID.
   return normalized.replace(
-    /^.*?(?=(?:claude|gpt|grok|kimi|glm|minimax|muse)-)/,
+    /^.*?(?=(?:claude|gemini|gpt|grok|kimi|glm|minimax|muse)-)/,
     "",
   );
 }
@@ -73,7 +77,7 @@ function withoutReleaseSuffix(model: string) {
 function withoutVersionSeparator(model: string) {
   // Some provider aliases use "4.7" where Anthropic IDs use "4-7".
   return model.replace(
-    /^(claude-(?:opus|sonnet|haiku)-\d+)\.(\d+)$/,
+    /^(claude-(?:fable|mythos|opus|sonnet|haiku)-\d+)\.(\d+)$/,
     "$1-$2",
   );
 }
