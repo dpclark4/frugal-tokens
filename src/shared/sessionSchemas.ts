@@ -576,6 +576,7 @@ export const spendCompositionSchema = z.object({
 export const sessionDiagnosticsSchema = z.object({
   sessions: z.array(z.object({
     id: z.string(),
+    dates: z.array(z.string()).min(1),
     title: z.string(),
     harness: harnessSchema.optional(),
     primaryModel: z.string().nullable(),

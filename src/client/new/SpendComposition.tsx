@@ -3,6 +3,8 @@ import {
   Bar,
   CartesianGrid,
   ComposedChart,
+  ReferenceArea,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -22,8 +24,10 @@ import "./SpendComposition.css";
 type Metric = "spend" | "tokens";
 type CompositionDay = SpendCompositionData["days"][number];
 type ChartRow = {
+  index: number;
   date: string;
   source: CompositionDay;
+  total: number;
   [key: string]: string | number | CompositionDay;
 };
 
@@ -238,9 +242,10 @@ function CompositionTooltip({ active, payload, data, metric }: {
 }
 
 function CompositionChart(
-  { data, metric }: {
+  { data, metric, highlightedDates }: {
     data: SpendCompositionData;
     metric: Metric;
+    highlightedDates?: string[];
   },
 ) {
   const series = useMemo(() => [
@@ -254,7 +259,7 @@ function CompositionChart(
       : []),
   ], [data]);
   const rows = useMemo(() =>
-    data.days.map((day) => {
+    data.days.map((day, index) => {
       const values: Record<string, number> = {};
       data.models.forEach((model, index) => {
         const value = day.models.find((item) => item.model === model.model);
@@ -267,8 +272,14 @@ function CompositionChart(
           ? day.otherSpend
           : day.otherProcessedInput;
       }
-      return { date: day.date, source: day, ...values };
+      const total = Object.values(values).reduce((sum, value) => sum + value, 0);
+      return { index, date: day.date, source: day, total, ...values };
     }), [data, metric]);
+  const highlightedRows = (highlightedDates ?? [])
+    .flatMap((date) => rows.find((row) => row.date === date) ?? [])
+    .toSorted((a, b) => a.index - b.index);
+  const maxTotal = Math.max(0, ...rows.map((row) => row.total));
+  const highlightCeiling = maxTotal === 0 ? 1 : maxTotal * 1.06;
 
   return (
     <div
@@ -292,9 +303,14 @@ function CompositionChart(
             strokeDasharray="3 5"
           />
           <XAxis
-            dataKey="date"
+            dataKey="index"
+            type="number"
+            domain={[-0.5, Math.max(0.5, rows.length - 0.5)]}
+            ticks={rows.map((row) => row.index)}
             tickFormatter={(value) =>
-              shortDate.format(parseDate(String(value)))}
+              shortDate.format(
+                parseDate(rows[Math.round(Number(value))]?.date ?? ""),
+              )}
             minTickGap={42}
             axisLine={false}
             tickLine={false}
@@ -307,6 +323,7 @@ function CompositionChart(
           <YAxis
             yAxisId="volume"
             width={48}
+            domain={[0, () => highlightCeiling]}
             tickFormatter={(value) =>
               metric === "spend"
                 ? `$${compact.format(Number(value))}`
@@ -344,13 +361,42 @@ function CompositionChart(
               isAnimationActive={false}
             />
           ))}
+          {highlightedRows.length > 0 && (
+            <ReferenceArea
+              yAxisId="volume"
+              x1={highlightedRows[0].index - 0.5}
+              x2={highlightedRows[highlightedRows.length - 1].index + 0.5}
+              y1={0}
+              y2={highlightCeiling}
+              fill="#0f7169"
+              fillOpacity={0.08}
+              stroke="none"
+              ifOverflow="visible"
+            />
+          )}
+          {highlightedRows.map((row) => (
+            <ReferenceLine
+              key={row.date}
+              yAxisId="volume"
+              segment={[
+                { x: row.index, y: highlightCeiling },
+                { x: row.index, y: row.total },
+              ]}
+              stroke="#0f7169"
+              strokeDasharray="4 4"
+              ifOverflow="visible"
+            />
+          ))}
         </ComposedChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
-export function SpendComposition({ data }: { data: SpendCompositionData }) {
+export function SpendComposition({ data, highlightedDates }: {
+  data: SpendCompositionData;
+  highlightedDates?: string[];
+}) {
   const [metric, setMetric] = useState<Metric>("spend");
   const empty = data.models.length === 0;
 
@@ -404,7 +450,11 @@ export function SpendComposition({ data }: { data: SpendCompositionData }) {
               </div>
             </header>
             <div className="composition-trend">
-              <CompositionChart data={data} metric={metric} />
+              <CompositionChart
+                data={data}
+                metric={metric}
+                highlightedDates={highlightedDates}
+              />
             </div>
           </div>
         )}

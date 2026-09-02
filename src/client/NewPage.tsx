@@ -137,6 +137,7 @@ export function NewPage() {
     harness: string;
     data: TtlMissMetrics;
   }>();
+  const [highlightedSpendDates, setHighlightedSpendDates] = useState<string[]>();
   const screenshotRef = useRef<HTMLDivElement>(null);
   const pendingScrollYRef = useRef<number | undefined>(undefined);
   const refreshScrollYRef = useRef<number | undefined>(
@@ -408,7 +409,10 @@ export function NewPage() {
                   />
                 }
               >
-                <SpendComposition data={data.spendComposition} />
+                <SpendComposition
+                  data={data.spendComposition}
+                  highlightedDates={highlightedSpendDates}
+                />
               </Suspense>
             )
             : (
@@ -446,6 +450,7 @@ export function NewPage() {
                 >
                   <SessionDiagnostics
                     data={workRhythmData.sessionDiagnostics}
+                    onHighlightDates={setHighlightedSpendDates}
                   />
                 </Suspense>
               )

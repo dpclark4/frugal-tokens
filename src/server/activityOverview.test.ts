@@ -85,6 +85,7 @@ Deno.test("activity overview returns period totals and daily drill-down data", (
   strictEqual(result.summary.topDecileSpendShare, 5 / 9);
   deepStrictEqual(workRhythm.sessionDiagnostics.sessions, [{
     id: "2",
+    dates: ["2026-07-02"],
     title: "Session 2",
     primaryModel: null,
     estimatedActiveMinutes: 0,
@@ -96,6 +97,7 @@ Deno.test("activity overview returns period totals and daily drill-down data", (
     userTurns: 1,
   }, {
     id: "1",
+    dates: ["2026-07-01", "2026-07-02"],
     title: "Session 1",
     primaryModel: null,
     estimatedActiveMinutes: 0,
