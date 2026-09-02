@@ -1020,8 +1020,6 @@ export class ConversationRepository {
               AND COALESCE(root_call.source_call_id, '')
                 NOT LIKE 'unmeasured:%'
             GROUP BY root_turn.conversation_id, root_turn.id
-            ORDER BY root_turn.conversation_id, root_turn.started_at,
-              root_turn.ordinal
           ) measured_turn
           GROUP BY measured_turn.root_id
           ORDER BY measured_turn.root_id
