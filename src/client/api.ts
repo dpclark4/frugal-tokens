@@ -14,7 +14,7 @@ import {
   ttlMissMetricsSchema,
   usageResponseSchema,
   workRhythmDaysResponseSchema,
-  workRhythmSummaryOverviewResponseSchema,
+  workRhythmSummaryResponseSchema,
 } from "../shared/sessionSchemas.ts";
 
 // SAFETY: Vite injects the typed env object into import.meta for client builds.
@@ -91,7 +91,7 @@ export async function getWorkRhythm(
   range: 30 | 90,
   harness: string,
 ) {
-  return workRhythmSummaryOverviewResponseSchema.parse(
+  return workRhythmSummaryResponseSchema.parse(
     await getJson(`/api/work-rhythm?${workRhythmQuery(range, harness)}`),
   );
 }

@@ -30,9 +30,10 @@ import {
 } from "./overviewAnalytics.ts";
 import {
   aggregateActivityOverview,
+  aggregateWorkRhythmOverview,
   aggregateWorkRhythmSummaryOverview,
 } from "./activityOverview.ts";
-import { aggregateWorkRhythm, workRhythmRange } from "./workRhythm.ts";
+import { workRhythmRange } from "./workRhythm.ts";
 import { aggregateSessionDistributions } from "./sessionShapeAnalytics.ts";
 import { expandHomePath, openArchiveDatabase, sqlitePath } from "./database.ts";
 import { SourceArtifactRepository } from "./sourceArtifactRepository.ts";
@@ -705,26 +706,28 @@ function workRhythmResponse(context: Context, includeDays: boolean) {
   let response: object;
   let dayCount = 0;
   if (includeDays) {
-    const workRhythm = aggregateWorkRhythm(
-      loaded,
-      start,
-      end,
-      timeZone,
-    );
-    aggregationTimings.set(
-      "work-rhythm-days",
-      performance.now() - aggregationStartedAt,
-    );
-    dayCount = Object.keys(workRhythm.days).length;
-    response = { range: workRhythm.range, days: workRhythm.days };
-  } else {
-    response = aggregateWorkRhythmSummaryOverview(
+    const overview = aggregateWorkRhythmOverview(
       loaded,
       start,
       end,
       timeZone,
       (name, duration) => aggregationTimings.set(name, duration),
     );
+    dayCount = Object.keys(overview.workRhythm.days).length;
+    response = {
+      range: overview.workRhythm.range,
+      days: overview.workRhythm.days,
+      sessionDiagnostics: overview.sessionDiagnostics,
+    };
+  } else {
+    const overview = aggregateWorkRhythmSummaryOverview(
+      loaded,
+      start,
+      end,
+      timeZone,
+      (name, duration) => aggregationTimings.set(name, duration),
+    );
+    response = { workRhythm: overview.workRhythm };
   }
   const aggregationDuration = performance.now() - aggregationStartedAt;
   const totalDuration = performance.now() - requestStartedAt;

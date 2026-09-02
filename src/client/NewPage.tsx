@@ -6,7 +6,7 @@ import type {
   SessionSummary,
   TtlMissMetrics,
   WorkRhythmDaysResponse,
-  WorkRhythmSummaryOverviewResponse,
+  WorkRhythmSummaryResponse,
 } from "../shared/sessionSchemas.ts";
 import {
   getActivityOverview,
@@ -122,7 +122,7 @@ export function NewPage() {
   const [loadedWorkRhythmSummary, setLoadedWorkRhythmSummary] = useState<{
     range: 30 | 90;
     harness: string;
-    data: WorkRhythmSummaryOverviewResponse;
+    data: WorkRhythmSummaryResponse;
   }>();
   const [loadedWorkRhythmDays, setLoadedWorkRhythmDays] = useState<{
     range: 30 | 90;
@@ -178,6 +178,12 @@ export function NewPage() {
       workRhythm: { ...workRhythmSummary.workRhythm, days: workRhythmDays },
     }
     : undefined;
+  const workRhythmOverview = workRhythmData && workRhythmDaysAreCurrent
+    ? {
+      ...workRhythmData,
+      sessionDiagnostics: loadedWorkRhythmDays!.data.sessionDiagnostics,
+    }
+    : undefined;
   const sessionDistributionsAreCurrent =
     loadedSessionDistributions !== undefined &&
     loadedSessionDistributions.range === search.range &&
@@ -186,8 +192,8 @@ export function NewPage() {
     loadedCacheMisses.range === search.range &&
     loadedCacheMisses.harness === search.harness;
   const reportReady = Boolean(
-    data && workRhythmData && workRhythmDaysAreCurrent &&
-      sessionDistributionsAreCurrent && cacheMissesAreCurrent,
+    data && workRhythmOverview && sessionDistributionsAreCurrent &&
+      cacheMissesAreCurrent,
   );
 
   useEffect(() => {
@@ -347,16 +353,15 @@ export function NewPage() {
 
   async function copyReport() {
     if (
-      !data || !workRhythmData || !workRhythmDaysAreCurrent ||
-      !loadedSessionDistributions || !sessionDistributionsAreCurrent ||
-      !loadedCacheMisses ||
+      !data || !workRhythmOverview || !loadedSessionDistributions ||
+      !sessionDistributionsAreCurrent || !loadedCacheMisses ||
       !cacheMissesAreCurrent
     ) return;
     try {
       const { buildOverviewReport } = await import("./overviewReport.ts");
       await copyText(buildOverviewReport({
         overview: data,
-        workRhythmOverview: workRhythmData,
+        workRhythmOverview,
         sessionDistributions: loadedSessionDistributions.data,
         cacheMisses: loadedCacheMisses.data,
         harness: search.harness,
@@ -494,7 +499,7 @@ export function NewPage() {
                     : undefined,
                 )}
             />
-            {workRhythmData
+            {workRhythmOverview
               ? (
                 <Suspense
                   fallback={
@@ -505,7 +510,7 @@ export function NewPage() {
                   }
                 >
                   <SessionDiagnostics
-                    data={workRhythmData.sessionDiagnostics}
+                    data={workRhythmOverview.sessionDiagnostics}
                     onHighlightDates={setHighlightedSpendDates}
                   />
                 </Suspense>

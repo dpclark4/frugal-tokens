@@ -1,7 +1,7 @@
 import type {
   ActivityOverviewResponse,
   WorkRhythmOverviewResponse,
-  WorkRhythmSummaryOverviewResponse,
+  WorkRhythmSummaryResponse,
 } from "../shared/sessionSchemas.ts";
 import type { StoredOverviewRollup } from "./overviewAnalytics.ts";
 import {
@@ -481,13 +481,9 @@ export function aggregateWorkRhythmSummaryOverview(
   end: number,
   timeZone: string,
   recordTiming?: (name: string, duration: number) => void,
-): WorkRhythmSummaryOverviewResponse {
-  return aggregateWorkRhythmResponse(
-    roots,
-    start,
-    end,
-    timeZone,
-    aggregateWorkRhythmSummary,
-    recordTiming,
-  );
+): WorkRhythmSummaryResponse {
+  const startedAt = performance.now();
+  const workRhythm = aggregateWorkRhythmSummary(roots, start, end, timeZone);
+  recordTiming?.("work-rhythm", performance.now() - startedAt);
+  return { workRhythm };
 }
