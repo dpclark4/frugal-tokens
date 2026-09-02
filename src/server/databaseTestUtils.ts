@@ -16,6 +16,7 @@ const migrations = [
   "../../db/migrations/20260812120000_compact_conversation_summaries.sql",
   "../../db/migrations/20260813120000_canonicalize_conversation_checkpoint.sql",
   "../../db/migrations/20260814120000_remove_legacy_session_schema.sql",
+  "../../db/migrations/20260902120000_add_tool_event_execution_idx.sql",
 ].map((path) => new URL(path, import.meta.url));
 
 export function migrateTestDatabase(db: DatabaseSync) {
