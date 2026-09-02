@@ -840,7 +840,8 @@ export class ConversationRepository {
     const rows = this.db.prepare(`
       WITH RECURSIVE tree(conversation_id, root_id) AS (
         SELECT c.id, c.id FROM conversations c
-        WHERE NOT EXISTS (
+        WHERE COALESCE(c.started_at, c.updated_at) >= ?
+          AND NOT EXISTS (
           SELECT 1 FROM conversation_subagent_launches launch
           WHERE launch.child_conversation_id = c.id
         )
@@ -881,6 +882,7 @@ export class ConversationRepository {
       GROUP BY harness, root_public_id, scope, status, reason, cause, gap_bucket
       ORDER BY harness, root_public_id, scope, status, reason, cause, gap_bucket
     `).all(
+      startedAt,
       startedAt,
       startedAt,
       harness ?? null,
