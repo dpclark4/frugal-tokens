@@ -4,134 +4,69 @@
 [config] codex disabled: CODEX_SESSION_DIR is not set
 [config] cursor disabled: CURSOR_CHATS_PATH is not set
 Frugal Tokens API listening on http://localhost:19000
-[sync] complete duration=342.0ms
-[request] method=GET endpoint=/api/harnesses?bench=1788383908749382000-0 status=200 cache=MISS duration=1.2ms ip=127.0.0.1
-[work-rhythm] harness=all range=30 roots=151 days=0 database=10.7ms root-rollups=3.4ms root-execution-intervals=6.5ms hydrate-rollups=0.7ms work-rhythm=2.9ms aggregate=2.9ms total=14.1ms
-[request] method=GET endpoint=/api/work-rhythm?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383908749382000-0 status=200 cache=MISS duration=14.6ms ip=127.0.0.1
-[activity-overview] harness=all range=30 roots=151 days=22 database=4.2ms root-rollups=0.6ms descendant-spend=0.5ms hydrate-rollups=0.4ms cache-misses=2.7ms activity-buckets=0.3ms spend-composition=1.4ms daily-response=5.7ms aggregate=7.6ms total=11.8ms
-[request] method=GET endpoint=/api/activity-overview?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383908749382000-0 status=200 cache=MISS duration=12.4ms ip=127.0.0.1
-[work-rhythm-days] harness=all range=30 roots=151 days=30 database=5.6ms root-rollups=0.6ms root-execution-intervals=4.5ms hydrate-rollups=0.5ms work-rhythm=5.1ms session-diagnostics=0.4ms aggregate=5.5ms total=11.2ms
-[request] method=GET endpoint=/api/work-rhythm/days?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383908749382000-0 status=200 cache=MISS duration=12.3ms ip=127.0.0.1
-[session-shape] harness=all range=30 roots=151 samples=151 database=4.3ms aggregate=0.4ms total=4.7ms
-[request] method=GET endpoint=/api/session-shape?range=30&harness=all&bench=1788383908749382000-0 status=200 cache=MISS duration=5.1ms ip=127.0.0.1
-[usage] harness=all range=30 roots=151 subagentGroups=9 days=22 sources=11.9ms database=11.9ms aggregate=1.3ms total=13.3ms
-[request] method=GET endpoint=/api/usage?range=30&harness=all&bench=1788383908749382000-0 status=200 cache=MISS duration=13.5ms ip=127.0.0.1
-[cache-miss-overview] harness=all range=30 calls=0 storedGroups=136 sources=12.3ms database=12.3ms aggregate=1.5ms total=13.7ms
-[request] method=GET endpoint=/api/cache-misses/overview?range=30&harness=all&bench=1788383908749382000-0 status=200 cache=MISS duration=14.0ms ip=127.0.0.1
-[request] method=GET endpoint=/api/harnesses?bench=1788383908843919000-1 status=200 cache=MISS duration=0.2ms ip=127.0.0.1
-[work-rhythm] harness=all range=30 roots=151 days=0 database=5.5ms root-rollups=0.7ms root-execution-intervals=4.4ms hydrate-rollups=0.5ms work-rhythm=1.5ms aggregate=1.5ms total=7.1ms
-[request] method=GET endpoint=/api/work-rhythm?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383908843919000-1 status=200 cache=MISS duration=7.3ms ip=127.0.0.1
-[activity-overview] harness=all range=30 roots=151 days=22 database=3.0ms root-rollups=0.5ms descendant-spend=0.2ms hydrate-rollups=0.3ms cache-misses=2.0ms activity-buckets=0.2ms spend-composition=0.2ms daily-response=0.6ms aggregate=1.0ms total=4.0ms
-[request] method=GET endpoint=/api/activity-overview?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383908843919000-1 status=200 cache=MISS duration=4.3ms ip=127.0.0.1
-[work-rhythm-days] harness=all range=30 roots=151 days=30 database=5.3ms root-rollups=0.5ms root-execution-intervals=4.3ms hydrate-rollups=0.5ms work-rhythm=3.4ms session-diagnostics=0.6ms aggregate=4.1ms total=9.4ms
-[request] method=GET endpoint=/api/work-rhythm/days?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383908843919000-1 status=200 cache=MISS duration=10.4ms ip=127.0.0.1
-[session-shape] harness=all range=30 roots=151 samples=151 database=1.0ms aggregate=0.2ms total=1.1ms
-[request] method=GET endpoint=/api/session-shape?range=30&harness=all&bench=1788383908843919000-1 status=200 cache=MISS duration=1.2ms ip=127.0.0.1
-[usage] harness=all range=30 roots=151 subagentGroups=9 days=22 sources=5.2ms database=5.2ms aggregate=0.6ms total=5.8ms
-[request] method=GET endpoint=/api/usage?range=30&harness=all&bench=1788383908843919000-1 status=200 cache=MISS duration=6.0ms ip=127.0.0.1
-[cache-miss-overview] harness=all range=30 calls=0 storedGroups=136 sources=8.5ms database=8.5ms aggregate=0.6ms total=9.2ms
-[request] method=GET endpoint=/api/cache-misses/overview?range=30&harness=all&bench=1788383908843919000-1 status=200 cache=MISS duration=9.3ms ip=127.0.0.1
-[request] method=GET endpoint=/api/harnesses?bench=1788383908885201000-2 status=200 cache=MISS duration=0.2ms ip=127.0.0.1
-[activity-overview] harness=all range=30 roots=151 days=22 database=3.5ms root-rollups=0.7ms descendant-spend=0.2ms hydrate-rollups=0.4ms cache-misses=2.2ms activity-buckets=0.2ms spend-composition=0.1ms daily-response=0.4ms aggregate=0.7ms total=4.3ms
-[request] method=GET endpoint=/api/activity-overview?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383908885201000-2 status=200 cache=MISS duration=6.1ms ip=127.0.0.1
-[work-rhythm] harness=all range=30 roots=151 days=0 database=5.5ms root-rollups=0.5ms root-execution-intervals=4.5ms hydrate-rollups=0.5ms work-rhythm=1.3ms aggregate=1.3ms total=6.9ms
-[request] method=GET endpoint=/api/work-rhythm?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383908885201000-2 status=200 cache=MISS duration=8.2ms ip=127.0.0.1
-[work-rhythm-days] harness=all range=30 roots=151 days=30 database=5.6ms root-rollups=0.7ms root-execution-intervals=4.4ms hydrate-rollups=0.5ms work-rhythm=3.1ms session-diagnostics=0.5ms aggregate=3.7ms total=9.3ms
-[request] method=GET endpoint=/api/work-rhythm/days?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383908885201000-2 status=200 cache=MISS duration=10.2ms ip=127.0.0.1
-[cache-miss-overview] harness=all range=30 calls=0 storedGroups=136 sources=9.4ms database=9.4ms aggregate=0.6ms total=10.1ms
-[request] method=GET endpoint=/api/cache-misses/overview?range=30&harness=all&bench=1788383908885201000-2 status=200 cache=MISS duration=10.2ms ip=127.0.0.1
-[usage] harness=all range=30 roots=151 subagentGroups=9 days=22 sources=5.9ms database=5.9ms aggregate=0.7ms total=6.6ms
-[request] method=GET endpoint=/api/usage?range=30&harness=all&bench=1788383908885201000-2 status=200 cache=MISS duration=6.8ms ip=127.0.0.1
-[session-shape] harness=all range=30 roots=151 samples=151 database=1.0ms aggregate=0.2ms total=1.2ms
-[request] method=GET endpoint=/api/session-shape?range=30&harness=all&bench=1788383908885201000-2 status=200 cache=MISS duration=1.3ms ip=127.0.0.1
-[request] method=GET endpoint=/api/harnesses?bench=1788383908933454000-3 status=200 cache=MISS duration=0.3ms ip=127.0.0.1
-[activity-overview] harness=all range=30 roots=151 days=22 database=3.5ms root-rollups=0.6ms descendant-spend=0.2ms hydrate-rollups=0.4ms cache-misses=2.3ms activity-buckets=0.2ms spend-composition=0.2ms daily-response=0.4ms aggregate=0.9ms total=4.4ms
-[request] method=GET endpoint=/api/activity-overview?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383908933454000-3 status=200 cache=MISS duration=4.8ms ip=127.0.0.1
-[work-rhythm] harness=all range=30 roots=151 days=0 database=5.6ms root-rollups=0.6ms root-execution-intervals=4.5ms hydrate-rollups=0.5ms work-rhythm=1.3ms aggregate=1.3ms total=7.0ms
-[request] method=GET endpoint=/api/work-rhythm?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383908933454000-3 status=200 cache=MISS duration=8.7ms ip=127.0.0.1
-[cache-miss-overview] harness=all range=30 calls=0 storedGroups=136 sources=9.0ms database=9.0ms aggregate=0.6ms total=9.6ms
-[request] method=GET endpoint=/api/cache-misses/overview?range=30&harness=all&bench=1788383908933454000-3 status=200 cache=MISS duration=9.8ms ip=127.0.0.1
-[session-shape] harness=all range=30 roots=151 samples=151 database=1.0ms aggregate=0.2ms total=1.2ms
-[request] method=GET endpoint=/api/session-shape?range=30&harness=all&bench=1788383908933454000-3 status=200 cache=MISS duration=1.3ms ip=127.0.0.1
-[work-rhythm-days] harness=all range=30 roots=151 days=30 database=5.3ms root-rollups=0.5ms root-execution-intervals=4.4ms hydrate-rollups=0.5ms work-rhythm=3.4ms session-diagnostics=0.2ms aggregate=3.6ms total=9.0ms
-[request] method=GET endpoint=/api/work-rhythm/days?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383908933454000-3 status=200 cache=MISS duration=10.0ms ip=127.0.0.1
-[usage] harness=all range=30 roots=151 subagentGroups=9 days=22 sources=5.8ms database=5.8ms aggregate=0.6ms total=6.4ms
-[request] method=GET endpoint=/api/usage?range=30&harness=all&bench=1788383908933454000-3 status=200 cache=MISS duration=6.6ms ip=127.0.0.1
-[request] method=GET endpoint=/api/harnesses?bench=1788383908978731000-4 status=200 cache=MISS duration=0.2ms ip=127.0.0.1
-[work-rhythm] harness=all range=30 roots=151 days=0 database=5.7ms root-rollups=0.7ms root-execution-intervals=4.6ms hydrate-rollups=0.5ms work-rhythm=1.3ms aggregate=1.3ms total=7.1ms
-[request] method=GET endpoint=/api/work-rhythm?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383908978731000-4 status=200 cache=MISS duration=7.3ms ip=127.0.0.1
-[activity-overview] harness=all range=30 roots=151 days=22 database=3.1ms root-rollups=0.6ms descendant-spend=0.2ms hydrate-rollups=0.3ms cache-misses=2.0ms activity-buckets=0.2ms spend-composition=0.1ms daily-response=0.3ms aggregate=0.7ms total=3.7ms
-[request] method=GET endpoint=/api/activity-overview?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383908978731000-4 status=200 cache=MISS duration=4.1ms ip=127.0.0.1
-[work-rhythm-days] harness=all range=30 roots=151 days=30 database=4.8ms root-rollups=0.5ms root-execution-intervals=3.9ms hydrate-rollups=0.4ms work-rhythm=2.8ms session-diagnostics=0.2ms aggregate=3.0ms total=7.8ms
-[request] method=GET endpoint=/api/work-rhythm/days?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383908978731000-4 status=200 cache=MISS duration=8.7ms ip=127.0.0.1
-[session-shape] harness=all range=30 roots=151 samples=151 database=1.0ms aggregate=0.2ms total=1.2ms
-[request] method=GET endpoint=/api/session-shape?range=30&harness=all&bench=1788383908978731000-4 status=200 cache=MISS duration=1.4ms ip=127.0.0.1
-[usage] harness=all range=30 roots=151 subagentGroups=9 days=22 sources=5.6ms database=5.6ms aggregate=0.5ms total=6.1ms
-[request] method=GET endpoint=/api/usage?range=30&harness=all&bench=1788383908978731000-4 status=200 cache=MISS duration=6.2ms ip=127.0.0.1
+[sync] complete duration=361.6ms
+[work-rhythm] harness=all range=30 roots=151 days=0 database=16.5ms root-rollups=8.4ms root-execution-intervals=7.5ms hydrate-rollups=0.5ms work-rhythm=3.1ms aggregate=3.1ms total=20.1ms
+[request] method=GET endpoint=/api/work-rhythm?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788384176875541000-0 status=200 cache=MISS duration=21.1ms ip=127.0.0.1
+[request] method=GET endpoint=/api/harnesses?bench=1788384176875541000-0 status=200 cache=MISS duration=0.4ms ip=127.0.0.1
+[activity-overview] harness=all range=30 roots=151 days=22 database=4.1ms root-rollups=0.6ms descendant-spend=0.4ms hydrate-rollups=0.4ms cache-misses=2.8ms activity-buckets=0.3ms spend-composition=1.2ms daily-response=6.2ms aggregate=7.8ms total=12.0ms
+[request] method=GET endpoint=/api/activity-overview?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788384176875541000-0 status=200 cache=MISS duration=12.4ms ip=127.0.0.1
+[work-rhythm-days] harness=all range=30 roots=151 days=30 database=5.4ms root-rollups=0.6ms root-execution-intervals=4.4ms hydrate-rollups=0.5ms work-rhythm=5.4ms session-diagnostics=0.5ms aggregate=5.9ms total=11.4ms
+[request] method=GET endpoint=/api/work-rhythm/days?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788384176875541000-0 status=200 cache=MISS duration=12.6ms ip=127.0.0.1
+[usage] harness=all range=30 roots=151 subagentGroups=9 days=22 sources=20.6ms database=20.6ms aggregate=1.3ms total=21.9ms
+[request] method=GET endpoint=/api/usage?range=30&harness=all&bench=1788384176875541000-0 status=200 cache=MISS duration=22.3ms ip=127.0.0.1
+[cache-miss-overview] harness=all range=30 calls=0 storedGroups=136 sources=12.1ms database=12.1ms aggregate=1.4ms total=13.5ms
+[request] method=GET endpoint=/api/cache-misses/overview?range=30&harness=all&bench=1788384176875541000-0 status=200 cache=MISS duration=13.8ms ip=127.0.0.1
+[session-shape] harness=all range=30 roots=151 samples=151 database=1.0ms aggregate=0.3ms total=1.3ms
+[request] method=GET endpoint=/api/session-shape?range=30&harness=all&bench=1788384176875541000-0 status=200 cache=MISS duration=1.5ms ip=127.0.0.1
+[request] method=GET endpoint=/api/harnesses?bench=1788384176979387000-1 status=200 cache=MISS duration=0.2ms ip=127.0.0.1
+[activity-overview] harness=all range=30 roots=151 days=22 database=2.7ms root-rollups=0.4ms descendant-spend=0.2ms hydrate-rollups=0.3ms cache-misses=1.7ms activity-buckets=0.2ms spend-composition=0.2ms daily-response=0.6ms aggregate=0.9ms total=3.6ms
+[request] method=GET endpoint=/api/activity-overview?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788384176979387000-1 status=200 cache=MISS duration=3.9ms ip=127.0.0.1
+[work-rhythm] harness=all range=30 roots=151 days=0 database=4.9ms root-rollups=0.4ms root-execution-intervals=4.1ms hydrate-rollups=0.4ms work-rhythm=1.4ms aggregate=1.4ms total=6.3ms
+[request] method=GET endpoint=/api/work-rhythm?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788384176979387000-1 status=200 cache=MISS duration=6.5ms ip=127.0.0.1
+[work-rhythm-days] harness=all range=30 roots=151 days=30 database=4.8ms root-rollups=0.5ms root-execution-intervals=3.8ms hydrate-rollups=0.4ms work-rhythm=3.3ms session-diagnostics=0.6ms aggregate=3.9ms total=8.7ms
+[request] method=GET endpoint=/api/work-rhythm/days?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788384176979387000-1 status=200 cache=MISS duration=9.7ms ip=127.0.0.1
+[usage] harness=all range=30 roots=151 subagentGroups=9 days=22 sources=5.3ms database=5.3ms aggregate=0.6ms total=5.9ms
+[request] method=GET endpoint=/api/usage?range=30&harness=all&bench=1788384176979387000-1 status=200 cache=MISS duration=6.0ms ip=127.0.0.1
+[session-shape] harness=all range=30 roots=151 samples=151 database=0.9ms aggregate=0.2ms total=1.0ms
+[request] method=GET endpoint=/api/session-shape?range=30&harness=all&bench=1788384176979387000-1 status=200 cache=MISS duration=1.1ms ip=127.0.0.1
+[cache-miss-overview] harness=all range=30 calls=0 storedGroups=136 sources=8.1ms database=8.1ms aggregate=0.6ms total=8.7ms
+[request] method=GET endpoint=/api/cache-misses/overview?range=30&harness=all&bench=1788384176979387000-1 status=200 cache=MISS duration=8.8ms ip=127.0.0.1
+[request] method=GET endpoint=/api/harnesses?bench=1788384177018910000-2 status=200 cache=MISS duration=0.2ms ip=127.0.0.1
+[activity-overview] harness=all range=30 roots=151 days=22 database=2.9ms root-rollups=0.4ms descendant-spend=0.2ms hydrate-rollups=0.3ms cache-misses=2.0ms activity-buckets=0.2ms spend-composition=0.1ms daily-response=0.3ms aggregate=0.7ms total=3.6ms
+[request] method=GET endpoint=/api/activity-overview?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788384177018910000-2 status=200 cache=MISS duration=3.8ms ip=127.0.0.1
+[work-rhythm] harness=all range=30 roots=151 days=0 database=4.8ms root-rollups=0.4ms root-execution-intervals=4.0ms hydrate-rollups=0.4ms work-rhythm=1.3ms aggregate=1.3ms total=6.2ms
+[request] method=GET endpoint=/api/work-rhythm?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788384177018910000-2 status=200 cache=MISS duration=6.3ms ip=127.0.0.1
+[usage] harness=all range=30 roots=151 subagentGroups=9 days=22 sources=5.1ms database=5.1ms aggregate=0.6ms total=5.7ms
+[request] method=GET endpoint=/api/usage?range=30&harness=all&bench=1788384177018910000-2 status=200 cache=MISS duration=5.8ms ip=127.0.0.1
+[session-shape] harness=all range=30 roots=151 samples=151 database=0.8ms aggregate=0.1ms total=1.0ms
+[request] method=GET endpoint=/api/session-shape?range=30&harness=all&bench=1788384177018910000-2 status=200 cache=MISS duration=1.0ms ip=127.0.0.1
+[work-rhythm-days] harness=all range=30 roots=151 days=30 database=5.0ms root-rollups=0.4ms root-execution-intervals=4.1ms hydrate-rollups=0.5ms work-rhythm=3.2ms session-diagnostics=0.2ms aggregate=3.4ms total=8.4ms
+[request] method=GET endpoint=/api/work-rhythm/days?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788384177018910000-2 status=200 cache=MISS duration=9.3ms ip=127.0.0.1
 [cache-miss-overview] harness=all range=30 calls=0 storedGroups=136 sources=8.9ms database=8.9ms aggregate=0.6ms total=9.5ms
-[request] method=GET endpoint=/api/cache-misses/overview?range=30&harness=all&bench=1788383908978731000-4 status=200 cache=MISS duration=9.6ms ip=127.0.0.1
-[request] method=GET endpoint=/api/harnesses?bench=1788383959994211000-0 status=200 cache=MISS duration=1.8ms ip=127.0.0.1
-[work-rhythm] harness=all range=30 roots=151 days=0 database=15.6ms root-rollups=7.6ms root-execution-intervals=7.4ms hydrate-rollups=0.5ms work-rhythm=2.4ms aggregate=2.4ms total=18.0ms
-[request] method=GET endpoint=/api/work-rhythm?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383959994211000-0 status=200 cache=MISS duration=18.3ms ip=127.0.0.1
-[activity-overview] harness=all range=30 roots=151 days=22 database=4.2ms root-rollups=0.6ms descendant-spend=0.4ms hydrate-rollups=0.5ms cache-misses=2.6ms activity-buckets=0.2ms spend-composition=0.1ms daily-response=0.6ms aggregate=0.9ms total=5.1ms
-[request] method=GET endpoint=/api/activity-overview?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383959994211000-0 status=200 cache=MISS duration=5.4ms ip=127.0.0.1
-[work-rhythm-days] harness=all range=30 roots=151 days=30 database=5.5ms root-rollups=0.5ms root-execution-intervals=4.4ms hydrate-rollups=0.5ms work-rhythm=4.2ms session-diagnostics=0.4ms aggregate=4.6ms total=10.0ms
-[request] method=GET endpoint=/api/work-rhythm/days?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383959994211000-0 status=200 cache=MISS duration=11.1ms ip=127.0.0.1
-[usage] harness=all range=30 roots=151 subagentGroups=9 days=22 sources=55.6ms database=55.6ms aggregate=0.6ms total=56.2ms
-[request] method=GET endpoint=/api/usage?range=30&harness=all&bench=1788383959994211000-0 status=200 cache=MISS duration=56.4ms ip=127.0.0.1
-[session-shape] harness=all range=30 roots=151 samples=151 database=1.4ms aggregate=0.2ms total=1.5ms
-[request] method=GET endpoint=/api/session-shape?range=30&harness=all&bench=1788383959994211000-0 status=200 cache=MISS duration=1.6ms ip=127.0.0.1
-[cache-miss-overview] harness=all range=30 calls=0 storedGroups=136 sources=14.5ms database=14.5ms aggregate=1.3ms total=15.8ms
-[request] method=GET endpoint=/api/cache-misses/overview?range=30&harness=all&bench=1788383959994211000-0 status=200 cache=MISS duration=16.0ms ip=127.0.0.1
-[activity-overview] harness=all range=30 roots=151 days=22 database=3.2ms root-rollups=0.5ms descendant-spend=0.2ms hydrate-rollups=0.3ms cache-misses=2.1ms activity-buckets=0.1ms spend-composition=0.1ms daily-response=0.4ms aggregate=0.7ms total=3.9ms
-[request] method=GET endpoint=/api/activity-overview?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383960121980000-1 status=200 cache=MISS duration=4.2ms ip=127.0.0.1
-[request] method=GET endpoint=/api/harnesses?bench=1788383960121980000-1 status=200 cache=MISS duration=0.2ms ip=127.0.0.1
-[work-rhythm] harness=all range=30 roots=151 days=0 database=5.0ms root-rollups=0.5ms root-execution-intervals=4.1ms hydrate-rollups=0.4ms work-rhythm=1.4ms aggregate=1.4ms total=6.4ms
-[request] method=GET endpoint=/api/work-rhythm?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383960121980000-1 status=200 cache=MISS duration=6.5ms ip=127.0.0.1
-[work-rhythm-days] harness=all range=30 roots=151 days=30 database=5.0ms root-rollups=0.5ms root-execution-intervals=4.0ms hydrate-rollups=0.5ms work-rhythm=3.5ms session-diagnostics=0.2ms aggregate=3.7ms total=8.7ms
-[request] method=GET endpoint=/api/work-rhythm/days?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383960121980000-1 status=200 cache=MISS duration=9.6ms ip=127.0.0.1
-[session-shape] harness=all range=30 roots=151 samples=151 database=1.0ms aggregate=0.2ms total=1.1ms
-[request] method=GET endpoint=/api/session-shape?range=30&harness=all&bench=1788383960121980000-1 status=200 cache=MISS duration=1.2ms ip=127.0.0.1
-[usage] harness=all range=30 roots=151 subagentGroups=9 days=22 sources=5.2ms database=5.2ms aggregate=0.8ms total=6.0ms
-[request] method=GET endpoint=/api/usage?range=30&harness=all&bench=1788383960121980000-1 status=200 cache=MISS duration=6.1ms ip=127.0.0.1
-[cache-miss-overview] harness=all range=30 calls=0 storedGroups=136 sources=8.3ms database=8.3ms aggregate=0.8ms total=9.1ms
-[request] method=GET endpoint=/api/cache-misses/overview?range=30&harness=all&bench=1788383960121980000-1 status=200 cache=MISS duration=9.2ms ip=127.0.0.1
-[request] method=GET endpoint=/api/harnesses?bench=1788383960162906000-2 status=200 cache=MISS duration=0.2ms ip=127.0.0.1
-[activity-overview] harness=all range=30 roots=151 days=22 database=3.1ms root-rollups=0.6ms descendant-spend=0.2ms hydrate-rollups=0.3ms cache-misses=2.0ms activity-buckets=0.2ms spend-composition=0.3ms daily-response=0.3ms aggregate=0.8ms total=3.9ms
-[request] method=GET endpoint=/api/activity-overview?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383960162906000-2 status=200 cache=MISS duration=4.2ms ip=127.0.0.1
-[work-rhythm] harness=all range=30 roots=151 days=0 database=4.8ms root-rollups=0.5ms root-execution-intervals=3.9ms hydrate-rollups=0.4ms work-rhythm=1.1ms aggregate=1.1ms total=5.9ms
-[request] method=GET endpoint=/api/work-rhythm?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383960162906000-2 status=200 cache=MISS duration=6.0ms ip=127.0.0.1
-[work-rhythm-days] harness=all range=30 roots=151 days=30 database=4.9ms root-rollups=0.5ms root-execution-intervals=4.0ms hydrate-rollups=0.4ms work-rhythm=3.1ms session-diagnostics=0.2ms aggregate=3.3ms total=8.2ms
-[request] method=GET endpoint=/api/work-rhythm/days?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383960162906000-2 status=200 cache=MISS duration=9.0ms ip=127.0.0.1
-[session-shape] harness=all range=30 roots=151 samples=151 database=1.0ms aggregate=0.2ms total=1.1ms
-[request] method=GET endpoint=/api/session-shape?range=30&harness=all&bench=1788383960162906000-2 status=200 cache=MISS duration=1.2ms ip=127.0.0.1
-[usage] harness=all range=30 roots=151 subagentGroups=9 days=22 sources=5.1ms database=5.1ms aggregate=0.5ms total=5.7ms
-[request] method=GET endpoint=/api/usage?range=30&harness=all&bench=1788383960162906000-2 status=200 cache=MISS duration=5.8ms ip=127.0.0.1
-[cache-miss-overview] harness=all range=30 calls=0 storedGroups=136 sources=8.3ms database=8.3ms aggregate=0.8ms total=9.1ms
-[request] method=GET endpoint=/api/cache-misses/overview?range=30&harness=all&bench=1788383960162906000-2 status=200 cache=MISS duration=9.2ms ip=127.0.0.1
-[request] method=GET endpoint=/api/harnesses?bench=1788383960202372000-3 status=200 cache=MISS duration=0.3ms ip=127.0.0.1
-[work-rhythm] harness=all range=30 roots=151 days=0 database=5.1ms root-rollups=0.6ms root-execution-intervals=4.1ms hydrate-rollups=0.4ms work-rhythm=1.3ms aggregate=1.3ms total=6.5ms
-[request] method=GET endpoint=/api/work-rhythm?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383960202372000-3 status=200 cache=MISS duration=6.6ms ip=127.0.0.1
-[activity-overview] harness=all range=30 roots=151 days=22 database=2.8ms root-rollups=0.5ms descendant-spend=0.2ms hydrate-rollups=0.3ms cache-misses=1.7ms activity-buckets=0.2ms spend-composition=0.1ms daily-response=0.5ms aggregate=0.7ms total=3.5ms
-[request] method=GET endpoint=/api/activity-overview?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383960202372000-3 status=200 cache=MISS duration=3.7ms ip=127.0.0.1
-[work-rhythm-days] harness=all range=30 roots=151 days=30 database=5.1ms root-rollups=0.4ms root-execution-intervals=4.2ms hydrate-rollups=0.5ms work-rhythm=3.3ms session-diagnostics=0.2ms aggregate=3.5ms total=8.6ms
-[request] method=GET endpoint=/api/work-rhythm/days?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383960202372000-3 status=200 cache=MISS duration=9.5ms ip=127.0.0.1
+[request] method=GET endpoint=/api/cache-misses/overview?range=30&harness=all&bench=1788384177018910000-2 status=200 cache=MISS duration=9.6ms ip=127.0.0.1
+[activity-overview] harness=all range=30 roots=151 days=22 database=3.4ms root-rollups=0.6ms descendant-spend=0.2ms hydrate-rollups=0.3ms cache-misses=2.2ms activity-buckets=0.2ms spend-composition=0.1ms daily-response=0.4ms aggregate=0.7ms total=4.1ms
+[request] method=GET endpoint=/api/activity-overview?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788384177058739000-3 status=200 cache=MISS duration=4.4ms ip=127.0.0.1
+[request] method=GET endpoint=/api/harnesses?bench=1788384177058739000-3 status=200 cache=MISS duration=0.3ms ip=127.0.0.1
+[work-rhythm] harness=all range=30 roots=151 days=0 database=5.6ms root-rollups=0.5ms root-execution-intervals=4.6ms hydrate-rollups=0.5ms work-rhythm=1.1ms aggregate=1.1ms total=6.8ms
+[request] method=GET endpoint=/api/work-rhythm?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788384177058739000-3 status=200 cache=MISS duration=6.9ms ip=127.0.0.1
 [session-shape] harness=all range=30 roots=151 samples=151 database=0.9ms aggregate=0.2ms total=1.1ms
-[request] method=GET endpoint=/api/session-shape?range=30&harness=all&bench=1788383960202372000-3 status=200 cache=MISS duration=1.2ms ip=127.0.0.1
-[cache-miss-overview] harness=all range=30 calls=0 storedGroups=136 sources=8.4ms database=8.4ms aggregate=1.3ms total=9.7ms
-[request] method=GET endpoint=/api/cache-misses/overview?range=30&harness=all&bench=1788383960202372000-3 status=200 cache=MISS duration=9.7ms ip=127.0.0.1
-[usage] harness=all range=30 roots=151 subagentGroups=9 days=22 sources=5.3ms database=5.3ms aggregate=0.6ms total=6.0ms
-[request] method=GET endpoint=/api/usage?range=30&harness=all&bench=1788383960202372000-3 status=200 cache=MISS duration=6.2ms ip=127.0.0.1
-[request] method=GET endpoint=/api/harnesses?bench=1788383960242537000-4 status=200 cache=MISS duration=0.2ms ip=127.0.0.1
-[activity-overview] harness=all range=30 roots=151 days=22 database=3.1ms root-rollups=0.6ms descendant-spend=0.2ms hydrate-rollups=0.3ms cache-misses=2.1ms activity-buckets=0.2ms spend-composition=0.1ms daily-response=0.4ms aggregate=0.7ms total=3.8ms
-[request] method=GET endpoint=/api/activity-overview?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383960242537000-4 status=200 cache=MISS duration=4.1ms ip=127.0.0.1
-[work-rhythm] harness=all range=30 roots=151 days=0 database=4.9ms root-rollups=0.4ms root-execution-intervals=4.1ms hydrate-rollups=0.4ms work-rhythm=1.1ms aggregate=1.1ms total=6.1ms
-[request] method=GET endpoint=/api/work-rhythm?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383960242537000-4 status=200 cache=MISS duration=6.2ms ip=127.0.0.1
-[work-rhythm-days] harness=all range=30 roots=151 days=30 database=4.9ms root-rollups=0.5ms root-execution-intervals=3.9ms hydrate-rollups=0.4ms work-rhythm=3.1ms session-diagnostics=0.2ms aggregate=3.3ms total=8.2ms
-[request] method=GET endpoint=/api/work-rhythm/days?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788383960242537000-4 status=200 cache=MISS duration=9.1ms ip=127.0.0.1
-[usage] harness=all range=30 roots=151 subagentGroups=9 days=22 sources=5.1ms database=5.1ms aggregate=0.5ms total=5.7ms
-[request] method=GET endpoint=/api/usage?range=30&harness=all&bench=1788383960242537000-4 status=200 cache=MISS duration=5.8ms ip=127.0.0.1
-[cache-miss-overview] harness=all range=30 calls=0 storedGroups=136 sources=8.4ms database=8.4ms aggregate=0.7ms total=9.2ms
-[request] method=GET endpoint=/api/cache-misses/overview?range=30&harness=all&bench=1788383960242537000-4 status=200 cache=MISS duration=9.3ms ip=127.0.0.1
-[session-shape] harness=all range=30 roots=151 samples=151 database=0.9ms aggregate=0.2ms total=1.1ms
-[request] method=GET endpoint=/api/session-shape?range=30&harness=all&bench=1788383960242537000-4 status=200 cache=MISS duration=1.2ms ip=127.0.0.1
+[request] method=GET endpoint=/api/session-shape?range=30&harness=all&bench=1788384177058739000-3 status=200 cache=MISS duration=1.2ms ip=127.0.0.1
+[work-rhythm-days] harness=all range=30 roots=151 days=30 database=4.7ms root-rollups=0.4ms root-execution-intervals=3.8ms hydrate-rollups=0.4ms work-rhythm=3.2ms session-diagnostics=0.2ms aggregate=3.4ms total=8.1ms
+[request] method=GET endpoint=/api/work-rhythm/days?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788384177058739000-3 status=200 cache=MISS duration=9.1ms ip=127.0.0.1
+[cache-miss-overview] harness=all range=30 calls=0 storedGroups=136 sources=8.2ms database=8.2ms aggregate=0.6ms total=8.8ms
+[request] method=GET endpoint=/api/cache-misses/overview?range=30&harness=all&bench=1788384177058739000-3 status=200 cache=MISS duration=8.9ms ip=127.0.0.1
+[usage] harness=all range=30 roots=151 subagentGroups=9 days=22 sources=5.0ms database=5.0ms aggregate=0.5ms total=5.6ms
+[request] method=GET endpoint=/api/usage?range=30&harness=all&bench=1788384177058739000-3 status=200 cache=MISS duration=5.7ms ip=127.0.0.1
+[request] method=GET endpoint=/api/harnesses?bench=1788384177098796000-4 status=200 cache=MISS duration=0.1ms ip=127.0.0.1
+[activity-overview] harness=all range=30 roots=151 days=22 database=3.1ms root-rollups=0.5ms descendant-spend=0.2ms hydrate-rollups=0.3ms cache-misses=2.0ms activity-buckets=0.2ms spend-composition=0.1ms daily-response=0.3ms aggregate=0.7ms total=3.8ms
+[request] method=GET endpoint=/api/activity-overview?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788384177098796000-4 status=200 cache=MISS duration=4.0ms ip=127.0.0.1
+[work-rhythm] harness=all range=30 roots=151 days=0 database=4.9ms root-rollups=0.5ms root-execution-intervals=4.0ms hydrate-rollups=0.4ms work-rhythm=1.1ms aggregate=1.1ms total=6.0ms
+[request] method=GET endpoint=/api/work-rhythm?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788384177098796000-4 status=200 cache=MISS duration=6.1ms ip=127.0.0.1
+[cache-miss-overview] harness=all range=30 calls=0 storedGroups=136 sources=7.9ms database=7.9ms aggregate=0.6ms total=8.5ms
+[request] method=GET endpoint=/api/cache-misses/overview?range=30&harness=all&bench=1788384177098796000-4 status=200 cache=MISS duration=8.6ms ip=127.0.0.1
+[usage] harness=all range=30 roots=151 subagentGroups=9 days=22 sources=5.0ms database=5.0ms aggregate=0.6ms total=5.5ms
+[request] method=GET endpoint=/api/usage?range=30&harness=all&bench=1788384177098796000-4 status=200 cache=MISS duration=5.7ms ip=127.0.0.1
+[work-rhythm-days] harness=all range=30 roots=151 days=30 database=5.0ms root-rollups=0.6ms root-execution-intervals=4.0ms hydrate-rollups=0.4ms work-rhythm=3.1ms session-diagnostics=0.2ms aggregate=3.3ms total=8.3ms
+[request] method=GET endpoint=/api/work-rhythm/days?range=30&harness=all&timeZone=America%2FLos_Angeles&bench=1788384177098796000-4 status=200 cache=MISS duration=9.1ms ip=127.0.0.1
+[session-shape] harness=all range=30 roots=151 samples=151 database=0.8ms aggregate=0.1ms total=1.0ms
+[request] method=GET endpoint=/api/session-shape?range=30&harness=all&bench=1788384177098796000-4 status=200 cache=MISS duration=1.0ms ip=127.0.0.1
