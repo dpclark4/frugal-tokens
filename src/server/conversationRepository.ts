@@ -850,48 +850,33 @@ export class ConversationRepository {
     };
     // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.#prepare(`
-      WITH RECURSIVE tree(conversation_id, root_id) AS (
-        SELECT c.id, c.id FROM conversations c
-        WHERE COALESCE(c.started_at, c.updated_at) >= ?
-          AND NOT EXISTS (
-          SELECT 1 FROM conversation_subagent_launches launch
-          WHERE launch.child_conversation_id = c.id
-        )
-        UNION ALL
-        SELECT launch.child_conversation_id, tree.root_id
-        FROM conversation_subagent_launches launch
-        JOIN tree ON tree.conversation_id = launch.parent_conversation_id
-      ), scoped AS (
-        SELECT so.harness,
-          COALESCE(root.public_id, root.external_id) AS root_public_id,
-          CASE WHEN miss.conversation_id = tree.root_id
-            THEN 'root' ELSE 'subagent' END AS scope,
-          miss.status, miss.reason, miss.cause,
-          CASE
-            WHEN miss.gap_ms < ${THIRTY_MINUTES_MS} THEN 'under-thirty'
-            WHEN miss.gap_ms < ${TWO_HOURS_MS} THEN 'thirty-to-two'
-            WHEN miss.gap_ms < ${EIGHT_HOURS_MS} THEN 'two-to-eight'
-            ELSE 'eight-plus'
-          END AS gap_bucket,
-          miss.actual_missed_cost, miss.expected_read_cost,
-          miss.estimated_extra_cost, miss.missed_tokens
-        FROM conversation_cache_misses miss
-        JOIN tree ON tree.conversation_id = miss.conversation_id
-        JOIN conversations root ON root.id = tree.root_id
-        JOIN sources so ON so.id = root.source_id
-        WHERE miss.started_at >= ?
-          AND (? IS NULL OR so.harness = ?)
-      )
-      SELECT harness, root_public_id, scope, status, reason, cause, gap_bucket,
+      SELECT so.harness,
+        COALESCE(root.public_id, root.external_id) AS root_public_id,
+        CASE WHEN miss.conversation_id = miss.root_conversation_id
+          THEN 'root' ELSE 'subagent' END AS scope,
+        miss.status, miss.reason, miss.cause,
+        CASE
+          WHEN miss.gap_ms < ${THIRTY_MINUTES_MS} THEN 'under-thirty'
+          WHEN miss.gap_ms < ${TWO_HOURS_MS} THEN 'thirty-to-two'
+          WHEN miss.gap_ms < ${EIGHT_HOURS_MS} THEN 'two-to-eight'
+          ELSE 'eight-plus'
+        END AS gap_bucket,
         COUNT(*) AS misses,
-        SUM(COALESCE(actual_missed_cost, 0)) AS attributed_cost,
-        SUM(COALESCE(expected_read_cost, 0)) AS expected_read_cost,
-        SUM(COALESCE(estimated_extra_cost, 0)) AS estimated_extra_cost,
-        SUM(missed_tokens) AS missed_tokens,
-        SUM(actual_missed_cost IS NULL) AS unpriced
-      FROM scoped
-      GROUP BY harness, root_public_id, scope, status, reason, cause, gap_bucket
-      ORDER BY harness, root_public_id, scope, status, reason, cause, gap_bucket
+        SUM(COALESCE(miss.actual_missed_cost, 0)) AS attributed_cost,
+        SUM(COALESCE(miss.expected_read_cost, 0)) AS expected_read_cost,
+        SUM(COALESCE(miss.estimated_extra_cost, 0)) AS estimated_extra_cost,
+        SUM(miss.missed_tokens) AS missed_tokens,
+        SUM(miss.actual_missed_cost IS NULL) AS unpriced
+      FROM conversation_cache_misses miss
+      JOIN conversations root ON root.id = miss.root_conversation_id
+      JOIN sources so ON so.id = root.source_id
+      WHERE miss.started_at >= ?
+        AND COALESCE(root.started_at, root.updated_at) >= ?
+        AND (? IS NULL OR so.harness = ?)
+      GROUP BY so.harness, root_public_id, scope, miss.status, miss.reason,
+        miss.cause, gap_bucket
+      ORDER BY so.harness, root_public_id, scope, miss.status, miss.reason,
+        miss.cause, gap_bucket
     `).all(
       startedAt,
       startedAt,
