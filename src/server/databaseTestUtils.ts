@@ -20,6 +20,7 @@ const migrations = [
   "../../db/migrations/20260902121000_add_conversation_usage_idx.sql",
   "../../db/migrations/20260902122000_add_turn_execution_idx.sql",
   "../../db/migrations/20260902123000_add_turn_execution_cover_idx.sql",
+  "../../db/migrations/20260902124000_add_root_execution_intervals_rollup.sql",
 ].map((path) => new URL(path, import.meta.url));
 
 export function migrateTestDatabase(db: DatabaseSync) {

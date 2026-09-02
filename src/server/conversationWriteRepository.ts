@@ -282,6 +282,7 @@ function analyticsRollupValues(rollup: SessionRollup) {
     rollup.subagentTokens.cacheRead,
     rollup.subagentTokens.cacheWrite ?? null,
     JSON.stringify(rollup.overview),
+    JSON.stringify(rollup.rootExecutionIntervals),
   ];
 }
 
@@ -1574,8 +1575,9 @@ export class ConversationWriteRepository {
           reasoning_tokens, processed_tokens, first_activity_at,
           last_activity_at, subagent_model_calls,
           subagent_uncached_input_tokens, subagent_cache_read_tokens,
-          subagent_cache_write_tokens, overview_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          subagent_cache_write_tokens, overview_json,
+          root_execution_intervals_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         conversationID,
         analyticsRollup.version,
@@ -1893,8 +1895,9 @@ export class ConversationWriteRepository {
         reasoning_tokens, processed_tokens, first_activity_at,
         last_activity_at, subagent_model_calls,
         subagent_uncached_input_tokens, subagent_cache_read_tokens,
-        subagent_cache_write_tokens, overview_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        subagent_cache_write_tokens, overview_json,
+        root_execution_intervals_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       conversationID,
       analyticsRollup.version,
@@ -1913,7 +1916,7 @@ export class ConversationWriteRepository {
         rollup_version = ?, first_activity_at = ?, last_activity_at = ?,
         subagent_model_calls = ?, subagent_uncached_input_tokens = ?,
         subagent_cache_read_tokens = ?, subagent_cache_write_tokens = ?,
-        overview_json = ?
+        overview_json = ?, root_execution_intervals_json = ?
       WHERE conversation_id = ?
     `).run(...analyticsRollupValues(rollup), conversationID);
   }

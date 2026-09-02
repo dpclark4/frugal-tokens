@@ -943,6 +943,7 @@ export class ConversationRepository {
       this.db.prepare(`
         SELECT c.id, ${effectiveConversationTitle} AS title, so.harness,
           c.started_at, c.ended_at, cr.overview_json,
+          cr.root_execution_intervals_json,
           COALESCE(c.public_id, c.external_id) AS session_public_id
         FROM conversation_rollups cr
         JOIN conversations c ON c.id = cr.conversation_id
@@ -961,6 +962,7 @@ export class ConversationRepository {
         started_at: number | null;
         ended_at: number | null;
         overview_json: string;
+        root_execution_intervals_json: string | null;
         session_public_id: string;
       }>);
     const spendRows = includeSubagentSpend
@@ -998,7 +1000,8 @@ export class ConversationRepository {
           subagent_spend: number;
         }>)
       : [];
-    const intervalRows = includeRootExecutionIntervals
+    const intervalRows = includeRootExecutionIntervals &&
+        rows.some((row) => row.root_execution_intervals_json === null)
       ? measured(
         "root-execution-intervals",
         () =>
@@ -1074,7 +1077,8 @@ export class ConversationRepository {
         };
         if (includeRootExecutionIntervals) {
           rollup.rootExecutionIntervals = JSON.parse(
-            intervalsByRoot.get(row.id) ?? "[]",
+            row.root_execution_intervals_json ??
+              intervalsByRoot.get(row.id) ?? "[]",
           );
         }
         if (row.started_at !== null) rollup.startedAt = row.started_at;
