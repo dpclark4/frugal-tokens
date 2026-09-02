@@ -131,6 +131,8 @@ export function NewPage() {
   }>();
   const [error, setError] = useState<string>();
   const [workRhythmError, setWorkRhythmError] = useState<string>();
+  const [secondarySectionsEnabled, setSecondarySectionsEnabled] =
+    useState(false);
   const [harnesses, setHarnesses] = useState<SessionSummary["harness"][]>([]);
   const [screenshotState, setScreenshotState] = useState<ScreenshotState>(
     "idle",
@@ -248,9 +250,13 @@ export function NewPage() {
     let active = true;
     setError(undefined);
     setWorkRhythmError(undefined);
+    setSecondarySectionsEnabled(false);
     setLoadedWorkRhythmSummary(undefined);
     setLoadedWorkRhythmDays(undefined);
-    getActivityOverview(search.range, search.harness).then((result) => {
+    const activityRequest = getActivityOverview(
+      search.range,
+      search.harness,
+    ).then((result) => {
       if (!active) return;
       setLoadedOverview({
         range: search.range,
@@ -265,7 +271,10 @@ export function NewPage() {
         );
       }
     });
-    getWorkRhythm(search.range, search.harness).then((workRhythm) => {
+    const workRhythmRequest = getWorkRhythm(
+      search.range,
+      search.harness,
+    ).then((workRhythm) => {
       if (!active) return;
       setLoadedWorkRhythmSummary({
         range: search.range,
@@ -296,6 +305,9 @@ export function NewPage() {
             : "Unable to load estimated work",
         );
       }
+    });
+    void Promise.all([activityRequest, workRhythmRequest]).then(() => {
+      if (active) setSecondarySectionsEnabled(true);
     });
     return () => {
       active = false;
@@ -415,6 +427,7 @@ export function NewPage() {
               <SessionDistributions
                 range={search.range}
                 harness={search.harness}
+                enabled={secondarySectionsEnabled}
                 onDataChange={(sessionDistributions) =>
                   setLoadedSessionDistributions(
                     sessionDistributions
@@ -469,6 +482,7 @@ export function NewPage() {
             <CacheOverview
               range={search.range}
               harness={search.harness}
+              enabled={secondarySectionsEnabled}
               onDataChange={(cacheMisses) =>
                 setLoadedCacheMisses(
                   cacheMisses

@@ -20,6 +20,7 @@ type MetricKey = DistributionMetric["key"];
 type SessionDistributionsProps = {
   range: 30 | 90;
   harness: string;
+  enabled?: boolean;
   onDataChange?: (data: SessionDistributionResponse | undefined) => void;
 };
 
@@ -268,6 +269,7 @@ function DistributionStrip({
 export function SessionDistributions({
   range,
   harness,
+  enabled = true,
   onDataChange,
 }: SessionDistributionsProps) {
   const [data, setData] = useState<SessionDistributionResponse>();
@@ -282,6 +284,9 @@ export function SessionDistributions({
     setInitialInputError(undefined);
     setInitialInputUsage(undefined);
     onDataChange?.(undefined);
+    if (!enabled) return () => {
+      active = false;
+    };
     getSessionDistributions(range, harness).then((result) => {
       if (active) {
         setData(result);
@@ -311,7 +316,7 @@ export function SessionDistributions({
     return () => {
       active = false;
     };
-  }, [range, harness]);
+  }, [range, harness, enabled]);
 
   return (
     <section className="session-shape" aria-labelledby="session-shape-title">

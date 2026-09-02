@@ -19,8 +19,9 @@ SAMPLES = max(3, int(os.environ.get("FRUGAL_TOKENS_BENCHMARK_SAMPLES", "5")))
 TIMEOUT_SECONDS = float(os.environ.get("FRUGAL_TOKENS_BENCHMARK_TIMEOUT", "30"))
 REFERENCE_DIR = Path(__file__).with_name("reference")
 
-# NewPage starts the critical requests together. Calendar/detail data starts
-# after the lightweight work-rhythm response resolves.
+# NewPage starts the core requests together. Calendar data starts after the
+# lightweight work-rhythm response; below-the-fold sections start once the
+# activity and work-rhythm summary responses have both settled.
 CRITICAL_ENDPOINTS = (
     ("harnesses", "/api/harnesses", {}, True),
     (
@@ -35,6 +36,16 @@ CRITICAL_ENDPOINTS = (
         {"range": "30", "harness": "all", "timeZone": TIME_ZONE},
         False,
     ),
+)
+DEFERRED_ENDPOINTS = (
+    (
+        "work_rhythm_days",
+        "/api/work-rhythm/days",
+        {"range": "30", "harness": "all", "timeZone": TIME_ZONE},
+        False,
+    ),
+)
+AFTER_CRITICAL_ENDPOINTS = (
     (
         "session_shape",
         "/api/session-shape",
@@ -49,15 +60,7 @@ CRITICAL_ENDPOINTS = (
         True,
     ),
 )
-DEFERRED_ENDPOINTS = (
-    (
-        "work_rhythm_days",
-        "/api/work-rhythm/days",
-        {"range": "30", "harness": "all", "timeZone": TIME_ZONE},
-        False,
-    ),
-)
-ENDPOINTS = CRITICAL_ENDPOINTS + DEFERRED_ENDPOINTS
+ENDPOINTS = CRITICAL_ENDPOINTS + DEFERRED_ENDPOINTS + AFTER_CRITICAL_ENDPOINTS
 
 
 def canonical_json(body: bytes) -> str:
@@ -134,8 +137,16 @@ def run_sample(index: int) -> tuple[float, float, list[dict[str, object]]]:
         }
         results = [futures[endpoint[0]].result() for endpoint in CRITICAL_ENDPOINTS]
         critical_ms = (time.perf_counter() - started) * 1_000
+        after_critical_futures = {
+            endpoint[0]: executor.submit(fetch, endpoint, run_id)
+            for endpoint in AFTER_CRITICAL_ENDPOINTS
+        }
         results.extend(
             deferred_futures[endpoint[0]].result() for endpoint in DEFERRED_ENDPOINTS
+        )
+        results.extend(
+            after_critical_futures[endpoint[0]].result()
+            for endpoint in AFTER_CRITICAL_ENDPOINTS
         )
         complete_ms = (time.perf_counter() - started) * 1_000
     # Keep the summary in the result set even though result ordering is based

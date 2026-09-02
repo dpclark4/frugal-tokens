@@ -7,6 +7,7 @@ import "./CacheOverview.css";
 type CacheOverviewProps = {
   range: 30 | 90;
   harness: string;
+  enabled?: boolean;
   onDataChange?: (data: TtlMissMetrics | undefined) => void;
 };
 
@@ -267,6 +268,7 @@ function CacheMissTable({ metrics }: { metrics: TtlMissMetrics }) {
 export function CacheOverview({
   range,
   harness,
+  enabled = true,
   onDataChange,
 }: CacheOverviewProps) {
   const [metrics, setMetrics] = useState<TtlMissMetrics>();
@@ -277,6 +279,9 @@ export function CacheOverview({
     setMetrics(undefined);
     setError(undefined);
     onDataChange?.(undefined);
+    if (!enabled) return () => {
+      active = false;
+    };
     getCacheMissOverview(range, harness).then((result) => {
       if (active) {
         setMetrics(result);
@@ -295,7 +300,7 @@ export function CacheOverview({
     return () => {
       active = false;
     };
-  }, [range, harness]);
+  }, [range, harness, enabled]);
 
   return (
     <section
