@@ -281,12 +281,30 @@ export function NewPage() {
       search.range,
       search.harness,
     ).then((workRhythm) => {
-      if (!active) return;
+      if (!active) return false;
       setLoadedWorkRhythmSummary({
         range: search.range,
         harness: search.harness,
         data: workRhythm,
       });
+      return true;
+    }).catch((reason) => {
+      if (active) {
+        setWorkRhythmError(
+          reason instanceof Error
+            ? reason.message
+            : "Unable to load estimated work",
+        );
+      }
+      return false;
+    });
+    void Promise.all([activityRequest, workRhythmRequest]).then(([
+      _activity,
+      workRhythmLoaded,
+    ]) => {
+      if (!active) return;
+      setSecondarySectionsEnabled(true);
+      if (!workRhythmLoaded) return;
       getWorkRhythmDays(search.range, search.harness).then((days) => {
         if (!active) return;
         setLoadedWorkRhythmDays({
@@ -303,17 +321,6 @@ export function NewPage() {
           );
         }
       });
-    }).catch((reason) => {
-      if (active) {
-        setWorkRhythmError(
-          reason instanceof Error
-            ? reason.message
-            : "Unable to load estimated work",
-        );
-      }
-    });
-    void Promise.all([activityRequest, workRhythmRequest]).then(() => {
-      if (active) setSecondarySectionsEnabled(true);
     });
     return () => {
       active = false;

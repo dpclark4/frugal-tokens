@@ -127,16 +127,15 @@ def run_sample(index: int) -> tuple[float, float, list[dict[str, object]]]:
             endpoint[0]: executor.submit(fetch, endpoint, run_id)
             for endpoint in CRITICAL_ENDPOINTS
         }
-        # Match NewPage's dependency: start calendar/detail work only after
-        # the summary response has resolved, while other critical requests may
-        # still be running.
-        summary = futures["work_rhythm"].result()
+        # Match NewPage's dependency: defer calendar/detail work until both
+        # core responses settle so synchronous SQLite work cannot delay either
+        # core response.
+        results = [futures[endpoint[0]].result() for endpoint in CRITICAL_ENDPOINTS]
+        critical_ms = (time.perf_counter() - started) * 1_000
         deferred_futures = {
             endpoint[0]: executor.submit(fetch, endpoint, run_id)
             for endpoint in DEFERRED_ENDPOINTS
         }
-        results = [futures[endpoint[0]].result() for endpoint in CRITICAL_ENDPOINTS]
-        critical_ms = (time.perf_counter() - started) * 1_000
         after_critical_futures = {
             endpoint[0]: executor.submit(fetch, endpoint, run_id)
             for endpoint in AFTER_CRITICAL_ENDPOINTS
@@ -149,9 +148,6 @@ def run_sample(index: int) -> tuple[float, float, list[dict[str, object]]]:
             for endpoint in AFTER_CRITICAL_ENDPOINTS
         )
         complete_ms = (time.perf_counter() - started) * 1_000
-    # Keep the summary in the result set even though result ordering is based
-    # on endpoint declarations; this makes the dependency explicit above.
-    assert summary in results
     return critical_ms, complete_ms, results
 
 
