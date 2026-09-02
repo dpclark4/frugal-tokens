@@ -13,7 +13,7 @@ from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
-BASE_URL = os.environ.get("FRUGAL_TOKENS_BENCHMARK_URL", "http://localhost:5273").rstrip("/")
+BASE_URL = os.environ.get("FRUGAL_TOKENS_BENCHMARK_URL", "http://localhost:19000").rstrip("/")
 TIME_ZONE = os.environ.get("FRUGAL_TOKENS_BENCHMARK_TIME_ZONE", "America/Los_Angeles")
 SAMPLES = max(3, int(os.environ.get("FRUGAL_TOKENS_BENCHMARK_SAMPLES", "5")))
 TIMEOUT_SECONDS = float(os.environ.get("FRUGAL_TOKENS_BENCHMARK_TIMEOUT", "30"))
