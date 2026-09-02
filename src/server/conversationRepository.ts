@@ -331,8 +331,20 @@ type OverviewRollupCache = {
 
 export class ConversationRepository {
   private overviewRollupCache?: OverviewRollupCache;
+  private statements = new Map<
+    string,
+    ReturnType<DatabaseSync["prepare"]>
+  >();
 
   constructor(private db: DatabaseSync) {}
+
+  #prepare(sql: string) {
+    const existing = this.statements.get(sql);
+    if (existing !== undefined) return existing;
+    const statement = this.db.prepare(sql);
+    this.statements.set(sql, statement);
+    return statement;
+  }
 
   clearTransientCaches() {
     this.overviewRollupCache = undefined;
@@ -837,7 +849,7 @@ export class ConversationRepository {
       unpriced: number;
     };
     // SAFETY: The static SQL projection and migrated schema define this row contract.
-    const rows = this.db.prepare(`
+    const rows = this.#prepare(`
       WITH RECURSIVE tree(conversation_id, root_id) AS (
         SELECT c.id, c.id FROM conversations c
         WHERE COALESCE(c.started_at, c.updated_at) >= ?
@@ -940,7 +952,7 @@ export class ConversationRepository {
     const parameters = [startedAt, harness ?? null, harness ?? null] as const;
     const rows = measured("root-rollups", () =>
       // SAFETY: The static SQL projection and migrated schema define this row contract.
-      this.db.prepare(`
+      this.#prepare(`
         SELECT c.id, ${effectiveConversationTitle} AS title, so.harness,
           c.started_at, c.ended_at, cr.overview_json,
           cr.root_execution_intervals_json,
@@ -968,7 +980,7 @@ export class ConversationRepository {
     const spendRows = includeSubagentSpend
       ? measured("descendant-spend", () =>
         // SAFETY: The static SQL projection and migrated schema define this row contract.
-        this.db.prepare(`
+        this.#prepare(`
         SELECT c.id, COALESCE((
           WITH RECURSIVE descendants(id) AS (
             SELECT launch.child_conversation_id
