@@ -3,6 +3,8 @@ import { getRouteApi } from "@tanstack/react-router";
 import type {
   SessionListResponse,
   SessionMissFilter,
+  SessionSortDirection,
+  SessionSortKey,
   SessionSummary,
 } from "../../shared/sessionSchemas.ts";
 import { parseSessionMissFilters } from "../../shared/sessionSchemas.ts";
@@ -22,8 +24,14 @@ type RecentSessionsProps = {
   harnesses: SessionSummary["harness"][];
   misses?: string;
   page: number;
+  sortBy?: SessionSortKey;
+  sortDirection?: SessionSortDirection;
   onHarnessChange: (harness: OverviewHarness) => void;
   onMissesChange: (misses?: string) => void;
+  onSortChange: (
+    sortBy?: SessionSortKey,
+    sortDirection?: SessionSortDirection,
+  ) => void;
   onPageChange: (page: number) => void;
   onLoadSettled?: () => void;
 };
@@ -33,8 +41,11 @@ export function RecentSessions({
   harnesses,
   misses,
   page,
+  sortBy,
+  sortDirection,
   onHarnessChange,
   onMissesChange,
+  onSortChange,
   onPageChange,
   onLoadSettled,
 }: RecentSessionsProps) {
@@ -72,7 +83,14 @@ export function RecentSessions({
     setLoading(true);
     if (clear) setData(undefined);
     try {
-      const result = await getSessions(page, harness, missFilters, 15);
+      const result = await getSessions(
+        page,
+        harness,
+        missFilters,
+        15,
+        sortBy,
+        sortDirection,
+      );
       if (request === requestRef.current) setData(result);
     } catch (reason) {
       if (request === requestRef.current) {
@@ -94,7 +112,7 @@ export function RecentSessions({
       active = false;
       requestRef.current += 1;
     };
-  }, [harness, missFilterKey, page]);
+  }, [harness, missFilterKey, page, sortBy, sortDirection]);
 
   async function refreshData() {
     setRefreshing(true);
@@ -169,9 +187,12 @@ export function RecentSessions({
         selectedMissFilters={missFilters}
         harness={harness}
         harnesses={harnesses}
+        sortBy={sortBy}
+        sortDirection={sortDirection}
         onRefresh={refreshData}
         onHarnessChange={onHarnessChange}
         onMissFiltersChange={changeMissFilters}
+        onSortChange={onSortChange}
         onOpenSession={openSession}
         onPageChange={(nextPage) => {
           rootRef.current?.scrollIntoView({ block: "start" });
