@@ -278,6 +278,14 @@ export function enrichSessionSummary(detail: SessionDetail): SessionSummary {
       : displayModelName(lastModel),
     cacheSummary: summarizeSessionCache(analyzed),
     cacheIssues: sessionCacheIssues(analyzed),
+    // analyzeSessionCache already computes these from real per-call token
+    // magnitudes and each model's actual cache pricing; carry them through
+    // instead of leaving them stranded on `analyzed`.
+    cacheMissCost: analyzed.cacheMissCost,
+    inclusiveCacheMissCost: analyzed.inclusiveCacheMissCost,
+    hasUnpricedCacheMissCost: analyzed.hasUnpricedCacheMissCost,
+    inclusiveHasUnpricedCacheMissCost:
+      analyzed.inclusiveHasUnpricedCacheMissCost,
     compactionCount: compactionCount(analyzed),
     contextLatest: context.latest?.size,
     contextPeak: context.peak?.size,

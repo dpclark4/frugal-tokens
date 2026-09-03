@@ -261,7 +261,7 @@ Deno.test("flips to ascending order on request", () => {
   }
 });
 
-Deno.test("sorts cache misses by the same count the UI displays", () => {
+Deno.test("sorts cache misses by their share of session cost, not the raw dollar amount", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   const sources = new SourceArtifactRepository(db);
@@ -269,14 +269,17 @@ Deno.test("sorts cache misses by the same count the UI displays", () => {
   const conversations = new ConversationRepository(db);
   try {
     seedSortFixture(sources, projection);
-    // Counts only, deliberately not mirroring `sortFixtureValues`' a < b < c
-    // ordering, so this test can't pass by accident via some other key's
-    // tiebreaker. The UI badge is session.cacheIssues.length
-    // (RecentSessionsTable.tsx), a flat count across every issue cause -
-    // this seeds that same shape rather than the old fullMisses/partialHits
-    // breakdown so the sort can't drift from what's displayed again.
-    const issueCounts = { a: 1, b: 3, c: 0 };
-    for (const [id, count] of Object.entries(issueCounts)) {
+    // a has the largest absolute miss cost ($5), but it's a small share of
+    // a's own (large) total spend. b has a much smaller absolute miss cost
+    // ($1) but it dominates b's (small) total spend. The ratio sort ranks
+    // b above a despite b costing less in raw dollars - the opposite of
+    // what sorting by inclusiveCacheMissCost directly would produce.
+    const sessions = {
+      a: { inclusiveComputedCost: 50, inclusiveCacheMissCost: 5 }, // 10%
+      b: { inclusiveComputedCost: 2, inclusiveCacheMissCost: 1 }, // 50%
+      c: { inclusiveComputedCost: 10, inclusiveCacheMissCost: 0.5 }, // 5%
+    };
+    for (const [id, fields] of Object.entries(sessions)) {
       // SAFETY: The static SQL projection and migrated schema define this row contract.
       const row = db.prepare(`
         SELECT cr.conversation_id, cr.summary_json
@@ -284,11 +287,7 @@ Deno.test("sorts cache misses by the same count the UI displays", () => {
         JOIN conversations c ON c.id = cr.conversation_id
         WHERE c.external_id = ?
       `).get(id) as { conversation_id: number; summary_json: string };
-      const summary = JSON.parse(row.summary_json);
-      summary.cacheIssues = Array.from(
-        { length: count },
-        (_, index) => ({ status: "full-miss", turn: index + 1 }),
-      );
+      const summary = { ...JSON.parse(row.summary_json), ...fields };
       db.prepare(`
         UPDATE conversation_rollups SET summary_json = ?
         WHERE conversation_id = ?

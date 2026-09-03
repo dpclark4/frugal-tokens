@@ -40,6 +40,14 @@ const currency = new Intl.NumberFormat("en-US", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
 });
+// Cache-miss cost is often a small fraction of a session's total spend, so a
+// fixed 2-decimal format would round most values to $0.00. Significant
+// digits keep small and large estimates equally legible.
+const cacheCostCurrency = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumSignificantDigits: 3,
+});
 
 const missFilterOptions: Array<{
   value: SessionMissFilter;
@@ -257,11 +265,22 @@ function cacheMissBreakdown(session: SessionSummary) {
   });
 }
 
-function CacheMissSummary({ session }: { session: SessionSummary }) {
+function CacheMissSummary({
+  session,
+  sessionCost,
+}: {
+  session: SessionSummary;
+  sessionCost: number | undefined;
+}) {
   const tooltipId = useId();
   const misses = session.cacheIssues?.length ?? 0;
   const breakdown = cacheMissBreakdown(session);
   const showBreakdown = breakdown.length > 0 && breakdown.length <= 2;
+  const cost = session.inclusiveCacheMissCost;
+  const shareOfTotal = cost !== undefined && sessionCost !== undefined &&
+      sessionCost > 0
+    ? Math.floor((cost / sessionCost) * 100)
+    : undefined;
   if (misses === 0) return null;
   return (
     <span
@@ -301,6 +320,15 @@ function CacheMissSummary({ session }: { session: SessionSummary }) {
           <strong>
             {integer.format(misses)} cache {misses === 1 ? "miss" : "misses"}
           </strong>
+          {cost !== undefined && (
+            <small>
+              ~{cacheCostCurrency.format(cost)} estimated cost
+              {session.inclusiveHasUnpricedCacheMissCost ? "+" : ""}
+            </small>
+          )}
+          {shareOfTotal !== undefined && (
+            <small>({shareOfTotal}% of total)</small>
+          )}
         </span>
         <span className="recent-session-cache-tooltip-rows">
           {breakdown.map((group) => (
@@ -505,7 +533,7 @@ function SessionRow({
         )}
       </td>
       <td className="recent-session-cache-cell">
-        <CacheMissSummary session={session} />
+        <CacheMissSummary session={session} sessionCost={cost} />
       </td>
       <td className="recent-session-cost-cell">
         <strong>{cost === undefined ? "—" : currency.format(cost)}</strong>
