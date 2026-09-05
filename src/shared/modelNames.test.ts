@@ -9,6 +9,7 @@ Deno.test("formats known model IDs consistently", () => {
     "claude-haiku-4-5": "Claude Haiku 4.5",
     "claude-haiku-4-5-20251001": "Claude Haiku 4.5",
     "claude-haiku-4-5-20251201": "Claude Haiku 4.5",
+    "gpt-6-astra": "GPT 6 Astra",
     "gpt-5.6-terra": "GPT 5.6 Terra",
     "grok-4-5": "Grok 4.5",
     "grok-4-6": "Grok 4.6",

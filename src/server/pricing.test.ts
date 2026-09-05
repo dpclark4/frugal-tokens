@@ -59,6 +59,35 @@ Deno.test("uses long-context rates for every priced token category", () => {
   );
 });
 
+Deno.test("prices GPT-6 Astra at its short and long context rates", () => {
+  closeTo(
+    computeModelCallCost(
+      tokens({
+        uncachedInput: 50_000,
+        cacheRead: 50_000,
+        cacheWrite: 50_000,
+        output: 50_000,
+      }),
+      "gpt-6-astra",
+      timestamp,
+    ),
+    3.675,
+  );
+  closeTo(
+    computeModelCallCost(
+      tokens({
+        uncachedInput: 1_000_000,
+        cacheRead: 1_000_000,
+        cacheWrite: 1_000_000,
+        output: 1_000_000,
+      }),
+      "gpt-6-astra",
+      timestamp,
+    ),
+    122,
+  );
+});
+
 Deno.test("uses the published long-context model rates", () => {
   const expected = new Map([
     ["gpt-5.6-sol", 55],

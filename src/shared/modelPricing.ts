@@ -211,6 +211,12 @@ const standard = {
     output: 2,
   },
   "muse-spark-1.2": { input: 1.25, cacheRead: 0.15, output: 4.25 },
+  "gpt-6-astra": {
+    input: 10,
+    cacheRead: 1,
+    cacheWrite: 12.5,
+    output: 50,
+  },
   "gpt-5.6-sol": {
     input: 5,
     cacheRead: 0.5,
@@ -249,6 +255,12 @@ const standard = {
 } satisfies ModelRateRegistry;
 
 const longContext = {
+  "gpt-6-astra": {
+    input: 20,
+    cacheRead: 2,
+    cacheWrite: 25,
+    output: 75,
+  },
   "gpt-5.3-codex": { input: 1.75, cacheRead: 0.175, output: 14 },
   "gpt-5.2-codex": { input: 1.75, cacheRead: 0.175, output: 14 },
   "gpt-5.1-codex-max": { input: 1.25, cacheRead: 0.125, output: 10 },
@@ -384,6 +396,7 @@ const OPENAI_LUNA_TERRA_PRICE_CUT = Date.parse("2026-07-30T20:00:00Z");
 const OPENAI_SOL_PRICE_CUT = Date.parse("2026-08-21T21:00:00Z");
 
 export const counterfactualModelIDs = [
+  "gpt-6-astra",
   "gpt-5.6-sol",
   "gpt-5.6-terra",
   "gpt-5.6-luna",
@@ -441,7 +454,7 @@ export const counterfactualModelIDs = [
 function usesLongContextRates(model: string, inputTokens: number) {
   if (
     (model.startsWith("gpt-5.") || model === "gpt-5" ||
-      model.startsWith("gpt-5-")) &&
+      model.startsWith("gpt-5-") || model.startsWith("gpt-6-")) &&
     inputTokens >= LONG_CONTEXT_THRESHOLD
   ) return true;
   if (model.startsWith("grok-") && inputTokens >= GROK_LONG_CONTEXT_THRESHOLD) {

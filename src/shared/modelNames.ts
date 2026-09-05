@@ -16,6 +16,7 @@ const modelDisplayNames = new Map<string, string>([
   ["claude-haiku-3-5", "Claude Haiku 3.5"],
   ["gemini-3.8-flash", "Gemini 3.8 Flash"],
   ["gemini-3.7-flash", "Gemini 3.7 Flash"],
+  ["gpt-6-astra", "GPT 6 Astra"],
   ["gpt-5.6-terra", "GPT 5.6 Terra"],
   ["gpt-5.6-sol", "GPT 5.6 Sol"],
   ["gpt-5.6-luna", "GPT 5.6 Luna"],
