@@ -83,6 +83,10 @@ type CanonicalEntrySource = {
   signature: string;
 };
 
+type EntryCursor = {
+  entryID: number | null;
+};
+
 function entrySignature(
   kind: string,
   role: string | undefined,
@@ -924,7 +928,7 @@ export class ConversationWriteRepository {
         calls: ConversationCallImport[],
         entryIDs: number[],
         callIDs: number[],
-        cursor: { entryID: number | null },
+        cursor: EntryCursor,
       ) => {
         for (const call of calls) {
           const callBasis: IdentityBasis = call.identityBasis ?? "unresolved";
@@ -1195,7 +1199,7 @@ export class ConversationWriteRepository {
               entryIDs.push(entryID);
             }
             const callIDs: number[] = [];
-            const cursor: { entryID: number | null } = {
+            const cursor: EntryCursor = {
               entryID: previousEntryID,
             };
             appendTurnCalls(
@@ -1247,7 +1251,7 @@ export class ConversationWriteRepository {
               const extraCalls = turn.calls.slice(
                 currentCanonicalTurn.payload.calls.length,
               );
-              const cursor: { entryID: number | null } = {
+              const cursor: EntryCursor = {
                 entryID: currentCanonicalTurn.lastEntryID,
               };
               appendTurnCalls(

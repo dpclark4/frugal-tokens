@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.2
+
+      - name: Cache Deno dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/deno
+          key: deno-${{ runner.os }}-${{ hashFiles('deno.lock', 'deno.json', 'deno.jsonc') }}
+          restore-keys: |
+            deno-${{ runner.os }}-
+
+      - name: Check formatting
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          mapfile -t files < <(
+            git diff --diff-filter=ACMR --name-only "$BASE_SHA"...HEAD -- \
+              'src/**' 'deno.json' 'vite.config.ts' 'index.html'
+          )
+          if (( ${#files[@]} == 0 )); then
+            echo "No Deno-formatted files changed."
+          else
+            deno fmt --check "${files[@]}"
+          fi
+
+      - name: Run Deno lint
+        run: deno lint src scripts vite.config.ts
+
+      - name: Run anti-slop gate
+        run: deno task lint:oxlint:gate
+
+      - name: Run type check
+        run: deno task check
+
+      - name: Run tests
+        run: deno task test --reporter=dot
+
+      - name: Build application
+        run: deno task build
