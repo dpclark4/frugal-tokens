@@ -2,6 +2,7 @@ import type {
   WorkRhythmData,
   WorkRhythmDay,
   WorkRhythmSession,
+  WorkRhythmSummary,
 } from "../shared/sessionSchemas.ts";
 import type { StoredOverviewRollup } from "./overviewAnalytics.ts";
 import {
@@ -163,11 +164,12 @@ export function workRhythmRange(
   };
 }
 
-export function aggregateWorkRhythm(
+function aggregateWorkRhythmInternal(
   roots: StoredOverviewRollup[],
   start: number,
   end: number,
   timeZone: string,
+  includeDays: boolean,
 ): WorkRhythmData {
   // Constructing a ZonedDateTime validates the IANA identifier as well as
   // giving all calendar boundaries their correct DST-sensitive instants.
@@ -243,7 +245,7 @@ export function aggregateWorkRhythm(
       }
     >
   >();
-  for (const root of roots) {
+  if (includeDays) for (const root of roots) {
     const rootKey = `${root.harness ?? "unknown"}: ${
       root.sessionID ?? root.rootSessionID
     }`;
@@ -323,7 +325,7 @@ export function aggregateWorkRhythm(
     day.estimatedActiveMinutes
   ).filter((minutes) => minutes > 0).toSorted((a, b) => a - b);
   const days: Record<string, WorkRhythmDay> = {};
-  for (const day of dayValues.values()) {
+  if (includeDays) for (const day of dayValues.values()) {
     const span = daySpans.get(day.date)!;
     const activityOnDate = rootActivity.map(({ root, rootKey, intervals }) => ({
       root,
@@ -406,8 +408,8 @@ export function aggregateWorkRhythm(
   }
 
   const weekdayActivity = WEEKDAYS.map(({ weekday, label }) => {
-    const matching = dates.map((date) => days[date.toString()]).filter((day) =>
-      dateWeekday(day.date) === weekday
+    const matching = dates.map((date) => dayValues.get(date.toString())!).filter(
+      (day) => dateWeekday(day.date) === weekday
     );
     const totalMinutes = matching.reduce(
       (sum, day) => sum + day.estimatedActiveMinutes,
@@ -478,6 +480,31 @@ export function aggregateWorkRhythm(
     ...structure,
     days,
   };
+}
+
+export function aggregateWorkRhythm(
+  roots: StoredOverviewRollup[],
+  start: number,
+  end: number,
+  timeZone: string,
+): WorkRhythmData {
+  return aggregateWorkRhythmInternal(roots, start, end, timeZone, true);
+}
+
+export function aggregateWorkRhythmSummary(
+  roots: StoredOverviewRollup[],
+  start: number,
+  end: number,
+  timeZone: string,
+): WorkRhythmSummary {
+  const { days: _days, ...summary } = aggregateWorkRhythmInternal(
+    roots,
+    start,
+    end,
+    timeZone,
+    false,
+  );
+  return summary;
 }
 
 function dateWeekday(date: string): 0 | 1 | 2 | 3 | 4 | 5 | 6 {

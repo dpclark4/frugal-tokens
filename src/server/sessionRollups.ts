@@ -56,6 +56,7 @@ export type SessionRollup = {
   subagentReportedCost?: number;
   subagentComputedCost?: number;
   overview: SessionOverviewRollup;
+  rootExecutionIntervals: SessionOverviewRollup["executionIntervals"];
 };
 
 type MutableDay = Omit<OverviewDayRollup, "models"> & {
@@ -199,6 +200,7 @@ export function buildSessionRollup(
 
   const days = new Map<string, MutableDay>();
   const executionIntervals: SessionOverviewRollup["executionIntervals"] = [];
+  const rootExecutionIntervals: SessionOverviewRollup["executionIntervals"] = [];
   let firstActivityAt: number | undefined;
   let lastActivityAt: number | undefined;
   for (const session of [root, ...descendants]) {
@@ -229,10 +231,12 @@ export function buildSessionRollup(
       day.lastCallAt = Math.max(day.lastCallAt ?? turnLastCall, turnLastCall);
 
       const turnExecutionEnd = executionEnd({ ...turn, calls });
-      executionIntervals.push({
+      const interval = {
         startedAt: turn.startedAt,
         executionEndAt: turnExecutionEnd,
-      });
+      };
+      executionIntervals.push(interval);
+      if (session === root) rootExecutionIntervals.push(interval);
       firstActivityAt = Math.min(
         firstActivityAt ?? turn.startedAt,
         turn.startedAt,
@@ -325,5 +329,8 @@ export function buildSessionRollup(
         a.startedAt - b.startedAt
       ),
     },
+    rootExecutionIntervals: rootExecutionIntervals.toSorted((a, b) =>
+      a.startedAt - b.startedAt
+    ),
   };
 }

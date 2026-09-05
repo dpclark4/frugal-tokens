@@ -595,6 +595,25 @@ export const workRhythmOverviewResponseSchema = z.object({
   sessionDiagnostics: sessionDiagnosticsSchema,
 });
 
+export const workRhythmSummarySchema = workRhythmDataSchema.omit({
+  days: true,
+});
+
+export const workRhythmSummaryResponseSchema = z.object({
+  workRhythm: workRhythmSummarySchema,
+});
+
+export const workRhythmSummaryOverviewResponseSchema = z.object({
+  workRhythm: workRhythmSummarySchema,
+  sessionDiagnostics: sessionDiagnosticsSchema,
+});
+
+export const workRhythmDaysResponseSchema = z.object({
+  range: z.object({ start: z.string(), end: z.string() }),
+  days: z.record(z.string(), workRhythmDaySchema),
+  sessionDiagnostics: sessionDiagnosticsSchema,
+});
+
 export const activityOverviewResponseSchema = z.object({
   startDate: z.string(),
   endDate: z.string(),
@@ -992,6 +1011,16 @@ export const sessionDistributionResponseSchema = z.object({
 export type WorkRhythmSession = z.infer<typeof workRhythmSessionSchema>;
 export type WorkRhythmDay = z.infer<typeof workRhythmDaySchema>;
 export type WorkRhythmData = z.infer<typeof workRhythmDataSchema>;
+export type WorkRhythmSummary = z.infer<typeof workRhythmSummarySchema>;
+export type WorkRhythmDaysResponse = z.infer<
+  typeof workRhythmDaysResponseSchema
+>;
+export type WorkRhythmSummaryResponse = z.infer<
+  typeof workRhythmSummaryResponseSchema
+>;
+export type WorkRhythmSummaryOverviewResponse = z.infer<
+  typeof workRhythmSummaryOverviewResponseSchema
+>;
 export type ActivityOverviewResponse = z.infer<
   typeof activityOverviewResponseSchema
 >;

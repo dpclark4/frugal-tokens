@@ -1,9 +1,13 @@
 import type {
   ActivityOverviewResponse,
   WorkRhythmOverviewResponse,
+  WorkRhythmSummaryResponse,
 } from "../shared/sessionSchemas.ts";
 import type { StoredOverviewRollup } from "./overviewAnalytics.ts";
-import { aggregateWorkRhythm } from "./workRhythm.ts";
+import {
+  aggregateWorkRhythm,
+  aggregateWorkRhythmSummary,
+} from "./workRhythm.ts";
 import { modelMetadata } from "../shared/modelMetadata.ts";
 import {
   estimatedWorkIntervals,
@@ -226,12 +230,13 @@ function sessionDiagnostics(
     const session:
       WorkRhythmOverviewResponse["sessionDiagnostics"]["sessions"][number] = {
         id: root.sessionID ?? String(root.rootSessionID),
-        dates: days.map((day) => day.date),
+        dates: days.map((day) =>
+          day.date
+        ),
         title: root.title ?? `Session ${root.rootSessionID}`,
         primaryModel,
         estimatedActiveMinutes: intervals.reduce(
-          (sum, interval) =>
-            sum + interval.end - interval.start,
+          (sum, interval) => sum + interval.end - interval.start,
           0,
         ) / 60_000,
         observedSessionMinutes: Math.max(
@@ -428,14 +433,20 @@ export function aggregateActivityOverview(
   };
 }
 
-export function aggregateWorkRhythmOverview(
+function aggregateWorkRhythmResponse<T>(
   roots: StoredOverviewRollup[],
   start: number,
   end: number,
   timeZone: string,
+  workRhythm: (
+    roots: StoredOverviewRollup[],
+    start: number,
+    end: number,
+    timeZone: string,
+  ) => T,
   recordTiming?: (name: string, duration: number) => void,
-): WorkRhythmOverviewResponse {
-  const measured = <T>(name: string, operation: () => T): T => {
+) {
+  const measured = <V>(name: string, operation: () => V): V => {
     const startedAt = performance.now();
     const result = operation();
     recordTiming?.(name, performance.now() - startedAt);
@@ -444,11 +455,41 @@ export function aggregateWorkRhythmOverview(
   return {
     workRhythm: measured(
       "work-rhythm",
-      () => aggregateWorkRhythm(roots, start, end, timeZone),
+      () => workRhythm(roots, start, end, timeZone),
     ),
     sessionDiagnostics: measured(
       "session-diagnostics",
       () => sessionDiagnostics(roots, start, end),
     ),
   };
+}
+
+export function aggregateWorkRhythmOverview(
+  roots: StoredOverviewRollup[],
+  start: number,
+  end: number,
+  timeZone: string,
+  recordTiming?: (name: string, duration: number) => void,
+): WorkRhythmOverviewResponse {
+  return aggregateWorkRhythmResponse(
+    roots,
+    start,
+    end,
+    timeZone,
+    aggregateWorkRhythm,
+    recordTiming,
+  );
+}
+
+export function aggregateWorkRhythmSummaryOverview(
+  roots: StoredOverviewRollup[],
+  start: number,
+  end: number,
+  timeZone: string,
+  recordTiming?: (name: string, duration: number) => void,
+): WorkRhythmSummaryResponse {
+  const startedAt = performance.now();
+  const workRhythm = aggregateWorkRhythmSummary(roots, start, end, timeZone);
+  recordTiming?.("work-rhythm", performance.now() - startedAt);
+  return { workRhythm };
 }
