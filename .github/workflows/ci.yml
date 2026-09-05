@@ -55,7 +55,7 @@ jobs:
         run: deno task check
 
       - name: Run tests
-        run: deno task test --reporter=dot
+        run: deno task test --parallel --reporter=dot
 
       - name: Build application
         run: deno task build
