@@ -10,6 +10,7 @@ import { openArchiveDatabase } from "./database.ts";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
 import { SourceArtifactRepository } from "./sourceArtifactRepository.ts";
 import type { LinearConversationImport } from "./conversationImportTypes.ts";
+import type { SessionSortKey } from "../shared/sessionSchemas.ts";
 
 const usage = {
   uncachedInput: 10,
@@ -103,6 +104,229 @@ function linearSession(sourceID: number): LinearConversationImport {
     },
   };
 }
+
+// Distinct enough per column that ascending/descending order isn't
+// accidentally shared across keys, and sized so computed cost (which scales
+// with each model's own per-token rate) still lands in the same a < b < c
+// order as the raw token counts.
+const sortFixtureValues = [
+  {
+    id: "a",
+    title: "Alpha",
+    model: "gpt-5.6-luna",
+    userTurns: 1,
+    uncachedInput: 120,
+    output: 80,
+    updatedAt: 100,
+  },
+  {
+    id: "b",
+    title: "Bravo",
+    model: "gpt-5.6-sol",
+    userTurns: 5,
+    uncachedInput: 340,
+    output: 260,
+    updatedAt: 200,
+  },
+  {
+    id: "c",
+    title: "Charlie",
+    model: "gpt-5.6-terra",
+    userTurns: 10,
+    uncachedInput: 910,
+    output: 770,
+    updatedAt: 300,
+  },
+];
+
+function sortFixtureSession(
+  sourceID: number,
+  values: typeof sortFixtureValues[number],
+): LinearConversationImport {
+  const tokens = {
+    uncachedInput: values.uncachedInput,
+    cacheRead: 0,
+    freshPrompt: values.uncachedInput,
+    output: values.output,
+    reasoning: 0,
+    processed: values.uncachedInput + values.output,
+  };
+  return {
+    sourceID,
+    externalID: values.id,
+    publicID: values.id,
+    artifactPath: `project/${values.id}.jsonl`,
+    workingDirectory: "/workspace/project",
+    observedAt: 10,
+    checkpoint: { parserVersion: "test", checksum: values.id },
+    session: {
+      title: values.title,
+      updatedAt: values.updatedAt,
+      startedAt: 10,
+      endedAt: 30,
+      providers: ["openai"],
+      models: [values.model],
+      userTurns: values.userTurns,
+      modelCalls: 1,
+      tokens,
+      turns: [{
+        number: 1,
+        startedAt: 10,
+        calls: [{
+          id: "call-1",
+          callWithinTurn: 1,
+          provider: "openai",
+          model: values.model,
+          startedAt: 11,
+          completedAt: 12,
+          tokens,
+          activity: { hasText: true, hasReasoning: false, tools: [] },
+        }],
+      }],
+    },
+  };
+}
+
+function seedSortFixture(
+  sources: SourceArtifactRepository,
+  projection: ConversationWriteRepository,
+) {
+  const sourceID = sources.ensureSource("pi", "directory", "Pi", "/sessions");
+  for (const values of sortFixtureValues) {
+    const imported = sortFixtureSession(sourceID, values);
+    sources.recordUnchangedArtifact(
+      sourceID,
+      imported.externalID,
+      imported.artifactPath!,
+      imported.observedAt,
+    );
+    projection.replaceLinearConversationTree([imported]);
+  }
+}
+
+const sortKeyExpectedDescOrder = {
+  name: ["c", "b", "a"],
+  model: ["c", "b", "a"],
+  activity: ["c", "b", "a"],
+  input: ["c", "b", "a"],
+  output: ["c", "b", "a"],
+  cost: ["c", "b", "a"],
+  // No cache issues are seeded here (see the dedicated heuristic test
+  // below), so every session ties at 0 and falls through to the
+  // updated_at DESC tiebreaker.
+  cacheMisses: ["c", "b", "a"],
+} satisfies Record<SessionSortKey, string[]>;
+
+// SAFETY: sortKeyExpectedDescOrder's keys are declared as exactly the
+// SessionSortKey enum members via the `satisfies` check above.
+for (const key of Object.keys(sortKeyExpectedDescOrder) as SessionSortKey[]) {
+  Deno.test(`sorts recent sessions by ${key} (descending)`, () => {
+    const db = openArchiveDatabase(":memory:");
+    migrateTestDatabase(db);
+    const sources = new SourceArtifactRepository(db);
+    const projection = new ConversationWriteRepository(db);
+    const conversations = new ConversationRepository(db);
+    try {
+      seedSortFixture(sources, projection);
+      deepStrictEqual(
+        conversations.listSessions(1, 10, "pi", undefined, {
+          key,
+          direction: "desc",
+        }).items.map(({ id }) => id),
+        sortKeyExpectedDescOrder[key],
+      );
+    } finally {
+      db.close();
+    }
+  });
+}
+
+Deno.test("flips to ascending order on request", () => {
+  const db = openArchiveDatabase(":memory:");
+  migrateTestDatabase(db);
+  const sources = new SourceArtifactRepository(db);
+  const projection = new ConversationWriteRepository(db);
+  const conversations = new ConversationRepository(db);
+  try {
+    seedSortFixture(sources, projection);
+    deepStrictEqual(
+      conversations.listSessions(1, 10, "pi", undefined, {
+        key: "input",
+        direction: "asc",
+      }).items.map(({ id }) => id),
+      ["a", "b", "c"],
+    );
+  } finally {
+    db.close();
+  }
+});
+
+Deno.test("sorts cache misses by full misses first, then partial+ttl combined", () => {
+  const db = openArchiveDatabase(":memory:");
+  migrateTestDatabase(db);
+  const sources = new SourceArtifactRepository(db);
+  const projection = new ConversationWriteRepository(db);
+  const conversations = new ConversationRepository(db);
+  try {
+    seedSortFixture(sources, projection);
+    const cacheSummaries = {
+      a: { fullMisses: 2, partialHits: 0, ttlRelatedMisses: 0 },
+      b: { fullMisses: 1, partialHits: 5, ttlRelatedMisses: 0 },
+      c: { fullMisses: 1, partialHits: 1, ttlRelatedMisses: 1 },
+    } satisfies Record<string, {
+      fullMisses: number;
+      partialHits: number;
+      ttlRelatedMisses: number;
+    }>;
+    for (const [id, cacheSummary] of Object.entries(cacheSummaries)) {
+      // SAFETY: The static SQL projection and migrated schema define this row contract.
+      const row = db.prepare(`
+        SELECT cr.conversation_id, cr.summary_json
+        FROM conversation_rollups cr
+        JOIN conversations c ON c.id = cr.conversation_id
+        WHERE c.external_id = ?
+      `).get(id) as { conversation_id: number; summary_json: string };
+      const summary = JSON.parse(row.summary_json);
+      summary.cacheSummary = {
+        ...summary.cacheSummary,
+        ...cacheSummary,
+      };
+      db.prepare(`
+        UPDATE conversation_rollups SET summary_json = ?
+        WHERE conversation_id = ?
+      `).run(JSON.stringify(summary), row.conversation_id);
+    }
+
+    deepStrictEqual(
+      conversations.listSessions(1, 10, "pi", undefined, {
+        key: "cacheMisses",
+        direction: "desc",
+      }).items.map(({ id }) => id),
+      // a has the most full misses; among the full=1 tie, b's larger
+      // partial+ttl combined key sorts before c's.
+      ["a", "b", "c"],
+    );
+  } finally {
+    db.close();
+  }
+});
+
+Deno.test("omitting sort reproduces the natural updated_at order", () => {
+  const db = openArchiveDatabase(":memory:");
+  migrateTestDatabase(db);
+  const sources = new SourceArtifactRepository(db);
+  const projection = new ConversationWriteRepository(db);
+  const conversations = new ConversationRepository(db);
+  try {
+    seedSortFixture(sources, projection);
+    deepStrictEqual(
+      conversations.listSessions(1, 10, "pi").items.map(({ id }) => id),
+      ["c", "b", "a"],
+    );
+  } finally {
+    db.close();
+  }
+});
 
 Deno.test("overview rollups return ordered root execution intervals", () => {
   const db = openArchiveDatabase(":memory:");

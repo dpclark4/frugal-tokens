@@ -10,10 +10,16 @@ import { priceSessionDetail } from "./pricing.ts";
 import { counterfactualModelIDs } from "../shared/modelPricing.ts";
 import { estimateSessionCostScenario } from "./costScenario.ts";
 import { analyzeSessionCache, CACHE_TTL_1H_MS } from "./cacheAnalysis.ts";
-import type { SessionSummary } from "../shared/sessionSchemas.ts";
+import type {
+  SessionSortDirection,
+  SessionSortKey,
+  SessionSummary,
+} from "../shared/sessionSchemas.ts";
 import {
   parseSessionMissFilters,
   sessionMissFilterSchema,
+  sessionSortDirectionSchema,
+  sessionSortKeySchema,
   titleGenerationSettingSchema,
 } from "../shared/sessionSchemas.ts";
 import { aggregateUsageRollups } from "./usageAnalytics.ts";
@@ -147,6 +153,15 @@ function isHarnessFilter(value: string) {
 
 function harnessSelection(value: string) {
   return isHarness(value) ? value : undefined;
+}
+
+const sessionSortAscendingByDefault = new Set<SessionSortKey>([
+  "name",
+  "model",
+]);
+
+function defaultSortDirection(key: SessionSortKey): SessionSortDirection {
+  return sessionSortAscendingByDefault.has(key) ? "asc" : "desc";
 }
 
 function toolCallRange(value: string): 7 | 30 | 90 | undefined {
@@ -874,12 +889,41 @@ app.get("/api/sessions", (context) => {
       }`,
     }, 400);
   }
+  const sortByParam = context.req.query("sortBy");
+  const parsedSortBy = sessionSortKeySchema.safeParse(sortByParam);
+  if (sortByParam !== undefined && !parsedSortBy.success) {
+    return context.json({
+      error: `Invalid sortBy; expected ${
+        sessionSortKeySchema.options.join(", ")
+      }`,
+    }, 400);
+  }
+  const sortDirectionParam = context.req.query("sortDirection");
+  const parsedSortDirection = sessionSortDirectionSchema.safeParse(
+    sortDirectionParam,
+  );
+  if (sortDirectionParam !== undefined && !parsedSortDirection.success) {
+    return context.json({
+      error: `Invalid sortDirection; expected ${
+        sessionSortDirectionSchema.options.join(", ")
+      }`,
+    }, 400);
+  }
+  const sort = parsedSortBy.success
+    ? {
+      key: parsedSortBy.data,
+      direction: parsedSortDirection.success
+        ? parsedSortDirection.data
+        : defaultSortDirection(parsedSortBy.data),
+    }
+    : undefined;
   const queryStartedAt = performance.now();
   const result = readRepository.listSessions(
     page,
     pageSize,
     harnessSelection(harness),
     missFilters,
+    sort,
   );
   const queryDuration = performance.now() - queryStartedAt;
   const enrichmentStartedAt = performance.now();

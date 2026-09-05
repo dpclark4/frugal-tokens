@@ -14,6 +14,8 @@ import {
   type SessionListResponse,
   sessionListResponseSchema,
   type SessionMissFilter,
+  type SessionSortDirection,
+  type SessionSortKey,
   type SessionSummary,
   sessionSummarySchema,
   type TokenUsage,
@@ -339,6 +341,7 @@ export class ConversationRepository {
     pageSize: number,
     harness?: Harness,
     missFilters?: SessionMissFilter[],
+    sort?: { key: SessionSortKey; direction: SessionSortDirection },
   ): SessionListResponse {
     if (
       !Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) ||
@@ -352,6 +355,7 @@ export class ConversationRepository {
       missFilters,
       pageSize,
       (page - 1) * pageSize,
+      sort,
     );
     const cacheIssues = this.#storedCacheIssues(rows.map((row) => row.id));
     const items = rows.map((row) => ({
@@ -1329,11 +1333,52 @@ export class ConversationRepository {
     return Number(row.count);
   }
 
+  #sortClause(sort?: { key: SessionSortKey; direction: SessionSortDirection }) {
+    if (!sort) {
+      return "ORDER BY c.updated_at DESC, COALESCE(c.public_id, c.external_id) DESC, so.harness DESC";
+    }
+    const direction = sort.direction === "asc" ? "ASC" : "DESC"; // allowlisted, not interpolated raw
+    const keys = {
+      name: `c.title COLLATE NOCASE ${direction}`,
+      model: `COALESCE(
+        json_extract(cr.summary_json, '$.displayModel'),
+        REPLACE(
+          json_extract(c.models_json, '$[' || (json_array_length(c.models_json) - 1) || ']'),
+          '-', ' '
+        )
+      ) COLLATE NOCASE ${direction}`,
+      activity:
+        `COALESCE(json_extract(cr.summary_json, '$.inclusiveUserTurns'), cr.user_turns) ${direction}`,
+      input: `COALESCE(
+        json_extract(cr.summary_json, '$.inclusiveTokens.uncachedInput')
+          + json_extract(cr.summary_json, '$.inclusiveTokens.cacheRead')
+          + COALESCE(json_extract(cr.summary_json, '$.inclusiveTokens.cacheWrite'), 0),
+        cr.uncached_input_tokens + cr.cache_read_tokens + COALESCE(cr.cache_write_tokens, 0)
+      ) ${direction}`,
+      output:
+        `COALESCE(json_extract(cr.summary_json, '$.inclusiveTokens.output'), cr.output_tokens) ${direction}`,
+      cost: `COALESCE(
+        json_extract(cr.summary_json, '$.inclusiveComputedCost'),
+        json_extract(cr.summary_json, '$.computedCost'),
+        json_extract(cr.summary_json, '$.inclusiveReportedCost'),
+        cr.reported_cost
+      ) ${direction}`,
+      cacheMisses:
+        `COALESCE(json_extract(cr.summary_json, '$.cacheSummary.fullMisses'), 0) ${direction},
+        (COALESCE(json_extract(cr.summary_json, '$.cacheSummary.partialHits'), 0)
+          + COALESCE(json_extract(cr.summary_json, '$.cacheSummary.ttlRelatedMisses'), 0)) ${direction}`,
+    } satisfies Record<SessionSortKey, string>;
+    return `ORDER BY ${
+      keys[sort.key]
+    }, c.updated_at DESC, COALESCE(c.public_id, c.external_id) DESC`;
+  }
+
   #rootRows(
     harness: Harness | undefined,
     missFilters: SessionMissFilter[] | undefined,
     limit: number,
     offset: number,
+    sort?: { key: SessionSortKey; direction: SessionSortDirection },
   ): ConversationRow[] {
     const filter = this.#rootFilter(missFilters);
     // SAFETY: The static SQL projection and migrated schema define this row contract.
@@ -1352,8 +1397,7 @@ export class ConversationRepository {
           cr.uncached_input_tokens > 0 OR cr.cache_read_tokens > 0 OR
           COALESCE(cr.cache_write_tokens, 0) > 0
         )
-      ORDER BY c.updated_at DESC,
-        COALESCE(c.public_id, c.external_id) DESC, so.harness DESC
+      ${this.#sortClause(sort)}
       LIMIT ? OFFSET ?
     `).all(
       harness ?? null,

@@ -26,6 +26,20 @@ export const sessionMissFilterValues = [
 export const sessionMissFilterSchema = z.enum(sessionMissFilterValues);
 export const sessionMissFiltersSchema = z.array(sessionMissFilterSchema);
 
+export const sessionSortKeySchema = z.enum([
+  "activity",
+  "name",
+  "model",
+  "input",
+  "output",
+  "cost",
+  "cacheMisses",
+]);
+export type SessionSortKey = z.infer<typeof sessionSortKeySchema>;
+
+export const sessionSortDirectionSchema = z.enum(["asc", "desc"]);
+export type SessionSortDirection = z.infer<typeof sessionSortDirectionSchema>;
+
 export function parseSessionMissFilters(
   value?: string,
 ): SessionMissFilter[] | undefined {
@@ -174,6 +188,7 @@ export const sessionSummarySchema = z.object({
   contextPeakTurn: z.number().int().positive().optional(),
   contextPeakCall: z.number().int().positive().optional(),
   tokens: tokenUsageSchema,
+  displayModel: z.string().optional(),
 });
 
 export const sessionListItemSchema = sessionSummarySchema.omit({

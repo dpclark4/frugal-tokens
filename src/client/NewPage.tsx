@@ -468,8 +468,12 @@ export function NewPage() {
             harnesses={harnesses}
             misses={search.misses}
             page={search.page ?? 1}
+            sortBy={search.sortBy}
+            sortDirection={search.sortDirection}
             onHarnessChange={(harness) => update({ harness, page: undefined })}
             onMissesChange={(misses) => update({ misses, page: undefined })}
+            onSortChange={(sortBy, sortDirection) =>
+              update({ sortBy, sortDirection, page: undefined })}
             onPageChange={(page) =>
               update({ page: page === 1 ? undefined : page })}
             onLoadSettled={finishOverviewFilterTransition}
