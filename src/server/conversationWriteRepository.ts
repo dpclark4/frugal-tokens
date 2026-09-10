@@ -286,6 +286,7 @@ function analyticsRollupValues(rollup: SessionRollup) {
     rollup.subagentTokens.cacheRead,
     rollup.subagentTokens.cacheWrite ?? null,
     JSON.stringify(rollup.overview),
+    JSON.stringify(rollup.rootExecutionIntervals),
   ];
 }
 
@@ -474,6 +475,7 @@ export class ConversationWriteRepository {
           launch === undefined ? "source-ancestry" : "explicit-tool-link",
         );
       }
+      this.#refreshCacheMissRoots([...conversationIDs.values()]);
       const byExternalID = new Map(
         values.map((value) => [value.externalID, value]),
       );
@@ -1578,8 +1580,9 @@ export class ConversationWriteRepository {
           reasoning_tokens, processed_tokens, first_activity_at,
           last_activity_at, subagent_model_calls,
           subagent_uncached_input_tokens, subagent_cache_read_tokens,
-          subagent_cache_write_tokens, overview_json
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          subagent_cache_write_tokens, overview_json,
+          root_execution_intervals_json
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         conversationID,
         analyticsRollup.version,
@@ -1597,6 +1600,10 @@ export class ConversationWriteRepository {
         undefined,
         branchCallPredecessors,
       );
+      this.#refreshCacheMissRoots([
+        conversationID,
+        ...subagentConversationIDs.values(),
+      ]);
       this.#materializeSummary(
         conversationID,
         sessionDetailFromConversationImports(
@@ -1611,6 +1618,33 @@ export class ConversationWriteRepository {
       this.db.exec("ROLLBACK");
       throw error;
     }
+  }
+
+  #refreshCacheMissRoots(conversationIDs: number[]) {
+    if (conversationIDs.length === 0) return;
+    const placeholders = conversationIDs.map(() => "?").join(", ");
+    this.#prepare(`
+      WITH RECURSIVE tree(conversation_id, root_id) AS (
+        SELECT c.id, c.id
+        FROM conversations c
+        WHERE c.id IN (${placeholders})
+          AND NOT EXISTS (
+            SELECT 1 FROM conversation_subagent_launches launch
+            WHERE launch.child_conversation_id = c.id
+          )
+        UNION ALL
+        SELECT launch.child_conversation_id, tree.root_id
+        FROM conversation_subagent_launches launch
+        JOIN tree ON tree.conversation_id = launch.parent_conversation_id
+      )
+      UPDATE conversation_cache_misses AS miss
+      SET root_conversation_id = (
+        SELECT tree.root_id
+        FROM tree
+        WHERE tree.conversation_id = miss.conversation_id
+      )
+      WHERE miss.conversation_id IN (${placeholders})
+    `).run(...conversationIDs, ...conversationIDs);
   }
 
   #insertLinearConversation(
@@ -1897,8 +1931,9 @@ export class ConversationWriteRepository {
         reasoning_tokens, processed_tokens, first_activity_at,
         last_activity_at, subagent_model_calls,
         subagent_uncached_input_tokens, subagent_cache_read_tokens,
-        subagent_cache_write_tokens, overview_json
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        subagent_cache_write_tokens, overview_json,
+        root_execution_intervals_json
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       conversationID,
       analyticsRollup.version,
@@ -1917,7 +1952,7 @@ export class ConversationWriteRepository {
         rollup_version = ?, first_activity_at = ?, last_activity_at = ?,
         subagent_model_calls = ?, subagent_uncached_input_tokens = ?,
         subagent_cache_read_tokens = ?, subagent_cache_write_tokens = ?,
-        overview_json = ?
+        overview_json = ?, root_execution_intervals_json = ?
       WHERE conversation_id = ?
     `).run(...analyticsRollupValues(rollup), conversationID);
   }

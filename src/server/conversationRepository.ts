@@ -170,7 +170,7 @@ type CallRow = {
 const effectiveConversationTitle = `
   COALESCE((
     SELECT ss.generated_title
-    FROM conversation_branches title_branch
+    FROM conversation_branches title_branch INDEXED BY conversation_branches_title_idx
     JOIN source_sessions ss ON ss.id = title_branch.source_session_id
     WHERE title_branch.conversation_id = c.id
       AND ss.generated_title IS NOT NULL
@@ -321,8 +321,34 @@ function missPredicates(filters: SessionMissFilter[]) {
 }
 
 /** Existing session/analytics contracts reconstructed from conversation tables. */
+const OVERVIEW_ROLLUP_CACHE_TTL_MS = 25;
+
+type OverviewRollupCache = {
+  key: string;
+  expiresAt: number;
+  value: StoredOverviewRollup[];
+};
+
 export class ConversationRepository {
+  private overviewRollupCache?: OverviewRollupCache;
+  private statements = new Map<
+    string,
+    ReturnType<DatabaseSync["prepare"]>
+  >();
+
   constructor(private db: DatabaseSync) {}
+
+  #prepare(sql: string) {
+    const existing = this.statements.get(sql);
+    if (existing !== undefined) return existing;
+    const statement = this.db.prepare(sql);
+    this.statements.set(sql, statement);
+    return statement;
+  }
+
+  clearTransientCaches() {
+    this.overviewRollupCache = undefined;
+  }
 
   listHarnesses(): Harness[] {
     // SAFETY: The static SQL projection and migrated schema define this row contract.
@@ -823,49 +849,34 @@ export class ConversationRepository {
       unpriced: number;
     };
     // SAFETY: The static SQL projection and migrated schema define this row contract.
-    const rows = this.db.prepare(`
-      WITH RECURSIVE tree(conversation_id, root_id) AS (
-        SELECT c.id, c.id FROM conversations c
-        WHERE NOT EXISTS (
-          SELECT 1 FROM conversation_subagent_launches launch
-          WHERE launch.child_conversation_id = c.id
-        )
-        UNION ALL
-        SELECT launch.child_conversation_id, tree.root_id
-        FROM conversation_subagent_launches launch
-        JOIN tree ON tree.conversation_id = launch.parent_conversation_id
-      ), scoped AS (
-        SELECT so.harness,
-          COALESCE(root.public_id, root.external_id) AS root_public_id,
-          CASE WHEN miss.conversation_id = tree.root_id
-            THEN 'root' ELSE 'subagent' END AS scope,
-          miss.status, miss.reason, miss.cause,
-          CASE
-            WHEN miss.gap_ms < ${THIRTY_MINUTES_MS} THEN 'under-thirty'
-            WHEN miss.gap_ms < ${TWO_HOURS_MS} THEN 'thirty-to-two'
-            WHEN miss.gap_ms < ${EIGHT_HOURS_MS} THEN 'two-to-eight'
-            ELSE 'eight-plus'
-          END AS gap_bucket,
-          miss.actual_missed_cost, miss.expected_read_cost,
-          miss.estimated_extra_cost, miss.missed_tokens
-        FROM conversation_cache_misses miss
-        JOIN tree ON tree.conversation_id = miss.conversation_id
-        JOIN conversations root ON root.id = tree.root_id
-        JOIN sources so ON so.id = root.source_id
-        WHERE miss.started_at >= ?
-          AND COALESCE(root.started_at, root.updated_at) >= ?
-          AND (? IS NULL OR so.harness = ?)
-      )
-      SELECT harness, root_public_id, scope, status, reason, cause, gap_bucket,
+    const rows = this.#prepare(`
+      SELECT so.harness,
+        COALESCE(root.public_id, root.external_id) AS root_public_id,
+        CASE WHEN miss.conversation_id = miss.root_conversation_id
+          THEN 'root' ELSE 'subagent' END AS scope,
+        miss.status, miss.reason, miss.cause,
+        CASE
+          WHEN miss.gap_ms < ${THIRTY_MINUTES_MS} THEN 'under-thirty'
+          WHEN miss.gap_ms < ${TWO_HOURS_MS} THEN 'thirty-to-two'
+          WHEN miss.gap_ms < ${EIGHT_HOURS_MS} THEN 'two-to-eight'
+          ELSE 'eight-plus'
+        END AS gap_bucket,
         COUNT(*) AS misses,
-        SUM(COALESCE(actual_missed_cost, 0)) AS attributed_cost,
-        SUM(COALESCE(expected_read_cost, 0)) AS expected_read_cost,
-        SUM(COALESCE(estimated_extra_cost, 0)) AS estimated_extra_cost,
-        SUM(missed_tokens) AS missed_tokens,
-        SUM(actual_missed_cost IS NULL) AS unpriced
-      FROM scoped
-      GROUP BY harness, root_public_id, scope, status, reason, cause, gap_bucket
-      ORDER BY harness, root_public_id, scope, status, reason, cause, gap_bucket
+        SUM(COALESCE(miss.actual_missed_cost, 0)) AS attributed_cost,
+        SUM(COALESCE(miss.expected_read_cost, 0)) AS expected_read_cost,
+        SUM(COALESCE(miss.estimated_extra_cost, 0)) AS estimated_extra_cost,
+        SUM(miss.missed_tokens) AS missed_tokens,
+        SUM(miss.actual_missed_cost IS NULL) AS unpriced
+      FROM conversation_cache_misses miss
+      JOIN conversations root ON root.id = miss.root_conversation_id
+      JOIN sources so ON so.id = root.source_id
+      WHERE miss.started_at >= ?
+        AND COALESCE(root.started_at, root.updated_at) >= ?
+        AND (? IS NULL OR so.harness = ?)
+      GROUP BY so.harness, root_public_id, scope, miss.status, miss.reason,
+        miss.cause, gap_bucket
+      ORDER BY so.harness, root_public_id, scope, miss.status, miss.reason,
+        miss.cause, gap_bucket
     `).all(
       startedAt,
       startedAt,
@@ -906,6 +917,17 @@ export class ConversationRepository {
       includeRootExecutionIntervals = true,
       recordTiming,
     } = options;
+    const cacheKey = `${startedAt}:${
+      harness ?? ""
+    }:${includeSubagentSpend}:${includeRootExecutionIntervals}`;
+    const now = performance.now();
+    if (
+      includeSubagentSpend && includeRootExecutionIntervals &&
+      this.overviewRollupCache?.key === cacheKey &&
+      this.overviewRollupCache.expiresAt > now
+    ) {
+      return this.overviewRollupCache.value;
+    }
     const measured = <T>(name: string, operation: () => T): T => {
       const started = performance.now();
       const result = operation();
@@ -915,9 +937,10 @@ export class ConversationRepository {
     const parameters = [startedAt, harness ?? null, harness ?? null] as const;
     const rows = measured("root-rollups", () =>
       // SAFETY: The static SQL projection and migrated schema define this row contract.
-      this.db.prepare(`
+      this.#prepare(`
         SELECT c.id, ${effectiveConversationTitle} AS title, so.harness,
           c.started_at, c.ended_at, cr.overview_json,
+          cr.root_execution_intervals_json,
           COALESCE(c.public_id, c.external_id) AS session_public_id
         FROM conversation_rollups cr
         JOIN conversations c ON c.id = cr.conversation_id
@@ -936,12 +959,13 @@ export class ConversationRepository {
         started_at: number | null;
         ended_at: number | null;
         overview_json: string;
+        root_execution_intervals_json: string | null;
         session_public_id: string;
       }>);
     const spendRows = includeSubagentSpend
       ? measured("descendant-spend", () =>
         // SAFETY: The static SQL projection and migrated schema define this row contract.
-        this.db.prepare(`
+        this.#prepare(`
         SELECT c.id, COALESCE((
           WITH RECURSIVE descendants(id) AS (
             SELECT launch.child_conversation_id
@@ -973,7 +997,8 @@ export class ConversationRepository {
           subagent_spend: number;
         }>)
       : [];
-    const intervalRows = includeRootExecutionIntervals
+    const intervalRows = includeRootExecutionIntervals &&
+        rows.some((row) => row.root_execution_intervals_json === null)
       ? measured(
         "root-execution-intervals",
         () =>
@@ -1020,8 +1045,6 @@ export class ConversationRepository {
               AND COALESCE(root_call.source_call_id, '')
                 NOT LIKE 'unmeasured:%'
             GROUP BY root_turn.conversation_id, root_turn.id
-            ORDER BY root_turn.conversation_id, root_turn.started_at,
-              root_turn.ordinal
           ) measured_turn
           GROUP BY measured_turn.root_id
           ORDER BY measured_turn.root_id
@@ -1031,7 +1054,7 @@ export class ConversationRepository {
           }>,
       )
       : [];
-    return measured("hydrate-rollups", () => {
+    const result = measured("hydrate-rollups", () => {
       const spendByRoot = new Map(
         spendRows.map((row) => [row.id, row.subagent_spend]),
       );
@@ -1051,7 +1074,8 @@ export class ConversationRepository {
         };
         if (includeRootExecutionIntervals) {
           rollup.rootExecutionIntervals = JSON.parse(
-            intervalsByRoot.get(row.id) ?? "[]",
+            row.root_execution_intervals_json ??
+              intervalsByRoot.get(row.id) ?? "[]",
           );
         }
         if (row.started_at !== null) rollup.startedAt = row.started_at;
@@ -1062,6 +1086,14 @@ export class ConversationRepository {
         return rollup;
       });
     });
+    if (includeSubagentSpend && includeRootExecutionIntervals) {
+      this.overviewRollupCache = {
+        key: cacheKey,
+        expiresAt: performance.now() + OVERVIEW_ROLLUP_CACHE_TTL_MS,
+        value: result,
+      };
+    }
+    return result;
   }
 
   listSessionDistributionRollups(

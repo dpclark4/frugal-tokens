@@ -13,7 +13,8 @@ import {
   toolCallsResponseSchema,
   ttlMissMetricsSchema,
   usageResponseSchema,
-  workRhythmOverviewResponseSchema,
+  workRhythmDaysResponseSchema,
+  workRhythmSummaryResponseSchema,
 } from "../shared/sessionSchemas.ts";
 
 // SAFETY: Vite injects the typed env object into import.meta for client builds.
@@ -78,17 +79,29 @@ export async function getActivityOverview(
   );
 }
 
-export async function getWorkRhythm(
-  range: 30 | 90,
-  harness: string,
-) {
-  const query = new URLSearchParams({
+function workRhythmQuery(range: 30 | 90, harness: string) {
+  return new URLSearchParams({
     range: String(range),
     harness,
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   });
-  return workRhythmOverviewResponseSchema.parse(
-    await getJson(`/api/work-rhythm?${query}`),
+}
+
+export async function getWorkRhythm(
+  range: 30 | 90,
+  harness: string,
+) {
+  return workRhythmSummaryResponseSchema.parse(
+    await getJson(`/api/work-rhythm?${workRhythmQuery(range, harness)}`),
+  );
+}
+
+export async function getWorkRhythmDays(
+  range: 30 | 90,
+  harness: string,
+) {
+  return workRhythmDaysResponseSchema.parse(
+    await getJson(`/api/work-rhythm/days?${workRhythmQuery(range, harness)}`),
   );
 }
 

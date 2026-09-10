@@ -3,7 +3,9 @@ import { dirname, join } from "node:path";
 
 function homeDirectory() {
   const home = Deno.env.get("HOME") || Deno.env.get("USERPROFILE");
-  if (!home) throw new Error("Cannot expand ~ because no home directory is set");
+  if (!home) {
+    throw new Error("Cannot expand ~ because no home directory is set");
+  }
   return home;
 }
 

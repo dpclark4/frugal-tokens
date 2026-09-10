@@ -1069,10 +1069,12 @@ function ActivityTimeline({ day }: { day: WorkRhythmDay }) {
 
 export function WorkRhythm({
   data,
+  calendarLoaded = true,
   selectedDate,
   onSelect,
 }: {
   data: WorkRhythmData;
+  calendarLoaded?: boolean;
   selectedDate: string;
   onSelect: (date: string) => void;
 }) {
@@ -1100,7 +1102,11 @@ export function WorkRhythm({
   };
 
   return (
-    <section className="work-rhythm-module" aria-labelledby="work-rhythm-title">
+    <section
+      className="work-rhythm-module"
+      aria-labelledby="work-rhythm-title"
+      aria-busy={!calendarLoaded}
+    >
       <div className="work-rhythm-overview">
         <header className="work-rhythm-header">
           <h2 id="work-rhythm-title">Estimated work</h2>
