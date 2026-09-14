@@ -9,6 +9,8 @@ import {
   sessionDistributionResponseSchema,
   sessionListResponseSchema,
   type SessionMissFilter,
+  type SessionSortDirection,
+  type SessionSortKey,
   titleGenerationSettingSchema,
   toolCallsResponseSchema,
   ttlMissMetricsSchema,
@@ -153,6 +155,8 @@ export async function getSessions(
   harness: string,
   missFilters?: SessionMissFilter[],
   pageSize = 25,
+  sortBy?: SessionSortKey,
+  sortDirection?: SessionSortDirection,
 ) {
   const query = new URLSearchParams({
     page: String(page),
@@ -165,6 +169,8 @@ export async function getSessions(
       missFilters.length === 0 ? "none" : missFilters.join(","),
     );
   }
+  if (sortBy !== undefined) query.set("sortBy", sortBy);
+  if (sortDirection !== undefined) query.set("sortDirection", sortDirection);
   return sessionListResponseSchema.parse(
     await getJson(`/api/sessions?${query}`),
   );

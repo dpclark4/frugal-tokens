@@ -9,6 +9,10 @@ import {
   RouterProvider,
 } from "@tanstack/react-router";
 import { z } from "zod";
+import {
+  sessionSortDirectionSchema,
+  sessionSortKeySchema,
+} from "../shared/sessionSchemas.ts";
 import { NewPage } from "./NewPage.tsx";
 import "./styles.css";
 
@@ -112,6 +116,8 @@ const newRoute = createRoute({
     date: z.iso.date().optional().catch(undefined),
     misses: z.string().optional(),
     page: z.coerce.number().int().positive().optional().catch(undefined),
+    sortBy: sessionSortKeySchema.optional(),
+    sortDirection: sessionSortDirectionSchema.optional(),
   }),
   component: NewPage,
 });

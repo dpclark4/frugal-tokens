@@ -93,7 +93,8 @@
 
 .recent-sessions-filter-trigger,
 .recent-sessions-harness select,
-.recent-sessions-refresh {
+.recent-sessions-refresh,
+.recent-sessions-reset-sort {
   min-height: 32px;
   border: 1px solid #bdcac6;
   border-radius: 5px;
@@ -122,7 +123,8 @@
   background-repeat: no-repeat;
 }
 
-.recent-sessions-refresh {
+.recent-sessions-refresh,
+.recent-sessions-reset-sort {
   display: inline-flex;
   width: 32px;
   align-items: center;
@@ -132,7 +134,8 @@
 
 .recent-sessions-filter-trigger:hover,
 .recent-sessions-harness select:hover,
-.recent-sessions-refresh:hover:not(:disabled) {
+.recent-sessions-refresh:hover:not(:disabled),
+.recent-sessions-reset-sort:hover:not([aria-disabled="true"]) {
   border-color: #91aaa4;
   background-color: #f4f7f6;
 }
@@ -140,7 +143,8 @@
 .recent-sessions-filter-trigger:focus-visible,
 .recent-sessions-filter-trigger[aria-expanded="true"],
 .recent-sessions-harness select:focus-visible,
-.recent-sessions-refresh:focus-visible {
+.recent-sessions-refresh:focus-visible,
+.recent-sessions-reset-sort:focus-visible {
   border-color: var(--dashboard-signal);
   outline: none;
   box-shadow: 0 0 0 3px rgba(15, 113, 105, .12);
@@ -241,6 +245,42 @@
 
 .recent-sessions-table th:last-child {
   text-align: right;
+}
+
+.recent-sessions-sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.recent-sessions-table th:nth-child(n + 2):not(:last-child) .recent-sessions-sort-button {
+  justify-content: center;
+}
+
+.recent-sessions-table th:last-child .recent-sessions-sort-button {
+  justify-content: flex-end;
+}
+
+.recent-sessions-sort-button:hover,
+.recent-sessions-sort-button:focus-visible {
+  color: var(--dashboard-signal);
+}
+
+.recent-sessions-sort-button:focus-visible {
+  outline: 2px solid rgba(15, 113, 105, .3);
+  outline-offset: 2px;
+}
+
+.recent-sessions-sort-glyph-idle {
+  color: #a9b6b1;
 }
 
 .recent-session-row {
@@ -632,7 +672,8 @@
 }
 
 .recent-sessions-pagination button:disabled,
-.recent-sessions-refresh:disabled {
+.recent-sessions-refresh:disabled,
+.recent-sessions-reset-sort[aria-disabled="true"] {
   cursor: default;
   opacity: .45;
 }

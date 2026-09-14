@@ -1,8 +1,16 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { ChevronDown, Image, RefreshCw } from "lucide-react";
+import {
+  ArrowUpDown,
+  ChevronDown,
+  ChevronUp,
+  Image,
+  RefreshCw,
+} from "lucide-react";
 import type {
   SessionListResponse,
   SessionMissFilter,
+  SessionSortDirection,
+  SessionSortKey,
   SessionSummary,
 } from "../../shared/sessionSchemas.ts";
 import { displayModelName } from "../../shared/modelNames.ts";
@@ -45,6 +53,16 @@ const missFilterOptions: Array<{
   { value: "partial-miss", label: "Partial miss" },
 ];
 
+const sessionSortDefaultDirection = {
+  name: "asc",
+  model: "asc",
+  activity: "desc",
+  input: "desc",
+  output: "desc",
+  cost: "desc",
+  cacheMisses: "desc",
+} satisfies Record<SessionSortKey, SessionSortDirection>;
+
 type RecentSessionsTableProps = {
   data?: SessionListResponse;
   loading: boolean;
@@ -53,9 +71,15 @@ type RecentSessionsTableProps = {
   selectedMissFilters?: SessionMissFilter[];
   harness: OverviewHarness;
   harnesses: SessionSummary["harness"][];
+  sortBy?: SessionSortKey;
+  sortDirection?: SessionSortDirection;
   onRefresh: () => Promise<void>;
   onHarnessChange: (harness: OverviewHarness) => void;
   onMissFiltersChange: (filters?: SessionMissFilter[]) => void;
+  onSortChange: (
+    sortBy?: SessionSortKey,
+    sortDirection?: SessionSortDirection,
+  ) => void;
   onOpenSession: (session: SessionSummary) => void;
   onPageChange: (page: number) => void;
 };
@@ -302,6 +326,70 @@ function CacheMissSummary({ session }: { session: SessionSummary }) {
   );
 }
 
+function SortableHeader({
+  label,
+  sortKey,
+  activeKey,
+  activeDirection,
+  onSortChange,
+  className,
+}: {
+  label: string;
+  sortKey: SessionSortKey;
+  activeKey?: SessionSortKey;
+  activeDirection?: SessionSortDirection;
+  onSortChange: (
+    sortBy?: SessionSortKey,
+    sortDirection?: SessionSortDirection,
+  ) => void;
+  className?: string;
+}) {
+  const active = activeKey === sortKey;
+  const direction = active
+    ? activeDirection ?? sessionSortDefaultDirection[sortKey]
+    : undefined;
+
+  function handleClick() {
+    if (!active) {
+      onSortChange(sortKey, sessionSortDefaultDirection[sortKey]);
+      return;
+    }
+    onSortChange(sortKey, direction === "asc" ? "desc" : "asc");
+  }
+
+  return (
+    <th
+      className={className}
+      aria-sort={direction === "asc"
+        ? "ascending"
+        : direction === "desc"
+        ? "descending"
+        : "none"}
+    >
+      <button
+        type="button"
+        className="recent-sessions-sort-button"
+        onClick={handleClick}
+      >
+        <span>{label}</span>
+        {active
+          ? (
+            direction === "asc"
+              ? <ChevronUp size={12} aria-hidden="true" />
+              : <ChevronDown size={12} aria-hidden="true" />
+          )
+          : (
+            <ArrowUpDown
+              size={12}
+              aria-hidden="true"
+              className="recent-sessions-sort-glyph-idle"
+            />
+          )}
+      </button>
+    </th>
+  );
+}
+
 function SessionRow({
   session,
   onOpen,
@@ -319,6 +407,8 @@ function SessionRow({
   const activityAt = session.updatedAt;
   const elapsed = duration(session.startedAt, session.endedAt);
   const model = session.models.at(-1);
+  const displayModel = session.displayModel ??
+    (model ? displayModelName(model) : undefined);
   const otherModels = Math.max(0, session.models.length - 1);
   const cost = session.inclusiveComputedCost ?? session.computedCost ??
     session.inclusiveReportedCost ?? session.reportedCost;
@@ -352,7 +442,7 @@ function SessionRow({
           <span className="recent-session-model-copy">
             <span className="recent-session-model-name">
               <strong title={model}>
-                {model ? displayModelName(model) : "Unknown"}
+                {displayModel ?? "Unknown"}
               </strong>
               {otherModels > 0 && (
                 <small title={session.models.join(", ")}>+{otherModels}</small>
@@ -432,9 +522,12 @@ export function RecentSessionsTable({
   selectedMissFilters,
   harness,
   harnesses,
+  sortBy,
+  sortDirection,
   onRefresh,
   onHarnessChange,
   onMissFiltersChange,
+  onSortChange,
   onOpenSession,
   onPageChange,
 }: RecentSessionsTableProps) {
@@ -530,6 +623,19 @@ export function RecentSessionsTable({
           >
             <RefreshCw size={14} aria-hidden="true" />
           </button>
+          <button
+            type="button"
+            className="recent-sessions-reset-sort"
+            onClick={() => {
+              if (sortBy === undefined) return;
+              onSortChange(undefined, undefined);
+            }}
+            aria-disabled={sortBy === undefined}
+            aria-label="Reset sort"
+            title="Reset sort to most recent activity timestamp"
+          >
+            <ArrowUpDown size={14} aria-hidden="true" />
+          </button>
           <SessionMissFilters
             selected={selectedMissFilters}
             onChange={onMissFiltersChange}
@@ -576,15 +682,56 @@ export function RecentSessionsTable({
               </colgroup>
               <thead>
                 <tr>
-                  <th>Session</th>
-                  <th>Model</th>
-                  <th>Activity</th>
-                  <th>Input</th>
-                  <th>Output</th>
-                  <th className="recent-session-cache-heading">
-                    Cache misses
-                  </th>
-                  <th>Cost</th>
+                  <SortableHeader
+                    label="Session"
+                    sortKey="name"
+                    activeKey={sortBy}
+                    activeDirection={sortDirection}
+                    onSortChange={onSortChange}
+                  />
+                  <SortableHeader
+                    label="Model"
+                    sortKey="model"
+                    activeKey={sortBy}
+                    activeDirection={sortDirection}
+                    onSortChange={onSortChange}
+                  />
+                  <SortableHeader
+                    label="Activity"
+                    sortKey="activity"
+                    activeKey={sortBy}
+                    activeDirection={sortDirection}
+                    onSortChange={onSortChange}
+                  />
+                  <SortableHeader
+                    label="Input"
+                    sortKey="input"
+                    activeKey={sortBy}
+                    activeDirection={sortDirection}
+                    onSortChange={onSortChange}
+                  />
+                  <SortableHeader
+                    label="Output"
+                    sortKey="output"
+                    activeKey={sortBy}
+                    activeDirection={sortDirection}
+                    onSortChange={onSortChange}
+                  />
+                  <SortableHeader
+                    label="Cache misses"
+                    sortKey="cacheMisses"
+                    activeKey={sortBy}
+                    activeDirection={sortDirection}
+                    onSortChange={onSortChange}
+                    className="recent-session-cache-heading"
+                  />
+                  <SortableHeader
+                    label="Cost"
+                    sortKey="cost"
+                    activeKey={sortBy}
+                    activeDirection={sortDirection}
+                    onSortChange={onSortChange}
+                  />
                 </tr>
               </thead>
               <tbody>

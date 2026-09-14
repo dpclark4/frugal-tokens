@@ -137,7 +137,9 @@ export function NewPage() {
     harness: string;
     data: TtlMissMetrics;
   }>();
-  const [highlightedSpendDates, setHighlightedSpendDates] = useState<string[]>();
+  const [highlightedSpendDates, setHighlightedSpendDates] = useState<
+    string[]
+  >();
   const screenshotRef = useRef<HTMLDivElement>(null);
   const pendingScrollYRef = useRef<number | undefined>(undefined);
   const refreshScrollYRef = useRef<number | undefined>(
@@ -468,8 +470,12 @@ export function NewPage() {
             harnesses={harnesses}
             misses={search.misses}
             page={search.page ?? 1}
+            sortBy={search.sortBy}
+            sortDirection={search.sortDirection}
             onHarnessChange={(harness) => update({ harness, page: undefined })}
             onMissesChange={(misses) => update({ misses, page: undefined })}
+            onSortChange={(sortBy, sortDirection) =>
+              update({ sortBy, sortDirection, page: undefined })}
             onPageChange={(page) =>
               update({ page: page === 1 ? undefined : page })}
             onLoadSettled={finishOverviewFilterTransition}

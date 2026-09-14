@@ -14,6 +14,7 @@ import {
   summarizeSessionCache,
 } from "./cacheAnalysis.ts";
 import { priceSessionDetail } from "./pricing.ts";
+import { displayModelName } from "../shared/modelNames.ts";
 import type {
   ConversationContextEventImport,
   LinearConversationImport,
@@ -266,11 +267,15 @@ export function enrichSessionSummary(detail: SessionDetail): SessionSummary {
       }))
     ),
   );
+  const lastModel = detail.models.at(-1);
   return {
     ...detail,
     userTurns: priced.userTurns,
     modelCalls: priced.modelCalls,
     computedCost: priced.computedCost,
+    displayModel: lastModel === undefined
+      ? undefined
+      : displayModelName(lastModel),
     cacheSummary: summarizeSessionCache(analyzed),
     cacheIssues: sessionCacheIssues(analyzed),
     compactionCount: compactionCount(analyzed),
