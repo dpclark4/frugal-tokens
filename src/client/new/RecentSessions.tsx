@@ -77,11 +77,10 @@ export function RecentSessions({
     }
   });
 
-  async function loadPage(page: number, clear = false) {
+  async function loadPage(page: number) {
     const request = ++requestRef.current;
     setError(undefined);
     setLoading(true);
-    if (clear) setData(undefined);
     try {
       const result = await getSessions(
         page,
@@ -105,7 +104,8 @@ export function RecentSessions({
 
   useEffect(() => {
     let active = true;
-    void loadPage(page, true).finally(() => {
+    // Keep the table mounted while fetching so the page height and scroll stay stable.
+    void loadPage(page).finally(() => {
       if (active) onLoadSettled?.();
     });
     return () => {

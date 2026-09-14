@@ -670,7 +670,7 @@ export function RecentSessionsTable({
               loading ? " is-loading" : ""
             }`}
           >
-            <table className="recent-sessions-table">
+            <table className="recent-sessions-table" aria-busy={loading}>
               <colgroup>
                 <col className="recent-session-name-column" />
                 <col className="recent-session-model-column" />
