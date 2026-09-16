@@ -1,4 +1,4 @@
-import { deepStrictEqual, strictEqual } from "node:assert/strict";
+import { deepStrictEqual, ok, strictEqual } from "node:assert/strict";
 import { syncClaudeCodeSessions } from "./claudeCodeImporter.ts";
 import { openArchiveDatabase } from "./database.ts";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
@@ -10,6 +10,136 @@ function write(path: string, content: string) {
   Deno.mkdirSync(path.slice(0, path.lastIndexOf("/")), { recursive: true });
   Deno.writeTextFileSync(path, content.trim());
 }
+
+Deno.test("isolates conflicting Claude session identities from unrelated imports", async () => {
+  const directory = Deno.makeTempDirSync();
+  const sessions = `${directory}/projects`;
+  const sharedID = "00000000-0000-4000-8000-000000000091";
+  const independentID = "00000000-0000-4000-8000-000000000092";
+  const transcript = (id: string) =>
+    [
+      JSON.stringify({
+        type: "user",
+        uuid: `${id}-user`,
+        sessionId: id,
+        timestamp: "2026-08-01T10:00:00Z",
+        promptSource: "typed",
+        origin: { kind: "human" },
+        message: { content: "Synthetic prompt" },
+      }),
+      JSON.stringify({
+        type: "assistant",
+        uuid: `${id}-assistant`,
+        sessionId: id,
+        timestamp: "2026-08-01T10:00:01Z",
+        message: {
+          id: `${id}-call`,
+          model: "claude-sonnet",
+          content: [{ type: "text", text: "Synthetic answer" }],
+          usage: { input_tokens: 1, output_tokens: 1 },
+        },
+      }),
+    ].join("\n");
+
+  // Simulate a transcript copied between project directories. File identities
+  // differ, but both files claim the same source session identity.
+  write(`${sessions}/project-a/${sharedID}.jsonl`, transcript(sharedID));
+  write(`${sessions}/project-b/${sharedID}.jsonl`, transcript(sharedID));
+  write(
+    `${sessions}/project-c/${independentID}.jsonl`,
+    transcript(independentID),
+  );
+
+  const db = openArchiveDatabase(`${directory}/archive.sqlite`);
+  migrateTestDatabase(db);
+  const repository = new SourceArtifactRepository(db);
+  const conversations = new ConversationWriteRepository(db);
+  try {
+    const result = await syncClaudeCodeSessions(
+      sessions,
+      repository,
+      conversations,
+    );
+    // Quarantine both ambiguous artifacts, not the entire source.
+    deepStrictEqual(result, {
+      discovered: 3,
+      imported: 1,
+      skipped: 0,
+      failed: 2,
+    });
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM conversations").get()!.count,
+      1,
+    );
+    const reads = new ConversationRepository(db);
+    strictEqual(
+      reads.getSession("claude-code", `project-c/${independentID}`)?.id,
+      `project-c/${independentID}`,
+    );
+  } finally {
+    db.close();
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
+Deno.test("records both Claude artifact paths when session identity insertion conflicts", async () => {
+  const directory = Deno.makeTempDirSync();
+  const sessions = `${directory}/projects`;
+  const identity = "00000000-0000-4000-8000-000000000093";
+  const paths = [
+    `project-a/${identity}.jsonl`,
+    `project-b/${identity}.jsonl`,
+  ];
+  for (const path of paths) {
+    write(
+      `${sessions}/${path}`,
+      JSON.stringify({
+        type: "ai-title",
+        sessionId: identity,
+        aiTitle: "PRIVATE_TITLE_MUST_NOT_APPEAR_IN_DIAGNOSTICS",
+      }),
+    );
+  }
+
+  const db = openArchiveDatabase(`${directory}/archive.sqlite`);
+  migrateTestDatabase(db);
+  const repository = new SourceArtifactRepository(db);
+  try {
+    await syncClaudeCodeSessions(
+      sessions,
+      repository,
+      new ConversationWriteRepository(db),
+    );
+    // Both owners are new in this transaction. Diagnostics must capture the
+    // existing owner before rollback removes its newly inserted identity.
+    const sourceID = repository.ensureSource(
+      "claude-code",
+      "directory",
+      "Claude Code",
+      sessions,
+    );
+    const errors = paths.map((path) =>
+      repository.projectionCheckpoint(sourceID, path.slice(0, -6))?.lastError
+    );
+    for (const error of errors) {
+      ok(error, "Each conflicting artifact must retain diagnostic details");
+      ok(error.includes(identity), "Diagnostic must identify the session ID");
+      for (const path of paths) {
+        ok(error.includes(path), `Diagnostic must identify claimant ${path}`);
+      }
+      ok(!error.includes("PRIVATE_TITLE_MUST_NOT_APPEAR_IN_DIAGNOSTICS"));
+    }
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM source_artifact_identities")
+        .get()!.count,
+      0,
+      "The failed metadata transaction must roll back",
+    );
+  } finally {
+    db.close();
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
 
 Deno.test("imports a Claude Code root and namespaced child tree", async () => {
   const directory = Deno.makeTempDirSync();
