@@ -11,6 +11,7 @@ import {
   type SourceArtifactMetadata,
   type SourceArtifactProjectionRecord,
   SourceArtifactRepository,
+  SourceIdentityConflictError,
 } from "./sourceArtifactRepository.ts";
 import type { LinearConversationImport } from "./conversationImportTypes.ts";
 import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
@@ -100,6 +101,69 @@ function connectedArtifactFamilies(records: SourceArtifactProjectionRecord[]) {
   });
 }
 
+function quarantineIdentityFamily(
+  records: SourceArtifactProjectionRecord[],
+  proposed: SourceArtifactMetadata[],
+  conflict: SourceIdentityConflictError,
+  quarantined: Set<string>,
+) {
+  const neighbors = new Map<string, Set<string>>();
+  const artifactNode = (id: string) => JSON.stringify(["artifact", id]);
+  const identityNode = (namespace: string, value: string) =>
+    JSON.stringify(["identity", namespace, value]);
+  const link = (left: string, right: string) => {
+    if (!neighbors.has(left)) neighbors.set(left, new Set());
+    if (!neighbors.has(right)) neighbors.set(right, new Set());
+    neighbors.get(left)!.add(right);
+    neighbors.get(right)!.add(left);
+  };
+  // Include both stored and proposed edges: quarantined metadata remains stored,
+  // and neither old nor new family members may project against ambiguous owners.
+  for (const record of records) {
+    const node = artifactNode(record.externalID);
+    for (
+      const identity of [record.sourceIdentity, record.parentSourceIdentity]
+    ) {
+      if (identity !== undefined) {
+        link(node, identityNode(sourceIdentityNamespace, identity));
+      }
+    }
+  }
+  for (const value of proposed) {
+    const node = artifactNode(value.externalID);
+    for (const identity of value.identities) {
+      link(node, identityNode(identity.namespace, identity.value));
+    }
+    for (const lineage of value.lineage) {
+      link(
+        node,
+        identityNode(
+          lineage.parentIdentityNamespace,
+          lineage.parentIdentityValue,
+        ),
+      );
+    }
+  }
+  const pending = conflict.artifacts.map((artifact) =>
+    artifactNode(artifact.externalID)
+  );
+  const visited = new Set<string>();
+  while (pending.length > 0) {
+    const node = pending.pop()!;
+    if (visited.has(node)) continue;
+    visited.add(node);
+    pending.push(...(neighbors.get(node) ?? []));
+  }
+  for (
+    const id of new Set([
+      ...records.map((record) => record.externalID),
+      ...proposed.map((value) => value.externalID),
+    ])
+  ) {
+    if (visited.has(artifactNode(id))) quarantined.add(id);
+  }
+}
+
 function assertAcyclicArtifactLineage(
   family: SourceArtifactProjectionRecord[],
 ) {
@@ -181,7 +245,8 @@ export async function syncClaudeCodeSessions(
   const metadata: SourceArtifactMetadata[] = [];
   let imported = 0;
   let skipped = 0;
-  let failed = 0;
+  const failedIDs = new Set<string>();
+  const quarantined = new Set<string>();
 
   const snapshot = (candidate: ClaudeCodeSessionCandidate) => {
     const snapshots = readCandidateSnapshots(candidate);
@@ -269,21 +334,62 @@ export async function syncClaudeCodeSessions(
         failure,
         projectionName,
       );
-      failed++;
+      failedIDs.add(candidate.id);
     }
   }
 
   repository.markMissingArtifacts(sourceID, observedAt);
   try {
-    if (metadata.length > 0) {
-      repository.replaceSourceArtifactMetadata(sourceID, metadata);
+    let pendingMetadata = metadata;
+    const conflicts: SourceIdentityConflictError[] = [];
+    let storedRecords: SourceArtifactProjectionRecord[] | undefined;
+    while (pendingMetadata.length > 0) {
+      try {
+        repository.replaceSourceArtifactMetadata(sourceID, pendingMetadata);
+        break;
+      } catch (error) {
+        if (!(error instanceof SourceIdentityConflictError)) throw error;
+        conflicts.push(error);
+        storedRecords ??= repository.listSourceArtifactsForProjection(
+          sourceID,
+          projectionName,
+          sourceIdentityNamespace,
+          forkRelationship,
+        );
+        const previousSize = quarantined.size;
+        quarantineIdentityFamily(storedRecords, metadata, error, quarantined);
+        if (quarantined.size === previousSize) throw error;
+        pendingMetadata = metadata.filter((value) =>
+          !quarantined.has(value.externalID)
+        );
+        console.warn(
+          `[sync] harness=claude-code identity conflict; quarantined=${
+            JSON.stringify([...quarantined])
+          }`,
+          error.message,
+        );
+      }
+    }
+    if (conflicts.length > 0) {
+      const failure = {
+        name: "SourceIdentityConflictError",
+        message: conflicts.map((conflict) => conflict.message).join("\n"),
+      };
+      for (const id of quarantined) {
+        repository.recordProjectionError(sourceID, id, projectionName, failure);
+        if (candidateByID.has(id)) failedIDs.add(id);
+      }
     }
     const records = repository.listSourceArtifactsForProjection(
       sourceID,
       projectionName,
       sourceIdentityNamespace,
       forkRelationship,
-    ).filter((record) => record.sourceIdentity !== undefined);
+    ).filter((record) =>
+      record.sourceIdentity !== undefined &&
+      !quarantined.has(record.externalID) &&
+      !failedIDs.has(record.externalID)
+    );
     for (const family of connectedArtifactFamilies(records)) {
       const available = family.filter((record) =>
         record.availability === "available" &&
@@ -386,7 +492,7 @@ export async function syncClaudeCodeSessions(
             failure,
           );
         }
-        failed += available.length;
+        for (const record of available) failedIDs.add(record.externalID);
       }
     }
   } catch (error) {
@@ -403,7 +509,12 @@ export async function syncClaudeCodeSessions(
         failure,
       );
     }
-    failed += candidates.length;
+    for (const candidate of candidates) failedIDs.add(candidate.id);
   }
-  return { discovered: candidates.length, imported, skipped, failed };
+  return {
+    discovered: candidates.length,
+    imported,
+    skipped,
+    failed: failedIDs.size,
+  };
 }

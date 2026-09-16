@@ -76,6 +76,61 @@ Deno.test("isolates conflicting Claude session identities from unrelated imports
       reads.getSession("claude-code", `project-c/${independentID}`)?.id,
       `project-c/${independentID}`,
     );
+
+    // Retry unchanged conflicting files; checkpoints must not hide the conflict.
+    deepStrictEqual(
+      await syncClaudeCodeSessions(sessions, repository, conversations),
+      {
+        discovered: 3,
+        imported: 0,
+        skipped: 1,
+        failed: 2,
+      },
+    );
+    Deno.removeSync(`${sessions}/project-b/${sharedID}.jsonl`);
+    deepStrictEqual(
+      await syncClaudeCodeSessions(sessions, repository, conversations),
+      {
+        discovered: 2,
+        imported: 1,
+        skipped: 1,
+        failed: 0,
+      },
+    );
+
+    // Move the actual archive file after import. Its missing owner still holds
+    // the identity; preserve its old conversation and continue unrelated work.
+    Deno.mkdirSync(`${sessions}/project-d`);
+    Deno.renameSync(
+      `${sessions}/project-a/${sharedID}.jsonl`,
+      `${sessions}/project-d/${sharedID}.jsonl`,
+    );
+    deepStrictEqual(
+      await syncClaudeCodeSessions(sessions, repository, conversations),
+      {
+        discovered: 2,
+        imported: 0,
+        skipped: 1,
+        failed: 1,
+      },
+    );
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM conversations").get()!.count,
+      2,
+    );
+    const sourceID = repository.ensureSource(
+      "claude-code",
+      "directory",
+      "Claude Code",
+      sessions,
+    );
+    const error = repository.projectionCheckpoint(
+      sourceID,
+      `project-d/${sharedID}`,
+    )?.lastError;
+    ok(error?.includes(`project-a/${sharedID}.jsonl`));
+    ok(error?.includes(`project-d/${sharedID}.jsonl`));
+    ok(error?.includes('"availability":"missing"'));
   } finally {
     db.close();
     Deno.removeSync(directory, { recursive: true });
@@ -101,15 +156,39 @@ Deno.test("records both Claude artifact paths when session identity insertion co
     );
   }
 
+  const childID = "00000000-0000-4000-8000-000000000094";
+  const childPath = `project-c/${childID}.jsonl`;
+  write(
+    `${sessions}/${childPath}`,
+    [
+      JSON.stringify({
+        type: "assistant",
+        sessionId: childID,
+        session_id: identity,
+      }),
+      JSON.stringify({
+        type: "assistant",
+        sessionId: childID,
+        session_id: childID,
+      }),
+    ].join("\n"),
+  );
+
   const db = openArchiveDatabase(`${directory}/archive.sqlite`);
   migrateTestDatabase(db);
   const repository = new SourceArtifactRepository(db);
   try {
-    await syncClaudeCodeSessions(
+    const result = await syncClaudeCodeSessions(
       sessions,
       repository,
       new ConversationWriteRepository(db),
     );
+    deepStrictEqual(result, {
+      discovered: 3,
+      imported: 0,
+      skipped: 0,
+      failed: 3,
+    });
     // Both owners are new in this transaction. Diagnostics must capture the
     // existing owner before rollback removes its newly inserted identity.
     const sourceID = repository.ensureSource(
@@ -118,7 +197,7 @@ Deno.test("records both Claude artifact paths when session identity insertion co
       "Claude Code",
       sessions,
     );
-    const errors = paths.map((path) =>
+    const errors = [...paths, childPath].map((path) =>
       repository.projectionCheckpoint(sourceID, path.slice(0, -6))?.lastError
     );
     for (const error of errors) {
