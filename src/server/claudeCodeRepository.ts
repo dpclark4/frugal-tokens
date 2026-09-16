@@ -274,8 +274,16 @@ function userInputs(
   return inputs;
 }
 
+function isLocalCommandRecord(record: Record) {
+  const text = userText(record)?.trimStart();
+  return text !== undefined &&
+    /^(?:<command-name>|<local-command-(?:caveat|stdout|stderr)>)/.test(text);
+}
+
 function startsTurn(record: Record, hasTurns: boolean) {
-  if (record.type !== "user" || record.isMeta) return false;
+  if (
+    record.type !== "user" || record.isMeta || isLocalCommandRecord(record)
+  ) return false;
   const text = userText(record);
   if (!text) return false;
   return record.origin?.kind === "human" ||
@@ -352,7 +360,10 @@ function claudeCompactionDetails(
       break;
     }
     if (startsTurn(candidate, true)) break;
-    if (fallbackSummary === undefined && userText(candidate)?.trim()) {
+    if (
+      fallbackSummary === undefined && !isLocalCommandRecord(candidate) &&
+      userText(candidate)?.trim()
+    ) {
       fallbackSummary = candidate;
     }
   }
