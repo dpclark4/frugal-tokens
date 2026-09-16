@@ -1,4 +1,4 @@
-import { deepStrictEqual } from "node:assert/strict";
+import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { ClaudeCodeRepository } from "./claudeCodeRepository.ts";
 import type { SessionDetail } from "../shared/sessionSchemas.ts";
 
@@ -12,6 +12,21 @@ function repository(files: Record<string, string>) {
   }
   return new ClaudeCodeRepository(directory);
 }
+
+Deno.test("ignores local command records when choosing a Claude title", () => {
+  const actual = repository({
+    "command-before-prompt.jsonl": `
+{"type":"user","uuid":"command-caveat","promptId":"command","isMeta":true,"userType":"external","message":{"role":"user","content":"<local-command-caveat>Generated while running a command</local-command-caveat>"}}
+{"type":"user","uuid":"command-name","promptId":"command","userType":"external","message":{"role":"user","content":"<command-name>/model</command-name>"}}
+{"type":"user","uuid":"command-output","promptId":"command","userType":"external","message":{"role":"user","content":"<local-command-stdout>Set model to Haiku</local-command-stdout>"}}
+{"type":"user","uuid":"prompt","promptId":"prompt","promptSource":"typed","origin":{"kind":"human"},"userType":"external","message":{"role":"user","content":"Inspect the importer"}}
+{"type":"assistant","uuid":"assistant","timestamp":"2026-06-25T19:51:54.000Z","message":{"id":"call","role":"assistant","model":"claude-sonnet-4-5","stop_reason":"end_turn","content":[{"type":"text","text":"Done"}],"usage":{"input_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"output_tokens":1}}}
+`,
+  }).getSession("command-before-prompt");
+
+  strictEqual(actual?.title, "Inspect the importer");
+  strictEqual(actual?.userTurns, 1);
+});
 
 Deno.test("normalizes model changes without creating command turns", () => {
   const actual = repository({
