@@ -66,7 +66,7 @@ Deno.test("isolates conflicting Claude session identities from unrelated imports
       imported: 1,
       skipped: 0,
       failed: 2,
-    });
+    }, "Initial sync must isolate the two conflicting artifacts");
     strictEqual(
       db.prepare("SELECT COUNT(*) AS count FROM conversations").get()!.count,
       1,
@@ -86,6 +86,7 @@ Deno.test("isolates conflicting Claude session identities from unrelated imports
         skipped: 1,
         failed: 2,
       },
+      "Unchanged retry must retain quarantine and skip the healthy session",
     );
     Deno.removeSync(`${sessions}/project-b/${sharedID}.jsonl`);
     deepStrictEqual(
@@ -96,6 +97,7 @@ Deno.test("isolates conflicting Claude session identities from unrelated imports
         skipped: 1,
         failed: 0,
       },
+      "Removing the duplicate must allow the remaining session to recover",
     );
 
     // Move the actual archive file after import. Its missing owner still holds
@@ -113,6 +115,7 @@ Deno.test("isolates conflicting Claude session identities from unrelated imports
         skipped: 1,
         failed: 1,
       },
+      "Moving an imported artifact must report its missing identity owner",
     );
     strictEqual(
       db.prepare("SELECT COUNT(*) AS count FROM conversations").get()!.count,
@@ -131,6 +134,79 @@ Deno.test("isolates conflicting Claude session identities from unrelated imports
     ok(error?.includes(`project-a/${sharedID}.jsonl`));
     ok(error?.includes(`project-d/${sharedID}.jsonl`));
     ok(error?.includes('"availability":"missing"'));
+  } finally {
+    db.close();
+    Deno.removeSync(directory, { recursive: true });
+  }
+});
+
+Deno.test("accumulates quarantine across independent Claude identity conflicts", async () => {
+  const directory = Deno.makeTempDirSync();
+  const sessions = `${directory}/projects`;
+  const artifacts = [
+    { path: "a/first.jsonl", identity: "first" },
+    { path: "b/first.jsonl", identity: "first" },
+    { path: "c/second.jsonl", identity: "second" },
+    { path: "d/second.jsonl", identity: "second" },
+    { path: "e/healthy.jsonl", identity: "healthy" },
+  ];
+  for (const { path, identity } of artifacts) {
+    write(
+      `${sessions}/${path}`,
+      JSON.stringify({
+        type: "user",
+        sessionId: identity,
+        uuid: `${identity}-user`,
+        timestamp: "2026-08-01T10:00:00Z",
+        promptSource: "typed",
+        origin: { kind: "human" },
+        message: { content: "Synthetic prompt" },
+      }),
+    );
+  }
+  const db = openArchiveDatabase(`${directory}/archive.sqlite`);
+  migrateTestDatabase(db);
+  const repository = new SourceArtifactRepository(db);
+  try {
+    const result = await syncClaudeCodeSessions(
+      sessions,
+      repository,
+      new ConversationWriteRepository(db),
+    );
+    deepStrictEqual(
+      result,
+      {
+        discovered: 5,
+        imported: 1,
+        skipped: 0,
+        failed: 4,
+      },
+      "Both collision groups must remain quarantined after successive retries",
+    );
+    const sourceID = repository.ensureSource(
+      "claude-code",
+      "directory",
+      "Claude Code",
+      sessions,
+    );
+    for (const { path } of artifacts.slice(0, 4)) {
+      const error = repository.projectionCheckpoint(sourceID, path.slice(0, -6))
+        ?.lastError;
+      ok(error, `Quarantine must persist for ${path}`);
+      for (const claimant of artifacts.slice(0, 4)) {
+        ok(
+          error.includes(claimant.path),
+          `Diagnostics must retain ${claimant.path}`,
+        );
+      }
+    }
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS count FROM source_artifact_identities")
+        .get()!.count,
+      1,
+      "Only the healthy artifact may retain an identity mapping",
+    );
+    ok(new ConversationRepository(db).getSession("claude-code", "e/healthy"));
   } finally {
     db.close();
     Deno.removeSync(directory, { recursive: true });

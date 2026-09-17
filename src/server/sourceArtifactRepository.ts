@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { SessionSummary } from "../shared/sessionSchemas.ts";
 
 type Harness = SessionSummary["harness"];
+const SQLITE_CONSTRAINT_UNIQUE = 2067;
 
 export type ProjectionCheckpoint = {
   changeHint?: string;
@@ -295,9 +296,9 @@ export class SourceArtifactRepository {
           } catch (error) {
             if (
               error instanceof Error && "errcode" in error &&
-              error.errcode === 2067
+              error.errcode === SQLITE_CONSTRAINT_UNIQUE
             ) {
-              const artifacts = this.identityConflictArtifacts(
+              const artifacts = this.#identityConflictArtifacts(
                 sourceID,
                 sourceArtifactID,
                 identity.namespace,
@@ -354,7 +355,7 @@ export class SourceArtifactRepository {
   }
 
   // Called before rollback: an owner may have been inserted in this transaction.
-  identityConflictArtifacts(
+  #identityConflictArtifacts(
     sourceID: number,
     incomingArtifactID: number,
     namespace: string,
