@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { SessionSummary } from "../shared/sessionSchemas.ts";
 
 type Harness = SessionSummary["harness"];
+const SQLITE_CONSTRAINT_UNIQUE = 2067;
 
 export type ProjectionCheckpoint = {
   changeHint?: string;
@@ -40,6 +41,29 @@ export type SourceArtifactProjectionRecord = {
   dependencyDigest?: string;
   lastError?: string;
 };
+
+export type IdentityConflictArtifact = {
+  externalID: string;
+  artifactPath?: string;
+  availability: "available" | "missing";
+};
+
+export class SourceIdentityConflictError extends Error {
+  constructor(
+    readonly namespace: string,
+    readonly identity: string,
+    readonly artifacts: IdentityConflictArtifact[],
+    cause: unknown,
+  ) {
+    super(
+      `Source identity conflict: ${
+        JSON.stringify({ namespace, identity, artifacts })
+      }`,
+      { cause },
+    );
+    this.name = "SourceIdentityConflictError";
+  }
+}
 
 export type ArtifactImportFailure = {
   name?: string;
@@ -251,17 +275,46 @@ export class SourceArtifactRepository {
         this.#prepare(
           "DELETE FROM source_artifact_identities WHERE source_session_id = ?",
         ).run(sourceArtifactID);
+      }
+      for (const value of values) {
+        const sourceArtifactID = this.#sourceArtifactID(
+          sourceID,
+          value.externalID,
+        );
         for (const identity of value.identities) {
-          this.#prepare(`
+          try {
+            this.#prepare(`
             INSERT INTO source_artifact_identities (
               source_session_id, source_id, identity_namespace, identity_value
             ) VALUES (?, ?, ?, ?)
           `).run(
-            sourceArtifactID,
-            sourceID,
-            identity.namespace,
-            identity.value,
-          );
+                sourceArtifactID,
+                sourceID,
+                identity.namespace,
+                identity.value,
+              );
+          } catch (error) {
+            if (
+              error instanceof Error && "errcode" in error &&
+              error.errcode === SQLITE_CONSTRAINT_UNIQUE
+            ) {
+              const artifacts = this.#identityConflictArtifacts(
+                sourceID,
+                sourceArtifactID,
+                identity.namespace,
+                identity.value,
+              );
+              if (artifacts.length > 1) {
+                throw new SourceIdentityConflictError(
+                  identity.namespace,
+                  identity.value,
+                  artifacts,
+                  error,
+                );
+              }
+            }
+            throw error;
+          }
         }
         for (const lineage of value.lineage) {
           this.#prepare(`
@@ -299,6 +352,38 @@ export class SourceArtifactRepository {
       this.db.exec("ROLLBACK");
       throw error;
     }
+  }
+
+  // Called before rollback: an owner may have been inserted in this transaction.
+  #identityConflictArtifacts(
+    sourceID: number,
+    incomingArtifactID: number,
+    namespace: string,
+    identity: string,
+  ): IdentityConflictArtifact[] {
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
+    const rows = this.#prepare(`
+      SELECT external_id, artifact_path, availability FROM source_sessions
+      WHERE source_id = ? AND (id = ? OR id IN (
+        SELECT source_session_id FROM source_artifact_identities
+        WHERE source_id = ? AND identity_namespace = ? AND identity_value = ?
+      )) ORDER BY external_id
+    `).all(
+      sourceID,
+      incomingArtifactID,
+      sourceID,
+      namespace,
+      identity,
+    ) as Array<{
+      external_id: string;
+      artifact_path: string | null;
+      availability: "available" | "missing";
+    }>;
+    return rows.map((row) => ({
+      externalID: row.external_id,
+      artifactPath: optional(row.artifact_path),
+      availability: row.availability,
+    }));
   }
 
   listSourceArtifactsForProjection(

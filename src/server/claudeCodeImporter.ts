@@ -11,6 +11,7 @@ import {
   type SourceArtifactMetadata,
   type SourceArtifactProjectionRecord,
   SourceArtifactRepository,
+  SourceIdentityConflictError,
 } from "./sourceArtifactRepository.ts";
 import type { LinearConversationImport } from "./conversationImportTypes.ts";
 import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
@@ -69,6 +70,18 @@ function fingerprint(
   return hash.digest("hex");
 }
 
+function collectConnected<T>(seeds: T[], neighbors: Map<T, Set<T>>) {
+  const visited = new Set<T>();
+  const pending = [...seeds];
+  while (pending.length > 0) {
+    const node = pending.pop()!;
+    if (visited.has(node)) continue;
+    visited.add(node);
+    pending.push(...(neighbors.get(node) ?? []));
+  }
+  return visited;
+}
+
 function connectedArtifactFamilies(records: SourceArtifactProjectionRecord[]) {
   const byID = new Map(
     records.map((record) => [record.sourceArtifactID, record]),
@@ -87,17 +100,111 @@ function connectedArtifactFamilies(records: SourceArtifactProjectionRecord[]) {
   const visited = new Set<number>();
   return records.flatMap((record) => {
     if (visited.has(record.sourceArtifactID)) return [];
-    const family: SourceArtifactProjectionRecord[] = [];
-    const pending = [record.sourceArtifactID];
-    while (pending.length > 0) {
-      const id = pending.pop()!;
-      if (visited.has(id)) continue;
-      visited.add(id);
-      family.push(byID.get(id)!);
-      pending.push(...neighbors.get(id)!);
-    }
+    const connected = collectConnected([record.sourceArtifactID], neighbors);
+    for (const id of connected) visited.add(id);
+    const family = [...connected].map((id) => byID.get(id)!);
     return [family.sort((a, b) => a.externalID.localeCompare(b.externalID))];
   });
+}
+
+function quarantineIdentityFamily(
+  records: SourceArtifactProjectionRecord[],
+  proposed: SourceArtifactMetadata[],
+  conflict: SourceIdentityConflictError,
+) {
+  const neighbors = new Map<string, Set<string>>();
+  const artifactNode = (id: string) => JSON.stringify(["artifact", id]);
+  const identityNode = (namespace: string, value: string) =>
+    JSON.stringify(["identity", namespace, value]);
+  const link = (left: string, right: string) => {
+    if (!neighbors.has(left)) neighbors.set(left, new Set());
+    if (!neighbors.has(right)) neighbors.set(right, new Set());
+    neighbors.get(left)!.add(right);
+    neighbors.get(right)!.add(left);
+  };
+  // Include both stored and proposed edges: quarantined metadata remains stored,
+  // and neither old nor new family members may project against ambiguous owners.
+  for (const record of records) {
+    const node = artifactNode(record.externalID);
+    for (
+      const identity of [record.sourceIdentity, record.parentSourceIdentity]
+    ) {
+      if (identity !== undefined) {
+        link(node, identityNode(sourceIdentityNamespace, identity));
+      }
+    }
+  }
+  for (const value of proposed) {
+    const node = artifactNode(value.externalID);
+    for (const identity of value.identities) {
+      link(node, identityNode(identity.namespace, identity.value));
+    }
+    for (const lineage of value.lineage) {
+      link(
+        node,
+        identityNode(
+          lineage.parentIdentityNamespace,
+          lineage.parentIdentityValue,
+        ),
+      );
+    }
+  }
+  const visited = collectConnected(
+    conflict.artifacts.map((artifact) => artifactNode(artifact.externalID)),
+    neighbors,
+  );
+  const quarantined = new Set<string>();
+  for (
+    const id of new Set([
+      ...records.map((record) => record.externalID),
+      ...proposed.map((value) => value.externalID),
+    ])
+  ) {
+    if (visited.has(artifactNode(id))) quarantined.add(id);
+  }
+  return quarantined;
+}
+
+function storeMetadataWithQuarantine(
+  repository: SourceArtifactRepository,
+  sourceID: number,
+  metadata: SourceArtifactMetadata[],
+) {
+  const quarantined = new Set<string>();
+  const conflicts = new Map<string, SourceIdentityConflictError>();
+  let pendingMetadata = metadata;
+  let storedRecords: SourceArtifactProjectionRecord[] | undefined;
+  while (pendingMetadata.length > 0) {
+    try {
+      repository.replaceSourceArtifactMetadata(sourceID, pendingMetadata);
+      break;
+    } catch (error) {
+      if (!(error instanceof SourceIdentityConflictError)) throw error;
+      storedRecords ??= repository.listSourceArtifactsForProjection(
+        sourceID,
+        projectionName,
+        sourceIdentityNamespace,
+        forkRelationship,
+      );
+      const previousSize = quarantined.size;
+      const affected = quarantineIdentityFamily(storedRecords, metadata, error);
+      for (const id of affected) {
+        quarantined.add(id);
+        conflicts.set(id, error);
+      }
+      if (quarantined.size === previousSize) throw error;
+      pendingMetadata = metadata.filter((value) =>
+        !quarantined.has(value.externalID)
+      );
+      console.warn(
+        `[sync] harness=claude-code identity conflict; quarantined=${
+          JSON.stringify([...affected])
+        }`,
+        error.message,
+      );
+    }
+  }
+  return { quarantined, conflicts };
 }
 
 function assertAcyclicArtifactLineage(
@@ -181,7 +288,7 @@ export async function syncClaudeCodeSessions(
   const metadata: SourceArtifactMetadata[] = [];
   let imported = 0;
   let skipped = 0;
-  let failed = 0;
+  const failedIDs = new Set<string>();
 
   const snapshot = (candidate: ClaudeCodeSessionCandidate) => {
     const snapshots = readCandidateSnapshots(candidate);
@@ -269,21 +376,36 @@ export async function syncClaudeCodeSessions(
         failure,
         projectionName,
       );
-      failed++;
+      failedIDs.add(candidate.id);
     }
   }
 
   repository.markMissingArtifacts(sourceID, observedAt);
   try {
-    if (metadata.length > 0) {
-      repository.replaceSourceArtifactMetadata(sourceID, metadata);
+    const { quarantined, conflicts } = storeMetadataWithQuarantine(
+      repository,
+      sourceID,
+      metadata,
+    );
+    for (const [id, conflict] of conflicts) {
+      repository.recordProjectionError(
+        sourceID,
+        id,
+        projectionName,
+        artifactImportFailure(conflict),
+      );
+      if (candidateByID.has(id)) failedIDs.add(id);
     }
     const records = repository.listSourceArtifactsForProjection(
       sourceID,
       projectionName,
       sourceIdentityNamespace,
       forkRelationship,
-    ).filter((record) => record.sourceIdentity !== undefined);
+    ).filter((record) =>
+      record.sourceIdentity !== undefined &&
+      !quarantined.has(record.externalID) &&
+      !failedIDs.has(record.externalID)
+    );
     for (const family of connectedArtifactFamilies(records)) {
       const available = family.filter((record) =>
         record.availability === "available" &&
@@ -386,7 +508,7 @@ export async function syncClaudeCodeSessions(
             failure,
           );
         }
-        failed += available.length;
+        for (const record of available) failedIDs.add(record.externalID);
       }
     }
   } catch (error) {
@@ -403,7 +525,12 @@ export async function syncClaudeCodeSessions(
         failure,
       );
     }
-    failed += candidates.length;
+    for (const candidate of candidates) failedIDs.add(candidate.id);
   }
-  return { discovered: candidates.length, imported, skipped, failed };
+  return {
+    discovered: candidates.length,
+    imported,
+    skipped,
+    failed: failedIDs.size,
+  };
 }
