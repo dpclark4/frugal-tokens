@@ -189,14 +189,20 @@ Deno.test("accumulates quarantine across independent Claude identity conflicts",
       "Claude Code",
       sessions,
     );
-    for (const { path } of artifacts.slice(0, 4)) {
+    for (const { path, identity } of artifacts.slice(0, 4)) {
       const error = repository.projectionCheckpoint(sourceID, path.slice(0, -6))
         ?.lastError;
       ok(error, `Quarantine must persist for ${path}`);
-      for (const claimant of artifacts.slice(0, 4)) {
-        ok(
+      for (const claimant of artifacts) {
+        strictEqual(
           error.includes(claimant.path),
-          `Diagnostics must retain ${claimant.path}`,
+          claimant.identity === identity,
+          `Diagnostics for ${path} must include only its own collision group`,
+        );
+        strictEqual(
+          error.includes(`"identity":"${claimant.identity}"`),
+          claimant.identity === identity,
+          `Diagnostics for ${path} must exclude unrelated identities`,
         );
       }
     }

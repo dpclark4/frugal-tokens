@@ -171,7 +171,7 @@ function storeMetadataWithQuarantine(
   metadata: SourceArtifactMetadata[],
 ) {
   const quarantined = new Set<string>();
-  const conflicts: SourceIdentityConflictError[] = [];
+  const conflicts = new Map<string, SourceIdentityConflictError>();
   let pendingMetadata = metadata;
   let storedRecords: SourceArtifactProjectionRecord[] | undefined;
   while (pendingMetadata.length > 0) {
@@ -180,7 +180,6 @@ function storeMetadataWithQuarantine(
       break;
     } catch (error) {
       if (!(error instanceof SourceIdentityConflictError)) throw error;
-      conflicts.push(error);
       storedRecords ??= repository.listSourceArtifactsForProjection(
         sourceID,
         projectionName,
@@ -188,10 +187,10 @@ function storeMetadataWithQuarantine(
         forkRelationship,
       );
       const previousSize = quarantined.size;
-      for (
-        const id of quarantineIdentityFamily(storedRecords, metadata, error)
-      ) {
+      const affected = quarantineIdentityFamily(storedRecords, metadata, error);
+      for (const id of affected) {
         quarantined.add(id);
+        conflicts.set(id, error);
       }
       if (quarantined.size === previousSize) throw error;
       pendingMetadata = metadata.filter((value) =>
@@ -199,7 +198,7 @@ function storeMetadataWithQuarantine(
       );
       console.warn(
         `[sync] harness=claude-code identity conflict; quarantined=${
-          JSON.stringify([...quarantined])
+          JSON.stringify([...affected])
         }`,
         error.message,
       );
@@ -388,15 +387,14 @@ export async function syncClaudeCodeSessions(
       sourceID,
       metadata,
     );
-    if (conflicts.length > 0) {
-      const failure = {
-        name: "SourceIdentityConflictError",
-        message: conflicts.map((conflict) => conflict.message).join("\n"),
-      };
-      for (const id of quarantined) {
-        repository.recordProjectionError(sourceID, id, projectionName, failure);
-        if (candidateByID.has(id)) failedIDs.add(id);
-      }
+    for (const [id, conflict] of conflicts) {
+      repository.recordProjectionError(
+        sourceID,
+        id,
+        projectionName,
+        artifactImportFailure(conflict),
+      );
+      if (candidateByID.has(id)) failedIDs.add(id);
     }
     const records = repository.listSourceArtifactsForProjection(
       sourceID,
