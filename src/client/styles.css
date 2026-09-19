@@ -2064,14 +2064,12 @@ table.data-table {
 }
 
 .cost-warning-tooltip {
-  position: absolute;
-  z-index: 40;
-  right: -6px;
-  bottom: calc(100% + 9px);
-  display: none;
+  position: fixed;
+  z-index: 1000;
+  display: block;
   width: max-content;
-  min-width: 220px;
-  max-width: 280px;
+  min-width: min(220px, calc(100vw - 16px));
+  max-width: min(280px, calc(100vw - 16px));
   padding: 10px 11px;
   pointer-events: none;
   text-align: left;
@@ -2080,7 +2078,7 @@ table.data-table {
 
 .cost-warning-tooltip::after {
   position: absolute;
-  right: 6px;
+  left: var(--cost-warning-arrow-left);
   top: 100%;
   width: 8px;
   height: 8px;
@@ -2091,10 +2089,9 @@ table.data-table {
   transform: translateY(-4px) rotate(45deg);
 }
 
-.cost-warning-trigger:hover .cost-warning-tooltip,
-.cost-warning-trigger:focus .cost-warning-tooltip {
-  display: block;
-  animation: cost-warning-pop 120ms ease-out both;
+.cost-warning-tooltip[data-placement="below"]::after {
+  top: 0;
+  transform: translateY(-4px) rotate(225deg);
 }
 
 .cost-warning-heading,
@@ -2143,17 +2140,6 @@ table.data-table {
 
 .cost-warning-row.is-difference b {
   color: var(--danger, var(--sd-red));
-}
-
-@keyframes cost-warning-pop {
-  from {
-    opacity: 0;
-    transform: translateY(3px) scale(.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
 }
 
 .detail-row > td {
