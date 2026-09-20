@@ -25,6 +25,8 @@ const modelDisplayNames = new Map<string, string>([
   ["kimi-k3", "Kimi K3"],
   ["kimi-k2.7-code", "Kimi K2.7 Code"],
   ["grok-build-0.1", "Grok Build 0.1"],
+  ["muse-spark-1.3-contributor", "Muse Spark 1.3 Contributor"],
+  ["muse-spark-1.3", "Muse Spark 1.3"],
   ["muse-spark-1.2", "Muse Spark 1.2"],
 ]);
 

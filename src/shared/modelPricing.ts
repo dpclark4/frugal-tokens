@@ -210,6 +210,8 @@ const standard = {
     cacheRead: 0.2,
     output: 2,
   },
+  "muse-spark-1.3-contributor": { input: 0.1, cacheRead: 0.002, output: 0.2 },
+  "muse-spark-1.3": { input: 1.25, cacheRead: 0.15, output: 4.25 },
   "muse-spark-1.2": { input: 1.25, cacheRead: 0.15, output: 4.25 },
   "gpt-6-astra": {
     input: 10,
@@ -448,6 +450,8 @@ export const counterfactualModelIDs = [
   "minimax-m3",
   "minimax-m2.7",
   "minimax-m2.5",
+  "muse-spark-1.3-contributor",
+  "muse-spark-1.3",
   "muse-spark-1.2",
 ] as const;
 

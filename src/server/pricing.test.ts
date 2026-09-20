@@ -453,6 +453,50 @@ Deno.test("prices Grok Build and Muse Spark at published rates", () => {
   );
 });
 
+Deno.test("prices Muse Spark 1.3 variants at their distinct published rates", () => {
+  const cases = [
+    { model: "muse-spark-1.3", input: 1.25, cached: 0.15, output: 4.25 },
+    {
+      model: "muse-spark-1.3-contributor",
+      input: 0.1,
+      cached: 0.002,
+      output: 0.2,
+    },
+  ];
+  for (const { model, input, cached, output } of cases) {
+    for (const id of [model, `meta/${model}`]) {
+      closeTo(
+        computeModelCallCost(
+          tokens({ uncachedInput: 1_000_000 }),
+          id,
+          timestamp,
+        ),
+        input,
+      );
+      closeTo(
+        computeModelCallCost(tokens({ cacheRead: 1_000_000 }), id, timestamp),
+        cached,
+      );
+      closeTo(
+        computeModelCallCost(tokens({ output: 1_000_000 }), id, timestamp),
+        output,
+      );
+      closeTo(
+        computeModelCallCost(
+          tokens({
+            uncachedInput: 100_000,
+            cacheRead: 900_000,
+            output: 10_000,
+          }),
+          id,
+          timestamp,
+        ),
+        input * 0.1 + cached * 0.9 + output * 0.01,
+      );
+    }
+  }
+});
+
 Deno.test("keeps Claude Sonnet 5 at its published $2/$10 rates", () => {
   for (
     const at of [

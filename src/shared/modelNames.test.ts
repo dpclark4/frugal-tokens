@@ -20,6 +20,10 @@ Deno.test("formats known model IDs consistently", () => {
     "minimax/minimax-m3": "MiniMax M3",
     "grok-build-0.1": "Grok Build 0.1",
     "muse-spark-1.2": "Muse Spark 1.2",
+    "muse-spark-1.3": "Muse Spark 1.3",
+    "meta/muse-spark-1.3": "Muse Spark 1.3",
+    "muse-spark-1.3-contributor": "Muse Spark 1.3 Contributor",
+    "meta/muse-spark-1.3-contributor": "Muse Spark 1.3 Contributor",
     "gemini-3.8-flash": "Gemini 3.8 Flash",
     "google/gemini-3.7-flash": "Gemini 3.7 Flash",
   };
