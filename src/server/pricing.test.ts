@@ -1,6 +1,6 @@
 import { strictEqual } from "node:assert/strict";
 import type { TokenUsage } from "../shared/sessionSchemas.ts";
-import { computeModelCallCost } from "./pricing.ts";
+import { computeModelCallCost, estimateModelCacheMissCost } from "./pricing.ts";
 
 const timestamp = Date.parse("2026-07-15T00:00:00Z");
 
@@ -22,6 +22,49 @@ function closeTo(actual: number | undefined, expected: number) {
     true,
   );
 }
+
+Deno.test("free model markers have zero cost regardless of case or token coverage", () => {
+  for (
+    const model of [
+      "muse-spark-1.3-contributor-free",
+      "minimax-m2.5-FREE",
+      "kimi-k2.5-Free",
+      "provider/unknown:free",
+      "X Preview F Free",
+      "unknown_free",
+    ]
+  ) {
+    for (
+      const usage of [
+        tokens({
+          uncachedInput: 1_000_000,
+          cacheRead: 500_000,
+          cacheWrite: 100_000,
+          output: 1_000,
+          reasoning: 500,
+        }),
+        tokens({ processed: 500 }),
+      ]
+    ) {
+      strictEqual(computeModelCallCost(usage, model, timestamp), 0);
+    }
+    const miss = estimateModelCacheMissCost(
+      tokens({ uncachedInput: 100_000 }),
+      tokens({ uncachedInput: 100_000, cacheWrite: 1_000 }),
+      model,
+      timestamp,
+    );
+    strictEqual(miss?.actualMissedCost, 0);
+    strictEqual(miss?.expectedReadCost, 0);
+    strictEqual(miss?.estimatedExtraCost, 0);
+  }
+  for (const model of ["freedom-model", "carefree-model", "freeform"]) {
+    strictEqual(
+      computeModelCallCost(tokens({ uncachedInput: 1_000 }), model, timestamp),
+      undefined,
+    );
+  }
+});
 
 Deno.test("switches GPT pricing at the long-context boundary", () => {
   closeTo(

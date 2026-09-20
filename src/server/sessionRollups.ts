@@ -142,7 +142,7 @@ function executionEnd(
 
 /** Builds the disposable, query-oriented data stored beside a root session. */
 export function buildSessionRollup(
-  sessions: LinearConversationImport[],
+  sessions: Pick<LinearConversationImport, "session" | "parentExternalID">[],
 ): SessionRollup {
   if (sessions.length === 0) {
     throw new Error("Cannot roll up an empty session tree");
