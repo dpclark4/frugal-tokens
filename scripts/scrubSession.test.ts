@@ -358,6 +358,21 @@ Deno.test("rejects unsupported shapes and malformed telemetry without echoing so
   }
 });
 
+Deno.test("malformed JSON reports only the line number, not parser diagnostics", () => {
+  for (const harness of ["pi", "codex"] as const) {
+    for (
+      const invalid of ["PRIVATE_MARKER", '{"secret":PRIVATE_MARKER}', "[]"]
+    ) {
+      throws(() => scrubSession(harness, invalid, "example"), {
+        message: "Invalid JSON object at nonblank line 1",
+      });
+      throws(() => scrubSession(harness, `{}\n\n${invalid}`, "example"), {
+        message: "Invalid JSON object at nonblank line 2",
+      });
+    }
+  }
+});
+
 Deno.test("never overwrites source or existing output, including aliases", async () => {
   const directory = await Deno.makeTempDir();
   try {

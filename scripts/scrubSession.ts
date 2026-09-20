@@ -943,11 +943,12 @@ export function scrubSession(harness: Harness, input: string, name: string) {
   }
   const rows = input.split(/\r?\n/).filter((line) => line.trim()).map(
     (line, i) => {
-      const parsed = recordSchema.safeParse(JSON.parse(line));
-      if (!parsed.success) {
+      try {
+        return recordSchema.parse(JSON.parse(line));
+      } catch {
+        // JSON parser and schema diagnostics may contain private source content.
         throw new Error(`Invalid JSON object at nonblank line ${i + 1}`);
       }
-      return parsed.data;
     },
   );
   if (rows.length === 0) throw new Error("Session is empty");

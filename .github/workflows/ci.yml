@@ -37,7 +37,7 @@ jobs:
         run: |
           mapfile -t files < <(
             git diff --diff-filter=ACMR --name-only "$BASE_SHA"...HEAD -- \
-              'src/**' 'deno.json' 'vite.config.ts' 'index.html'
+              'src/**' 'scripts/**' 'e2e/**' 'deno.json' 'vite.config.ts' 'index.html'
           )
           if (( ${#files[@]} == 0 )); then
             echo "No Deno-formatted files changed."
@@ -46,7 +46,7 @@ jobs:
           fi
 
       - name: Run Deno lint
-        run: deno lint src scripts vite.config.ts
+        run: deno lint src scripts e2e vite.config.ts
 
       - name: Run anti-slop gate
         run: deno task lint:oxlint:gate
@@ -56,6 +56,9 @@ jobs:
 
       - name: Run tests
         run: deno task test --parallel --reporter=dot
+
+      - name: Run HTTP e2e tests
+        run: deno task test:e2e
 
       - name: Build application
         run: deno task build
