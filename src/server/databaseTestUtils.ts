@@ -16,6 +16,13 @@ const migrations = [
   "../../db/migrations/20260812120000_compact_conversation_summaries.sql",
   "../../db/migrations/20260813120000_canonicalize_conversation_checkpoint.sql",
   "../../db/migrations/20260814120000_remove_legacy_session_schema.sql",
+  "../../db/migrations/20260902120000_add_tool_event_execution_idx.sql",
+  "../../db/migrations/20260902121000_add_conversation_usage_idx.sql",
+  "../../db/migrations/20260902122000_add_turn_execution_idx.sql",
+  "../../db/migrations/20260902123000_add_turn_execution_cover_idx.sql",
+  "../../db/migrations/20260902124000_add_root_execution_intervals_rollup.sql",
+  "../../db/migrations/20260902125000_add_conversation_title_idx.sql",
+  "../../db/migrations/20260902127000_add_cache_miss_root_id.sql",
 ].map((path) => new URL(path, import.meta.url));
 
 export function migrateTestDatabase(db: DatabaseSync) {
