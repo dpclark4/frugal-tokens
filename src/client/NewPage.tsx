@@ -25,21 +25,21 @@ import {
 } from "./new/overviewReturnScroll.ts";
 
 const route = getRouteApi("/");
-const WorkRhythm = lazy(() =>
+const loadWorkRhythm = () =>
   import("./new/WorkRhythm.tsx").then(({ WorkRhythm }) => ({
     default: WorkRhythm,
-  }))
-);
-const SpendComposition = lazy(() =>
+  }));
+const loadSpendComposition = () =>
   import("./new/SpendComposition.tsx").then(({ SpendComposition }) => ({
     default: SpendComposition,
-  }))
-);
-const SessionDiagnostics = lazy(() =>
+  }));
+const loadSessionDiagnostics = () =>
   import("./new/SessionDiagnostics.tsx").then(({ SessionDiagnostics }) => ({
     default: SessionDiagnostics,
-  }))
-);
+  }));
+const WorkRhythm = lazy(loadWorkRhythm);
+const SpendComposition = lazy(loadSpendComposition);
+const SessionDiagnostics = lazy(loadSessionDiagnostics);
 
 async function copyText(value: string) {
   if (navigator.clipboard && globalThis.isSecureContext) {
@@ -228,6 +228,11 @@ export function NewPage() {
     setError(undefined);
     setWorkRhythmError(undefined);
     setLoadedWorkRhythm(undefined);
+    // Load chart code alongside its data, rather than after the responses arrive.
+    // Rendering through React.lazy still handles any module-loading failures.
+    void loadWorkRhythm().catch(() => {});
+    void loadSpendComposition().catch(() => {});
+    void loadSessionDiagnostics().catch(() => {});
     getActivityOverview(search.range, search.harness).then((result) => {
       if (!active) return;
       setLoadedOverview({
