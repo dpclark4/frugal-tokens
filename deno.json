@@ -39,6 +39,8 @@
   "fmt": {
     "include": [
       "src/",
+      "scripts/",
+      "e2e/",
       "deno.json",
       "vite.config.ts",
       "index.html"
@@ -49,7 +51,8 @@
     "check": "deno check src/server/main.ts src/client/main.tsx vite.config.ts",
     "lint:oxlint": "deno run -A oxlint .",
     "lint:oxlint:gate": "deno run -A oxlint --config .oxlintrc.prek.json --quiet .",
-    "test": "deno test --allow-env --allow-read --allow-write",
+    "test": "deno test --allow-env --allow-read --allow-write src scripts tools",
+    "test:e2e": "deno test --allow-env --allow-read --allow-write --allow-run --allow-net=127.0.0.1 --reporter=dot e2e/tests",
     "db:new": "deno run -A scripts/runDbmate.ts new",
     "db:migrate": "deno run --allow-env=FRUGAL_TOKENS_DATABASE_URL,HOME,USERPROFILE --allow-read --allow-write scripts/prepareDatabase.ts && deno run -A scripts/runDbmate.ts --no-dump-schema up",
     "db:rollback": "deno run -A scripts/runDbmate.ts down",
