@@ -7,6 +7,7 @@ import { createResponseCache } from "./responseCache.ts";
 import { formatTiming } from "./timing.ts";
 import { getRequestIp } from "./requestIp.ts";
 import { priceSessionDetail } from "./pricing.ts";
+import { repriceUnpricedSessions } from "./sessionRepricing.ts";
 import { counterfactualModelIDs } from "../shared/modelPricing.ts";
 import { estimateSessionCostScenario } from "./costScenario.ts";
 import { analyzeSessionCache, CACHE_TTL_1H_MS } from "./cacheAnalysis.ts";
@@ -294,6 +295,7 @@ async function syncSources() {
         ),
     );
   }
+  repriceUnpricedSessions(archiveDatabase);
   await generateMissingSessionTitles(archiveDatabase);
   console.info(
     `[sync] complete duration=${formatTiming(performance.now() - startedAt)}`,

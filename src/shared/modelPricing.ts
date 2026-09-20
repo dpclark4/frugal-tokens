@@ -11,6 +11,15 @@ export type ModelRateCard = {
   cacheWrite1h?: number;
 };
 
+const freeRates: ModelRateCard = {
+  input: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  cacheWrite5m: 0,
+  cacheWrite1h: 0,
+  output: 0,
+};
+
 type ModelRateRegistry = {
   readonly [model: string]: ModelRateCard | undefined;
 };
@@ -483,6 +492,7 @@ export function modelRateCard(
   inputTokens: number,
   provider?: string,
 ) {
+  if (/(?:^|[^a-z0-9])free(?:$|[^a-z0-9])/i.test(model)) return freeRates;
   const normalized = canonicalModelId(
     provider?.toLowerCase() === "cursor" ? cursorPricingModel(model) : model,
   );
@@ -522,10 +532,6 @@ export function computeModelCallCostBreakdown(
   timestamp: number,
   provider?: string,
 ): ModelCallCostBreakdown | undefined {
-  const categorizedTokens = tokens.uncachedInput + tokens.cacheRead +
-    (tokens.cacheWrite ?? 0) + tokens.output + tokens.reasoning;
-  if (tokens.processed > 0 && categorizedTokens === 0) return undefined;
-
   const rates = modelRateCard(
     model,
     timestamp,
@@ -533,6 +539,12 @@ export function computeModelCallCostBreakdown(
     provider,
   );
   if (!rates) return undefined;
+  if (rates === freeRates) {
+    return { input: 0, cacheRead: 0, cacheWrite: 0, output: 0 };
+  }
+  const categorizedTokens = tokens.uncachedInput + tokens.cacheRead +
+    (tokens.cacheWrite ?? 0) + tokens.output + tokens.reasoning;
+  if (tokens.processed > 0 && categorizedTokens === 0) return undefined;
 
   let cacheWrite = 0;
   if (tokens.cacheWrite !== undefined) {
