@@ -63,7 +63,15 @@ const recordSchema = z.object({
   usage: jsonValueSchema.optional(),
   message: z.object({
     role: z.string().optional(),
-    content: z.array(contentBlockSchema).optional(),
+    // Pi persists string content for system, user, and custom messages.
+    content: z.union([
+      z.string().transform(
+        (
+          text,
+        ): z.infer<typeof contentBlockSchema>[] => [{ type: "text", text }],
+      ),
+      z.array(contentBlockSchema),
+    ]).optional(),
     api: z.string().optional(),
     provider: z.string().optional(),
     model: z.string().optional(),
