@@ -12,6 +12,8 @@ export const PERFORMANCE_RANGE_DAYS = 90;
 export const PERFORMANCE_MODELS = {
   openai: [
     "gpt-6-astra",
+    "gpt-6-sol",
+    "gpt-6-luna",
     "gpt-5.6-sol",
     "gpt-5.6-terra",
     "gpt-5.6-luna",
@@ -25,6 +27,7 @@ export const PERFORMANCE_MODELS = {
   anthropic: [
     "claude-fable-5-1",
     "claude-fable-5",
+    "claude-opus-5-5",
     "claude-opus-5",
     "claude-opus-4-8",
     "claude-opus-4-7",

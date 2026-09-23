@@ -102,6 +102,41 @@ Deno.test("uses long-context rates for every priced token category", () => {
   );
 });
 
+Deno.test("prices GPT-6 Sol and Luna at their short and long context rates", () => {
+  const models = [
+    ["gpt-6-sol", 14.7, 24.4],
+    ["gpt-6-luna", 0.735, 1.22],
+  ] as const;
+  for (const [model, shortCost, longCost] of models) {
+    closeTo(
+      computeModelCallCost(
+        tokens({
+          uncachedInput: 1_000,
+          cacheRead: 1_000,
+          cacheWrite: 1_000,
+          output: 1_000,
+        }),
+        model,
+        timestamp,
+      ),
+      shortCost / 1_000,
+    );
+    closeTo(
+      computeModelCallCost(
+        tokens({
+          uncachedInput: 1_000_000,
+          cacheRead: 1_000_000,
+          cacheWrite: 1_000_000,
+          output: 1_000_000,
+        }),
+        model,
+        timestamp,
+      ),
+      longCost,
+    );
+  }
+});
+
 Deno.test("prices GPT-6 Astra at its short and long context rates", () => {
   closeTo(
     computeModelCallCost(
@@ -214,6 +249,24 @@ Deno.test("uses Sol prices effective August 21 at 5 PM Eastern", () => {
   closeTo(
     computeModelCallCost(longTokens, "gpt-5.6-sol", effectiveAt),
     5.94,
+  );
+});
+
+Deno.test("prices Claude Opus 5.5 at its published rates", () => {
+  closeTo(
+    computeModelCallCost(
+      tokens({
+        uncachedInput: 1_000_000,
+        cacheRead: 1_000_000,
+        cacheWrite: 2_000_000,
+        cacheWrite5m: 1_000_000,
+        cacheWrite1h: 1_000_000,
+        output: 1_000_000,
+      }),
+      "claude-opus-5-5",
+      timestamp,
+    ),
+    37.2,
   );
 });
 

@@ -57,6 +57,13 @@ const standard = {
     cacheRead: 0.25,
     output: 50,
   },
+  "claude-opus-5-5": {
+    input: 4,
+    cacheWrite5m: 5,
+    cacheWrite1h: 8,
+    cacheRead: 0.2,
+    output: 20,
+  },
   "claude-opus-5": {
     input: 5,
     cacheWrite5m: 6.25,
@@ -228,6 +235,18 @@ const standard = {
     cacheWrite: 12.5,
     output: 50,
   },
+  "gpt-6-sol": {
+    input: 2,
+    cacheRead: 0.2,
+    cacheWrite: 2.5,
+    output: 10,
+  },
+  "gpt-6-luna": {
+    input: 0.1,
+    cacheRead: 0.01,
+    cacheWrite: 0.125,
+    output: 0.5,
+  },
   "gpt-5.6-sol": {
     input: 5,
     cacheRead: 0.5,
@@ -271,6 +290,18 @@ const longContext = {
     cacheRead: 2,
     cacheWrite: 25,
     output: 75,
+  },
+  "gpt-6-sol": {
+    input: 4,
+    cacheRead: 0.4,
+    cacheWrite: 5,
+    output: 15,
+  },
+  "gpt-6-luna": {
+    input: 0.2,
+    cacheRead: 0.02,
+    cacheWrite: 0.25,
+    output: 0.75,
   },
   "gpt-5.3-codex": { input: 1.75, cacheRead: 0.175, output: 14 },
   "gpt-5.2-codex": { input: 1.75, cacheRead: 0.175, output: 14 },
@@ -408,6 +439,8 @@ const OPENAI_SOL_PRICE_CUT = Date.parse("2026-08-21T21:00:00Z");
 
 export const counterfactualModelIDs = [
   "gpt-6-astra",
+  "gpt-6-sol",
+  "gpt-6-luna",
   "gpt-5.6-sol",
   "gpt-5.6-terra",
   "gpt-5.6-luna",
@@ -432,6 +465,7 @@ export const counterfactualModelIDs = [
   "claude-fable-5-1",
   "claude-mythos-5",
   "claude-mythos-5-1",
+  "claude-opus-5-5",
   "claude-opus-5",
   "claude-opus-4-8",
   "claude-opus-4-7",
