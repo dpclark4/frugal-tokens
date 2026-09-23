@@ -1,5 +1,5 @@
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
-import { PiRepository } from "./piRepository.ts";
+import { normalizePiSession, PiRepository } from "./piRepository.ts";
 import type { SessionDetail } from "../shared/sessionSchemas.ts";
 
 function repository(files: Record<string, string>) {
@@ -12,6 +12,98 @@ function repository(files: Record<string, string>) {
   }
   return new PiRepository(directory);
 }
+
+Deno.test("imports mixed PI content formats without counting system messages", () => {
+  const entries = [
+    { type: "session", version: 3, id: "mixed", cwd: "/project" },
+    {
+      type: "message",
+      message: {
+        role: "system",
+        content: "",
+        sections: { preamble: "You are a coding assistant." },
+        toolsAdded: [{
+          name: "read",
+          description: "Read files",
+          parameters: {},
+        }],
+      },
+    },
+    { type: "message", message: { role: "user", content: "Inspect sessions" } },
+    {
+      type: "message",
+      id: "assistant-1",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "Done." }],
+        provider: "anthropic",
+        model: "test-model",
+        usage: { input: 10, output: 2, totalTokens: 12, cost: { total: 0.01 } },
+      },
+    },
+    {
+      type: "message",
+      message: {
+        role: "system",
+        content: "Follow updated instructions.",
+        sections: { preamble: null },
+        toolsRemoved: [{ name: "read" }],
+      },
+    },
+    {
+      type: "message",
+      message: {
+        role: "user",
+        content: [{ type: "text", text: "Inspect again" }],
+      },
+    },
+    {
+      type: "message",
+      id: "assistant-2",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "Done again." }],
+        provider: "anthropic",
+        model: "test-model",
+        usage: { input: 20, output: 3, totalTokens: 23, cost: { total: 0.02 } },
+      },
+    },
+  ];
+  const text = entries.map((entry) => JSON.stringify(entry)).join("\n");
+  const actual = normalizePiSession({
+    id: "mixed",
+    path: "/mixed.jsonl",
+    artifactPath: "mixed.jsonl",
+    updatedAt: 0,
+    size: text.length,
+  }, text);
+
+  strictEqual(actual.summary.title, "Inspect sessions");
+  strictEqual(actual.summary.userTurns, 2);
+  strictEqual(actual.summary.modelCalls, 2);
+  strictEqual(actual.summary.tokens.processed, 35);
+  strictEqual(actual.summary.reportedCost, 0.03);
+  deepStrictEqual(actual.turns.map((turn) => turn.inputs), [
+    [{
+      kind: "text",
+      preview: "Inspect sessions",
+      originalLength: 16,
+      truncated: false,
+    }],
+    [{
+      kind: "text",
+      preview: "Inspect again",
+      originalLength: 13,
+      truncated: false,
+    }],
+  ]);
+  deepStrictEqual(
+    actual.turns.flatMap((turn) =>
+      turn.calls.map((call) => call.activity.tools)
+    ),
+    [[], []],
+  );
+});
 
 Deno.test("prefers the latest PI session name over the first prompt", () => {
   const actual = repository({

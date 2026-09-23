@@ -21,8 +21,11 @@ Conserve tool calls and tokens during implementation.
 - Never silently bypass commit or push hooks with `--no-verify`. Fix hook
   failures when possible; otherwise explain the failure and get explicit
   approval before bypassing, then disclose the bypass in the final response.
-- In the final response, report verification performed and explicitly mention
-  relevant checks that were not run.
+- Run relevant tests before opening a PR; reuse passing results when the tested
+  code has not changed.
+- Omit routine verification sections from PR descriptions and final responses.
+  Disclose failures, skipped relevant tests, or CI gaps that affect confidence;
+  do not list every broader check left to CI.
 
 ## UI Descriptions
 
