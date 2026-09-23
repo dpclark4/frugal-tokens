@@ -1,0 +1,336 @@
+export const snapshot = {};
+
+snapshot[`sessions filters and pagination > harness=pi 1`] = `
+{
+  ids: [
+    "astra-ttl3-full2",
+    "luna-compaction1-full1",
+    "astra-full1-partial2",
+    "haiku-thinking2-full1",
+  ],
+  pagination: {
+    page: 1,
+    pageSize: 100,
+    totalItems: 4,
+    totalPages: 1,
+  },
+}
+`;
+
+snapshot[`sessions filters and pagination > harness=codex 1`] = `
+{
+  ids: [
+    "fixture-id-0001",
+  ],
+  pagination: {
+    page: 1,
+    pageSize: 100,
+    totalItems: 1,
+    totalPages: 1,
+  },
+}
+`;
+
+snapshot[`sessions filters and pagination > harness=opencode 1`] = `
+{
+  ids: [],
+  pagination: {
+    page: 1,
+    pageSize: 100,
+    totalItems: 0,
+    totalPages: 0,
+  },
+}
+`;
+
+snapshot[`sessions filters and pagination > misses=ttl 1`] = `
+{
+  ids: [
+    "astra-ttl3-full2",
+  ],
+  pagination: {
+    page: 1,
+    pageSize: 100,
+    totalItems: 1,
+    totalPages: 1,
+  },
+}
+`;
+
+snapshot[`sessions filters and pagination > misses=compaction 1`] = `
+{
+  ids: [
+    "luna-compaction1-full1",
+  ],
+  pagination: {
+    page: 1,
+    pageSize: 100,
+    totalItems: 1,
+    totalPages: 1,
+  },
+}
+`;
+
+snapshot[`sessions filters and pagination > misses=thinking-change 1`] = `
+{
+  ids: [
+    "haiku-thinking2-full1",
+    "fixture-id-0001",
+  ],
+  pagination: {
+    page: 1,
+    pageSize: 100,
+    totalItems: 2,
+    totalPages: 1,
+  },
+}
+`;
+
+snapshot[`sessions filters and pagination > misses=model-change 1`] = `
+{
+  ids: [],
+  pagination: {
+    page: 1,
+    pageSize: 100,
+    totalItems: 0,
+    totalPages: 0,
+  },
+}
+`;
+
+snapshot[`sessions filters and pagination > misses=full-miss 1`] = `
+{
+  ids: [
+    "astra-ttl3-full2",
+    "luna-compaction1-full1",
+    "astra-full1-partial2",
+    "haiku-thinking2-full1",
+  ],
+  pagination: {
+    page: 1,
+    pageSize: 100,
+    totalItems: 4,
+    totalPages: 1,
+  },
+}
+`;
+
+snapshot[`sessions filters and pagination > misses=partial-miss 1`] = `
+{
+  ids: [
+    "astra-full1-partial2",
+  ],
+  pagination: {
+    page: 1,
+    pageSize: 100,
+    totalItems: 1,
+    totalPages: 1,
+  },
+}
+`;
+
+snapshot[`sessions filters and pagination > misses=ttl,thinking-change 1`] = `
+{
+  ids: [
+    "astra-ttl3-full2",
+    "haiku-thinking2-full1",
+    "fixture-id-0001",
+  ],
+  pagination: {
+    page: 1,
+    pageSize: 100,
+    totalItems: 3,
+    totalPages: 1,
+  },
+}
+`;
+
+snapshot[`sessions filters and pagination > misses=none 1`] = `
+{
+  ids: [],
+  pagination: {
+    page: 1,
+    pageSize: 100,
+    totalItems: 0,
+    totalPages: 0,
+  },
+}
+`;
+
+snapshot[`sessions filters and pagination > harness=pi&misses=thinking-change 1`] = `
+{
+  ids: [
+    "haiku-thinking2-full1",
+  ],
+  pagination: {
+    page: 1,
+    pageSize: 100,
+    totalItems: 1,
+    totalPages: 1,
+  },
+}
+`;
+
+snapshot[`sessions filters and pagination > sort activity asc 1`] = `
+[
+  "fixture-id-0001",
+  "luna-compaction1-full1",
+  "haiku-thinking2-full1",
+  "astra-full1-partial2",
+  "astra-ttl3-full2",
+]
+`;
+
+snapshot[`sessions filters and pagination > sort activity desc 1`] = `
+[
+  "astra-ttl3-full2",
+  "astra-full1-partial2",
+  "haiku-thinking2-full1",
+  "luna-compaction1-full1",
+  "fixture-id-0001",
+]
+`;
+
+snapshot[`sessions filters and pagination > sort name asc 1`] = `
+[
+  "luna-compaction1-full1",
+  "astra-ttl3-full2",
+  "astra-full1-partial2",
+  "fixture-id-0001",
+  "haiku-thinking2-full1",
+]
+`;
+
+snapshot[`sessions filters and pagination > sort name desc 1`] = `
+[
+  "astra-ttl3-full2",
+  "astra-full1-partial2",
+  "fixture-id-0001",
+  "haiku-thinking2-full1",
+  "luna-compaction1-full1",
+]
+`;
+
+snapshot[`sessions filters and pagination > sort model asc 1`] = `
+[
+  "haiku-thinking2-full1",
+  "luna-compaction1-full1",
+  "fixture-id-0001",
+  "astra-ttl3-full2",
+  "astra-full1-partial2",
+]
+`;
+
+snapshot[`sessions filters and pagination > sort model desc 1`] = `
+[
+  "astra-ttl3-full2",
+  "astra-full1-partial2",
+  "fixture-id-0001",
+  "luna-compaction1-full1",
+  "haiku-thinking2-full1",
+]
+`;
+
+snapshot[`sessions filters and pagination > sort input asc 1`] = `
+[
+  "fixture-id-0001",
+  "haiku-thinking2-full1",
+  "astra-full1-partial2",
+  "astra-ttl3-full2",
+  "luna-compaction1-full1",
+]
+`;
+
+snapshot[`sessions filters and pagination > sort input desc 1`] = `
+[
+  "luna-compaction1-full1",
+  "astra-ttl3-full2",
+  "astra-full1-partial2",
+  "haiku-thinking2-full1",
+  "fixture-id-0001",
+]
+`;
+
+snapshot[`sessions filters and pagination > sort output asc 1`] = `
+[
+  "fixture-id-0001",
+  "haiku-thinking2-full1",
+  "astra-full1-partial2",
+  "astra-ttl3-full2",
+  "luna-compaction1-full1",
+]
+`;
+
+snapshot[`sessions filters and pagination > sort output desc 1`] = `
+[
+  "luna-compaction1-full1",
+  "astra-ttl3-full2",
+  "astra-full1-partial2",
+  "haiku-thinking2-full1",
+  "fixture-id-0001",
+]
+`;
+
+snapshot[`sessions filters and pagination > sort cost asc 1`] = `
+[
+  "fixture-id-0001",
+  "haiku-thinking2-full1",
+  "astra-full1-partial2",
+  "luna-compaction1-full1",
+  "astra-ttl3-full2",
+]
+`;
+
+snapshot[`sessions filters and pagination > sort cost desc 1`] = `
+[
+  "astra-ttl3-full2",
+  "luna-compaction1-full1",
+  "astra-full1-partial2",
+  "haiku-thinking2-full1",
+  "fixture-id-0001",
+]
+`;
+
+snapshot[`sessions filters and pagination > sort cacheMisses asc 1`] = `
+[
+  "fixture-id-0001",
+  "luna-compaction1-full1",
+  "astra-full1-partial2",
+  "haiku-thinking2-full1",
+  "astra-ttl3-full2",
+]
+`;
+
+snapshot[`sessions filters and pagination > sort cacheMisses desc 1`] = `
+[
+  "astra-ttl3-full2",
+  "astra-full1-partial2",
+  "haiku-thinking2-full1",
+  "luna-compaction1-full1",
+  "fixture-id-0001",
+]
+`;
+
+snapshot[`sessions reject invalid filters > harness=invalid 1`] = `
+{
+  error: "Invalid harness",
+}
+`;
+
+snapshot[`sessions reject invalid filters > misses=invalid 1`] = `
+{
+  error: "Invalid miss filter; expected compaction, ttl, thinking-change, model-change, full-miss, partial-miss",
+}
+`;
+
+snapshot[`sessions reject invalid filters > sortBy=invalid 1`] = `
+{
+  error: "Invalid sortBy; expected activity, name, model, input, output, cost, cacheMisses",
+}
+`;
+
+snapshot[`sessions reject invalid filters > sortDirection=invalid 1`] = `
+{
+  error: "Invalid sortDirection; expected asc, desc",
+}
+`;

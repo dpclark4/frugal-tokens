@@ -10,6 +10,32 @@ Deno 2.9+'s built-in `t.assertSnapshot()` (no snapshot library).
 `support/server.ts` reads `fixtures/{pi,codex}/` into fresh, migrated temporary
 SQLite storage. It waits for import and cleans up afterward. Personal session
 configuration, title generation, and periodic sync are disabled.
+`support/main.ts` fixes `Date.now()` and no-argument `new Date()` at February 1,
+2026, 12:00 UTC, and the server runs in UTC. Overview and cache-miss overview
+tests use `range=all`; other dashboard tests exercise fixed 30/90-day windows.
+Real time passing does not expire fixtures. The scrubber shifts sessions to
+January 15, 2026: keep new fixtures within the tested windows and before the
+fixed clock. For longer fixtures, adjust the fixed clock/windows and
+intentionally update snapshots.
+
+## Coverage
+
+- Homepage data: harnesses, usage, activity overview, work rhythm, session
+  shape, cache-miss overview, and overview.
+- Other analytics: performance and collapsed/expanded tool calls.
+- Sessions: imported Pi/Codex list, harness/miss filters, every supported sort
+  key in both directions, pagination, empty results, and invalid filters.
+- Pi `astra-full1-partial2`: full detail response, full/partial cache miss
+  counts, cost scenarios with both cache TTLs, missing sessions, and invalid
+  inputs.
+- Dashboard validation: invalid harnesses, ranges, timezones, and model/expand
+  parameters; activity also covers a Pi-only 90-day non-UTC view and empty data.
+
+These are HTTP integration tests, not browser rendering/navigation tests. GitHub
+Actions runs `deno task test:e2e` in CI's separate **Run HTTP e2e tests** step.
+Snapshot updates generate expected responses; review them before accepting
+behavior changes. Normal test runs compare responses without rewriting
+snapshots.
 
 ## Adding a session (agents)
 

@@ -1,0 +1,103 @@
+export const snapshot = {};
+
+snapshot[`dashboard endpoints reject invalid filters > /api/usage?harness=invalid 1`] = `
+{
+  error: "Invalid harness",
+}
+`;
+
+snapshot[`dashboard endpoints reject invalid filters > /api/overview?harness=invalid 1`] = `
+{
+  error: "Invalid harness",
+}
+`;
+
+snapshot[`dashboard endpoints reject invalid filters > /api/cache-misses/overview?harness=invalid 1`] = `
+{
+  error: "Invalid harness",
+}
+`;
+
+snapshot[`dashboard endpoints reject invalid filters > /api/activity-overview?harness=invalid 1`] = `
+{
+  error: "Invalid harness",
+}
+`;
+
+snapshot[`dashboard endpoints reject invalid filters > /api/work-rhythm?harness=invalid 1`] = `
+{
+  error: "Invalid harness",
+}
+`;
+
+snapshot[`dashboard endpoints reject invalid filters > /api/session-shape?harness=invalid 1`] = `
+{
+  error: "Invalid harness",
+}
+`;
+
+snapshot[`dashboard endpoints reject invalid filters > /api/performance?harness=invalid 1`] = `
+{
+  error: "Invalid harness",
+}
+`;
+
+snapshot[`dashboard endpoints reject invalid filters > /api/tool-calls?harness=invalid 1`] = `
+{
+  error: "Invalid harness",
+}
+`;
+
+snapshot[`dashboard endpoints reject invalid filters > /api/activity-overview?range=invalid 1`] = `
+{
+  error: "Invalid range; expected 30 or 90",
+}
+`;
+
+snapshot[`dashboard endpoints reject invalid filters > /api/work-rhythm?range=invalid 1`] = `
+{
+  error: "Invalid range; expected 30 or 90",
+}
+`;
+
+snapshot[`dashboard endpoints reject invalid filters > /api/session-shape?range=invalid 1`] = `
+{
+  error: "Invalid range; expected 30 or 90",
+}
+`;
+
+snapshot[`dashboard endpoints reject invalid filters > /api/tool-calls?range=invalid 1`] = `
+{
+  error: "Invalid range; expected 7, 30, or 90",
+}
+`;
+
+snapshot[`dashboard endpoints reject invalid filters > /api/activity-overview?timeZone=invalid 1`] = `
+{
+  error: "Invalid IANA timezone",
+}
+`;
+
+snapshot[`dashboard endpoints reject invalid filters > /api/work-rhythm?timeZone=invalid 1`] = `
+{
+  error: "Invalid IANA timezone",
+}
+`;
+
+snapshot[`dashboard endpoints reject invalid filters > /api/tool-calls?expand=invalid 1`] = `
+{
+  error: "Invalid expand value",
+}
+`;
+
+snapshot[`dashboard endpoints reject invalid filters > /api/performance?openai=invalid 1`] = `
+{
+  error: "Invalid OpenAI model",
+}
+`;
+
+snapshot[`dashboard endpoints reject invalid filters > /api/performance?anthropic=invalid 1`] = `
+{
+  error: "Invalid Anthropic model",
+}
+`;

@@ -1,0 +1,31 @@
+export const snapshot = {};
+
+snapshot[`Pi session cost scenarios > 5m 1`] = `
+{
+  breakdown: {
+    cacheRead: 0.9055317000000003,
+    cacheWrite: 0.5287725000000004,
+    input: 0,
+    output: 0.14046,
+  },
+  cacheTtl: "5m",
+  cost: 1.5747642000000006,
+  hasUnpricedCost: false,
+  model: "claude-sonnet-4-6",
+}
+`;
+
+snapshot[`Pi session cost scenarios > 1h 1`] = `
+{
+  breakdown: {
+    cacheRead: 0.9180522000000004,
+    cacheWrite: 0.5956260000000002,
+    input: 0,
+    output: 0.14046,
+  },
+  cacheTtl: "1h",
+  cost: 1.6541382000000007,
+  hasUnpricedCost: false,
+  model: "claude-sonnet-4-6",
+}
+`;
