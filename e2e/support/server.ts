@@ -43,11 +43,12 @@ export async function startServer() {
         `--allow-read=${root},${directory}`,
         `--allow-write=${directory}`,
         "--allow-net=0.0.0.0:0",
-        "src/server/main.ts",
+        "e2e/support/main.ts",
       ],
       clearEnv: true,
       env: {
         HOME: directory,
+        TZ: "UTC",
         FRUGAL_TOKENS_DATABASE_URL: `sqlite:${databasePath}`,
         PI_SESSION_DIR: join(root, "e2e/fixtures/pi"),
         CODEX_SESSION_DIR: join(root, "e2e/fixtures/codex"),

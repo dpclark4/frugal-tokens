@@ -1,0 +1,136 @@
+export const snapshot = {};
+
+snapshot[`overview aggregates imported sessions 1`] = `
+{
+  activeDays: 3,
+  activeWeekdays: 3,
+  activity: {
+    hasUnpricedCost: false,
+    peakConcurrentSessions: {
+      average: 2.3333333333333335,
+      median: 1,
+      p90: 4.2,
+    },
+    sessions: {
+      average: 2.3333333333333335,
+      median: 1,
+      p90: 4.2,
+    },
+    spend: {
+      average: 6.593291183333334,
+      median: 5.367338000000001,
+      p90: 11.70847044,
+    },
+    turns: {
+      average: 29,
+      median: 19,
+      p90: 55,
+    },
+  },
+  elapsedWeekdays: 14632,
+  models: [
+    {
+      efficiency: 0.9456996983973665,
+      hasUnpricedCost: false,
+      input: 8623930,
+      isOther: false,
+      model: "gpt-6-astra",
+      sessions: 2,
+      spend: 14.358818,
+      spendShare: 0.7259307277017452,
+    },
+    {
+      efficiency: 0.973560534527069,
+      hasUnpricedCost: false,
+      input: 25365301,
+      isOther: false,
+      model: "gpt-5.6-luna",
+      sessions: 1,
+      spend: 5.079782000000002,
+      spendShare: 0.25681569637739177,
+    },
+    {
+      efficiency: 0.3905175085218469,
+      hasUnpricedCost: false,
+      input: 209755,
+      isOther: false,
+      model: "anthropic/claude-haiku-4.5",
+      sessions: 1,
+      spend: 0.17134655,
+      spendShare: 0.008662671657979331,
+    },
+    {
+      efficiency: 0.9305265819584044,
+      hasUnpricedCost: false,
+      input: 158190,
+      isOther: false,
+      model: "gpt-5.6-sol",
+      sessions: 1,
+      spend: 0.14033999999999996,
+      spendShare: 0.0070950908581516176,
+    },
+    {
+      efficiency: 0.5072811059907835,
+      hasUnpricedCost: false,
+      input: 21700,
+      isOther: true,
+      model: "Other",
+      sessions: 1,
+      spend: 0.029587000000000002,
+      spendShare: 0.001495813404732307,
+    },
+  ],
+  multiDaySessionRate: 0.2,
+  multiDaySessions: 1,
+  rangeDays: 20486,
+  rotationInactivityMinutes: 30,
+  sessionProfile: {
+    activeSpan: {
+      average: 1.4,
+      median: 1,
+      p90: 2.2,
+    },
+    efficiency: {
+      average: 0.8285896949186036,
+      median: 0.9347340142758193,
+      p90: 0.9700025725421159,
+    },
+    elapsed: {
+      average: 102721025,
+      median: 2792805,
+      p90: 305495460.8000001,
+    },
+    hasUnpricedCost: false,
+    initialInput: {
+      average: 5976,
+      median: 3000,
+      p90: 11897.2,
+    },
+    input: {
+      average: 6875775.2,
+      median: 3159445,
+      p90: 17404974.6,
+    },
+    overallEfficiency: 0.9625220149722172,
+    peakContext: {
+      average: 107042,
+      median: 60041,
+      p90: 239577.40000000002,
+    },
+    spend: {
+      average: 3.9559747100000004,
+      median: 4.632378,
+      p90: 7.8677768000000015,
+    },
+    turns: {
+      average: 17.4,
+      median: 9,
+      p90: 34.2,
+    },
+  },
+  sessions: 5,
+  subagentCoverage: "partial",
+  weekdayActivityRate: 0.0002050300710770913,
+  weekendDays: 0,
+}
+`;
