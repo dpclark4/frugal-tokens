@@ -24,7 +24,7 @@ import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
 const contentPreviewLimit = 2_048;
 const projectionName = "conversation";
 
-export const cursorParserVersion = "cursor-conversation-1";
+export const cursorParserVersion = "cursor-conversation-2";
 
 type CursorFileMeta = {
   schemaVersion?: number;

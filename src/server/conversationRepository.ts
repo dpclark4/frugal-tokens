@@ -1350,6 +1350,12 @@ export class ConversationRepository {
       return "ORDER BY c.updated_at DESC, COALESCE(c.public_id, c.external_id) DESC, so.harness DESC";
     }
     const direction = sort.direction === "asc" ? "ASC" : "DESC"; // allowlisted, not interpolated raw
+    const totalCost = `COALESCE(
+      json_extract(cr.summary_json, '$.inclusiveComputedCost'),
+      json_extract(cr.summary_json, '$.computedCost'),
+      json_extract(cr.summary_json, '$.inclusiveReportedCost'),
+      cr.reported_cost
+    )`;
     const keys = {
       name: `${effectiveConversationTitle} COLLATE NOCASE ${direction}`,
       model: `COALESCE(
@@ -1366,17 +1372,25 @@ export class ConversationRepository {
       ) ${direction}`,
       output:
         `COALESCE(json_extract(cr.summary_json, '$.inclusiveTokens.output'), cr.output_tokens) ${direction}`,
-      cost: `COALESCE(
-        json_extract(cr.summary_json, '$.inclusiveComputedCost'),
-        json_extract(cr.summary_json, '$.computedCost'),
-        json_extract(cr.summary_json, '$.inclusiveReportedCost'),
-        cr.reported_cost
+      cost: `${totalCost} ${direction}`,
+      // Sorts by the *share* of a session's cost attributable to cache
+      // misses (inclusiveCacheMissCost / total cost), not the absolute
+      // dollar amount. The two are only weakly related in practice - a
+      // $50 session and a $2 session can both be 40% cache waste - and
+      // the Cost column already covers "which sessions are the biggest";
+      // this instead answers "which sessions behaved worst, relative to
+      // their own size," which is the more actionable question for a
+      // caching problem regardless of the session's absolute cost. The
+      // tooltip shows the absolute estimate alongside this ratio.
+      // Sessions with no cache misses or no known total cost both land
+      // at ratio 0, same as the COALESCE(...,0) convention used above.
+      cacheMisses: `(
+        CASE WHEN ${totalCost} > 0
+          THEN (1.0 * COALESCE(json_extract(cr.summary_json, '$.inclusiveCacheMissCost'), 0))
+            / ${totalCost}
+          ELSE 0
+        END
       ) ${direction}`,
-      // Matches what the UI actually shows (session.cacheIssues.length in
-      // RecentSessionsTable.tsx), rather than re-deriving a separate
-      // full-misses/partial-misses heuristic that can disagree with it.
-      cacheMisses:
-        `COALESCE(json_array_length(cr.summary_json, '$.cacheIssues'), 0) ${direction}`,
     } satisfies Record<SessionSortKey, string>;
     return `ORDER BY ${
       keys[sort.key]

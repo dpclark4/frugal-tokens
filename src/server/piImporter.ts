@@ -6,7 +6,7 @@ import {
 } from "./fileSessionImporter.ts";
 import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
 
-const parserVersion = "pi-conversation-8";
+const parserVersion = "pi-conversation-9";
 
 export async function syncPiSessions(
   directory: string,

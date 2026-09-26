@@ -579,6 +579,13 @@
   font-size: var(--tooltip-type-value);
 }
 
+.recent-session-cache-tooltip-heading > small {
+  display: block;
+  margin-top: 3px;
+  color: var(--tooltip-muted);
+  font-size: var(--dashboard-type-micro);
+}
+
 .recent-session-cache-tooltip-rows {
   display: grid;
   gap: 7px;
