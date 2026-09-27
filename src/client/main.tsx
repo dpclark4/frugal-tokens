@@ -117,14 +117,6 @@ const newRoute = createRoute({
     date: z.iso.date().optional().catch(undefined),
     misses: z.string().optional(),
     page: z.coerce.number().int().positive().optional().catch(undefined),
-    sessionHarness: z.enum([
-      "all",
-      "opencode",
-      "claude-code",
-      "pi",
-      "codex",
-      "cursor",
-    ]).optional().catch(undefined),
     models: sessionModelSelectionSchema.optional().catch(undefined),
     sortBy: z.preprocess(
       (key) => key === "name" ? "timestamp" : key,
