@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 import { getRouteApi } from "@tanstack/react-router";
-import { sessionMissCost } from "./sessionMissCost.ts";
+import { formatMissCost, sessionMissCost } from "./sessionMissCost.ts";
 import {
   jsonObjectSchema,
   jsonStringValue,
@@ -2874,9 +2874,10 @@ export function SessionDetailPage() {
   const totalMissCost = !hasCacheMisses || !hasPricedCacheMissCost ||
       session.inclusiveCacheMissCost === undefined
     ? undefined
-    : `${money.format(session.inclusiveCacheMissCost)}${
-      session.inclusiveHasUnpricedCacheMissCost ? "+" : ""
-    }`;
+    : formatMissCost(
+      session.inclusiveCacheMissCost,
+      session.inclusiveHasUnpricedCacheMissCost,
+    );
   const subagentHasMisses = tree.slice(1).some((item) =>
     item.turns.some((turn) =>
       turn.calls.some((call) =>
@@ -2894,8 +2895,8 @@ export function SessionDetailPage() {
         {subagents > 0 && (
           <span
             title={subagentHasMisses
-              ? `${money.format(subagentMissCost)}${
-                subagentMissesUnpriced ? "+" : ""
+              ? `${
+                formatMissCost(subagentMissCost, subagentMissesUnpriced)
               } subagent miss cost; included in total miss cost`
               : undefined}
           >

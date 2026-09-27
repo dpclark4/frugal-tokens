@@ -1,5 +1,27 @@
 import { strictEqual } from "node:assert/strict";
-import { sessionMissCost } from "./sessionMissCost.ts";
+import { formatMissCost, sessionMissCost } from "./sessionMissCost.ts";
+
+Deno.test("session and subagent miss totals preserve sub-cent amounts and coverage", () => {
+  for (
+    const [cost, expected] of [
+      [0, "$0.00"],
+      [0.001, "<$0.01"],
+      [0.0099, "<$0.01"],
+      [0.01, "$0.01"],
+      [2.69, "$2.69"],
+    ] as const
+  ) {
+    strictEqual(formatMissCost(cost), expected);
+    strictEqual(formatMissCost(cost, true), `${expected}+`);
+    strictEqual(
+      sessionMissCost([{
+        cacheAssessment: { status: "full-miss" },
+        cacheMissCost: cost,
+      }])?.amount,
+      formatMissCost(cost),
+    );
+  }
+});
 
 Deno.test("miss cost omits calls without misses", () => {
   strictEqual(sessionMissCost([{}]), undefined);

@@ -5,6 +5,12 @@ const money = new Intl.NumberFormat("en-US", {
   currency: "USD",
 });
 
+export function formatMissCost(cost: number, hasUnpriced = false) {
+  return `${cost > 0 && cost < 0.01 ? "<$0.01" : money.format(cost)}${
+    hasUnpriced ? "+" : ""
+  }`;
+}
+
 export function sessionMissCost(
   calls: Pick<ModelCall, "cacheAssessment" | "cacheMissCost">[],
 ) {
@@ -18,9 +24,7 @@ export function sessionMissCost(
   const cost = priced.reduce((sum, call) => sum + call.cacheMissCost!, 0);
   const amount = priced.length === 0
     ? "unavailable"
-    : `${cost > 0 && cost < 0.01 ? "<$0.01" : money.format(cost)}${
-      unpriced > 0 ? "+" : ""
-    }`;
+    : formatMissCost(cost, unpriced > 0);
   const title = "Estimated cost attributed to tokens that missed the cache; " +
     "not the extra cost over a cache hit." +
     (unpriced > 0
