@@ -81,6 +81,18 @@
   background: #eef3f1;
 }
 
+.session-options-models label[aria-disabled="true"] {
+  opacity: .55;
+  cursor: not-allowed;
+  background: none;
+}
+
+.session-options-limit {
+  margin: 8px 0;
+  color: var(--dashboard-muted);
+  font: var(--dashboard-type-label)/1.4 var(--mono);
+}
+
 .session-options-model-heading {
   width: 100%;
 }

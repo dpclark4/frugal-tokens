@@ -1,6 +1,9 @@
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
-import type { SessionModelOption } from "../../../shared/sessionBrowserSchemas.ts";
+import {
+  type SessionModelOption,
+  sessionModelSelectionLimit,
+} from "../../../shared/sessionBrowserSchemas.ts";
 import type {
   SessionMissFilter,
   SessionSummary,
@@ -88,20 +91,27 @@ export function SessionOptions({
     pendingFocus.current = undefined;
   }, [models]);
 
+  const modelLimitReached = models.length >= sessionModelSelectionLimit;
+
   function modelOption(option: SessionModelOption) {
+    const selected = models.includes(option.id);
+    const disabled = modelLimitReached && !selected;
     return (
-      <label key={option.id} title={option.id}>
+      <label key={option.id} title={option.id} aria-disabled={disabled}>
         <input
           ref={(element) => {
             if (element) modelInputs.current.set(option.id, element);
             else modelInputs.current.delete(option.id);
           }}
           type="checkbox"
-          checked={models.includes(option.id)}
+          checked={selected}
+          disabled={disabled}
+          aria-describedby={disabled ? `${id}-model-limit` : undefined}
           onChange={() => {
+            if (disabled) return;
             pendingFocus.current = option.id;
             onModelsChange(
-              models.includes(option.id)
+              selected
                 ? models.filter((model) => model !== option.id)
                 : [...models, option.id],
             );
@@ -191,6 +201,15 @@ export function SessionOptions({
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
+            {modelLimitReached && (
+              <p
+                className="session-options-limit"
+                id={`${id}-model-limit`}
+                role="status"
+              >
+                {sessionModelSelectionLimit}-model selection limit reached
+              </p>
+            )}
             {selectedOptions.length > 0 && (
               <div
                 className="session-options-selected"
