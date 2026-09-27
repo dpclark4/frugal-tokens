@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { compactHomePath } from "../../database.ts";
 import {
   harnessSchema,
   type SessionSummary,
@@ -10,7 +11,10 @@ import { parseSessionBrowserQuery } from "./query.ts";
 import type { SessionBrowserRepository } from "./repository.ts";
 
 export function sessionBrowserRoutes(
-  browser: Pick<SessionBrowserRepository, "listSessions" | "listModels">,
+  browser: Pick<
+    SessionBrowserRepository,
+    "listSessions" | "listModels" | "listDirectories"
+  >,
   conversations: Pick<
     ConversationRepository,
     "enrichSessionSummaries" | "getSession"
@@ -40,6 +44,9 @@ export function sessionBrowserRoutes(
     const models = browser.listModels(
       parsedHarness.success ? parsedHarness.data : undefined,
     );
+    const directories = browser.listDirectories(
+      parsedHarness.success ? parsedHarness.data : undefined,
+    );
     const queryDuration = performance.now() - queryStartedAt;
     const totalDuration = performance.now() - requestStartedAt;
     context.header(
@@ -53,7 +60,15 @@ export function sessionBrowserRoutes(
         formatTiming(queryDuration)
       } total=${formatTiming(totalDuration)}`,
     );
-    return context.json({ models });
+    return context.json({
+      models,
+      directories: directories.map((option) => ({
+        ...option,
+        displayPath: option.path === null
+          ? undefined
+          : compactHomePath(option.path),
+      })),
+    });
   });
 
   return app.get("/", (context) => {
@@ -61,11 +76,13 @@ export function sessionBrowserRoutes(
     const parsed = parseSessionBrowserQuery(
       context.req.query(),
       context.req.queries("model"),
+      context.req.queries("directory"),
     );
     if (parsed.error !== undefined) {
       return context.json({ error: parsed.error }, 400);
     }
-    const { page, pageSize, harness, missFilters, sort, models } = parsed.value;
+    const { page, pageSize, harness, missFilters, sort, models, directories } =
+      parsed.value;
     const queryStartedAt = performance.now();
     const result = browser.listSessions(
       page,
@@ -74,6 +91,7 @@ export function sessionBrowserRoutes(
       missFilters,
       sort,
       models,
+      directories,
     );
     const queryDuration = performance.now() - queryStartedAt;
     const enrichmentStartedAt = performance.now();

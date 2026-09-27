@@ -10,7 +10,11 @@ import {
   type SessionSummary,
 } from "../../../shared/sessionSchemas.ts";
 
-import { sessionModelSelectionSchema } from "../../../shared/sessionBrowserSchemas.ts";
+import {
+  sessionDirectoryGroup,
+  sessionDirectorySelectionSchema,
+  sessionModelSelectionSchema,
+} from "../../../shared/sessionBrowserSchemas.ts";
 
 function defaultSortDirection(key: SessionSortKey): SessionSortDirection {
   return key === "model" ? "asc" : "desc";
@@ -22,12 +26,14 @@ type SessionBrowserQuery = {
   harness: SessionSummary["harness"] | "all";
   missFilters: SessionMissFilter[] | undefined;
   models: string[];
+  directories: Array<string | null>;
   sort: { key: SessionSortKey; direction: SessionSortDirection } | undefined;
 };
 
 export function parseSessionBrowserQuery(
   query: Record<string, string | undefined>,
   models: string[] = [],
+  directories: string[] = [],
 ): { value: SessionBrowserQuery; error?: never } | {
   error: string;
   value?: never;
@@ -45,6 +51,13 @@ export function parseSessionBrowserQuery(
   }
   const parsedModels = sessionModelSelectionSchema.safeParse(models);
   if (!parsedModels.success) return { error: "Invalid model selection" };
+  // An empty directory query value denotes an unknown recorded directory.
+  const parsedDirectories = sessionDirectorySelectionSchema.safeParse(
+    directories.map((path) => path === "" ? null : path),
+  );
+  if (!parsedDirectories.success) {
+    return { error: "Invalid directory selection" };
+  }
   const misses = query.misses;
   const missFilters = parseSessionMissFilters(misses);
   if (
@@ -92,6 +105,9 @@ export function parseSessionBrowserQuery(
       harness: parsedHarness.success ? parsedHarness.data : "all",
       missFilters,
       models: [...new Set(parsedModels.data)],
+      directories: [
+        ...new Set(parsedDirectories.data.map(sessionDirectoryGroup)),
+      ],
       sort,
     },
   };

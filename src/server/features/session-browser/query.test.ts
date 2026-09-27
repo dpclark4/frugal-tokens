@@ -9,6 +9,7 @@ Deno.test("session browser query preserves default pagination and filters", () =
       harness: "all",
       missFilters: undefined,
       models: [],
+      directories: [],
       sort: undefined,
     },
   });
@@ -92,6 +93,25 @@ Deno.test("session browser query parses and validates model selections", () => {
     strictEqual(
       parseSessionBrowserQuery({}, models).error,
       "Invalid model selection",
+    );
+  }
+});
+
+Deno.test("session browser query validates and normalizes directory selections", () => {
+  deepStrictEqual(
+    parseSessionBrowserQuery({}, [], [
+      "/workspace/a",
+      "",
+      "/workspace/a",
+      "/home/a/.herdr/worktrees/project/one",
+      "/home/a/.herdr/worktrees/project/two/src",
+    ]).value?.directories,
+    ["/workspace/a", null, "/home/a/.herdr/worktrees/project"],
+  );
+  for (const directories of [["x".repeat(4097)], Array(101).fill("/project")]) {
+    strictEqual(
+      parseSessionBrowserQuery({}, [], directories).error,
+      "Invalid directory selection",
     );
   }
 });

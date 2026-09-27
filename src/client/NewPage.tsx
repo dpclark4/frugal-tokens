@@ -475,6 +475,12 @@ export function NewPage() {
             harnesses={harnesses}
             misses={search.misses}
             models={search.models}
+            directories={search.directories}
+            onDirectoriesChange={(directories) =>
+              update({
+                directories: directories.length ? directories : undefined,
+                page: undefined,
+              })}
             onModelsChange={(models) =>
               update({
                 models: models.length ? models : undefined,
@@ -488,6 +494,7 @@ export function NewPage() {
               update({
                 harness: "all",
                 models: undefined,
+                directories: undefined,
                 misses: undefined,
                 page: undefined,
               })}
