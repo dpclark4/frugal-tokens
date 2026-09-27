@@ -43,7 +43,7 @@ const currency = new Intl.NumberFormat("en-US", {
 });
 
 const sessionSortDefaultDirection = {
-  name: "asc",
+  timestamp: "desc",
   model: "asc",
   activity: "desc",
   input: "desc",
@@ -245,7 +245,7 @@ function SortableHeader({
   ) => void;
   className?: string;
 }) {
-  const active = activeKey === sortKey;
+  const active = (activeKey ?? "timestamp") === sortKey;
   const direction = active
     ? activeDirection ?? sessionSortDefaultDirection[sortKey]
     : undefined;
@@ -543,19 +543,6 @@ export function RecentSessionsTable({
           >
             <RefreshCw size={14} aria-hidden="true" />
           </button>
-          <button
-            type="button"
-            className="recent-sessions-reset-sort"
-            onClick={() => {
-              if (sortBy === undefined) return;
-              onSortChange(undefined, undefined);
-            }}
-            aria-disabled={sortBy === undefined}
-            aria-label="Reset sort"
-            title="Reset sort to most recent activity timestamp"
-          >
-            <ArrowUpDown size={14} aria-hidden="true" />
-          </button>
           <SessionOptions
             open={optionsOpen}
             setOpen={setOptionsOpen}
@@ -616,7 +603,7 @@ export function RecentSessionsTable({
                 <tr>
                   <SortableHeader
                     label="Session"
-                    sortKey="name"
+                    sortKey="timestamp"
                     activeKey={sortBy}
                     activeDirection={sortDirection}
                     onSortChange={onSortChange}

@@ -107,7 +107,7 @@ function seedSortFixture(
 }
 
 const sortKeyExpectedDescOrder = {
-  name: ["c", "b", "a"],
+  timestamp: ["c", "b", "a"],
   model: ["c", "b", "a"],
   activity: ["c", "b", "a"],
   input: ["c", "b", "a"],
@@ -209,7 +209,7 @@ Deno.test("sorts cache misses by the same count the UI displays", () => {
   }
 });
 
-Deno.test("sorts by name using effective title (generated title when present)", () => {
+Deno.test("sorts session timestamps oldest first on request", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   const sources = new SourceArtifactRepository(db);
@@ -217,27 +217,12 @@ Deno.test("sorts by name using effective title (generated title when present)", 
   const conversations = new SessionBrowserRepository(db);
   try {
     seedSortFixture(sources, projection);
-    // Update session "a" to have a generated_title that sorts after "Charlie"
-    // SAFETY: The static SQL projection and migrated schema define this row contract.
-    const row = db.prepare(`
-      SELECT cb.source_session_id
-      FROM conversation_branches cb
-      JOIN conversations c ON c.id = cb.conversation_id
-      WHERE c.external_id = ?
-      LIMIT 1
-    `).get("a") as { source_session_id: number };
-    db.prepare(`
-      UPDATE source_sessions
-      SET generated_title = ?
-      WHERE id = ?
-    `).run("Zzz Override", row.source_session_id);
-    // Sort by name ascending: should be b ("Bravo"), c ("Charlie"), a ("Zzz Override")
     deepStrictEqual(
       conversations.listSessions(1, 10, "pi", undefined, {
-        key: "name",
+        key: "timestamp",
         direction: "asc",
       }).items.map(({ id }) => id),
-      ["b", "c", "a"],
+      ["a", "b", "c"],
     );
   } finally {
     db.close();

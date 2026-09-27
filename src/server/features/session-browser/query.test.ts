@@ -33,7 +33,7 @@ Deno.test("session browser query preserves pagination coercion and bounds", () =
 Deno.test("session browser query preserves sort defaults and explicit direction", () => {
   for (
     const key of [
-      "name",
+      "timestamp",
       "model",
       "activity",
       "input",
@@ -44,7 +44,7 @@ Deno.test("session browser query preserves sort defaults and explicit direction"
   ) {
     deepStrictEqual(parseSessionBrowserQuery({ sortBy: key }).value?.sort, {
       key,
-      direction: key === "name" || key === "model" ? "asc" : "desc",
+      direction: key === "model" ? "asc" : "desc",
     });
     deepStrictEqual(
       parseSessionBrowserQuery({ sortBy: key, sortDirection: "asc" }).value

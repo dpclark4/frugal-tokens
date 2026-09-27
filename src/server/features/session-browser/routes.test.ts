@@ -31,13 +31,13 @@ Deno.test("session browser route preserves mounting, filters, pagination, and ti
     }),
   );
   const response = await app.request(
-    "/api/sessions?page=2&pageSize=25&harness=pi&misses=model-change&sortBy=name&model=provider%2Fone&model=two",
+    "/api/sessions?page=2&pageSize=25&harness=pi&misses=model-change&sortBy=timestamp&model=provider%2Fone&model=two",
   );
   strictEqual(response.status, 200);
   deepStrictEqual(await response.json(), result);
   deepStrictEqual(args, [2, 25, "pi", ["model-change"], {
-    key: "name",
-    direction: "asc",
+    key: "timestamp",
+    direction: "desc",
   }, ["provider/one", "two"]]);
   strictEqual(enriched, true);
   match(
