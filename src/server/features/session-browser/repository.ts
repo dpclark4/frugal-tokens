@@ -262,10 +262,6 @@ export class SessionBrowserRepository {
     const direction = sort.direction === "asc" ? "ASC" : "DESC"; // allowlisted, not interpolated raw
     const keys = {
       timestamp: `c.updated_at ${direction}`,
-      model: `COALESCE(
-        json_extract(cr.summary_json, '$.displayModel'),
-        REPLACE(json_extract(c.models_json, '$[#-1]'), '-', ' ')
-      ) COLLATE NOCASE ${direction}`,
       activity:
         `COALESCE(json_extract(cr.summary_json, '$.inclusiveUserTurns'), cr.user_turns) ${direction}`,
       input: `COALESCE(

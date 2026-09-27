@@ -35,7 +35,6 @@ Deno.test("session browser query preserves sort defaults and explicit direction"
   for (
     const key of [
       "timestamp",
-      "model",
       "activity",
       "input",
       "output",
@@ -45,7 +44,7 @@ Deno.test("session browser query preserves sort defaults and explicit direction"
   ) {
     deepStrictEqual(parseSessionBrowserQuery({ sortBy: key }).value?.sort, {
       key,
-      direction: key === "model" ? "asc" : "desc",
+      direction: "desc",
     });
     deepStrictEqual(
       parseSessionBrowserQuery({ sortBy: key, sortDirection: "asc" }).value

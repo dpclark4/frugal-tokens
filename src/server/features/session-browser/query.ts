@@ -16,10 +16,6 @@ import {
   sessionModelSelectionSchema,
 } from "../../../shared/sessionBrowserSchemas.ts";
 
-function defaultSortDirection(key: SessionSortKey): SessionSortDirection {
-  return key === "model" ? "asc" : "desc";
-}
-
 type SessionBrowserQuery = {
   page: number;
   pageSize: number;
@@ -95,7 +91,7 @@ export function parseSessionBrowserQuery(
       key: parsedSortBy.data,
       direction: parsedSortDirection.success
         ? parsedSortDirection.data
-        : defaultSortDirection(parsedSortBy.data),
+        : "desc",
     }
     : undefined;
   return {

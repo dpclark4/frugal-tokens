@@ -38,6 +38,13 @@ const sessionActivity = new Intl.DateTimeFormat(undefined, {
   hour: "numeric",
   minute: "2-digit",
 });
+const sessionActivityWithYear = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
 const currency = new Intl.NumberFormat("en-US", {
   style: "currency",
   currency: "USD",
@@ -47,7 +54,6 @@ const currency = new Intl.NumberFormat("en-US", {
 
 const sessionSortDefaultDirection = {
   timestamp: "desc",
-  model: "asc",
   activity: "desc",
   input: "desc",
   output: "desc",
@@ -322,7 +328,9 @@ function SessionRow({
   const location = session.workingDirectory;
   const metadata = [
     location,
-    sessionActivity.format(activityAt),
+    (new Date(activityAt).getFullYear() === new Date().getFullYear()
+      ? sessionActivity
+      : sessionActivityWithYear).format(activityAt),
     elapsed,
   ].filter(Boolean).join(" · ");
 
@@ -621,13 +629,7 @@ export function RecentSessionsTable({
                     activeDirection={sortDirection}
                     onSortChange={onSortChange}
                   />
-                  <SortableHeader
-                    label="Model"
-                    sortKey="model"
-                    activeKey={sortBy}
-                    activeDirection={sortDirection}
-                    onSortChange={onSortChange}
-                  />
+                  <th scope="col">Model</th>
                   <SortableHeader
                     label="Activity"
                     sortKey="activity"

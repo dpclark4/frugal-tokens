@@ -29,7 +29,6 @@ export const sessionMissFiltersSchema = z.array(sessionMissFilterSchema);
 export const sessionSortKeySchema = z.enum([
   "activity",
   "timestamp",
-  "model",
   "input",
   "output",
   "cost",
