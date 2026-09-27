@@ -4,6 +4,7 @@ import { syncPiSessions } from "./piImporter.ts";
 import { SourceArtifactRepository } from "./sourceArtifactRepository.ts";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
 import { ConversationRepository } from "./conversationRepository.ts";
+import { SessionBrowserRepository } from "./features/session-browser/repository.ts";
 import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
 
 function transcript(prompt: string) {
@@ -97,7 +98,8 @@ Deno.test("imports PI thinking levels for turns and model calls", async () => {
     );
     strictEqual(detail.turns[1].reasoningSetting?.settingValue, "high");
     deepStrictEqual(
-      reads.listSessions(1, 10, "pi").items[0].thinking,
+      new SessionBrowserRepository(db).listSessions(1, 10, "pi").items[0]
+        .thinking,
       {
         latest: "high",
         values: ["low", "high"],
@@ -256,7 +258,11 @@ Deno.test("incrementally imports PI sessions and preserves the last good archive
 
     Deno.removeSync(transcriptPath);
     await syncPiSessions(sessions, repository, conversations);
-    strictEqual(reads.listSessions(1, 10, "pi").pagination.totalItems, 1);
+    strictEqual(
+      new SessionBrowserRepository(db).listSessions(1, 10, "pi").pagination
+        .totalItems,
+      1,
+    );
     strictEqual(
       db.prepare(`
         SELECT availability FROM source_sessions WHERE external_id = 'project/session'

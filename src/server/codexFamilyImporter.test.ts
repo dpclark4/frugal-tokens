@@ -6,7 +6,7 @@ import {
   parseJsonObject,
 } from "../shared/json.ts";
 import { syncCodexSessions } from "./codexImporter.ts";
-import { ConversationRepository } from "./conversationRepository.ts";
+import { SessionBrowserRepository } from "./features/session-browser/repository.ts";
 import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
 import { openArchiveDatabase } from "./database.ts";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
@@ -242,7 +242,7 @@ Deno.test("Codex rewind with a queued prompt projects as one branched conversati
     strictEqual(count(db, "conversation_model_calls"), 4);
     strictEqual(count(db, "artifact_model_call_occurrences"), 6);
     strictEqual(
-      new ConversationRepository(db).listSessions(
+      new SessionBrowserRepository(db).listSessions(
         1,
         10,
         "codex",
