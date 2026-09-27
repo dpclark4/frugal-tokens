@@ -246,6 +246,225 @@ Deno.test("omitting sort reproduces the natural updated_at order", () => {
   }
 });
 
+Deno.test("directory options count eligible roots, group unknown paths, and respect harness", () => {
+  const db = openArchiveDatabase(":memory:");
+  migrateTestDatabase(db);
+  const sources = new SourceArtifactRepository(db);
+  const projection = new ConversationWriteRepository(db);
+  const browser = new SessionBrowserRepository(db);
+  try {
+    const pi = sources.ensureSource("pi", "directory", "Pi", "/pi");
+    const codex = sources.ensureSource("codex", "directory", "Codex", "/codex");
+    const imports = [
+      sortFixtureSession(pi, { ...sortFixtureValues[0], id: "root" }),
+      sortFixtureSession(pi, { ...sortFixtureValues[0], id: "child" }),
+      sortFixtureSession(pi, { ...sortFixtureValues[0], id: "unknown" }),
+      sortFixtureSession(pi, { ...sortFixtureValues[0], id: "empty" }),
+      sortFixtureSession(codex, { ...sortFixtureValues[0], id: "other" }),
+      sortFixtureSession(pi, { ...sortFixtureValues[0], id: "no-tokens" }),
+    ];
+    imports[1].parentExternalID = imports[0].externalID;
+    for (const imported of imports) {
+      sources.recordUnchangedArtifact(
+        imported.sourceID,
+        imported.externalID,
+        imported.artifactPath!,
+        imported.observedAt,
+      );
+    }
+    projection.replaceLinearConversationTree(imports.slice(0, 2));
+    for (const imported of imports.slice(2)) {
+      projection.replaceLinearConversationTree([imported]);
+    }
+    db.prepare(
+      "UPDATE conversations SET working_directory = '/child-only' WHERE external_id = 'child'",
+    ).run();
+    db.prepare(
+      "UPDATE conversations SET working_directory = NULL WHERE external_id = 'unknown'",
+    ).run();
+    db.prepare(
+      "UPDATE conversations SET working_directory = '' WHERE external_id = 'empty'",
+    ).run();
+    db.prepare(
+      "UPDATE conversation_rollups SET uncached_input_tokens = 0, cache_read_tokens = 0, cache_write_tokens = 0 WHERE conversation_id IN (SELECT id FROM conversations WHERE external_id = 'no-tokens')",
+    ).run();
+    deepStrictEqual(browser.listDirectories(), [
+      { path: null, sessionCount: 2 },
+      { path: "/workspace/project", sessionCount: 2 },
+    ]);
+    deepStrictEqual(browser.listDirectories("pi"), [
+      { path: null, sessionCount: 2 },
+      { path: "/workspace/project", sessionCount: 1 },
+    ]);
+    deepStrictEqual(browser.listDirectories("codex"), [
+      { path: "/workspace/project", sessionCount: 1 },
+    ]);
+    deepStrictEqual(browser.listDirectories("opencode"), []);
+    for (const option of browser.listDirectories()) {
+      const filtered = browser.listSessions(
+        1,
+        100,
+        undefined,
+        undefined,
+        undefined,
+        [],
+        [option.path],
+      );
+      strictEqual(filtered.pagination.totalItems, option.sessionCount);
+    }
+    const unknown = browser.listSessions(
+      1,
+      100,
+      "pi",
+      undefined,
+      undefined,
+      [],
+      [null],
+    );
+    deepStrictEqual(unknown.items.map((item) => item.id).sort(), [
+      "empty",
+      "unknown",
+    ]);
+    const combined = browser.listSessions(
+      1,
+      100,
+      "pi",
+      undefined,
+      undefined,
+      [],
+      [null, "/workspace/project"],
+    );
+    strictEqual(combined.pagination.totalItems, 3);
+    strictEqual(
+      browser.listSessions(1, 100, "pi", undefined, undefined, [], [
+        "/child-only",
+      ]).pagination.totalItems,
+      0,
+    );
+    strictEqual(
+      browser.listSessions(1, 100, "pi", undefined, undefined, [
+        "missing-model",
+      ], [null]).pagination.totalItems,
+      0,
+    );
+    strictEqual(
+      browser.listSessions(1, 100, "pi", [], undefined, [], [null]).pagination
+        .totalItems,
+      0,
+    );
+  } finally {
+    db.close();
+  }
+});
+
+Deno.test("directory options roll up Herdr worktrees per project and home", () => {
+  const db = openArchiveDatabase(":memory:");
+  migrateTestDatabase(db);
+  const sources = new SourceArtifactRepository(db);
+  const projection = new ConversationWriteRepository(db);
+  const browser = new SessionBrowserRepository(db);
+  try {
+    const sourceID = sources.ensureSource("pi", "directory", "Pi", "/sessions");
+    const paths = [
+      "/home/a/.herdr/worktrees/project/worktree-one",
+      "/home/a/.herdr/worktrees/project/worktree-two/src",
+      "/home/a/.herdr/worktrees/project",
+      "/home/a/.herdr/worktrees/other/worktree-one",
+      "/home/b/.herdr/worktrees/project/worktree-one",
+      "/workspace/project/worktree-one",
+      "/home/a/not.herdr/worktrees/project/worktree-one",
+      "/home/a/.herdr/worktrees",
+      "/home/a/.herdr/worktrees/project-other/one",
+      "/home/a/.herdr/worktrees/proj_%/one",
+      "/home/a/.herdr/worktrees/projAB/one",
+      "/workspace/project/worktree-one/subdir",
+    ];
+    for (const [index, path] of paths.entries()) {
+      const imported = sortFixtureSession(sourceID, {
+        ...sortFixtureValues[0],
+        id: `directory-${index}`,
+      });
+      imported.workingDirectory = path;
+      sources.recordUnchangedArtifact(
+        sourceID,
+        imported.externalID,
+        imported.artifactPath!,
+        imported.observedAt,
+      );
+      projection.replaceLinearConversationTree([imported]);
+    }
+    deepStrictEqual(browser.listDirectories("pi"), [
+      { path: "/home/a/.herdr/worktrees/project", sessionCount: 3 },
+      { path: "/home/a/.herdr/worktrees", sessionCount: 1 },
+      { path: "/home/a/.herdr/worktrees/other", sessionCount: 1 },
+      { path: "/home/a/.herdr/worktrees/proj_%", sessionCount: 1 },
+      { path: "/home/a/.herdr/worktrees/projAB", sessionCount: 1 },
+      { path: "/home/a/.herdr/worktrees/project-other", sessionCount: 1 },
+      {
+        path: "/home/a/not.herdr/worktrees/project/worktree-one",
+        sessionCount: 1,
+      },
+      { path: "/home/b/.herdr/worktrees/project", sessionCount: 1 },
+      { path: "/workspace/project/worktree-one", sessionCount: 1 },
+      { path: "/workspace/project/worktree-one/subdir", sessionCount: 1 },
+    ]);
+    for (const option of browser.listDirectories("pi")) {
+      const filtered = browser.listSessions(
+        1,
+        100,
+        "pi",
+        undefined,
+        undefined,
+        [],
+        [option.path],
+      );
+      strictEqual(filtered.pagination.totalItems, option.sessionCount);
+    }
+    const selection = ["/home/a/.herdr/worktrees/project"];
+    const all = browser.listSessions(
+      1,
+      100,
+      "pi",
+      undefined,
+      undefined,
+      [],
+      selection,
+    );
+    deepStrictEqual(all.items.map((item) => item.id).sort(), [
+      "directory-0",
+      "directory-1",
+      "directory-2",
+    ]);
+    for (let page = 1; page <= 3; page++) {
+      const result = browser.listSessions(
+        page,
+        1,
+        "pi",
+        undefined,
+        undefined,
+        [],
+        selection,
+      );
+      strictEqual(result.pagination.totalItems, 3);
+      strictEqual(result.pagination.totalPages, 3);
+      deepStrictEqual(result.items, all.items.slice(page - 1, page));
+    }
+    strictEqual(
+      browser.listSessions(1, 100, "pi", undefined, undefined, [
+        sortFixtureValues[0].model,
+      ], selection).pagination.totalItems,
+      3,
+    );
+    strictEqual(
+      browser.listSessions(1, 100, "codex", undefined, undefined, [], selection)
+        .pagination.totalItems,
+      0,
+    );
+  } finally {
+    db.close();
+  }
+});
+
 Deno.test("model options count distinct root sessions including switches and subagents", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);

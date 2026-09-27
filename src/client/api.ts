@@ -167,6 +167,7 @@ export async function getSessions(
   sortBy?: SessionSortKey,
   sortDirection?: SessionSortDirection,
   models: string[] = [],
+  directories: Array<string | null> = [],
 ) {
   const query = new URLSearchParams({
     page: String(page),
@@ -180,6 +181,9 @@ export async function getSessions(
     );
   }
   for (const model of models) query.append("model", model);
+  for (const directory of directories) {
+    query.append("directory", directory ?? "");
+  }
   if (sortBy !== undefined) query.set("sortBy", sortBy);
   if (sortDirection !== undefined) query.set("sortDirection", sortDirection);
   return sessionListResponseSchema.parse(

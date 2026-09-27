@@ -9,7 +9,10 @@ import type {
 } from "../../shared/sessionSchemas.ts";
 import { parseSessionMissFilters } from "../../shared/sessionSchemas.ts";
 import { getSessionFilterOptions, getSessions, syncSessions } from "../api.ts";
-import type { SessionModelOption } from "../../shared/sessionBrowserSchemas.ts";
+import type {
+  SessionDirectoryOption,
+  SessionModelOption,
+} from "../../shared/sessionBrowserSchemas.ts";
 import type { OverviewHarness } from "./OverviewToolbar.tsx";
 import { RecentSessionsTable } from "./RecentSessionsTable.tsx";
 import {
@@ -25,6 +28,8 @@ type RecentSessionsProps = {
   harnesses: SessionSummary["harness"][];
   misses?: string;
   models?: string[];
+  directories?: Array<string | null>;
+  onDirectoriesChange: (directories: Array<string | null>) => void;
   onModelsChange: (models: string[]) => void;
   onClearFilters: () => void;
   page: number;
@@ -45,6 +50,8 @@ export function RecentSessions({
   harnesses,
   misses,
   models = [],
+  directories = [],
+  onDirectoriesChange,
   onModelsChange,
   onClearFilters,
   page,
@@ -64,6 +71,10 @@ export function RecentSessions({
     ? "none"
     : missFilters.join(",");
   const modelKey = JSON.stringify(models);
+  const directoryKey = JSON.stringify(directories);
+  const [directoryOptions, setDirectoryOptions] = useState<
+    SessionDirectoryOption[]
+  >([]);
   const [modelOptions, setModelOptions] = useState<SessionModelOption[]>([]);
   const [modelOptionsLoading, setModelOptionsLoading] = useState(true);
   const [modelOptionsError, setModelOptionsError] = useState<string>();
@@ -72,14 +83,20 @@ export function RecentSessions({
   useEffect(() => {
     let active = true;
     setModelOptions([]);
+    setDirectoryOptions([]);
     setModelOptionsLoading(true);
     setModelOptionsError(undefined);
     getSessionFilterOptions(harness).then((result) => {
-      if (active) setModelOptions(result.models);
+      if (active) {
+        setModelOptions(result.models);
+        setDirectoryOptions(result.directories);
+      }
     }).catch((reason) => {
       if (active) {
         setModelOptionsError(
-          reason instanceof Error ? reason.message : "Unable to load models",
+          reason instanceof Error
+            ? reason.message
+            : "Unable to load filter options",
         );
       }
     }).finally(() => {
@@ -124,6 +141,7 @@ export function RecentSessions({
         sortBy,
         sortDirection,
         models,
+        directories,
       );
       if (request === requestRef.current) setData(result);
     } catch (reason) {
@@ -147,7 +165,15 @@ export function RecentSessions({
       active = false;
       requestRef.current += 1;
     };
-  }, [harness, missFilterKey, modelKey, page, sortBy, sortDirection]);
+  }, [
+    harness,
+    missFilterKey,
+    modelKey,
+    directoryKey,
+    page,
+    sortBy,
+    sortDirection,
+  ]);
 
   async function refreshData() {
     setRefreshing(true);
@@ -222,7 +248,10 @@ export function RecentSessions({
         error={error}
         selectedMissFilters={missFilters}
         selectedModels={models}
+        selectedDirectories={directories}
+        onDirectoriesChange={onDirectoriesChange}
         modelOptions={modelOptions}
+        directoryOptions={directoryOptions}
         modelOptionsLoading={modelOptionsLoading}
         modelOptionsError={modelOptionsError}
         onModelsChange={onModelsChange}

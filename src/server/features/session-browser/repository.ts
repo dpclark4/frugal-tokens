@@ -16,7 +16,12 @@ import {
   type ConversationRow,
 } from "../../conversationRows.ts";
 
-import type { SessionModelOption } from "../../../shared/sessionBrowserSchemas.ts";
+import {
+  isHerdrProjectDirectory,
+  sessionDirectoryGroup,
+  type SessionDirectoryOption,
+  type SessionModelOption,
+} from "../../../shared/sessionBrowserSchemas.ts";
 
 type Harness = SessionSummary["harness"];
 
@@ -66,6 +71,47 @@ function missPredicates(filters: SessionMissFilter[]) {
 export class SessionBrowserRepository {
   constructor(private db: DatabaseSync) {}
 
+  listDirectories(harness?: Harness): SessionDirectoryOption[] {
+    // Directory attribution uses the root's recorded working directory, not its descendants'.
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
+    const rows = this.db.prepare(`
+      SELECT NULLIF(c.working_directory, '') AS path, COUNT(*) AS sessionCount
+      FROM conversations c
+      JOIN sources so ON so.id = c.source_id
+      JOIN conversation_rollups cr ON cr.conversation_id = c.id
+      WHERE (? IS NULL OR so.harness = ?)
+        AND (cr.uncached_input_tokens > 0 OR cr.cache_read_tokens > 0 OR
+          COALESCE(cr.cache_write_tokens, 0) > 0)
+        AND NOT EXISTS (
+          SELECT 1 FROM conversation_subagent_launches launch
+          WHERE launch.child_conversation_id = c.id
+        )
+      GROUP BY NULLIF(c.working_directory, '')
+      ORDER BY sessionCount DESC, path COLLATE NOCASE, path
+    `).all(harness ?? null, harness ?? null) as SessionDirectoryOption[];
+    const grouped = new Map<string | null, number>();
+    for (const { path, sessionCount } of rows) {
+      // Herdr's random worktree names are separate checkouts of the same project.
+      // Preserve the prefix so projects under different Herdr homes stay distinct.
+      const directory = sessionDirectoryGroup(path);
+      grouped.set(directory, (grouped.get(directory) ?? 0) + sessionCount);
+    }
+    return [...grouped].map(([path, sessionCount]) => ({ path, sessionCount }))
+      .sort((a, b) => {
+        if (a.sessionCount !== b.sessionCount) {
+          return b.sessionCount - a.sessionCount;
+        }
+        const left = a.path ?? "";
+        const right = b.path ?? "";
+        const foldedLeft = left.toLowerCase();
+        const foldedRight = right.toLowerCase();
+        if (foldedLeft !== foldedRight) {
+          return foldedLeft < foldedRight ? -1 : 1;
+        }
+        return left < right ? -1 : left > right ? 1 : 0;
+      });
+  }
+
   listModels(harness?: Harness): SessionModelOption[] {
     // Count each eligible root session once per model, including descendant calls.
     // SAFETY: The static SQL projection and migrated schema define this row contract.
@@ -94,6 +140,7 @@ export class SessionBrowserRepository {
     missFilters?: SessionMissFilter[],
     sort?: { key: SessionSortKey; direction: SessionSortDirection },
     models: string[] = [],
+    directories: Array<string | null> = [],
   ): SessionListResponse {
     if (
       !Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) ||
@@ -101,7 +148,12 @@ export class SessionBrowserRepository {
     ) {
       throw new RangeError("page and pageSize must be positive integers");
     }
-    const totalItems = this.#rootCount(harness, missFilters, models);
+    const totalItems = this.#rootCount(
+      harness,
+      missFilters,
+      models,
+      directories,
+    );
     const rows = this.#rootRows(
       harness,
       missFilters,
@@ -109,6 +161,7 @@ export class SessionBrowserRepository {
       (page - 1) * pageSize,
       sort,
       models,
+      directories,
     );
     const cacheIssues = this.#storedCacheIssues(rows.map((row) => row.id));
     const items = rows.map((row) => ({
@@ -126,7 +179,11 @@ export class SessionBrowserRepository {
     });
   }
 
-  #rootFilter(missFilters: SessionMissFilter[] | undefined, models: string[]) {
+  #rootFilter(
+    missFilters: SessionMissFilter[] | undefined,
+    models: string[],
+    directories: Array<string | null>,
+  ) {
     const predicates = missFilters === undefined
       ? []
       : missPredicates(missFilters);
@@ -149,9 +206,23 @@ export class SessionBrowserRepository {
       models.map(() => "?").join(", ")
     })
     )`;
+    const directoryParams: Array<string | null> = [];
+    const directoryPredicates = directories.map((path) => {
+      directoryParams.push(path);
+      if (path !== null && isHerdrProjectDirectory(path)) {
+        // Literal, case-sensitive prefix matching: '%' and '_' in paths are not wildcards.
+        directoryParams.push(`${path}/`);
+        return "(c.working_directory = ? OR instr(c.working_directory, ?) = 1)";
+      }
+      return "NULLIF(c.working_directory, '') IS ?";
+    });
+    const directoryClause = directoryPredicates.length
+      ? ` AND (${directoryPredicates.join(" OR ")})`
+      : "";
     return {
       cte: predicates.length > 0 || models.length > 0 ? sessionTree : "",
-      clause: missClause + modelClause,
+      clause: missClause + modelClause + directoryClause,
+      params: [...models, ...directoryParams],
     };
   }
 
@@ -159,8 +230,9 @@ export class SessionBrowserRepository {
     harness: Harness | undefined,
     missFilters: SessionMissFilter[] | undefined,
     models: string[],
+    directories: Array<string | null>,
   ) {
-    const filter = this.#rootFilter(missFilters, models);
+    const filter = this.#rootFilter(missFilters, models, directories);
     // SAFETY: The static SQL projection and migrated schema define this row contract.
     const row = this.db.prepare(`
       ${filter.cte}
@@ -177,7 +249,9 @@ export class SessionBrowserRepository {
           cr.uncached_input_tokens > 0 OR cr.cache_read_tokens > 0 OR
           COALESCE(cr.cache_write_tokens, 0) > 0
         )
-    `).get(harness ?? null, harness ?? null, ...models) as { count: number };
+    `).get(harness ?? null, harness ?? null, ...filter.params) as {
+      count: number;
+    };
     return Number(row.count);
   }
 
@@ -226,8 +300,9 @@ export class SessionBrowserRepository {
     offset: number,
     sort: { key: SessionSortKey; direction: SessionSortDirection } | undefined,
     models: string[],
+    directories: Array<string | null>,
   ): ConversationRow[] {
-    const filter = this.#rootFilter(missFilters, models);
+    const filter = this.#rootFilter(missFilters, models, directories);
     // SAFETY: The static SQL projection and migrated schema define this row contract.
     return this.db.prepare(`
       ${filter.cte}
@@ -249,7 +324,7 @@ export class SessionBrowserRepository {
     `).all(
       harness ?? null,
       harness ?? null,
-      ...models,
+      ...filter.params,
       limit,
       offset,
     ) as ConversationRow[];

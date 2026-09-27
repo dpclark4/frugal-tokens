@@ -13,7 +13,10 @@ import {
   sessionSortDirectionSchema,
   sessionSortKeySchema,
 } from "../shared/sessionSchemas.ts";
-import { sessionModelSelectionSchema } from "../shared/sessionBrowserSchemas.ts";
+import {
+  sessionDirectorySelectionSchema,
+  sessionModelSelectionSchema,
+} from "../shared/sessionBrowserSchemas.ts";
 import { NewPage } from "./NewPage.tsx";
 import "./styles.css";
 
@@ -118,6 +121,7 @@ const newRoute = createRoute({
     misses: z.string().optional(),
     page: z.coerce.number().int().positive().optional().catch(undefined),
     models: sessionModelSelectionSchema.optional().catch(undefined),
+    directories: sessionDirectorySelectionSchema.optional().catch(undefined),
     sortBy: z.preprocess(
       (key) => key === "name" ? "timestamp" : key,
       sessionSortKeySchema.optional(),

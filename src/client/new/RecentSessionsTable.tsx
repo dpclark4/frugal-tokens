@@ -22,7 +22,10 @@ import { harnessIcon, harnessName } from "../harness.ts";
 import type { OverviewHarness } from "./OverviewToolbar.tsx";
 import "./RecentSessionsTable.css";
 import { SessionOptions } from "../features/session-browser/SessionOptions.tsx";
-import type { SessionModelOption } from "../../shared/sessionBrowserSchemas.ts";
+import type {
+  SessionDirectoryOption,
+  SessionModelOption,
+} from "../../shared/sessionBrowserSchemas.ts";
 
 const integer = new Intl.NumberFormat("en-US");
 const compact = new Intl.NumberFormat("en-US", {
@@ -59,7 +62,10 @@ type RecentSessionsTableProps = {
   error?: string;
   selectedMissFilters?: SessionMissFilter[];
   selectedModels: string[];
+  selectedDirectories: Array<string | null>;
+  onDirectoriesChange: (directories: Array<string | null>) => void;
   modelOptions: SessionModelOption[];
+  directoryOptions: SessionDirectoryOption[];
   modelOptionsLoading: boolean;
   modelOptionsError?: string;
   onModelsChange: (models: string[]) => void;
@@ -422,7 +428,10 @@ export function RecentSessionsTable({
   error,
   selectedMissFilters,
   selectedModels,
+  selectedDirectories,
+  onDirectoriesChange,
   modelOptions,
+  directoryOptions,
   modelOptionsLoading,
   modelOptionsError,
   onModelsChange,
@@ -495,7 +504,7 @@ export function RecentSessionsTable({
     }
   }
 
-  const activeFilterCount = selectedModels.length +
+  const activeFilterCount = selectedModels.length + selectedDirectories.length +
     (harness === "all" ? 0 : 1) +
     (selectedMissFilters === undefined
       ? 0
@@ -547,16 +556,20 @@ export function RecentSessionsTable({
             open={optionsOpen}
             setOpen={setOptionsOpen}
             models={selectedModels}
+            directories={selectedDirectories}
+            onDirectoriesChange={onDirectoriesChange}
             harness={harness}
             harnesses={harnesses}
             misses={selectedMissFilters}
             options={modelOptions}
+            directoryOptions={directoryOptions}
             loading={modelOptionsLoading}
             error={modelOptionsError}
             onModelsChange={onModelsChange}
             onHarnessChange={onHarnessChange}
             onMissesChange={onMissFiltersChange}
             onRetry={onModelsRetry}
+            onClearFilters={onClearFilters}
           >
             <label className="recent-sessions-title-setting">
               <input
