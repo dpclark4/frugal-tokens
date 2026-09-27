@@ -1310,9 +1310,17 @@
   white-space: nowrap;
 }
 
+.sd-tool-target-empty {
+  color: var(--sd-ink-3);
+  font: 11px var(--mono);
+}
+
 .sd-tool-event > button small {
   color: var(--sd-ink-3);
   font: 10.5px var(--mono);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .sd-tool-event > button > svg:last-child {
