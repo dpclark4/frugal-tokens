@@ -18,6 +18,15 @@ import {
   workRhythmOverviewResponseSchema,
 } from "../shared/sessionSchemas.ts";
 
+import { sessionFilterOptionsSchema } from "../shared/sessionBrowserSchemas.ts";
+
+export async function getSessionFilterOptions(harness: string) {
+  const query = new URLSearchParams({ harness });
+  return sessionFilterOptionsSchema.parse(
+    await getJson(`/api/sessions/filter-options?${query}`),
+  );
+}
+
 // SAFETY: Vite injects the typed env object into import.meta for client builds.
 const apiBaseUrl = (import.meta as ImportMeta & {
   env: { VITE_API_BASE_URL?: string };
@@ -157,6 +166,7 @@ export async function getSessions(
   pageSize = 25,
   sortBy?: SessionSortKey,
   sortDirection?: SessionSortDirection,
+  models: string[] = [],
 ) {
   const query = new URLSearchParams({
     page: String(page),
@@ -169,6 +179,7 @@ export async function getSessions(
       missFilters.length === 0 ? "none" : missFilters.join(","),
     );
   }
+  for (const model of models) query.append("model", model);
   if (sortBy !== undefined) query.set("sortBy", sortBy);
   if (sortDirection !== undefined) query.set("sortDirection", sortDirection);
   return sessionListResponseSchema.parse(

@@ -18,10 +18,11 @@ import {
   getTitleGenerationSetting,
   setTitleGenerationSetting,
 } from "../api.ts";
-import { harnessIcon, harnessName, parseHarnessFilter } from "../harness.ts";
-import { HarnessOptions } from "../HarnessOptions.tsx";
+import { harnessIcon, harnessName } from "../harness.ts";
 import type { OverviewHarness } from "./OverviewToolbar.tsx";
 import "./RecentSessionsTable.css";
+import { SessionOptions } from "../features/session-browser/SessionOptions.tsx";
+import type { SessionModelOption } from "../../shared/sessionBrowserSchemas.ts";
 
 const integer = new Intl.NumberFormat("en-US");
 const compact = new Intl.NumberFormat("en-US", {
@@ -41,18 +42,6 @@ const currency = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 2,
 });
 
-const missFilterOptions: Array<{
-  value: SessionMissFilter;
-  label: string;
-}> = [
-  { value: "compaction", label: "Compaction" },
-  { value: "ttl", label: "TTL miss" },
-  { value: "thinking-change", label: "Thinking change" },
-  { value: "model-change", label: "Model change" },
-  { value: "full-miss", label: "Full miss" },
-  { value: "partial-miss", label: "Partial miss" },
-];
-
 const sessionSortDefaultDirection = {
   name: "asc",
   model: "asc",
@@ -69,6 +58,13 @@ type RecentSessionsTableProps = {
   refreshing: boolean;
   error?: string;
   selectedMissFilters?: SessionMissFilter[];
+  selectedModels: string[];
+  modelOptions: SessionModelOption[];
+  modelOptionsLoading: boolean;
+  modelOptionsError?: string;
+  onModelsChange: (models: string[]) => void;
+  onModelsRetry: () => void;
+  onClearFilters: () => void;
   harness: OverviewHarness;
   harnesses: SessionSummary["harness"][];
   sortBy?: SessionSortKey;
@@ -93,101 +89,6 @@ function duration(start?: number, end?: number) {
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
-}
-
-function SessionMissFilters({
-  selected,
-  onChange,
-}: {
-  selected?: SessionMissFilter[];
-  onChange: (filters?: SessionMissFilter[]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const noFilter = selected === undefined;
-  const selectedFilters = selected ?? [];
-  const allSelected = selectedFilters.length === missFilterOptions.length;
-  const label = noFilter
-    ? "No filter"
-    : allSelected
-    ? "All"
-    : selectedFilters.length === 0
-    ? "None"
-    : `${selectedFilters.length} selected`;
-
-  useEffect(() => {
-    if (!open) return;
-    function onPointerDown(event: PointerEvent) {
-      if (
-        event.target instanceof Node && !rootRef.current?.contains(event.target)
-      ) {
-        setOpen(false);
-      }
-    }
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
-    }
-    document.addEventListener("pointerdown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [open]);
-
-  function toggle(value: SessionMissFilter) {
-    if (noFilter || allSelected) {
-      onChange([value]);
-      return;
-    }
-    const next = selectedFilters.includes(value)
-      ? selectedFilters.filter((filter) => filter !== value)
-      : [...selectedFilters, value];
-    onChange(next.length ? next : undefined);
-  }
-
-  return (
-    <div className="recent-sessions-filter" ref={rootRef}>
-      <span className="recent-sessions-control-label">Cache misses</span>
-      <button
-        type="button"
-        className="recent-sessions-filter-trigger"
-        aria-expanded={open}
-        aria-haspopup="dialog"
-        onClick={() => setOpen((current) => !current)}
-      >
-        <span>{label}</span>
-        <ChevronDown size={13} aria-hidden="true" />
-      </button>
-      {open && (
-        <div
-          className="recent-sessions-filter-menu"
-          role="dialog"
-          aria-label="Session miss filters"
-        >
-          <label>
-            <input
-              type="checkbox"
-              checked={noFilter}
-              onChange={() => onChange(undefined)}
-            />
-            <span>No filter</span>
-          </label>
-          <div className="recent-sessions-filter-divider" role="separator" />
-          {missFilterOptions.map((option) => (
-            <label key={option.value}>
-              <input
-                type="checkbox"
-                checked={selectedFilters.includes(option.value)}
-                onChange={() => toggle(option.value)}
-              />
-              <span>{option.label}</span>
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
 function HarnessMark({ harness }: { harness: SessionSummary["harness"] }) {
@@ -520,6 +421,13 @@ export function RecentSessionsTable({
   refreshing,
   error,
   selectedMissFilters,
+  selectedModels,
+  modelOptions,
+  modelOptionsLoading,
+  modelOptionsError,
+  onModelsChange,
+  onModelsRetry,
+  onClearFilters,
   harness,
   harnesses,
   sortBy,
@@ -531,6 +439,7 @@ export function RecentSessionsTable({
   onOpenSession,
   onPageChange,
 }: RecentSessionsTableProps) {
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const [generateTitles, setGenerateTitles] = useState(false);
   const [titleSettingLoading, setTitleSettingLoading] = useState(true);
   const [titleSettingError, setTitleSettingError] = useState<string>();
@@ -586,6 +495,16 @@ export function RecentSessionsTable({
     }
   }
 
+  const activeFilterCount = selectedModels.length +
+    (harness === "all" ? 0 : 1) +
+    (selectedMissFilters === undefined
+      ? 0
+      : Math.max(1, selectedMissFilters.length));
+  const filterSummary = activeFilterCount > 0
+    ? `${activeFilterCount} ${
+      activeFilterCount === 1 ? "filter" : "filters"
+    } applied`
+    : undefined;
   const page = data?.pagination.page ?? 1;
   const totalPages = data?.pagination.totalPages ?? 0;
 
@@ -594,25 +513,26 @@ export function RecentSessionsTable({
       <header className="recent-sessions-heading">
         <div>
           <h2>Recent sessions</h2>
-          {data && (
-            <span className="recent-sessions-count">
-              {integer.format(data.pagination.totalItems)} sessions
-            </span>
-          )}
+          <div className="recent-sessions-count session-filter-summary">
+            {data && (
+              <span>{integer.format(data.pagination.totalItems)} sessions</span>
+            )}
+            {filterSummary && (
+              <>
+                {data && <span aria-hidden="true">·</span>}
+                <span>{filterSummary}</span>
+                <button
+                  type="button"
+                  className="session-filter-clear"
+                  onClick={onClearFilters}
+                >
+                  Clear all
+                </button>
+              </>
+            )}
+          </div>
         </div>
         <div className="recent-sessions-controls">
-          <label className="recent-sessions-title-setting">
-            <input
-              type="checkbox"
-              checked={generateTitles}
-              disabled={titleSettingLoading}
-              onChange={(event) => {
-                if (event.target.checked) setConfirmationOpen(true);
-                else void changeTitleGeneration(false);
-              }}
-            />
-            <span>Generate titles</span>
-          </label>
           <button
             type="button"
             className="recent-sessions-refresh"
@@ -636,22 +556,34 @@ export function RecentSessionsTable({
           >
             <ArrowUpDown size={14} aria-hidden="true" />
           </button>
-          <SessionMissFilters
-            selected={selectedMissFilters}
-            onChange={onMissFiltersChange}
-          />
-          <label className="recent-sessions-harness">
-            <span className="recent-sessions-control-label">Harness</span>
-            <select
-              value={harness}
-              onChange={(event) => {
-                const selected = parseHarnessFilter(event.target.value);
-                if (selected !== undefined) onHarnessChange(selected);
-              }}
-            >
-              <HarnessOptions harnesses={harnesses} />
-            </select>
-          </label>
+          <SessionOptions
+            open={optionsOpen}
+            setOpen={setOptionsOpen}
+            models={selectedModels}
+            harness={harness}
+            harnesses={harnesses}
+            misses={selectedMissFilters}
+            options={modelOptions}
+            loading={modelOptionsLoading}
+            error={modelOptionsError}
+            onModelsChange={onModelsChange}
+            onHarnessChange={onHarnessChange}
+            onMissesChange={onMissFiltersChange}
+            onRetry={onModelsRetry}
+          >
+            <label className="recent-sessions-title-setting">
+              <input
+                type="checkbox"
+                checked={generateTitles}
+                disabled={titleSettingLoading}
+                onChange={(event) => {
+                  if (event.target.checked) setConfirmationOpen(true);
+                  else void changeTitleGeneration(false);
+                }}
+              />
+              <span>Generate titles</span>
+            </label>
+          </SessionOptions>
         </div>
       </header>
 
@@ -744,6 +676,15 @@ export function RecentSessionsTable({
                 ))}
               </tbody>
             </table>
+            {!loading && !error && data.items.length === 0 && (
+              <div className="recent-sessions-empty" role="status">
+                {data.pagination.totalItems > 0
+                  ? "No sessions on this page"
+                  : activeFilterCount > 0
+                  ? "No sessions match these filters"
+                  : "No sessions yet"}
+              </div>
+            )}
           </div>
           {totalPages > 1 && (
             <nav

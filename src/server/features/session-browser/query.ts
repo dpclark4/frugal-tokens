@@ -10,6 +10,8 @@ import {
   type SessionSummary,
 } from "../../../shared/sessionSchemas.ts";
 
+import { sessionModelSelectionSchema } from "../../../shared/sessionBrowserSchemas.ts";
+
 const sessionSortAscendingByDefault = new Set<SessionSortKey>([
   "name",
   "model",
@@ -24,11 +26,13 @@ type SessionBrowserQuery = {
   pageSize: number;
   harness: SessionSummary["harness"] | "all";
   missFilters: SessionMissFilter[] | undefined;
+  models: string[];
   sort: { key: SessionSortKey; direction: SessionSortDirection } | undefined;
 };
 
 export function parseSessionBrowserQuery(
   query: Record<string, string | undefined>,
+  models: string[] = [],
 ): { value: SessionBrowserQuery; error?: never } | {
   error: string;
   value?: never;
@@ -44,6 +48,8 @@ export function parseSessionBrowserQuery(
   if (harness !== "all" && !parsedHarness.success) {
     return { error: "Invalid harness" };
   }
+  const parsedModels = sessionModelSelectionSchema.safeParse(models);
+  if (!parsedModels.success) return { error: "Invalid model selection" };
   const misses = query.misses;
   const missFilters = parseSessionMissFilters(misses);
   if (
@@ -90,6 +96,7 @@ export function parseSessionBrowserQuery(
       pageSize,
       harness: parsedHarness.success ? parsedHarness.data : "all",
       missFilters,
+      models: [...new Set(parsedModels.data)],
       sort,
     },
   };

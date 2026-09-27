@@ -13,6 +13,9 @@ Deno.test("session browser route preserves mounting, filters, pagination, and ti
   const app = new Hono().route(
     "/api/sessions",
     sessionBrowserRoutes({
+      listModels() {
+        return [];
+      },
       listSessions(...received) {
         args = received;
         return result;
@@ -28,14 +31,14 @@ Deno.test("session browser route preserves mounting, filters, pagination, and ti
     }),
   );
   const response = await app.request(
-    "/api/sessions?page=2&pageSize=25&harness=pi&misses=model-change&sortBy=name",
+    "/api/sessions?page=2&pageSize=25&harness=pi&misses=model-change&sortBy=name&model=provider%2Fone&model=two",
   );
   strictEqual(response.status, 200);
   deepStrictEqual(await response.json(), result);
   deepStrictEqual(args, [2, 25, "pi", ["model-change"], {
     key: "name",
     direction: "asc",
-  }]);
+  }, ["provider/one", "two"]]);
   strictEqual(enriched, true);
   match(
     response.headers.get("Server-Timing") ?? "",
@@ -43,10 +46,55 @@ Deno.test("session browser route preserves mounting, filters, pagination, and ti
   );
 });
 
+Deno.test("model options route returns ranked models, validates harness, and includes timing", async () => {
+  const calls: Array<string | undefined> = [];
+  const models = [{ id: "one", sessionCount: 10 }, {
+    id: "two",
+    sessionCount: 2,
+  }];
+  const app = new Hono().route(
+    "/api/sessions",
+    sessionBrowserRoutes({
+      listModels(harness) {
+        calls.push(harness);
+        return models;
+      },
+      listSessions() {
+        throw new Error("Options must not load session lists");
+      },
+    }, {
+      enrichSessionSummaries() {
+        throw new Error("Options must not enrich sessions");
+      },
+      getSession() {
+        throw new Error("Options must not load session details");
+      },
+    }),
+  );
+  for (const query of ["", "?harness=pi"]) {
+    const response = await app.request(`/api/sessions/filter-options${query}`);
+    strictEqual(response.status, 200);
+    deepStrictEqual(await response.json(), { models });
+    match(
+      response.headers.get("Server-Timing") ?? "",
+      /^database;dur=.*total;dur=/,
+    );
+  }
+  const invalid = await app.request(
+    "/api/sessions/filter-options?harness=invalid",
+  );
+  strictEqual(invalid.status, 400);
+  await invalid.body?.cancel();
+  deepStrictEqual(calls, [undefined, "pi"]);
+});
+
 Deno.test("session browser route rejects invalid queries before database access", async () => {
   const app = new Hono().route(
     "/api/sessions",
     sessionBrowserRoutes({
+      listModels() {
+        return [];
+      },
       listSessions() {
         throw new Error("Invalid queries should not access the database");
       },

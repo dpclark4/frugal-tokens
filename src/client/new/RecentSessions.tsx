@@ -8,7 +8,8 @@ import type {
   SessionSummary,
 } from "../../shared/sessionSchemas.ts";
 import { parseSessionMissFilters } from "../../shared/sessionSchemas.ts";
-import { getSessions, syncSessions } from "../api.ts";
+import { getSessionFilterOptions, getSessions, syncSessions } from "../api.ts";
+import type { SessionModelOption } from "../../shared/sessionBrowserSchemas.ts";
 import type { OverviewHarness } from "./OverviewToolbar.tsx";
 import { RecentSessionsTable } from "./RecentSessionsTable.tsx";
 import {
@@ -23,6 +24,9 @@ type RecentSessionsProps = {
   harness: OverviewHarness;
   harnesses: SessionSummary["harness"][];
   misses?: string;
+  models?: string[];
+  onModelsChange: (models: string[]) => void;
+  onClearFilters: () => void;
   page: number;
   sortBy?: SessionSortKey;
   sortDirection?: SessionSortDirection;
@@ -40,6 +44,9 @@ export function RecentSessions({
   harness,
   harnesses,
   misses,
+  models = [],
+  onModelsChange,
+  onClearFilters,
   page,
   sortBy,
   sortDirection,
@@ -56,6 +63,33 @@ export function RecentSessions({
     : missFilters.length === 0
     ? "none"
     : missFilters.join(",");
+  const modelKey = JSON.stringify(models);
+  const [modelOptions, setModelOptions] = useState<SessionModelOption[]>([]);
+  const [modelOptionsLoading, setModelOptionsLoading] = useState(true);
+  const [modelOptionsError, setModelOptionsError] = useState<string>();
+  const [optionsRevision, setOptionsRevision] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    setModelOptions([]);
+    setModelOptionsLoading(true);
+    setModelOptionsError(undefined);
+    getSessionFilterOptions(harness).then((result) => {
+      if (active) setModelOptions(result.models);
+    }).catch((reason) => {
+      if (active) {
+        setModelOptionsError(
+          reason instanceof Error ? reason.message : "Unable to load models",
+        );
+      }
+    }).finally(() => {
+      if (active) setModelOptionsLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [harness, optionsRevision]);
+
   const [data, setData] = useState<SessionListResponse>();
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -89,6 +123,7 @@ export function RecentSessions({
         15,
         sortBy,
         sortDirection,
+        models,
       );
       if (request === requestRef.current) setData(result);
     } catch (reason) {
@@ -112,13 +147,14 @@ export function RecentSessions({
       active = false;
       requestRef.current += 1;
     };
-  }, [harness, missFilterKey, page, sortBy, sortDirection]);
+  }, [harness, missFilterKey, modelKey, page, sortBy, sortDirection]);
 
   async function refreshData() {
     setRefreshing(true);
     setError(undefined);
     try {
       await syncSessions();
+      setOptionsRevision((value) => value + 1);
       await loadPage(page);
     } catch (reason) {
       setError(
@@ -185,6 +221,13 @@ export function RecentSessions({
         refreshing={refreshing}
         error={error}
         selectedMissFilters={missFilters}
+        selectedModels={models}
+        modelOptions={modelOptions}
+        modelOptionsLoading={modelOptionsLoading}
+        modelOptionsError={modelOptionsError}
+        onModelsChange={onModelsChange}
+        onClearFilters={onClearFilters}
+        onModelsRetry={() => setOptionsRevision((value) => value + 1)}
         harness={harness}
         harnesses={harnesses}
         sortBy={sortBy}

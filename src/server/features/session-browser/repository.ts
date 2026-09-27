@@ -17,7 +17,23 @@ import {
   effectiveConversationTitle,
 } from "../../conversationRows.ts";
 
+import type { SessionModelOption } from "../../../shared/sessionBrowserSchemas.ts";
+
 type Harness = SessionSummary["harness"];
+
+const sessionTree = `
+  WITH RECURSIVE tree(conversation_id, root_id) AS (
+    SELECT root.id, root.id FROM conversations root
+    WHERE NOT EXISTS (
+      SELECT 1 FROM conversation_subagent_launches root_launch
+      WHERE root_launch.child_conversation_id = root.id
+    )
+    UNION ALL
+    SELECT launch.child_conversation_id, tree.root_id
+    FROM conversation_subagent_launches launch
+    JOIN tree ON tree.conversation_id = launch.parent_conversation_id
+  )
+`;
 
 function missPredicates(filters: SessionMissFilter[]) {
   const predicates: string[] = [];
@@ -51,12 +67,34 @@ function missPredicates(filters: SessionMissFilter[]) {
 export class SessionBrowserRepository {
   constructor(private db: DatabaseSync) {}
 
+  listModels(harness?: Harness): SessionModelOption[] {
+    // Count each eligible root session once per model, including descendant calls.
+    // SAFETY: The static SQL projection and migrated schema define this row contract.
+    const rows = this.db.prepare(`
+      ${sessionTree}
+      SELECT call.model AS id, COUNT(DISTINCT c.id) AS sessionCount
+      FROM conversations c
+      JOIN sources so ON so.id = c.source_id
+      JOIN conversation_rollups cr ON cr.conversation_id = c.id
+      JOIN tree ON tree.root_id = c.id
+      JOIN conversation_model_calls call ON call.conversation_id = tree.conversation_id
+      WHERE (? IS NULL OR so.harness = ?)
+        AND (cr.uncached_input_tokens > 0 OR cr.cache_read_tokens > 0 OR
+          COALESCE(cr.cache_write_tokens, 0) > 0)
+        AND call.model <> ''
+      GROUP BY call.model
+      ORDER BY sessionCount DESC, call.model COLLATE NOCASE, call.model
+    `).all(harness ?? null, harness ?? null) as SessionModelOption[];
+    return rows.map(({ id, sessionCount }) => ({ id, sessionCount }));
+  }
+
   listSessions(
     page: number,
     pageSize: number,
     harness?: Harness,
     missFilters?: SessionMissFilter[],
     sort?: { key: SessionSortKey; direction: SessionSortDirection },
+    models: string[] = [],
   ): SessionListResponse {
     if (
       !Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) ||
@@ -64,13 +102,14 @@ export class SessionBrowserRepository {
     ) {
       throw new RangeError("page and pageSize must be positive integers");
     }
-    const totalItems = this.#rootCount(harness, missFilters);
+    const totalItems = this.#rootCount(harness, missFilters, models);
     const rows = this.#rootRows(
       harness,
       missFilters,
       pageSize,
       (page - 1) * pageSize,
       sort,
+      models,
     );
     const cacheIssues = this.#storedCacheIssues(rows.map((row) => row.id));
     const items = rows.map((row) => ({
@@ -88,40 +127,41 @@ export class SessionBrowserRepository {
     });
   }
 
-  #rootFilter(missFilters?: SessionMissFilter[]) {
+  #rootFilter(missFilters: SessionMissFilter[] | undefined, models: string[]) {
     const predicates = missFilters === undefined
       ? []
       : missPredicates(missFilters);
+    const missClause = missFilters === undefined
+      ? ""
+      : predicates.length === 0
+      ? " AND 0"
+      : ` AND EXISTS (
+          SELECT 1 FROM tree
+          JOIN conversation_cache_misses miss ON miss.conversation_id = tree.conversation_id
+          WHERE tree.root_id = c.id
+            AND (${
+        predicates.map((predicate) => `(${predicate})`).join(" OR ")
+      })
+        )`;
+    const modelClause = models.length === 0 ? "" : ` AND EXISTS (
+      SELECT 1 FROM tree
+      JOIN conversation_model_calls call ON call.conversation_id = tree.conversation_id
+      WHERE tree.root_id = c.id AND call.model IN (${
+      models.map(() => "?").join(", ")
+    })
+    )`;
     return {
-      cte: predicates.length === 0 ? "" : `
-        WITH RECURSIVE tree(conversation_id, root_id) AS (
-          SELECT root.id, root.id FROM conversations root
-          WHERE NOT EXISTS (
-            SELECT 1 FROM conversation_subagent_launches root_launch
-            WHERE root_launch.child_conversation_id = root.id
-          )
-          UNION ALL
-          SELECT launch.child_conversation_id, tree.root_id
-          FROM conversation_subagent_launches launch
-          JOIN tree ON tree.conversation_id = launch.parent_conversation_id
-        ), matching_roots AS (
-          SELECT DISTINCT tree.root_id
-          FROM tree
-          JOIN conversation_cache_misses miss
-            ON miss.conversation_id = tree.conversation_id
-          WHERE ${predicates.map((predicate) => `(${predicate})`).join(" OR ")}
-        )
-      `,
-      clause: missFilters === undefined
-        ? ""
-        : predicates.length === 0
-        ? " AND 0"
-        : " AND c.id IN (SELECT root_id FROM matching_roots)",
+      cte: predicates.length > 0 || models.length > 0 ? sessionTree : "",
+      clause: missClause + modelClause,
     };
   }
 
-  #rootCount(harness?: Harness, missFilters?: SessionMissFilter[]) {
-    const filter = this.#rootFilter(missFilters);
+  #rootCount(
+    harness: Harness | undefined,
+    missFilters: SessionMissFilter[] | undefined,
+    models: string[],
+  ) {
+    const filter = this.#rootFilter(missFilters, models);
     // SAFETY: The static SQL projection and migrated schema define this row contract.
     const row = this.db.prepare(`
       ${filter.cte}
@@ -138,7 +178,7 @@ export class SessionBrowserRepository {
           cr.uncached_input_tokens > 0 OR cr.cache_read_tokens > 0 OR
           COALESCE(cr.cache_write_tokens, 0) > 0
         )
-    `).get(harness ?? null, harness ?? null) as { count: number };
+    `).get(harness ?? null, harness ?? null, ...models) as { count: number };
     return Number(row.count);
   }
 
@@ -185,9 +225,10 @@ export class SessionBrowserRepository {
     missFilters: SessionMissFilter[] | undefined,
     limit: number,
     offset: number,
-    sort?: { key: SessionSortKey; direction: SessionSortDirection },
+    sort: { key: SessionSortKey; direction: SessionSortDirection } | undefined,
+    models: string[],
   ): ConversationRow[] {
-    const filter = this.#rootFilter(missFilters);
+    const filter = this.#rootFilter(missFilters, models);
     // SAFETY: The static SQL projection and migrated schema define this row contract.
     return this.db.prepare(`
       ${filter.cte}
@@ -209,6 +250,7 @@ export class SessionBrowserRepository {
     `).all(
       harness ?? null,
       harness ?? null,
+      ...models,
       limit,
       offset,
     ) as ConversationRow[];
