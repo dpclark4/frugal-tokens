@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { getRouteApi } from "@tanstack/react-router";
+import { sessionMissCost } from "./sessionMissCost.ts";
 import {
   jsonObjectSchema,
   jsonStringValue,
@@ -574,6 +575,9 @@ function turnSummary(
       0,
     ),
     cost,
+    missCost: model === "recorded" && thinking === "recorded"
+      ? sessionMissCost(calls)
+      : undefined,
   };
 }
 
@@ -1314,6 +1318,7 @@ function CallBlock({
   const input = contextSize(call.tokens);
   const reuse = input === 0 ? undefined : call.tokens.cacheRead / input;
   const id = callAnchor(session.id, turnNumber, call.id);
+  const missCost = sessionMissCost([call]);
   const launchedSubagents = new Set(
     call.activity.tools.flatMap((tool) =>
       tool.childSessionID ? [tool.childSessionID] : []
@@ -1378,10 +1383,30 @@ function CallBlock({
           </div>
         )}
         <div className="sd-call-stats">
-          <CostIntegrityValue
-            reported={call.reportedCost}
-            computed={call.computedCost}
-          />
+          <span className="sd-call-costs">
+            <CostIntegrityValue
+              reported={call.reportedCost}
+              computed={call.computedCost}
+            />
+            {missCost && (
+              <span title={missCost.title}>
+                {" · "}
+                {missCost.amount === "unavailable"
+                  ? "miss cost unavailable"
+                  : (
+                    <>
+                      <span
+                        className={missCost.isPositive
+                          ? "sd-miss-amount"
+                          : undefined}
+                      >
+                        {missCost.amount} miss cost
+                      </span>
+                    </>
+                  )}
+              </span>
+            )}
+          </span>
           <span>{compact.format(input)} context</span>
           <span>{compact.format(call.tokens.cacheRead)} cached</span>
           {reuse !== undefined && (
@@ -1578,6 +1603,17 @@ function TurnBlock({
               title={summaryCostTitle}
             >
               <strong>{summaryCost}</strong>
+              {summary.missCost && (
+                <small title={summary.missCost.title}>
+                  <span
+                    className={summary.missCost.isPositive
+                      ? "sd-miss-amount"
+                      : undefined}
+                  >
+                    miss cost {summary.missCost.amount}
+                  </span>
+                </small>
+              )}
             </span>
           </div>
           {collapsed
@@ -2853,20 +2889,35 @@ export function SessionDetailPage() {
     item.hasUnpricedCacheMissCost
   );
   const costDetail = subagents > 0
-    ? subagentCost.cost === undefined
-      ? "Subagents unpriced"
-      : `${money.format(subagentCost.cost)}${
-        subagentCost.hasUnpricedCost ? "+" : ""
-      } subagents${
-        subagentHasMisses
-          ? ` (${money.format(subagentMissCost)}${
-            subagentMissesUnpriced ? "+" : ""
-          } miss cost)`
-          : ""
-      }`
+    ? subagentCost.cost === undefined ? "Subagents unpriced" : (
+      <>
+        {money.format(subagentCost.cost)}
+        {subagentCost.hasUnpricedCost ? "+" : ""}{" "}
+        subagents{subagentHasMisses && (
+          <>
+            (<span
+              className={subagentMissCost > 0 ? "sd-miss-amount" : undefined}
+            >
+              {money.format(subagentMissCost)}
+              {subagentMissesUnpriced ? "+" : ""} miss cost
+            </span>)
+          </>
+        )}
+      </>
+    )
     : totalMissCost === undefined
     ? undefined
-    : `${totalMissCost} miss cost`;
+    : (
+      <>
+        <span
+          className={(session.inclusiveCacheMissCost ?? 0) > 0
+            ? "sd-miss-amount"
+            : undefined}
+        >
+          {totalMissCost} miss cost
+        </span>
+      </>
+    );
   const canOpenInGhostty = session.harness === "pi" ||
     session.harness === "opencode" || session.harness === "claude-code" ||
     session.harness === "codex";
@@ -3015,7 +3066,13 @@ export function SessionDetailPage() {
                 />
                 {totalMissCost !== undefined && subagents > 0 && (
                   <span className="sd-cost-miss-inline">
-                    ({totalMissCost} miss cost)
+                    (<span
+                      className={(session.inclusiveCacheMissCost ?? 0) > 0
+                        ? "sd-miss-amount"
+                        : undefined}
+                    >
+                      {totalMissCost} miss cost
+                    </span>)
                   </span>
                 )}
               </span>
