@@ -5,20 +5,13 @@ import {
   jsonValueSchema,
 } from "../shared/json.ts";
 import {
-  type CacheIssue,
   type ContextEvent,
   type ModelCall,
   type SessionDetail,
   sessionDetailSchema,
   sessionListItemSchema,
-  type SessionListResponse,
-  sessionListResponseSchema,
-  type SessionMissFilter,
-  type SessionSortDirection,
-  type SessionSortKey,
   type SessionSummary,
   sessionSummarySchema,
-  type TokenUsage,
 } from "../shared/sessionSchemas.ts";
 import type { ReasoningSettingImport } from "./conversationImportTypes.ts";
 import type { CacheMissRecord } from "./cacheAnalysis.ts";
@@ -85,44 +78,19 @@ import type {
   StoredUsageRollup,
 } from "./usageAnalytics.ts";
 import type { UsageCall } from "./usage.ts";
-import { compactHomePath } from "./database.ts";
+import {
+  baseSummary,
+  conversationColumns,
+  type ConversationRow,
+  effectiveConversationTitle,
+  tokens,
+} from "./conversationRows.ts";
 
 type Harness = SessionSummary["harness"];
 
 const THIRTY_MINUTES_MS = 30 * 60 * 1_000;
 const TWO_HOURS_MS = 2 * 60 * 60 * 1_000;
 const EIGHT_HOURS_MS = 8 * 60 * 60 * 1_000;
-
-type ConversationRow = {
-  id: number;
-  source_id: number;
-  external_id: string;
-  public_id: string | null;
-  harness: Harness;
-  title: string;
-  agent: string | null;
-  working_directory: string | null;
-  updated_at: number;
-  started_at: number | null;
-  ended_at: number | null;
-  providers_json: string;
-  models_json: string;
-  user_turns: number;
-  model_calls: number;
-  fork_count: number;
-  reported_cost: number | null;
-  computed_cost: number | null;
-  uncached_input_tokens: number;
-  cache_read_tokens: number;
-  cache_write_tokens: number | null;
-  cache_write_5m_tokens: number | null;
-  cache_write_1h_tokens: number | null;
-  fresh_prompt_tokens: number;
-  output_tokens: number;
-  reasoning_tokens: number;
-  processed_tokens: number;
-  summary_json: string | null;
-};
 
 type CallRow = {
   id: number;
@@ -169,31 +137,6 @@ type CallRow = {
   predecessor_resolved: number;
 };
 
-const effectiveConversationTitle = `
-  COALESCE((
-    SELECT ss.generated_title
-    FROM conversation_branches title_branch
-    JOIN source_sessions ss ON ss.id = title_branch.source_session_id
-    WHERE title_branch.conversation_id = c.id
-      AND ss.generated_title IS NOT NULL
-    ORDER BY title_branch.updated_at DESC, title_branch.id DESC
-    LIMIT 1
-  ), c.title)
-`;
-
-const conversationColumns = `
-  c.id, c.source_id, c.external_id, c.public_id, so.harness,
-  ${effectiveConversationTitle} AS title,
-  c.agent, c.working_directory, c.updated_at, c.started_at, c.ended_at,
-  c.providers_json, c.models_json, cr.user_turns, cr.model_calls,
-  MAX(0, (SELECT COUNT(*) FROM conversation_branches branch_count
-    WHERE branch_count.conversation_id = c.id) - 1) AS fork_count,
-  cr.reported_cost, cr.computed_cost, cr.uncached_input_tokens,
-  cr.cache_read_tokens, cr.cache_write_tokens, cr.cache_write_5m_tokens,
-  cr.cache_write_1h_tokens, cr.fresh_prompt_tokens, cr.output_tokens,
-  cr.reasoning_tokens, cr.processed_tokens, cr.summary_json
-`;
-
 function optional<T>(value: T | null): T | undefined {
   return value === null ? undefined : value;
 }
@@ -237,30 +180,6 @@ export function sessionToolTarget(value?: string) {
   return conciseSessionPreview(value);
 }
 
-function tokens(row: {
-  uncached_input_tokens: number;
-  cache_read_tokens: number;
-  cache_write_tokens: number | null;
-  cache_write_5m_tokens: number | null;
-  cache_write_1h_tokens: number | null;
-  fresh_prompt_tokens: number;
-  output_tokens: number;
-  reasoning_tokens: number;
-  processed_tokens: number;
-}): TokenUsage {
-  return {
-    uncachedInput: row.uncached_input_tokens,
-    cacheRead: row.cache_read_tokens,
-    cacheWrite: optional(row.cache_write_tokens),
-    cacheWrite5m: optional(row.cache_write_5m_tokens),
-    cacheWrite1h: optional(row.cache_write_1h_tokens),
-    freshPrompt: row.fresh_prompt_tokens,
-    output: row.output_tokens,
-    reasoning: row.reasoning_tokens,
-    processed: row.processed_tokens,
-  };
-}
-
 function reasoningSetting(row: {
   reasoning_setting_name: string | null;
   reasoning_setting_value: string | null;
@@ -293,35 +212,6 @@ function percentile(values: number[], quantile: number) {
     sorted[lower];
 }
 
-function missPredicates(filters: SessionMissFilter[]) {
-  const predicates: string[] = [];
-  if (filters.includes("compaction")) {
-    predicates.push("miss.cause = 'compaction'");
-  }
-  if (filters.includes("ttl")) predicates.push("miss.cause = 'ttl'");
-  if (filters.includes("thinking-change")) {
-    predicates.push("miss.cause = 'thinking-change'");
-  }
-  if (filters.includes("model-change")) {
-    predicates.push(
-      "miss.reason = 'model-change' AND miss.cause IS NULL",
-    );
-  }
-  if (filters.includes("full-miss")) {
-    predicates.push(
-      "miss.status = 'full-miss' AND miss.cause IS NULL " +
-        "AND (miss.reason IS NULL OR miss.reason <> 'model-change')",
-    );
-  }
-  if (filters.includes("partial-miss")) {
-    predicates.push(
-      "miss.status = 'partial-hit' AND miss.cause IS NULL " +
-        "AND (miss.reason IS NULL OR miss.reason <> 'model-change')",
-    );
-  }
-  return predicates;
-}
-
 /** Existing session/analytics contracts reconstructed from conversation tables. */
 export class ConversationRepository {
   constructor(private db: DatabaseSync) {}
@@ -334,43 +224,6 @@ export class ConversationRepository {
       JOIN conversations c ON c.source_id = so.id
     `).all() as Array<{ harness: Harness }>)
       .map(({ harness }) => harness);
-  }
-
-  listSessions(
-    page: number,
-    pageSize: number,
-    harness?: Harness,
-    missFilters?: SessionMissFilter[],
-    sort?: { key: SessionSortKey; direction: SessionSortDirection },
-  ): SessionListResponse {
-    if (
-      !Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) ||
-      pageSize < 1
-    ) {
-      throw new RangeError("page and pageSize must be positive integers");
-    }
-    const totalItems = this.#rootCount(harness, missFilters);
-    const rows = this.#rootRows(
-      harness,
-      missFilters,
-      pageSize,
-      (page - 1) * pageSize,
-      sort,
-    );
-    const cacheIssues = this.#storedCacheIssues(rows.map((row) => row.id));
-    const items = rows.map((row) => ({
-      ...this.#summary(row),
-      cacheIssues: cacheIssues.get(row.id) ?? [],
-    }));
-    return sessionListResponseSchema.parse({
-      items,
-      pagination: {
-        page,
-        pageSize,
-        totalItems,
-        totalPages: Math.ceil(totalItems / pageSize),
-      },
-    });
   }
 
   enrichSessionSummaries(items: SessionSummary[]): SessionSummary[] {
@@ -1291,232 +1144,10 @@ export class ConversationRepository {
     };
   }
 
-  #rootFilter(missFilters?: SessionMissFilter[]) {
-    const predicates = missFilters === undefined
-      ? []
-      : missPredicates(missFilters);
-    return {
-      cte: predicates.length === 0 ? "" : `
-        WITH RECURSIVE tree(conversation_id, root_id) AS (
-          SELECT root.id, root.id FROM conversations root
-          WHERE NOT EXISTS (
-            SELECT 1 FROM conversation_subagent_launches root_launch
-            WHERE root_launch.child_conversation_id = root.id
-          )
-          UNION ALL
-          SELECT launch.child_conversation_id, tree.root_id
-          FROM conversation_subagent_launches launch
-          JOIN tree ON tree.conversation_id = launch.parent_conversation_id
-        ), matching_roots AS (
-          SELECT DISTINCT tree.root_id
-          FROM tree
-          JOIN conversation_cache_misses miss
-            ON miss.conversation_id = tree.conversation_id
-          WHERE ${predicates.map((predicate) => `(${predicate})`).join(" OR ")}
-        )
-      `,
-      clause: missFilters === undefined
-        ? ""
-        : predicates.length === 0
-        ? " AND 0"
-        : " AND c.id IN (SELECT root_id FROM matching_roots)",
-    };
-  }
-
-  #rootCount(harness?: Harness, missFilters?: SessionMissFilter[]) {
-    const filter = this.#rootFilter(missFilters);
-    // SAFETY: The static SQL projection and migrated schema define this row contract.
-    const row = this.db.prepare(`
-      ${filter.cte}
-      SELECT COUNT(*) AS count
-      FROM conversations c
-      JOIN sources so ON so.id = c.source_id
-      JOIN conversation_rollups cr ON cr.conversation_id = c.id
-      WHERE (? IS NULL OR so.harness = ?)${filter.clause}
-        AND NOT EXISTS (
-          SELECT 1 FROM conversation_subagent_launches launch
-          WHERE launch.child_conversation_id = c.id
-        )
-        AND (
-          cr.uncached_input_tokens > 0 OR cr.cache_read_tokens > 0 OR
-          COALESCE(cr.cache_write_tokens, 0) > 0
-        )
-    `).get(harness ?? null, harness ?? null) as { count: number };
-    return Number(row.count);
-  }
-
-  #sortClause(sort?: { key: SessionSortKey; direction: SessionSortDirection }) {
-    if (!sort) {
-      return "ORDER BY c.updated_at DESC, COALESCE(c.public_id, c.external_id) DESC, so.harness DESC";
-    }
-    const direction = sort.direction === "asc" ? "ASC" : "DESC"; // allowlisted, not interpolated raw
-    const keys = {
-      name: `${effectiveConversationTitle} COLLATE NOCASE ${direction}`,
-      model: `COALESCE(
-        json_extract(cr.summary_json, '$.displayModel'),
-        REPLACE(json_extract(c.models_json, '$[#-1]'), '-', ' ')
-      ) COLLATE NOCASE ${direction}`,
-      activity:
-        `COALESCE(json_extract(cr.summary_json, '$.inclusiveUserTurns'), cr.user_turns) ${direction}`,
-      input: `COALESCE(
-        json_extract(cr.summary_json, '$.inclusiveTokens.uncachedInput')
-          + json_extract(cr.summary_json, '$.inclusiveTokens.cacheRead')
-          + COALESCE(json_extract(cr.summary_json, '$.inclusiveTokens.cacheWrite'), 0),
-        cr.uncached_input_tokens + cr.cache_read_tokens + COALESCE(cr.cache_write_tokens, 0)
-      ) ${direction}`,
-      output:
-        `COALESCE(json_extract(cr.summary_json, '$.inclusiveTokens.output'), cr.output_tokens) ${direction}`,
-      cost: `COALESCE(
-        json_extract(cr.summary_json, '$.inclusiveComputedCost'),
-        json_extract(cr.summary_json, '$.computedCost'),
-        json_extract(cr.summary_json, '$.inclusiveReportedCost'),
-        cr.reported_cost
-      ) ${direction}`,
-      // Matches what the UI actually shows (session.cacheIssues.length in
-      // RecentSessionsTable.tsx), rather than re-deriving a separate
-      // full-misses/partial-misses heuristic that can disagree with it.
-      cacheMisses:
-        `COALESCE(json_array_length(cr.summary_json, '$.cacheIssues'), 0) ${direction}`,
-    } satisfies Record<SessionSortKey, string>;
-    return `ORDER BY ${
-      keys[sort.key]
-    }, c.updated_at DESC, COALESCE(c.public_id, c.external_id) DESC`;
-  }
-
-  #rootRows(
-    harness: Harness | undefined,
-    missFilters: SessionMissFilter[] | undefined,
-    limit: number,
-    offset: number,
-    sort?: { key: SessionSortKey; direction: SessionSortDirection },
-  ): ConversationRow[] {
-    const filter = this.#rootFilter(missFilters);
-    // SAFETY: The static SQL projection and migrated schema define this row contract.
-    return this.db.prepare(`
-      ${filter.cte}
-      SELECT ${conversationColumns}
-      FROM conversations c
-      JOIN sources so ON so.id = c.source_id
-      JOIN conversation_rollups cr ON cr.conversation_id = c.id
-      WHERE (? IS NULL OR so.harness = ?)${filter.clause}
-        AND NOT EXISTS (
-          SELECT 1 FROM conversation_subagent_launches launch
-          WHERE launch.child_conversation_id = c.id
-        )
-        AND (
-          cr.uncached_input_tokens > 0 OR cr.cache_read_tokens > 0 OR
-          COALESCE(cr.cache_write_tokens, 0) > 0
-        )
-      ${this.#sortClause(sort)}
-      LIMIT ? OFFSET ?
-    `).all(
-      harness ?? null,
-      harness ?? null,
-      limit,
-      offset,
-    ) as ConversationRow[];
-  }
-
-  #storedCacheIssues(rootIDs: number[]): Map<number, CacheIssue[]> {
-    if (rootIDs.length === 0) return new Map();
-    const placeholders = rootIDs.map(() => "?").join(", ");
-    // SAFETY: The static SQL projection and migrated schema define this row contract.
-    const rows = this.db.prepare(`
-      WITH RECURSIVE tree(conversation_id, root_id, nested) AS (
-        SELECT c.id, c.id, 0 FROM conversations c
-        WHERE c.id IN (${placeholders})
-        UNION ALL
-        SELECT launch.child_conversation_id, tree.root_id, 1
-        FROM conversation_subagent_launches launch
-        JOIN tree ON tree.conversation_id = launch.parent_conversation_id
-      )
-      SELECT tree.root_id, tree.nested, miss.status, miss.cause, miss.reason,
-        turn.ordinal AS turn_ordinal, c.title, c.agent
-      FROM tree
-      JOIN conversation_cache_misses miss
-        ON miss.conversation_id = tree.conversation_id
-      JOIN conversation_turns turn ON turn.id = miss.turn_id
-      JOIN conversations c ON c.id = tree.conversation_id
-      ORDER BY tree.root_id, tree.nested, miss.started_at, miss.model_call_id
-    `).all(...rootIDs) as Array<{
-      root_id: number;
-      nested: number;
-      status: CacheIssue["status"];
-      cause: CacheIssue["cause"] | null;
-      reason: CacheIssue["reason"] | null;
-      turn_ordinal: number;
-      title: string;
-      agent: string | null;
-    }>;
-    const issues = new Map<number, CacheIssue[]>();
-    const seen = new Set<string>();
-    for (const row of rows) {
-      const scope = row.nested === 0
-        ? undefined
-        : row.agent === null
-        ? row.title
-        : `${row.agent}: ${row.title}`;
-      const issue: CacheIssue = {
-        status: row.status,
-        turn: row.turn_ordinal,
-      };
-      if (row.cause !== null) issue.cause = row.cause;
-      else if (row.reason !== null) issue.reason = row.reason;
-      if (scope !== undefined) issue.scope = scope;
-      const key = `${row.root_id}:${JSON.stringify(issue)}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const rootIssues = issues.get(row.root_id) ?? [];
-      rootIssues.push(issue);
-      issues.set(row.root_id, rootIssues);
-    }
-    return issues;
-  }
-
   #storedThinking(row: ConversationRow) {
     return row.summary_json === null
       ? undefined
       : sessionListItemSchema.parse(JSON.parse(row.summary_json)).thinking;
-  }
-
-  #baseSummary(
-    row: ConversationRow,
-    thinking: SessionSummary["thinking"],
-  ): SessionSummary {
-    const workingDirectory = optional(row.working_directory);
-    const summary: SessionSummary = {
-      id: row.public_id ?? row.external_id,
-      workingDirectory: workingDirectory === undefined
-        ? undefined
-        : compactHomePath(workingDirectory),
-      harness: row.harness,
-      title: row.title,
-      updatedAt: row.updated_at,
-      startedAt: optional(row.started_at),
-      endedAt: optional(row.ended_at),
-      providers: JSON.parse(row.providers_json),
-      models: JSON.parse(row.models_json),
-      userTurns: row.user_turns,
-      modelCalls: row.model_calls,
-      thinking: thinking ?? {
-        latest: undefined,
-        values: [],
-        classifiedCalls: 0,
-      },
-      reportedCost: optional(row.reported_cost),
-      tokens: tokens(row),
-    };
-    if (row.fork_count > 0) summary.forkCount = row.fork_count;
-    return summary;
-  }
-
-  #summary(row: ConversationRow): SessionSummary {
-    if (row.summary_json === null) {
-      return this.#baseSummary(row, undefined);
-    }
-    const stored = sessionListItemSchema.parse(JSON.parse(row.summary_json));
-    const base = this.#baseSummary(row, stored.thinking);
-    return sessionSummarySchema.parse({ ...stored, ...base });
   }
 
   #sourcePath(conversationID: number) {
@@ -1782,7 +1413,7 @@ export class ConversationRepository {
       WHERE launch.parent_conversation_id = ?
       ORDER BY c.updated_at, c.id
     `).all(row.id) as ConversationRow[];
-    const summary = this.#baseSummary(row, this.#storedThinking(row));
+    const summary = baseSummary(row, this.#storedThinking(row));
     const branches = branchRows.map((branch, index) => {
       const branchTurns = turns.filter((turn) =>
         turn.branchID === branch.external_id

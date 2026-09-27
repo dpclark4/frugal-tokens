@@ -7,6 +7,7 @@ import { analyzeSessionCache } from "./cacheAnalysis.ts";
 import { priceSessionDetail } from "./pricing.ts";
 import { contextRange } from "../shared/contextMetrics.ts";
 import { ConversationRepository } from "./conversationRepository.ts";
+import { SessionBrowserRepository } from "./features/session-browser/repository.ts";
 import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
 
 const transcript = `
@@ -65,7 +66,10 @@ Deno.test("imports Codex sessions for SQLite reads", async () => {
     );
 
     const id = "2026/07/11/rollout-session";
-    strictEqual(reads.listSessions(1, 10, "codex").items[0].id, id);
+    strictEqual(
+      new SessionBrowserRepository(db).listSessions(1, 10, "codex").items[0].id,
+      id,
+    );
     const detail = reads.getSession("codex", id)!;
     strictEqual(detail.title, "Import Codex");
     strictEqual(detail.workingDirectory, "/Users/test/project");

@@ -11,18 +11,10 @@ import { repriceUnpricedSessions } from "./sessionRepricing.ts";
 import { counterfactualModelIDs } from "../shared/modelPricing.ts";
 import { estimateSessionCostScenario } from "./costScenario.ts";
 import { analyzeSessionCache, CACHE_TTL_1H_MS } from "./cacheAnalysis.ts";
-import type {
-  SessionSortDirection,
-  SessionSortKey,
-  SessionSummary,
-} from "../shared/sessionSchemas.ts";
-import {
-  parseSessionMissFilters,
-  sessionMissFilterSchema,
-  sessionSortDirectionSchema,
-  sessionSortKeySchema,
-  titleGenerationSettingSchema,
-} from "../shared/sessionSchemas.ts";
+import type { SessionSummary } from "../shared/sessionSchemas.ts";
+import { titleGenerationSettingSchema } from "../shared/sessionSchemas.ts";
+import { SessionBrowserRepository } from "./features/session-browser/repository.ts";
+import { sessionBrowserRoutes } from "./features/session-browser/routes.ts";
 import { aggregateUsageRollups } from "./usageAnalytics.ts";
 import { aggregateTtlMisses, sumCacheMissCost } from "./ttlMissAnalytics.ts";
 import { aggregateToolCalls } from "./toolCallAnalytics.ts";
@@ -49,7 +41,6 @@ import { syncPiSessions } from "./piImporter.ts";
 import { syncCodexSessions } from "./codexImporter.ts";
 import { syncClaudeCodeSessions } from "./claudeCodeImporter.ts";
 import { syncOpenCodeSessions } from "./openCodeImporter.ts";
-import { enrichSessionSummary } from "./sessionSummaryEnrichment.ts";
 import { syncCursorAgentSessions } from "./cursorAgentRepository.ts";
 import {
   generateMissingSessionTitles,
@@ -154,15 +145,6 @@ function isHarnessFilter(value: string) {
 
 function harnessSelection(value: string) {
   return isHarness(value) ? value : undefined;
-}
-
-const sessionSortAscendingByDefault = new Set<SessionSortKey>([
-  "name",
-  "model",
-]);
-
-function defaultSortDirection(key: SessionSortKey): SessionSortDirection {
-  return sessionSortAscendingByDefault.has(key) ? "asc" : "desc";
 }
 
 function toolCallRange(value: string): 7 | 30 | 90 | undefined {
@@ -388,32 +370,12 @@ app.put("/api/settings/title-generation", async (context) => {
 // every successful manual, periodic, or startup sync.
 app.use("/api/*", apiResponseCache.middleware);
 
-function repositoryForHarness(harness: SessionSummary["harness"]) {
-  return {
-    listSessions: (page: number, pageSize: number) =>
-      readRepository.listSessions(page, pageSize, harness),
-    getSession: (id: string) => readRepository.getSession(harness, id),
-  };
-}
-
 app.get("/api/harnesses", (context) => {
   const seen = new Set(readRepository.listHarnesses());
   return context.json({
     harnesses: harnesses.filter((harness) => seen.has(harness)),
   });
 });
-
-function priceSummaries(items: SessionSummary[]) {
-  return items.map((item) => {
-    if (
-      item.cacheSummary !== undefined && item.compactionCount !== undefined &&
-      item.inclusiveTokens !== undefined
-    ) return item;
-    const detail = repositoryForHarness(item.harness)?.getSession(item.id);
-    if (!detail) return item;
-    return enrichSessionSummary(detail);
-  });
-}
 
 app.get("/api/tool-calls", (context) => {
   const harness = context.req.query("harness") ?? "all";
@@ -878,89 +840,13 @@ app.get("/api/usage", (context) => {
   return context.json(aggregated.response);
 });
 
-app.get("/api/sessions", (context) => {
-  const requestStartedAt = performance.now();
-  const page = Math.max(
-    1,
-    Number.parseInt(context.req.query("page") ?? "1", 10) || 1,
-  );
-  const requestedPageSize =
-    Number.parseInt(context.req.query("pageSize") ?? "10", 10) || 10;
-  const pageSize = Math.min(100, Math.max(1, requestedPageSize));
-  const harness = context.req.query("harness") ?? "all";
-  if (!isHarnessFilter(harness)) {
-    return context.json({ error: "Invalid harness" }, 400);
-  }
-  const misses = context.req.query("misses");
-  const missFilters = parseSessionMissFilters(misses);
-  if (
-    misses !== undefined && misses !== "" && misses !== "all" &&
-    misses !== "none" && missFilters === undefined
-  ) {
-    return context.json({
-      error: `Invalid miss filter; expected ${
-        sessionMissFilterSchema.options.join(", ")
-      }`,
-    }, 400);
-  }
-  const sortByParam = context.req.query("sortBy");
-  const parsedSortBy = sessionSortKeySchema.safeParse(sortByParam);
-  if (sortByParam !== undefined && !parsedSortBy.success) {
-    return context.json({
-      error: `Invalid sortBy; expected ${
-        sessionSortKeySchema.options.join(", ")
-      }`,
-    }, 400);
-  }
-  const sortDirectionParam = context.req.query("sortDirection");
-  const parsedSortDirection = sessionSortDirectionSchema.safeParse(
-    sortDirectionParam,
-  );
-  if (sortDirectionParam !== undefined && !parsedSortDirection.success) {
-    return context.json({
-      error: `Invalid sortDirection; expected ${
-        sessionSortDirectionSchema.options.join(", ")
-      }`,
-    }, 400);
-  }
-  const sort = parsedSortBy.success
-    ? {
-      key: parsedSortBy.data,
-      direction: parsedSortDirection.success
-        ? parsedSortDirection.data
-        : defaultSortDirection(parsedSortBy.data),
-    }
-    : undefined;
-  const queryStartedAt = performance.now();
-  const result = readRepository.listSessions(
-    page,
-    pageSize,
-    harnessSelection(harness),
-    missFilters,
-    sort,
-  );
-  const queryDuration = performance.now() - queryStartedAt;
-  const enrichmentStartedAt = performance.now();
-  const items = priceSummaries(
-    readRepository.enrichSessionSummaries(result.items),
-  );
-  const enrichmentDuration = performance.now() - enrichmentStartedAt;
-  const totalDuration = performance.now() - requestStartedAt;
-  context.header(
-    "Server-Timing",
-    `database;dur=${queryDuration.toFixed(1)}, enrichment;dur=${
-      enrichmentDuration.toFixed(1)
-    }, total;dur=${totalDuration.toFixed(1)}`,
-  );
-  console.info(
-    `[sessions] harness=${harness} page=${page} items=${items.length} database=${
-      formatTiming(queryDuration)
-    } enrichment=${formatTiming(enrichmentDuration)} total=${
-      formatTiming(totalDuration)
-    }`,
-  );
-  return context.json({ ...result, items });
-});
+app.route(
+  "/api/sessions",
+  sessionBrowserRoutes(
+    new SessionBrowserRepository(archiveDatabase),
+    readRepository,
+  ),
+);
 
 app.get("/api/sessions/:id/cost-scenario", (context) => {
   const harness = context.req.query("harness") ?? "opencode";
