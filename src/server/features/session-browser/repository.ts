@@ -14,7 +14,6 @@ import {
   baseSummary,
   conversationColumns,
   type ConversationRow,
-  effectiveConversationTitle,
 } from "../../conversationRows.ts";
 
 import type { SessionModelOption } from "../../../shared/sessionBrowserSchemas.ts";
@@ -188,7 +187,7 @@ export class SessionBrowserRepository {
     }
     const direction = sort.direction === "asc" ? "ASC" : "DESC"; // allowlisted, not interpolated raw
     const keys = {
-      name: `${effectiveConversationTitle} COLLATE NOCASE ${direction}`,
+      timestamp: `c.updated_at ${direction}`,
       model: `COALESCE(
         json_extract(cr.summary_json, '$.displayModel'),
         REPLACE(json_extract(c.models_json, '$[#-1]'), '-', ' ')
@@ -217,7 +216,7 @@ export class SessionBrowserRepository {
     } satisfies Record<SessionSortKey, string>;
     return `ORDER BY ${
       keys[sort.key]
-    }, c.updated_at DESC, COALESCE(c.public_id, c.external_id) DESC`;
+    }, c.updated_at DESC, COALESCE(c.public_id, c.external_id) DESC, so.harness DESC`;
   }
 
   #rootRows(

@@ -12,13 +12,8 @@ import {
 
 import { sessionModelSelectionSchema } from "../../../shared/sessionBrowserSchemas.ts";
 
-const sessionSortAscendingByDefault = new Set<SessionSortKey>([
-  "name",
-  "model",
-]);
-
 function defaultSortDirection(key: SessionSortKey): SessionSortDirection {
-  return sessionSortAscendingByDefault.has(key) ? "asc" : "desc";
+  return key === "model" ? "asc" : "desc";
 }
 
 type SessionBrowserQuery = {
