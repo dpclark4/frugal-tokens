@@ -357,7 +357,7 @@ export function NewPage() {
             harness={search.harness}
             harnesses={harnesses}
             onRangeChange={(range) => update({ range })}
-            onHarnessChange={(harness) => update({ harness })}
+            onHarnessChange={(harness) => update({ harness, page: undefined })}
             copyReportState={copyReportState}
             copyReportDisabled={!reportReady || Boolean(error)}
             onCopyReport={copyReport}
@@ -471,7 +471,7 @@ export function NewPage() {
           </div>
 
           <RecentSessions
-            harness={search.sessionHarness ?? "all"}
+            harness={search.harness}
             harnesses={harnesses}
             misses={search.misses}
             models={search.models}
@@ -483,16 +483,10 @@ export function NewPage() {
             page={search.page ?? 1}
             sortBy={search.sortBy}
             sortDirection={search.sortDirection}
-            onHarnessChange={(sessionHarness) =>
-              update({
-                sessionHarness: sessionHarness === "all"
-                  ? undefined
-                  : sessionHarness,
-                page: undefined,
-              })}
+            onHarnessChange={(harness) => update({ harness, page: undefined })}
             onClearFilters={() =>
               update({
-                sessionHarness: undefined,
+                harness: "all",
                 models: undefined,
                 misses: undefined,
                 page: undefined,
