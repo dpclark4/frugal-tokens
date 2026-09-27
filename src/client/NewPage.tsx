@@ -471,13 +471,32 @@ export function NewPage() {
           </div>
 
           <RecentSessions
-            harness={search.harness}
+            harness={search.sessionHarness ?? "all"}
             harnesses={harnesses}
             misses={search.misses}
+            models={search.models}
+            onModelsChange={(models) =>
+              update({
+                models: models.length ? models : undefined,
+                page: undefined,
+              })}
             page={search.page ?? 1}
             sortBy={search.sortBy}
             sortDirection={search.sortDirection}
-            onHarnessChange={(harness) => update({ harness, page: undefined })}
+            onHarnessChange={(sessionHarness) =>
+              update({
+                sessionHarness: sessionHarness === "all"
+                  ? undefined
+                  : sessionHarness,
+                page: undefined,
+              })}
+            onClearFilters={() =>
+              update({
+                sessionHarness: undefined,
+                models: undefined,
+                misses: undefined,
+                page: undefined,
+              })}
             onMissesChange={(misses) => update({ misses, page: undefined })}
             onSortChange={(sortBy, sortDirection) =>
               update({ sortBy, sortDirection, page: undefined })}

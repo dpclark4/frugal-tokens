@@ -261,6 +261,120 @@ Deno.test("omitting sort reproduces the natural updated_at order", () => {
   }
 });
 
+Deno.test("model options count distinct root sessions including switches and subagents", () => {
+  const db = openArchiveDatabase(":memory:");
+  migrateTestDatabase(db);
+  const sources = new SourceArtifactRepository(db);
+  const projection = new ConversationWriteRepository(db);
+  const browser = new SessionBrowserRepository(db);
+  function persist(imports: LinearConversationImport[]) {
+    for (const imported of imports) {
+      sources.recordUnchangedArtifact(
+        imported.sourceID,
+        imported.externalID,
+        imported.artifactPath!,
+        imported.observedAt,
+      );
+    }
+    projection.replaceLinearConversationTree(imports);
+  }
+  try {
+    const sourceID = sources.ensureSource("pi", "directory", "Pi", "/sessions");
+    const root = sortFixtureSession(sourceID, sortFixtureValues[0]);
+    const first = root.session.turns[0].calls[0];
+    first.tokens = {
+      ...first.tokens,
+      cacheRead: 50,
+      processed: first.tokens.processed + 50,
+    };
+    root.session.turns[0].calls.push(
+      { ...first, id: "repeat", callWithinTurn: 2 },
+      { ...first, id: "switch", model: "gpt-5.6-sol", callWithinTurn: 3 },
+    );
+    const child = sortFixtureSession(sourceID, {
+      ...sortFixtureValues[1],
+      id: "child",
+      model: "child-only",
+    });
+    child.parentExternalID = root.externalID;
+    persist([root, child]);
+    persist([
+      sortFixtureSession(sourceID, sortFixtureValues[1]),
+    ]);
+    const codexID = sources.ensureSource(
+      "codex",
+      "directory",
+      "Codex",
+      "/codex",
+    );
+    persist([
+      sortFixtureSession(codexID, sortFixtureValues[1]),
+    ]);
+    deepStrictEqual(browser.listModels(), [
+      { id: "gpt-5.6-sol", sessionCount: 3 },
+      { id: "child-only", sessionCount: 1 },
+      { id: "gpt-5.6-luna", sessionCount: 1 },
+    ]);
+    deepStrictEqual(browser.listModels("pi"), [
+      { id: "gpt-5.6-sol", sessionCount: 2 },
+      { id: "child-only", sessionCount: 1 },
+      { id: "gpt-5.6-luna", sessionCount: 1 },
+    ]);
+    deepStrictEqual(browser.listModels("opencode"), []);
+    const all = browser.listSessions(1, 100, "pi");
+    for (const model of ["child-only", "gpt-5.6-luna"]) {
+      const filtered = browser.listSessions(
+        1,
+        100,
+        "pi",
+        undefined,
+        undefined,
+        [model],
+      );
+      deepStrictEqual(
+        filtered.items,
+        all.items.filter((item) => item.id === "a"),
+      );
+      strictEqual(filtered.pagination.totalItems, 1);
+    }
+    for (let page = 1; page <= 2; page++) {
+      const filtered = browser.listSessions(
+        page,
+        1,
+        "pi",
+        undefined,
+        undefined,
+        ["gpt-5.6-sol", "gpt-5.6-luna"],
+      );
+      strictEqual(filtered.pagination.totalItems, 2);
+      strictEqual(filtered.pagination.totalPages, 2);
+      deepStrictEqual(filtered.items, all.items.slice(page - 1, page));
+    }
+    strictEqual(
+      browser.listSessions(1, 10, "pi", [], undefined, ["gpt-5.6-sol"])
+        .pagination.totalItems,
+      0,
+    );
+    strictEqual(
+      browser.listSessions(1, 10, "pi", undefined, undefined, [
+        "unknown' OR 1=1 --",
+      ]).pagination.totalItems,
+      0,
+    );
+    const switched = browser.listSessions(
+      1,
+      10,
+      "pi",
+      ["model-change"],
+      undefined,
+      ["gpt-5.6-sol"],
+    );
+    deepStrictEqual(switched.items.map((item) => item.id), ["a"]);
+  } finally {
+    db.close();
+  }
+});
+
 Deno.test("sorts by model with empty models_json array without crashing", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);

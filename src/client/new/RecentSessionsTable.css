@@ -187,8 +187,20 @@
 }
 
 .recent-sessions-table-wrap {
+  /* Header, five 66px rows, table spacing, and bottom padding. */
+  min-height: calc(28px + 5 * (66px + 8px) + 16px + 4px);
   padding: 0 10px 4px;
   transition: opacity 120ms ease;
+}
+
+.recent-sessions-empty {
+  display: grid;
+  min-height: 360px;
+  place-items: center;
+  padding: 24px;
+  color: var(--dashboard-muted);
+  font: var(--dashboard-type-table)/1.5 var(--mono);
+  text-align: center;
 }
 
 .recent-sessions-table-wrap.is-loading {

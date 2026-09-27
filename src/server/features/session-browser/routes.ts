@@ -1,5 +1,8 @@
 import { Hono } from "hono";
-import type { SessionSummary } from "../../../shared/sessionSchemas.ts";
+import {
+  harnessSchema,
+  type SessionSummary,
+} from "../../../shared/sessionSchemas.ts";
 import type { ConversationRepository } from "../../conversationRepository.ts";
 import { enrichSessionSummary } from "../../sessionSummaryEnrichment.ts";
 import { formatTiming } from "../../timing.ts";
@@ -7,7 +10,7 @@ import { parseSessionBrowserQuery } from "./query.ts";
 import type { SessionBrowserRepository } from "./repository.ts";
 
 export function sessionBrowserRoutes(
-  browser: Pick<SessionBrowserRepository, "listSessions">,
+  browser: Pick<SessionBrowserRepository, "listSessions" | "listModels">,
   conversations: Pick<
     ConversationRepository,
     "enrichSessionSummaries" | "getSession"
@@ -25,13 +28,44 @@ export function sessionBrowserRoutes(
     });
   }
 
-  return new Hono().get("/", (context) => {
+  const app = new Hono();
+  app.get("/filter-options", (context) => {
     const requestStartedAt = performance.now();
-    const parsed = parseSessionBrowserQuery(context.req.query());
+    const harness = context.req.query("harness") ?? "all";
+    const parsedHarness = harnessSchema.safeParse(harness);
+    if (harness !== "all" && !parsedHarness.success) {
+      return context.json({ error: "Invalid harness" }, 400);
+    }
+    const queryStartedAt = performance.now();
+    const models = browser.listModels(
+      parsedHarness.success ? parsedHarness.data : undefined,
+    );
+    const queryDuration = performance.now() - queryStartedAt;
+    const totalDuration = performance.now() - requestStartedAt;
+    context.header(
+      "Server-Timing",
+      `database;dur=${queryDuration.toFixed(1)}, total;dur=${
+        totalDuration.toFixed(1)
+      }`,
+    );
+    console.info(
+      `[session-filter-options] harness=${harness} models=${models.length} database=${
+        formatTiming(queryDuration)
+      } total=${formatTiming(totalDuration)}`,
+    );
+    return context.json({ models });
+  });
+
+  return app.get("/", (context) => {
+    const requestStartedAt = performance.now();
+    const parsed = parseSessionBrowserQuery(
+      context.req.query(),
+      context.req.queries("model"),
+    );
     if (parsed.error !== undefined) {
       return context.json({ error: parsed.error }, 400);
     }
-    const { page, pageSize, harness, missFilters, sort } = parsed.value;
+    const { page, pageSize, harness, missFilters, sort, models } = parsed.value;
     const queryStartedAt = performance.now();
     const result = browser.listSessions(
       page,
@@ -39,6 +73,7 @@ export function sessionBrowserRoutes(
       harness === "all" ? undefined : harness,
       missFilters,
       sort,
+      models,
     );
     const queryDuration = performance.now() - queryStartedAt;
     const enrichmentStartedAt = performance.now();
@@ -54,7 +89,7 @@ export function sessionBrowserRoutes(
       }, total;dur=${totalDuration.toFixed(1)}`,
     );
     console.info(
-      `[sessions] harness=${harness} page=${page} items=${items.length} database=${
+      `[sessions] harness=${harness} models=${models.length} page=${page} items=${items.length} database=${
         formatTiming(queryDuration)
       } enrichment=${formatTiming(enrichmentDuration)} total=${
         formatTiming(totalDuration)

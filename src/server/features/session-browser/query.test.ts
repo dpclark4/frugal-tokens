@@ -8,6 +8,7 @@ Deno.test("session browser query preserves default pagination and filters", () =
       pageSize: 10,
       harness: "all",
       missFilters: undefined,
+      models: [],
       sort: undefined,
     },
   });
@@ -74,6 +75,25 @@ Deno.test("session browser query parses harness and cache miss selections", () =
     parseSessionBrowserQuery({ misses: "none" }).value?.missFilters,
     [],
   );
+});
+
+Deno.test("session browser query parses and validates model selections", () => {
+  deepStrictEqual(
+    parseSessionBrowserQuery({}, ["a/b", "c", "a/b"]).value?.models,
+    ["a/b", "c"],
+  );
+  for (
+    const models of [
+      [""],
+      ["x".repeat(513)],
+      Array.from({ length: 101 }, () => "model"),
+    ]
+  ) {
+    strictEqual(
+      parseSessionBrowserQuery({}, models).error,
+      "Invalid model selection",
+    );
+  }
 });
 
 Deno.test("session browser query rejects invalid filters and sorting", () => {
