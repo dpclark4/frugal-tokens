@@ -538,13 +538,10 @@
   align-items: center;
 }
 
-.sd-cost-miss-inline {
-  overflow: hidden;
-  color: var(--sd-ink-3);
-  font-size: 10.5px;
-  font-weight: 400;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.sd-cost-summary-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .sd-cost-value.is-warning {
@@ -845,6 +842,7 @@
 .sd-turn-cost {
   justify-self: end;
   text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 .sd-turn-summary strong {
@@ -1365,9 +1363,16 @@
   font: 10.5px var(--mono);
 }
 
-.sd-call-stats > .sd-cost-value {
+.sd-miss-amount {
+  color: var(--sd-orange);
+}
+
+.sd-call-costs {
   min-width: 7ch;
-  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.sd-call-costs > .sd-cost-value {
   color: var(--sd-ink-2);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
