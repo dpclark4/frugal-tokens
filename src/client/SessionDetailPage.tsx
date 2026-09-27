@@ -2888,36 +2888,36 @@ export function SessionDetailPage() {
   const subagentMissesUnpriced = tree.slice(1).some((item) =>
     item.hasUnpricedCacheMissCost
   );
-  const costDetail = subagents > 0
-    ? subagentCost.cost === undefined ? "Subagents unpriced" : (
-      <>
-        {money.format(subagentCost.cost)}
-        {subagentCost.hasUnpricedCost ? "+" : ""}{" "}
-        subagents{subagentHasMisses && (
-          <>
-            (<span
-              className={subagentMissCost > 0 ? "sd-miss-amount" : undefined}
-            >
-              {money.format(subagentMissCost)}
-              {subagentMissesUnpriced ? "+" : ""} miss cost
-            </span>)
-          </>
+  const costDetail = subagents > 0 || totalMissCost !== undefined
+    ? (
+      <span className="sd-cost-summary-lines">
+        {subagents > 0 && (
+          <span
+            title={subagentHasMisses
+              ? `${money.format(subagentMissCost)}${
+                subagentMissesUnpriced ? "+" : ""
+              } subagent miss cost; included in total miss cost`
+              : undefined}
+          >
+            {subagentCost.cost === undefined
+              ? "Subagents unpriced"
+              : `${money.format(subagentCost.cost)}${
+                subagentCost.hasUnpricedCost ? "+" : ""
+              } subagents`}
+          </span>
         )}
-      </>
+        {totalMissCost !== undefined && (
+          <span
+            className={(session.inclusiveCacheMissCost ?? 0) > 0
+              ? "sd-miss-amount"
+              : undefined}
+          >
+            {totalMissCost} miss cost
+          </span>
+        )}
+      </span>
     )
-    : totalMissCost === undefined
-    ? undefined
-    : (
-      <>
-        <span
-          className={(session.inclusiveCacheMissCost ?? 0) > 0
-            ? "sd-miss-amount"
-            : undefined}
-        >
-          {totalMissCost} miss cost
-        </span>
-      </>
-    );
+    : undefined;
   const canOpenInGhostty = session.harness === "pi" ||
     session.harness === "opencode" || session.harness === "claude-code" ||
     session.harness === "codex";
@@ -3064,17 +3064,6 @@ export function SessionDetailPage() {
                   reported={session.inclusiveReportedCost ?? reportedCost}
                   computed={cost}
                 />
-                {totalMissCost !== undefined && subagents > 0 && (
-                  <span className="sd-cost-miss-inline">
-                    (<span
-                      className={(session.inclusiveCacheMissCost ?? 0) > 0
-                        ? "sd-miss-amount"
-                        : undefined}
-                    >
-                      {totalMissCost} miss cost
-                    </span>)
-                  </span>
-                )}
               </span>
             }
             detail={costDetail}

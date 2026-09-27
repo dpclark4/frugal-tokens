@@ -538,13 +538,10 @@
   align-items: center;
 }
 
-.sd-cost-miss-inline {
-  overflow: hidden;
-  color: var(--sd-ink-3);
-  font-size: 10.5px;
-  font-weight: 400;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.sd-cost-summary-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .sd-cost-value.is-warning {
