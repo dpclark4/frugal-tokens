@@ -10,11 +10,7 @@ import {
 } from "react";
 import { getRouteApi } from "@tanstack/react-router";
 import { formatMissCost, sessionMissCost } from "./sessionMissCost.ts";
-import {
-  jsonObjectSchema,
-  jsonStringValue,
-  jsonValueSchema,
-} from "../shared/json.ts";
+import { toolTarget } from "./toolTarget.ts";
 import {
   ArrowLeft,
   Bot,
@@ -1047,37 +1043,6 @@ function CacheMissBadges({
   );
 }
 
-function toolTarget(value?: string) {
-  if (!value) return undefined;
-  try {
-    const parsed = jsonValueSchema.parse(JSON.parse(value));
-    const direct = jsonStringValue(parsed);
-    if (direct !== undefined) return direct;
-    const object = jsonObjectSchema.safeParse(parsed);
-    if (object.success) {
-      for (
-        const key of [
-          "description",
-          "prompt",
-          "task",
-          "command",
-          "filePath",
-          "name",
-          "path",
-          "pattern",
-          "query",
-        ]
-      ) {
-        const candidate = jsonStringValue(object.data[key]);
-        if (candidate !== undefined) return candidate;
-      }
-    }
-  } catch {
-    return value;
-  }
-  return undefined;
-}
-
 function ToolEvent({
   tool,
   child,
@@ -1144,7 +1109,16 @@ function ToolEvent({
               {child.title}
             </span>
           )
-          : target && <code>{target}</code>}
+          : target
+          ? <code title={target}>{target}</code>
+          : (
+            <span
+              className="sd-tool-target-empty"
+              aria-label="Target unavailable"
+            >
+              —
+            </span>
+          )}
         <small>
           {child && `${childCalls} call${childCalls === 1 ? "" : "s"} · `}
           {duration}
