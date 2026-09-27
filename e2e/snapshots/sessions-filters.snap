@@ -191,23 +191,23 @@ snapshot[`sessions filters and pagination > sort activity desc 1`] = `
 ]
 `;
 
-snapshot[`sessions filters and pagination > sort name asc 1`] = `
+snapshot[`sessions filters and pagination > sort timestamp asc 1`] = `
 [
-  "luna-compaction1-full1",
-  "astra-ttl3-full2",
-  "astra-full1-partial2",
-  "fixture-id-0001",
   "haiku-thinking2-full1",
+  "fixture-id-0001",
+  "luna-compaction1-full1",
+  "astra-full1-partial2",
+  "astra-ttl3-full2",
 ]
 `;
 
-snapshot[`sessions filters and pagination > sort name desc 1`] = `
+snapshot[`sessions filters and pagination > sort timestamp desc 1`] = `
 [
   "astra-ttl3-full2",
   "astra-full1-partial2",
+  "luna-compaction1-full1",
   "fixture-id-0001",
   "haiku-thinking2-full1",
-  "luna-compaction1-full1",
 ]
 `;
 
@@ -325,7 +325,7 @@ snapshot[`sessions reject invalid filters > misses=invalid 1`] = `
 
 snapshot[`sessions reject invalid filters > sortBy=invalid 1`] = `
 {
-  error: "Invalid sortBy; expected activity, name, model, input, output, cost, cacheMisses",
+  error: "Invalid sortBy; expected activity, timestamp, model, input, output, cost, cacheMisses",
 }
 `;
 
