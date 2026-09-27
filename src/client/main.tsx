@@ -126,7 +126,10 @@ const newRoute = createRoute({
       "cursor",
     ]).optional().catch(undefined),
     models: sessionModelSelectionSchema.optional().catch(undefined),
-    sortBy: sessionSortKeySchema.optional(),
+    sortBy: z.preprocess(
+      (key) => key === "name" ? "timestamp" : key,
+      sessionSortKeySchema.optional(),
+    ),
     sortDirection: sessionSortDirectionSchema.optional(),
   }),
   component: NewPage,
