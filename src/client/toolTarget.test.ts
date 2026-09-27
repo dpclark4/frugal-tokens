@@ -71,6 +71,29 @@ Deno.test("escaped quotes cannot turn string contents into field boundaries", ()
   assertEquals(toolTarget(`${input.slice(0, 150)}…`), 'src/a",b.ts');
 });
 
+Deno.test("preview cutoff retains a complete final target field", () => {
+  const empty = JSON.stringify({ old_string: "", file_path: "src/x.ts" });
+  const input = JSON.stringify({
+    old_string: "x".repeat(2049 - empty.length),
+    file_path: "src/x.ts",
+  });
+  assertEquals(input.length, 2049);
+  assertEquals(toolTarget(input.slice(0, 2048)), "src/x.ts");
+  assertEquals(toolTarget(input.slice(0, 2047)), undefined);
+  assertEquals(toolTarget('{"file_path":"src/x.ts"'), "src/x.ts");
+});
+
+Deno.test("closing a preview does not recover incomplete or nested-only targets", () => {
+  assertEquals(toolTarget('{"metadata":{"file_path":"nested.ts"}'), undefined);
+  assertEquals(toolTarget('{"metadata":{"file_path":"nested.ts"'), undefined);
+  assertEquals(toolTarget('{"file_path":"src/x.ts'), undefined);
+  assertEquals(toolTarget('{"file_path":'), undefined);
+  assertEquals(
+    toolTarget('{"file_path":"src/x.ts","old_string":'),
+    "src/x.ts",
+  );
+});
+
 Deno.test("plain text and JSON string targets remain readable", () => {
   assertEquals(toolTarget("git diff"), "git diff");
   assertEquals(toolTarget('"src/example.ts"'), "src/example.ts");

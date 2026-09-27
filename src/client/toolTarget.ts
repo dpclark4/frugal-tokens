@@ -24,6 +24,15 @@ function completeObjectPrefix(value: string): string | undefined {
     else if (character === "}" || character === "]") depth--;
     else if (character === "," && depth === 1) boundary = index;
   }
+  if (depth === 1 && !quoted) {
+    const closed = `${value}}`;
+    try {
+      JSON.parse(closed);
+      return closed;
+    } catch {
+      // The final field is incomplete; retain only preceding complete fields.
+    }
+  }
   return boundary < 0 ? undefined : `${value.slice(0, boundary)}}`;
 }
 
