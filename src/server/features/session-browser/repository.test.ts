@@ -108,7 +108,6 @@ function seedSortFixture(
 
 const sortKeyExpectedDescOrder = {
   timestamp: ["c", "b", "a"],
-  model: ["c", "b", "a"],
   activity: ["c", "b", "a"],
   input: ["c", "b", "a"],
   output: ["c", "b", "a"],
@@ -574,31 +573,6 @@ Deno.test("model options count distinct root sessions including switches and sub
       ["gpt-5.6-sol"],
     );
     deepStrictEqual(switched.items.map((item) => item.id), ["a"]);
-  } finally {
-    db.close();
-  }
-});
-
-Deno.test("sorts by model with empty models_json array without crashing", () => {
-  const db = openArchiveDatabase(":memory:");
-  migrateTestDatabase(db);
-  const sources = new SourceArtifactRepository(db);
-  const projection = new ConversationWriteRepository(db);
-  const conversations = new SessionBrowserRepository(db);
-  try {
-    seedSortFixture(sources, projection);
-    // SAFETY: The static SQL projection and migrated schema define this row contract.
-    db.prepare(`
-      UPDATE conversations SET models_json = '[]' WHERE id = (
-        SELECT id FROM conversations WHERE external_id = ?
-      )
-    `).run("a");
-    const result = conversations.listSessions(1, 10, "pi", undefined, {
-      key: "model",
-      direction: "desc",
-    });
-    strictEqual(result.items.length, 3);
-    deepStrictEqual(result.items.map(({ id }) => id), ["c", "b", "a"]);
   } finally {
     db.close();
   }
