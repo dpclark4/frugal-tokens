@@ -79,10 +79,20 @@ export function computeCacheMissCost(
   if (actualBilling.cacheWrite > 0 && billing.cacheWrite === undefined) {
     return undefined;
   }
-  if (actualBilling.cacheWrite5m > 0 && billing.cacheWrite5m === undefined) {
+  // Match total-call pricing: use duration-specific rates when both are
+  // available, otherwise fall back to the model's generic write rate.
+  const hasDetailedRates = billing.cacheWrite5m !== undefined &&
+    billing.cacheWrite1h !== undefined;
+  const write5mRate = hasDetailedRates
+    ? billing.cacheWrite5m
+    : billing.cacheWrite ?? billing.cacheWrite5m;
+  const write1hRate = hasDetailedRates
+    ? billing.cacheWrite1h
+    : billing.cacheWrite ?? billing.cacheWrite1h;
+  if (actualBilling.cacheWrite5m > 0 && write5mRate === undefined) {
     return undefined;
   }
-  if (actualBilling.cacheWrite1h > 0 && billing.cacheWrite1h === undefined) {
+  if (actualBilling.cacheWrite1h > 0 && write1hRate === undefined) {
     return undefined;
   }
 
@@ -92,8 +102,8 @@ export function computeCacheMissCost(
   const nonReadCost = (
     actualBilling.uncachedInput * billing.input +
     actualBilling.cacheWrite * (billing.cacheWrite ?? 0) +
-    actualBilling.cacheWrite5m * (billing.cacheWrite5m ?? 0) +
-    actualBilling.cacheWrite1h * (billing.cacheWrite1h ?? 0)
+    actualBilling.cacheWrite5m * (write5mRate ?? 0) +
+    actualBilling.cacheWrite1h * (write1hRate ?? 0)
   ) / 1_000_000;
   const actualMissedCost = nonReadTokens === 0
     ? 0

@@ -152,6 +152,82 @@ Deno.test("does not price observed categories with missing rates", () => {
   );
 });
 
+Deno.test("falls back to generic rates for duration-specific writes", () => {
+  for (
+    const rates of [
+      { input: 3, cacheRead: 0.3, cacheWrite: 4 },
+      { input: 3, cacheRead: 0.3, cacheWrite: 4, cacheWrite5m: 9 },
+    ]
+  ) {
+    const result = estimateCacheMissCost(
+      rates,
+      tokens({ cacheRead: 100 }),
+      tokens({ cacheWrite: 100, cacheWrite5m: 25, cacheWrite1h: 75 }),
+    );
+    if (!result) throw new Error("Expected a priced estimate");
+    closeTo(result.actualMissedCost, 100 * 4 / 1_000_000);
+  }
+});
+
+Deno.test("prefers complete duration-specific rates over generic rates", () => {
+  const result = estimateCacheMissCost(
+    billing,
+    tokens({ cacheRead: 100 }),
+    tokens({ cacheWrite: 100, cacheWrite5m: 25, cacheWrite1h: 75 }),
+  );
+  if (!result) throw new Error("Expected a priced estimate");
+  closeTo(result.actualMissedCost, (25 * 3.75 + 75 * 6) / 1_000_000);
+});
+
+Deno.test("keeps duration-specific writes unpriced without applicable rates", () => {
+  for (const cacheWrite5m of [0, 100]) {
+    strictEqual(
+      estimateCacheMissCost(
+        { input: 3, cacheRead: 0.3 },
+        tokens({ cacheRead: 100 }),
+        tokens({
+          cacheWrite: 100,
+          cacheWrite5m,
+          cacheWrite1h: 100 - cacheWrite5m,
+        }),
+      ),
+      undefined,
+    );
+  }
+});
+
+Deno.test("prices Sol full and partial misses with reported 5-minute writes", () => {
+  for (
+    const [previousReusable, uncachedInput, cacheRead, cacheWrite] of [
+      [83950, 3, 0, 86037],
+      [86037, 154, 85886, 6503],
+      [112193, 544, 111803, 2947],
+      [139451, 544, 138910, 2977],
+    ]
+  ) {
+    const result = estimateModelCacheMissCost(
+      tokens({ cacheRead: previousReusable }),
+      tokens({
+        uncachedInput,
+        cacheRead,
+        cacheWrite,
+        cacheWrite5m: cacheWrite,
+        cacheWrite1h: 0,
+      }),
+      "gpt-5.6-sol",
+      Date.parse("2026-07-24T16:00:00Z"),
+      "openai",
+    );
+    if (!result) throw new Error("Expected a priced estimate");
+    const nonReadCost = (uncachedInput * 5 + cacheWrite * 6.25) / 1_000_000;
+    closeTo(
+      result.actualMissedCost,
+      nonReadCost * (previousReusable - cacheRead) /
+        (uncachedInput + cacheWrite),
+    );
+  }
+});
+
 Deno.test("uses short-context GPT rates below 272k", () => {
   const result = estimateModelCacheMissCost(
     tokens({ cacheRead: 229_000 }),
