@@ -96,7 +96,7 @@ function ModelTable({ data }: { data: SpendCompositionData }) {
       </div>
       <ol className="composition-models">
         {data.models.map((model) => {
-          const color = modelColor(model, data.models);
+          const color = modelColor(model);
           const name = displayModelName(model.model);
           return (
             <li key={model.model}>
@@ -188,7 +188,6 @@ function CompositionTooltip({ active, payload, data, metric }: {
       ? (b.value?.spend ?? 0) - (a.value?.spend ?? 0)
       : (b.value?.processedInput ?? 0) - (a.value?.processedInput ?? 0)
   );
-  const colorModels = [...data.models, ...day.otherModels];
   const totalSpend = day.models.reduce(
     (sum, model) => sum + model.spend,
     day.otherSpend,
@@ -223,7 +222,7 @@ function CompositionTooltip({ active, payload, data, metric }: {
               style={{
                 backgroundColor: model.provider === "other"
                   ? minorModelColor(model.model)
-                  : modelColor(model, colorModels),
+                  : modelColor(model),
               }}
               aria-hidden="true"
             />
@@ -252,7 +251,7 @@ function CompositionChart(
     ...data.models.map((model, index) => ({
       key: `model${index}`,
       model,
-      color: modelColor(model, data.models),
+      color: modelColor(model),
     })),
     ...(data.other
       ? [{ key: "other", model: undefined, color: otherModelColor }]
@@ -272,7 +271,10 @@ function CompositionChart(
           ? day.otherSpend
           : day.otherProcessedInput;
       }
-      const total = Object.values(values).reduce((sum, value) => sum + value, 0);
+      const total = Object.values(values).reduce(
+        (sum, value) => sum + value,
+        0,
+      );
       return { index, date: day.date, source: day, total, ...values };
     }), [data, metric]);
   const highlightedRows = (highlightedDates ?? [])
