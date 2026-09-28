@@ -16,6 +16,7 @@ import type {
 } from "../../shared/sessionSchemas.ts";
 import { displayModelName } from "../../shared/modelNames.ts";
 import { rollupCosts } from "../../shared/costMetrics.ts";
+import { formatCacheMissCost } from "./formatters.ts";
 import {
   getTitleGenerationSetting,
   setTitleGenerationSetting,
@@ -186,7 +187,7 @@ function CacheMissCost({
   return (
     <strong className="recent-session-cache-tooltip-cost">
       <span>{hasUnpricedCost && cost !== undefined ? "*" : ""}</span>
-      <span>{cost === undefined ? "N/A" : currency.format(cost)}</span>
+      <span>{formatCacheMissCost(cost)}</span>
     </strong>
   );
 }

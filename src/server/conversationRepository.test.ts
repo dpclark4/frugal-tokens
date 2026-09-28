@@ -445,6 +445,7 @@ Deno.test("session lists read cache issue reasons from normalized misses", () =>
       status: "full-miss",
       reason: "model-change",
       turn: 2,
+      estimatedCost: 0.000010416666666666666,
     }]);
     strictEqual(
       new SessionBrowserRepository(db).listSessions(1, 10, "codex", [
