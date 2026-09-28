@@ -132,6 +132,8 @@ export const cacheIssueSchema = z.object({
   reason: cacheAssessmentReasonSchema.optional(),
   turn: z.number().int().positive(),
   scope: z.string().optional(),
+  estimatedCost: z.number().nonnegative().optional(),
+  hasUnpricedCost: z.boolean().optional(),
 });
 
 export const turnCacheSummarySchema = cacheSummarySchema.extend({

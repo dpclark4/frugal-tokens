@@ -6,25 +6,30 @@ snapshot[`sessions table lists imported Pi and Codex sessions 1`] = `
     {
       cacheIssues: [
         {
+          estimatedCost: 0.27008000000000004,
           status: "full-miss",
           turn: 5,
         },
         {
           cause: "ttl",
+          estimatedCost: 0.47104,
           status: "full-miss",
           turn: 15,
         },
         {
           cause: "ttl",
+          estimatedCost: 0.5184,
           status: "full-miss",
           turn: 19,
         },
         {
+          estimatedCost: 0.544,
           status: "full-miss",
           turn: 20,
         },
         {
           cause: "ttl",
+          estimatedCost: 0.80128,
           status: "full-miss",
           turn: 38,
         },
@@ -98,10 +103,12 @@ snapshot[`sessions table lists imported Pi and Codex sessions 1`] = `
       cacheIssues: [
         {
           cause: "compaction",
+          estimatedCost: 0.029101,
           status: "full-miss",
           turn: 2,
         },
         {
+          estimatedCost: 0.116224,
           status: "full-miss",
           turn: 8,
         },
@@ -174,14 +181,17 @@ snapshot[`sessions table lists imported Pi and Codex sessions 1`] = `
     {
       cacheIssues: [
         {
+          estimatedCost: 0.00256,
           status: "partial-hit",
           turn: 2,
         },
         {
+          estimatedCost: 0.23936,
           status: "full-miss",
           turn: 5,
         },
         {
+          estimatedCost: 0.14079999999999998,
           status: "partial-hit",
           turn: 12,
         },
@@ -254,16 +264,19 @@ snapshot[`sessions table lists imported Pi and Codex sessions 1`] = `
     {
       cacheIssues: [
         {
+          estimatedCost: 0.011970521005440257,
           status: "full-miss",
           turn: 4,
         },
         {
           cause: "thinking-change",
+          estimatedCost: 0.03307125424464232,
           status: "full-miss",
           turn: 6,
         },
         {
           cause: "thinking-change",
+          estimatedCost: 0.03315500357626864,
           status: "full-miss",
           turn: 8,
         },
@@ -345,6 +358,7 @@ snapshot[`sessions table lists imported Pi and Codex sessions 1`] = `
       cacheIssues: [
         {
           cause: "thinking-change",
+          estimatedCost: 0.015359999999999999,
           status: "full-miss",
           turn: 5,
         },

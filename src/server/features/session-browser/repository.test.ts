@@ -142,6 +142,80 @@ for (const key of Object.keys(sortKeyExpectedDescOrder) as SessionSortKey[]) {
   });
 }
 
+Deno.test("cache issue costs include every call before turn deduplication", () => {
+  const db = openArchiveDatabase(":memory:");
+  migrateTestDatabase(db);
+  const sources = new SourceArtifactRepository(db);
+  const projection = new ConversationWriteRepository(db);
+  const conversations = new SessionBrowserRepository(db);
+  try {
+    const sourceID = sources.ensureSource("pi", "directory", "Pi", "/sessions");
+    const imported = sortFixtureSession(sourceID, sortFixtureValues[0]);
+    const turn = imported.session.turns[0];
+    const call = turn.calls[0];
+    turn.calls = Array.from({ length: 5 }, (_, index) => ({
+      ...call,
+      id: `call-${index + 1}`,
+      callWithinTurn: index + 1,
+    }));
+    imported.session.modelCalls = turn.calls.length;
+    const child = sortFixtureSession(sourceID, sortFixtureValues[1]);
+    child.parentExternalID = imported.externalID;
+    for (const item of [imported, child]) {
+      sources.recordUnchangedArtifact(
+        sourceID,
+        item.externalID,
+        item.artifactPath!,
+        item.observedAt,
+      );
+    }
+    projection.replaceLinearConversationTree([imported, child]);
+    db.exec("DELETE FROM conversation_cache_misses");
+    db.exec(`
+      INSERT INTO conversation_cache_misses (
+        model_call_id, conversation_id, turn_id, started_at, gap_ms,
+        status, cause, previous_context_tokens, current_context_tokens,
+        actual_cache_read_tokens, missed_tokens, actual_missed_cost
+      )
+      SELECT id, conversation_id, turn_id, started_at, 0,
+        'full-miss',
+        CASE call_within_turn WHEN 4 THEN 'compaction' WHEN 5 THEN 'ttl' END,
+        100, 100, 0, 100,
+        CASE call_within_turn WHEN 1 THEN 0.25 WHEN 2 THEN 0.5 WHEN 4 THEN 0 END
+      FROM conversation_model_calls
+    `);
+    const issues = conversations.listSessions(1, 10, "pi").items[0]
+      .cacheIssues!;
+    strictEqual(issues.length, 4);
+    deepStrictEqual(issues.find((issue) => issue.scope === "Bravo"), {
+      status: "full-miss",
+      turn: 1,
+      scope: "Bravo",
+      estimatedCost: 0.25,
+    });
+    deepStrictEqual(issues.find((issue) => issue.cause === undefined), {
+      status: "full-miss",
+      turn: 1,
+      estimatedCost: 0.75,
+      hasUnpricedCost: true,
+    });
+    deepStrictEqual(issues.find((issue) => issue.cause === "compaction"), {
+      status: "full-miss",
+      cause: "compaction",
+      turn: 1,
+      estimatedCost: 0,
+    });
+    deepStrictEqual(issues.find((issue) => issue.cause === "ttl"), {
+      status: "full-miss",
+      cause: "ttl",
+      turn: 1,
+      hasUnpricedCost: true,
+    });
+  } finally {
+    db.close();
+  }
+});
+
 Deno.test("flips to ascending order on request", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);

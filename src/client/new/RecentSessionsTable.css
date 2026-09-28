@@ -477,11 +477,15 @@
   position: relative;
   left: 18px;
   display: inline-block;
+  width: 98px;
   outline: none;
 }
 
 .recent-session-cache-summary > strong {
+  overflow: visible;
   color: #56645f;
+  text-align: right;
+  text-overflow: clip;
 }
 
 .recent-session-cache-breakdown {
@@ -490,7 +494,7 @@
   grid-template-columns: 66px auto;
   align-items: center;
   justify-items: start;
-  gap: 4px 7px;
+  gap: 3px 7px;
   text-align: left;
 }
 
@@ -554,75 +558,87 @@
 }
 
 .recent-session-cache-tooltip {
-  position: absolute;
-  z-index: 30;
-  top: calc(100% + 8px);
-  left: 50%;
+  position: fixed;
+  z-index: 1000;
   display: grid;
-  visibility: hidden;
-  width: 190px;
+  width: max-content;
+  min-width: min(260px, calc(100vw - 16px));
+  max-width: calc(100vw - 16px);
   padding: 8px 12px;
-  opacity: 0;
   pointer-events: none;
   text-align: left;
-  transform: translateX(-50%);
-  transition: opacity 100ms ease, visibility 100ms ease;
-}
-
-.recent-session-cache-summary:hover .recent-session-cache-tooltip,
-.recent-session-cache-summary:focus-visible .recent-session-cache-tooltip {
-  visibility: visible;
-  opacity: 1;
 }
 
 .recent-session-cache-tooltip-heading {
-  display: block;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
   padding-bottom: 7px;
   border-bottom: 1px solid var(--tooltip-rule);
 }
 
 .recent-session-cache-tooltip-heading > strong {
   display: block;
+  overflow: visible;
+  text-overflow: clip;
   color: var(--tooltip-text);
   font-size: var(--tooltip-type-value);
 }
 
 .recent-session-cache-tooltip-rows {
   display: grid;
-  gap: 7px;
+  grid-template-columns: minmax(max-content, 1fr) max-content max-content;
+  gap: 7px 14px;
   padding-top: 7px;
 }
 
 .recent-session-cache-tooltip-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: start;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
 }
 
 .recent-session-cache-tooltip-row > span {
-  display: grid;
-  min-width: 0;
-  gap: 2px;
-}
-
-.recent-session-cache-tooltip-row > span > span {
   color: var(--tooltip-text);
-}
-
-.recent-session-cache-tooltip-row small {
-  display: block;
-  overflow: hidden;
-  margin: 0;
-  color: var(--tooltip-muted);
-  font-size: var(--dashboard-type-micro);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .recent-session-cache-tooltip-row > strong {
+  overflow: visible;
+  text-overflow: clip;
   color: var(--tooltip-text);
   font-size: var(--tooltip-type-value);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.recent-session-cache-tooltip-cost {
+  display: grid;
+  grid-template-columns: 1ch 1fr;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.recent-session-cache-tooltip-cost > span:first-child {
+  text-align: left;
+}
+
+.recent-session-cache-tooltip-total {
+  padding-top: 7px;
+  border-top: 1px solid var(--tooltip-rule);
+}
+
+.recent-session-cache-tooltip-total > strong {
+  grid-column: 3;
+}
+
+.recent-session-cache-tooltip-note {
+  margin-top: 7px;
+  padding-top: 7px;
+  border-top: 1px solid var(--tooltip-rule);
+  color: var(--tooltip-muted);
 }
 
 .recent-session-cost-cell {

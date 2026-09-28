@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowUpDown,
   ChevronDown,
@@ -14,6 +15,8 @@ import type {
   SessionSummary,
 } from "../../shared/sessionSchemas.ts";
 import { displayModelName } from "../../shared/modelNames.ts";
+import { rollupCosts } from "../../shared/costMetrics.ts";
+import { formatCacheMissCost } from "./formatters.ts";
 import {
   getTitleGenerationSetting,
   setTitleGenerationSetting,
@@ -163,24 +166,102 @@ function cacheMissBreakdown(session: SessionSummary) {
   return groups.flatMap((group) => {
     const matches = issues.filter(group.test);
     if (matches.length === 0) return [];
-    const locations = matches.map((issue) =>
-      `${issue.scope ? `${issue.scope}, ` : ""}turn ${issue.turn}`
-    );
-    return [{ ...group, count: matches.length, locations }];
+    const cost = rollupCosts(matches.map((issue) => issue.estimatedCost));
+    return [{
+      ...group,
+      count: matches.length,
+      cost: cost.cost,
+      hasUnpricedCost: cost.hasUnpricedCost ||
+        matches.some((issue) => issue.hasUnpricedCost),
+    }];
   });
+}
+
+function CacheMissCost({
+  cost,
+  hasUnpricedCost,
+}: {
+  cost?: number;
+  hasUnpricedCost: boolean;
+}) {
+  return (
+    <strong className="recent-session-cache-tooltip-cost">
+      <span>{hasUnpricedCost && cost !== undefined ? "*" : ""}</span>
+      <span>{formatCacheMissCost(cost)}</span>
+    </strong>
+  );
 }
 
 function CacheMissSummary({ session }: { session: SessionSummary }) {
   const tooltipId = useId();
+  const triggerRef = useRef<HTMLSpanElement>(null);
+  const tooltipRef = useRef<HTMLSpanElement>(null);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const open = hovered || focused;
+
+  useLayoutEffect(() => {
+    if (!open) return;
+    const updatePosition = () => {
+      const trigger = triggerRef.current;
+      const tooltip = tooltipRef.current;
+      if (!trigger || !tooltip) return;
+      const anchor = trigger.getBoundingClientRect();
+      const { width, height } = tooltip.getBoundingClientRect();
+      const margin = 8;
+      const gap = 8;
+      const left = Math.max(
+        margin,
+        Math.min(
+          anchor.left + (anchor.width - width) / 2,
+          globalThis.innerWidth - width - margin,
+        ),
+      );
+      const fitsBelow = anchor.bottom + gap + height <=
+        globalThis.innerHeight - margin;
+      const top = fitsBelow ? anchor.bottom + gap : anchor.top - height - gap;
+      tooltip.style.left = `${left}px`;
+      tooltip.style.top = `${
+        Math.max(
+          margin,
+          Math.min(top, globalThis.innerHeight - height - margin),
+        )
+      }px`;
+    };
+    updatePosition();
+    const observer = new ResizeObserver(updatePosition);
+    if (tooltipRef.current) observer.observe(tooltipRef.current);
+    globalThis.addEventListener("resize", updatePosition);
+    globalThis.addEventListener("scroll", updatePosition, true);
+    return () => {
+      observer.disconnect();
+      globalThis.removeEventListener("resize", updatePosition);
+      globalThis.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open]);
+
   const misses = session.cacheIssues?.length ?? 0;
   const breakdown = cacheMissBreakdown(session);
-  const showBreakdown = breakdown.length > 0 && breakdown.length <= 2;
+  const hasUnpricedCost = breakdown.some((group) => group.hasUnpricedCost);
+  const totalCost = rollupCosts(breakdown.map((group) => group.cost)).cost;
+  const showBreakdown = breakdown.length > 0 && breakdown.length <= 3;
   if (misses === 0) return null;
   return (
     <span
       className="recent-session-cache-summary"
+      ref={triggerRef}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") {
+          setHovered(false);
+          setFocused(false);
+        }
+      }}
       tabIndex={0}
-      aria-describedby={tooltipId}
+      aria-describedby={open ? tooltipId : undefined}
     >
       {showBreakdown
         ? (
@@ -205,36 +286,51 @@ function CacheMissSummary({ session }: { session: SessionSummary }) {
             {integer.format(misses)} {misses === 1 ? "miss" : "misses"}
           </strong>
         )}
-      <span
-        className="tooltip-surface recent-session-cache-tooltip"
-        id={tooltipId}
-        role="tooltip"
-      >
-        <span className="recent-session-cache-tooltip-heading">
-          <strong>
-            {integer.format(misses)} cache {misses === 1 ? "miss" : "misses"}
-          </strong>
-        </span>
-        <span className="recent-session-cache-tooltip-rows">
-          {breakdown.map((group) => (
-            <span
-              className="recent-session-cache-tooltip-row"
-              key={group.label}
-            >
-              <span>
+      {open && createPortal(
+        <span
+          ref={tooltipRef}
+          className="tooltip-surface recent-session-cache-tooltip"
+          id={tooltipId}
+          role="tooltip"
+        >
+          <span className="recent-session-cache-tooltip-heading">
+            <strong>
+              {integer.format(misses)} cache {misses === 1 ? "miss" : "misses"}
+            </strong>
+            <span>Est. cost</span>
+          </span>
+          <span className="recent-session-cache-tooltip-rows">
+            {breakdown.map((group) => (
+              <span
+                className="recent-session-cache-tooltip-row"
+                key={group.label}
+              >
                 <span>{group.label}</span>
-                <small>
-                  {group.locations.slice(0, 3).join(" · ")}
-                  {group.locations.length > 3
-                    ? ` · +${group.locations.length - 3} more`
-                    : ""}
-                </small>
+                <strong>×{integer.format(group.count)}</strong>
+                <CacheMissCost
+                  cost={group.cost}
+                  hasUnpricedCost={group.hasUnpricedCost}
+                />
               </span>
-              <strong>×{integer.format(group.count)}</strong>
+            ))}
+            {breakdown.length > 1 && (
+              <span className="recent-session-cache-tooltip-row recent-session-cache-tooltip-total">
+                <span>Total</span>
+                <CacheMissCost
+                  cost={totalCost}
+                  hasUnpricedCost={hasUnpricedCost}
+                />
+              </span>
+            )}
+          </span>
+          {hasUnpricedCost && totalCost !== undefined && (
+            <span className="recent-session-cache-tooltip-note">
+              * Excludes unpriced calls.
             </span>
-          ))}
-        </span>
-      </span>
+          )}
+        </span>,
+        document.body,
+      )}
     </span>
   );
 }

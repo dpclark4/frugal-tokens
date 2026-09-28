@@ -18,6 +18,12 @@ export const currency = new Intl.NumberFormat("en-US", {
   currency: "USD",
   maximumFractionDigits: 2,
 });
+export function formatCacheMissCost(cost: number | undefined): string {
+  if (cost === undefined) return "N/A";
+  if (cost > 0 && cost < 0.01) return "<$0.01";
+  return currency.format(cost);
+}
+
 export const monthName = new Intl.DateTimeFormat(undefined, {
   month: "long",
   year: "numeric",
