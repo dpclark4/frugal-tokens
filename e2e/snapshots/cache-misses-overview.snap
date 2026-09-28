@@ -48,7 +48,7 @@ snapshot[`cache misses overview aggregates imported sessions 1`] = `
     thinkingChange: {
       affectedSessions: 2,
       attributedCost: 0.08158625782091096,
-      estimatedExtraCost: 0.07475175782091095,
+      estimatedExtraCost: 0.07475175782091097,
       expectedReadCost: 0.0068345,
       missedTokens: 59129,
       misses: 3,
