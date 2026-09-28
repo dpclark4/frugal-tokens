@@ -340,6 +340,7 @@ export class SessionBrowserRepository {
         JOIN tree ON tree.conversation_id = launch.parent_conversation_id
       )
       SELECT tree.root_id, tree.nested, miss.status, miss.cause, miss.reason,
+        miss.actual_missed_cost,
         turn.ordinal AS turn_ordinal, c.title, c.agent
       FROM tree
       JOIN conversation_cache_misses miss
@@ -353,12 +354,13 @@ export class SessionBrowserRepository {
       status: CacheIssue["status"];
       cause: CacheIssue["cause"] | null;
       reason: CacheIssue["reason"] | null;
+      actual_missed_cost: number | null;
       turn_ordinal: number;
       title: string;
       agent: string | null;
     }>;
     const issues = new Map<number, CacheIssue[]>();
-    const seen = new Set<string>();
+    const grouped = new Map<string, CacheIssue>();
     for (const row of rows) {
       const scope = row.nested === 0
         ? undefined
@@ -373,8 +375,16 @@ export class SessionBrowserRepository {
       else if (row.reason !== null) issue.reason = row.reason;
       if (scope !== undefined) issue.scope = scope;
       const key = `${row.root_id}:${JSON.stringify(issue)}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
+      const existing = grouped.get(key);
+      const target = existing ?? issue;
+      if (row.actual_missed_cost === null) {
+        target.hasUnpricedCost = true;
+      } else {
+        target.estimatedCost = (target.estimatedCost ?? 0) +
+          row.actual_missed_cost;
+      }
+      if (existing) continue;
+      grouped.set(key, issue);
       const rootIssues = issues.get(row.root_id) ?? [];
       rootIssues.push(issue);
       issues.set(row.root_id, rootIssues);

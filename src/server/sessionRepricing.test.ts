@@ -133,7 +133,9 @@ Deno.test("reprices stored sessions and subagents, preserving unknown and zero p
     deepStrictEqual(service.repriceSessions([rootID, rootID]), [{
       conversationID: rootID,
       updatedCalls: 2,
+      updatedCacheMisses: 0,
       remainingUnpricedCalls: 1,
+      remainingUnpricedCacheMisses: 0,
     }]);
     const stored = db.prepare(
       "SELECT computed_cost, overview_json, summary_json FROM conversation_rollups WHERE conversation_id = ?",
@@ -153,11 +155,110 @@ Deno.test("reprices stored sessions and subagents, preserving unknown and zero p
     deepStrictEqual(service.repriceSessions([rootID]), [{
       conversationID: rootID,
       updatedCalls: 0,
+      updatedCacheMisses: 0,
       remainingUnpricedCalls: 1,
+      remainingUnpricedCacheMisses: 0,
     }]);
     throws(() => service.repriceSessions([-1]), /Unknown root/);
     // A failed session must not leave a transaction open.
     deepStrictEqual(service.findUnpricedSessionIDs(), [rootID]);
+  } finally {
+    db.close();
+  }
+});
+
+Deno.test("repairs missing OpenCode miss costs when calls are already priced", () => {
+  const db = openArchiveDatabase(":memory:");
+  migrateTestDatabase(db);
+  try {
+    const sources = new SourceArtifactRepository(db);
+    const sourceID = sources.ensureSource(
+      "opencode",
+      "sqlite",
+      "OpenCode",
+      "/opencode.db",
+    );
+    const imports = [
+      session(sourceID, "root", "claude-opus-4-6"),
+      session(sourceID, "child", "claude-opus-4-6", "root"),
+    ];
+    for (const imported of imports) {
+      sources.recordUnchangedArtifact(
+        sourceID,
+        imported.externalID,
+        `${imported.externalID}.jsonl`,
+        1,
+      );
+      const first = imported.session.turns[0].calls[0];
+      imported.session.providers = ["anthropic"];
+      imported.session.turns[0].calls = Array.from({ length: 3 }, (_, i) => ({
+        ...first,
+        id: `call-${i + 1}`,
+        provider: "anthropic",
+        callWithinTurn: i + 1,
+        startedAt: i + 1,
+        completedAt: i + 2,
+        tokens: {
+          uncachedInput: 2,
+          cacheWrite: 9_998,
+          cacheRead: 0,
+          freshPrompt: 10_000,
+          output: 0,
+          reasoning: 0,
+          processed: 10_000,
+        },
+      }));
+      imported.session.modelCalls = 3;
+    }
+    new ConversationWriteRepository(db).replaceLinearConversationTree(imports);
+    strictEqual(
+      db.prepare("SELECT COUNT(*) AS n FROM conversation_cache_misses").get()!
+        .n,
+      4,
+    );
+    db.exec(`UPDATE conversation_cache_misses SET
+      actual_missed_cost = NULL, expected_read_cost = NULL, estimated_extra_cost = NULL;
+      UPDATE conversation_cache_misses SET actual_missed_cost = 0
+      WHERE model_call_id = (SELECT MAX(model_call_id) FROM conversation_cache_misses);`);
+    const rootID = Number(
+      db.prepare("SELECT id FROM conversations WHERE external_id = 'root'")
+        .get()!.id,
+    );
+    const prices = db.prepare(
+      "SELECT id, computed_cost FROM conversation_model_calls ORDER BY id",
+    ).all();
+    const service = new SessionRepricingService(db);
+    deepStrictEqual(service.findUnpricedSessionIDs(), [rootID]);
+    deepStrictEqual(service.repriceSessions([rootID]), [{
+      conversationID: rootID,
+      updatedCalls: 0,
+      updatedCacheMisses: 3,
+      remainingUnpricedCalls: 0,
+      remainingUnpricedCacheMisses: 0,
+    }]);
+    deepStrictEqual(
+      db.prepare(
+        "SELECT id, computed_cost FROM conversation_model_calls ORDER BY id",
+      ).all(),
+      prices,
+    );
+    const misses = db.prepare(
+      "SELECT actual_missed_cost FROM conversation_cache_misses ORDER BY model_call_id",
+    ).all();
+    for (const miss of misses.slice(0, 3)) {
+      // Only the preceding call's cached/written prefix is reusable.
+      const nonReadCost = 2 * 5 / 1_000_000 + 9_998 * 6.25 / 1_000_000;
+      strictEqual(miss.actual_missed_cost, nonReadCost * 9_998 / 10_000);
+    }
+    strictEqual(misses[3].actual_missed_cost, 0);
+    const summary = JSON.parse(String(
+      db.prepare(
+        "SELECT summary_json FROM conversation_rollups WHERE conversation_id = ?",
+      ).get(rootID)!.summary_json,
+    ));
+    strictEqual(summary.cacheIssues.length, 2);
+    deepStrictEqual(service.findUnpricedSessionIDs(), []);
+    strictEqual(service.repriceSessions([rootID])[0].updatedCacheMisses, 0);
   } finally {
     db.close();
   }

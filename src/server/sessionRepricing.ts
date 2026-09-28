@@ -59,7 +59,9 @@ function rollupTree(
 export type SessionRepricingResult = {
   conversationID: number;
   updatedCalls: number;
+  updatedCacheMisses: number;
   remainingUnpricedCalls: number;
+  remainingUnpricedCacheMisses: number;
 };
 
 /** Repairs missing calculated prices without rereading sources or replacing sessions. */
@@ -71,7 +73,10 @@ export class SessionRepricingService {
     const rows = this.db.prepare(`${sessionTree}
       SELECT DISTINCT tree.root_id AS id FROM tree
       JOIN conversation_model_calls call ON call.conversation_id = tree.id
-      WHERE call.computed_cost IS NULL
+      LEFT JOIN conversation_cache_misses miss ON miss.model_call_id = call.id
+      WHERE call.computed_cost IS NULL OR (
+        miss.model_call_id IS NOT NULL AND miss.actual_missed_cost IS NULL
+      )
     `).all() as Array<{ id: number }>;
     return rows.map((row) => row.id);
   }
@@ -126,7 +131,10 @@ export class SessionRepricingService {
               THEN SUM(computed_cost) END FROM conversation_model_calls WHERE conversation_id = ?
           ) WHERE conversation_id = ?`).run(conversationID, conversationID);
         }
-        this.#refreshCacheMissPrices(calls);
+      }
+      const { updatedCacheMisses, remainingUnpricedCacheMisses } = this
+        .#refreshCacheMissPrices(calls);
+      if (updates.length > 0 || updatedCacheMisses > 0) {
         const detail = new ConversationRepository(this.db).getSession(
           root.harness,
           root.public_id,
@@ -143,7 +151,9 @@ export class SessionRepricingService {
       return {
         conversationID: id,
         updatedCalls: updates.length,
+        updatedCacheMisses,
         remainingUnpricedCalls,
+        remainingUnpricedCacheMisses,
       };
     } catch (error) {
       this.db.exec("ROLLBACK");
@@ -155,11 +165,14 @@ export class SessionRepricingService {
     const byID = new Map(calls.map((call) => [call.id, call]));
     const select = this.db.prepare(
       `SELECT previous_model_call_id, previous_reusable_tokens
-      FROM conversation_cache_misses WHERE model_call_id = ?`,
+      FROM conversation_cache_misses
+      WHERE model_call_id = ? AND actual_missed_cost IS NULL`,
     );
     const update = this.db.prepare(`UPDATE conversation_cache_misses SET
       model_call_cost = ?, actual_missed_cost = ?, expected_read_cost = ?, estimated_extra_cost = ?
       WHERE model_call_id = ?`);
+    let updatedCacheMisses = 0;
+    let remainingUnpricedCacheMisses = 0;
     for (const call of calls) {
       // SAFETY: The static SQL projection defines this row contract.
       const miss = select.get(call.id) as {
@@ -168,7 +181,10 @@ export class SessionRepricingService {
       } | undefined;
       if (!miss) continue;
       const previous = byID.get(miss.previous_model_call_id!);
-      if (!previous) continue;
+      if (!previous) {
+        remainingUnpricedCacheMisses++;
+        continue;
+      }
       const estimate = estimateModelCacheMissCost(
         callTokens(previous),
         callTokens(call),
@@ -177,6 +193,10 @@ export class SessionRepricingService {
         call.provider,
         miss.previous_reusable_tokens ?? undefined,
       );
+      if (!estimate) {
+        remainingUnpricedCacheMisses++;
+        continue;
+      }
       update.run(
         computeModelCallCost(
           callTokens(call),
@@ -184,12 +204,14 @@ export class SessionRepricingService {
           call.started_at,
           call.provider,
         ) ?? null,
-        estimate?.actualMissedCost ?? null,
-        estimate?.expectedReadCost ?? null,
-        estimate?.estimatedExtraCost ?? null,
+        estimate.actualMissedCost,
+        estimate.expectedReadCost,
+        estimate.estimatedExtraCost,
         call.id,
       );
+      updatedCacheMisses++;
     }
+    return { updatedCacheMisses, remainingUnpricedCacheMisses };
   }
 }
 
@@ -203,12 +225,15 @@ export function repriceUnpricedSessions(db: DatabaseSync) {
   for (const id of ids) {
     try {
       const [result] = service.repriceSessions([id]);
-      if (result.updatedCalls > 0) updated++;
+      if (result.updatedCalls > 0 || result.updatedCacheMisses > 0) updated++;
       else notUpdated++;
       if (!summarize) {
         console.info(
-          `[reprice] session=${id} updated_calls=${result.updatedCalls} remaining_unpriced_calls=${result.remainingUnpricedCalls} status=${
-            result.remainingUnpricedCalls === 0 ? "priced" : "unpriced"
+          `[reprice] session=${id} updated_calls=${result.updatedCalls} remaining_unpriced_calls=${result.remainingUnpricedCalls} updated_cache_misses=${result.updatedCacheMisses} remaining_unpriced_cache_misses=${result.remainingUnpricedCacheMisses} status=${
+            result.remainingUnpricedCalls === 0 &&
+              result.remainingUnpricedCacheMisses === 0
+              ? "priced"
+              : "unpriced"
           }`,
         );
       }
