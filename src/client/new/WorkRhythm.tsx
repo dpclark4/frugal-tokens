@@ -5,7 +5,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Maximize2, X } from "lucide-react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   Bar,
@@ -717,8 +717,60 @@ function timelineSegments(
   });
 }
 
-function ActivityTimeline({ day }: { day: WorkRhythmDay }) {
+function DayTimelineDialog({ day, onClose }: {
+  day: WorkRhythmDay;
+  onClose: () => void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const dialog = dialogRef.current;
+    if (!dialog) return;
+    const previousOverflow = document.body.style.overflow;
+    dialog.showModal();
+    document.body.style.overflow = "hidden";
+    return () => {
+      dialog.close();
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
+  return (
+    <dialog
+      ref={dialogRef}
+      className="timeline-dialog"
+      aria-labelledby="timeline-dialog-title"
+      onCancel={onClose}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className="timeline-dialog-content">
+        <header className="timeline-dialog-header">
+          <h2 id="timeline-dialog-title">
+            {readableDate.format(parseDate(day.date))}
+          </h2>
+          <button
+            type="button"
+            className="timeline-icon-button"
+            aria-label="Close expanded timeline"
+            onClick={onClose}
+          >
+            <X size={16} aria-hidden="true" />
+          </button>
+        </header>
+        <ActivityTimeline day={day} expanded />
+      </div>
+    </dialog>
+  );
+}
+
+function ActivityTimeline({ day, expanded = false }: {
+  day: WorkRhythmDay;
+  expanded?: boolean;
+}) {
   const navigate = useNavigate();
+  const [expandedDate, setExpandedDate] = useState<string>();
   const viewportRef = useRef<HTMLDivElement>(null);
   const timelineDragRef = useRef<TimelineDrag | undefined>(undefined);
   const [zoom, setZoom] = useState<TimelineZoom>("fit");
@@ -732,6 +784,8 @@ function ActivityTimeline({ day }: { day: WorkRhythmDay }) {
   useEffect(() => {
     timelineDragRef.current = undefined;
     setSelection(undefined);
+    setTooltip(undefined);
+    setExpandedDate(undefined);
     setZoom("fit");
     const frame = requestAnimationFrame(() => {
       viewportRef.current?.scrollTo({ top: 0, left: 0 });
@@ -874,7 +928,7 @@ function ActivityTimeline({ day }: { day: WorkRhythmDay }) {
   return (
     <>
       <section className="activity-timeline" aria-label="Sessions by time">
-        {day.estimatedActiveMinutes > 0 && (
+        {(day.estimatedActiveMinutes > 0 || day.sessions.length > 0) && (
           <header className="timeline-toolbar">
             <div className="timeline-summary">
               <span>
@@ -923,6 +977,21 @@ function ActivityTimeline({ day }: { day: WorkRhythmDay }) {
                 >
                   +
                 </button>
+                {!expanded && (
+                  <button
+                    type="button"
+                    className="timeline-expand"
+                    aria-label="Expand day timeline"
+                    title="Expand day timeline"
+                    aria-haspopup="dialog"
+                    onClick={() => {
+                      setTooltip(undefined);
+                      setExpandedDate(day.date);
+                    }}
+                  >
+                    <Maximize2 size={14} aria-hidden="true" />
+                  </button>
+                )}
               </div>
             )}
           </header>
@@ -1061,7 +1130,13 @@ function ActivityTimeline({ day }: { day: WorkRhythmDay }) {
           <span>{currency.format(tooltip.session.spend)} on this date</span>
           <em>Click to open session</em>
         </div>,
-        document.body,
+        viewportRef.current?.closest("dialog") ?? document.body,
+      )}
+      {!expanded && expandedDate === day.date && day.sessions.length > 0 && (
+        <DayTimelineDialog
+          day={day}
+          onClose={() => setExpandedDate(undefined)}
+        />
       )}
     </>
   );
