@@ -1,6 +1,7 @@
 import type { TokenUsage } from "./sessionSchemas.ts";
 import { contextSize } from "./contextMetrics.ts";
 import { canonicalModelId } from "./modelNames.ts";
+import { computeCacheWriteCost } from "./cacheWritePricing.ts";
 
 export type ModelRateCard = {
   input: number;
@@ -580,31 +581,12 @@ export function computeModelCallCostBreakdown(
     (tokens.cacheWrite ?? 0) + tokens.output + tokens.reasoning;
   if (tokens.processed > 0 && categorizedTokens === 0) return undefined;
 
-  let cacheWrite = 0;
-  if (tokens.cacheWrite !== undefined) {
-    if (
-      tokens.cacheWrite5m !== undefined && tokens.cacheWrite1h !== undefined &&
-      tokens.cacheWrite5m + tokens.cacheWrite1h === tokens.cacheWrite &&
-      rates.cacheWrite5m !== undefined && rates.cacheWrite1h !== undefined
-    ) {
-      cacheWrite = tokens.cacheWrite5m * rates.cacheWrite5m +
-        tokens.cacheWrite1h * rates.cacheWrite1h;
-    } else if (rates.cacheWrite !== undefined) {
-      cacheWrite = tokens.cacheWrite * rates.cacheWrite;
-    } else if (
-      tokens.cacheWrite5m === undefined && tokens.cacheWrite1h === undefined &&
-      rates.cacheWrite5m !== undefined
-    ) {
-      // Sources with only a total cache-write count use the default 5-minute TTL.
-      cacheWrite = tokens.cacheWrite * rates.cacheWrite5m;
-    } else {
-      return undefined;
-    }
-  }
+  const cacheWrite = computeCacheWriteCost(tokens, rates);
+  if (cacheWrite === undefined) return undefined;
   return {
     input: tokens.uncachedInput * rates.input / 1_000_000,
     cacheRead: tokens.cacheRead * rates.cacheRead / 1_000_000,
-    cacheWrite: cacheWrite / 1_000_000,
+    cacheWrite,
     output: (tokens.output + tokens.reasoning) * rates.output / 1_000_000,
   };
 }

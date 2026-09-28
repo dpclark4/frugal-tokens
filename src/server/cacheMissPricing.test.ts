@@ -7,6 +7,7 @@ import {
   type InputBillingRates,
 } from "./cacheMissPricing.ts";
 import { estimateModelCacheMissCost } from "./pricing.ts";
+import { computeModelCallCostBreakdown } from "../shared/modelPricing.ts";
 
 function tokens(values: Partial<TokenUsage>): TokenUsage {
   return {
@@ -52,7 +53,7 @@ Deno.test("estimates missed reusable tokens for a partial cache miss", () => {
     missedTokens: 18_300,
     actualBilling: {
       uncachedInput: 2,
-      cacheWrite: 0,
+      cacheWrite: 19_098,
       cacheWrite5m: 0,
       cacheWrite1h: 19_098,
     },
@@ -70,8 +71,8 @@ Deno.test("estimates a full uncached miss while excluding net-new context", () =
   deepStrictEqual(estimate.actualBilling, {
     uncachedInput: 101_800,
     cacheWrite: 0,
-    cacheWrite5m: 0,
-    cacheWrite1h: 0,
+    cacheWrite5m: undefined,
+    cacheWrite1h: undefined,
   });
 });
 
@@ -116,14 +117,14 @@ Deno.test("prices missed tokens at the observed weighted non-read rate", () => {
   );
 });
 
-Deno.test("uses detailed write rates only when they reconcile to total writes", () => {
+Deno.test("preserves write duration data for shared pricing validation", () => {
   const detailed = estimateCacheMissTokens(
     tokens({ cacheRead: 100 }),
     tokens({ cacheWrite: 100, cacheWrite5m: 25, cacheWrite1h: 75 }),
   );
   deepStrictEqual(detailed.actualBilling, {
     uncachedInput: 0,
-    cacheWrite: 0,
+    cacheWrite: 100,
     cacheWrite5m: 25,
     cacheWrite1h: 75,
   });
@@ -135,9 +136,42 @@ Deno.test("uses detailed write rates only when they reconcile to total writes", 
   deepStrictEqual(generic.actualBilling, {
     uncachedInput: 0,
     cacheWrite: 100,
-    cacheWrite5m: 0,
-    cacheWrite1h: 0,
+    cacheWrite5m: 25,
+    cacheWrite1h: 70,
   });
+});
+
+Deno.test("prices OpenCode Opus misses consistently with total-call input cost", () => {
+  const timestamp = Date.parse("2026-02-08T18:00:00Z");
+  for (
+    const [previousReusable, uncachedInput, cacheRead, cacheWrite] of [
+      [148_517, 3, 13_465, 109_861],
+      [153_145, 3, 0, 158_541],
+      [168_250, 3, 0, 149_716],
+    ]
+  ) {
+    const usage = tokens({ uncachedInput, cacheRead, cacheWrite });
+    const total = computeModelCallCostBreakdown(
+      usage,
+      "claude-opus-4-6",
+      timestamp,
+      "anthropic",
+    );
+    const miss = estimateModelCacheMissCost(
+      tokens({ cacheRead: previousReusable }),
+      usage,
+      "claude-opus-4-6",
+      timestamp,
+      "anthropic",
+    );
+    if (!total || !miss) throw new Error("Expected total and miss pricing");
+    closeTo(total.cacheWrite, cacheWrite * 6.25 / 1_000_000);
+    closeTo(
+      miss.actualMissedCost,
+      (total.input + total.cacheWrite) * miss.missedTokens /
+        (uncachedInput + cacheWrite),
+    );
+  }
 });
 
 Deno.test("does not price observed categories with missing rates", () => {

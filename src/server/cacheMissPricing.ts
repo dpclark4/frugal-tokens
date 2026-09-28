@@ -1,5 +1,6 @@
 import type { TokenUsage } from "../shared/sessionSchemas.ts";
 import { contextSize } from "../shared/contextMetrics.ts";
+import { computeCacheWriteCost } from "../shared/cacheWritePricing.ts";
 
 export type CacheMissTokens = Pick<
   TokenUsage,
@@ -27,8 +28,8 @@ export type CacheMissTokenEstimate = {
   actualBilling: {
     uncachedInput: number;
     cacheWrite: number;
-    cacheWrite5m: number;
-    cacheWrite1h: number;
+    cacheWrite5m?: number;
+    cacheWrite1h?: number;
   };
 };
 
@@ -52,9 +53,6 @@ export function estimateCacheMissTokens(
   );
   const actualCacheRead = Math.min(after.cacheRead, expectedReusable);
   const missedTokens = Math.max(expectedReusable - actualCacheRead, 0);
-  const hasDetailedWrites = after.cacheWrite !== undefined &&
-    after.cacheWrite5m !== undefined && after.cacheWrite1h !== undefined &&
-    after.cacheWrite5m + after.cacheWrite1h === after.cacheWrite;
 
   return {
     previousContext,
@@ -64,9 +62,9 @@ export function estimateCacheMissTokens(
     missedTokens,
     actualBilling: {
       uncachedInput: after.uncachedInput,
-      cacheWrite: hasDetailedWrites ? 0 : after.cacheWrite ?? 0,
-      cacheWrite5m: hasDetailedWrites ? after.cacheWrite5m! : 0,
-      cacheWrite1h: hasDetailedWrites ? after.cacheWrite1h! : 0,
+      cacheWrite: after.cacheWrite ?? 0,
+      cacheWrite5m: after.cacheWrite5m,
+      cacheWrite1h: after.cacheWrite1h,
     },
   };
 }
@@ -76,35 +74,12 @@ export function computeCacheMissCost(
   estimate: CacheMissTokenEstimate,
 ): CacheMissCostEstimate | undefined {
   const { actualBilling, missedTokens } = estimate;
-  if (actualBilling.cacheWrite > 0 && billing.cacheWrite === undefined) {
-    return undefined;
-  }
-  // Match total-call pricing: use duration-specific rates when both are
-  // available, otherwise fall back to the model's generic write rate.
-  const hasDetailedRates = billing.cacheWrite5m !== undefined &&
-    billing.cacheWrite1h !== undefined;
-  const write5mRate = hasDetailedRates
-    ? billing.cacheWrite5m
-    : billing.cacheWrite ?? billing.cacheWrite5m;
-  const write1hRate = hasDetailedRates
-    ? billing.cacheWrite1h
-    : billing.cacheWrite ?? billing.cacheWrite1h;
-  if (actualBilling.cacheWrite5m > 0 && write5mRate === undefined) {
-    return undefined;
-  }
-  if (actualBilling.cacheWrite1h > 0 && write1hRate === undefined) {
-    return undefined;
-  }
+  const cacheWriteCost = computeCacheWriteCost(actualBilling, billing);
+  if (cacheWriteCost === undefined) return undefined;
 
-  const nonReadTokens = actualBilling.uncachedInput +
-    actualBilling.cacheWrite + actualBilling.cacheWrite5m +
-    actualBilling.cacheWrite1h;
-  const nonReadCost = (
-    actualBilling.uncachedInput * billing.input +
-    actualBilling.cacheWrite * (billing.cacheWrite ?? 0) +
-    actualBilling.cacheWrite5m * (write5mRate ?? 0) +
-    actualBilling.cacheWrite1h * (write1hRate ?? 0)
-  ) / 1_000_000;
+  const nonReadTokens = actualBilling.uncachedInput + actualBilling.cacheWrite;
+  const nonReadCost = actualBilling.uncachedInput * billing.input / 1_000_000 +
+    cacheWriteCost;
   const actualMissedCost = nonReadTokens === 0
     ? 0
     : nonReadCost * missedTokens / nonReadTokens;
