@@ -1,6 +1,7 @@
 import { backup, DatabaseSync } from "node:sqlite";
 import { dirname, resolve } from "node:path";
 import { sqlitePath } from "../src/server/database.ts";
+import { demoContextMetadataSql } from "./demoContextMetadata.ts";
 
 const DEMO_START_AT = Date.parse("2026-01-01T00:00:00Z");
 
@@ -409,10 +410,9 @@ function redact(db: DatabaseSync) {
             )
           END,
           content_hash = NULL,
-          -- Detail hydration parses context-event metadata, so retain only a
-          -- schema-valid sentinel rather than the source event payload.
+          -- Preserve safe compaction attribution, not the source event payload.
           native_metadata_json = CASE
-            WHEN kind = 'context-event' THEN '{"type":"redacted","sourceOrder":1}'
+            WHEN kind = 'context-event' THEN ${demoContextMetadataSql}
             ELSE NULL
           END;
 
@@ -601,7 +601,7 @@ function audit(db: DatabaseSync) {
           AND content_preview NOT LIKE '[redacted %; % characters]')
         OR content_hash IS NOT NULL
         OR (kind = 'context-event'
-          AND native_metadata_json IS NOT '{"type":"redacted","sourceOrder":1}')
+          AND native_metadata_json IS NOT ${demoContextMetadataSql})
         OR (kind <> 'context-event' AND native_metadata_json IS NOT NULL)`,
     ],
     ["conversation_branches", "external_id NOT GLOB 'demo-branch-*'"],
