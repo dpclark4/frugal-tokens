@@ -23,7 +23,10 @@ const providers = {
  */
 export function modelColor(model: ModelColorIdentity) {
   const palette = providers[model.provider];
-  const rates = modelRateCard(model.model, Number.POSITIVE_INFINITY, 0);
+  // Composition retains model IDs, but not the originating Cursor provider.
+  // Prefer exact rates so real suffixes (such as codex-max) remain intact.
+  const rates = modelRateCard(model.model, Number.POSITIVE_INFINITY, 0) ??
+    modelRateCard(model.model, Number.POSITIVE_INFINITY, 0, "cursor");
   if (!rates) return `oklch(0.68 0.025 ${palette.hue})`;
 
   const price = 0.75 * rates.input + 0.25 * rates.output;

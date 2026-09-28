@@ -42,6 +42,19 @@ Deno.test("equal prices have equal shades regardless of name and age", () => {
   }
 });
 
+Deno.test("Cursor routing and quality aliases use the base model shade", () => {
+  for (const base of ["claude-sonnet-4-6", "gpt-5.1-codex-max"]) {
+    for (const suffix of ["high", "medium", "low", "max", "fast", "slow"]) {
+      if (color(`${base}-${suffix}`) !== color(base)) {
+        throw new Error(`${base}-${suffix} must use its base model's rates`);
+      }
+    }
+  }
+  if (color("gpt-99-unknown-high") !== "oklch(0.68 0.025 250)") {
+    throw new Error("Unsupported Cursor aliases must keep the fallback shade");
+  }
+});
+
 Deno.test("unknown rates use a muted provider hue", () => {
   if (color("gpt-99-unknown") !== "oklch(0.68 0.025 250)") {
     throw new Error("Unknown OpenAI models must retain a muted blue hue");
