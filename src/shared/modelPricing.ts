@@ -114,6 +114,13 @@ const standard = {
     cacheRead: 1.5,
     output: 75,
   },
+  "claude-sonnet-5-5": {
+    input: 2,
+    cacheWrite5m: 2.5,
+    cacheWrite1h: 4,
+    cacheRead: 0.2,
+    output: 10,
+  },
   "claude-sonnet-5": {
     input: 2,
     cacheWrite5m: 2.5,
@@ -236,6 +243,12 @@ const standard = {
     cacheWrite: 12.5,
     output: 50,
   },
+  "gpt-6.1-sol": {
+    input: 2,
+    cacheRead: 0.1,
+    cacheWrite: 2.5,
+    output: 10,
+  },
   "gpt-6-sol": {
     input: 2,
     cacheRead: 0.2,
@@ -291,6 +304,12 @@ const longContext = {
     cacheRead: 2,
     cacheWrite: 25,
     output: 75,
+  },
+  "gpt-6.1-sol": {
+    input: 4,
+    cacheRead: 0.2,
+    cacheWrite: 5,
+    output: 15,
   },
   "gpt-6-sol": {
     input: 4,
@@ -440,6 +459,7 @@ const OPENAI_SOL_PRICE_CUT = Date.parse("2026-08-21T21:00:00Z");
 
 export const counterfactualModelIDs = [
   "gpt-6-astra",
+  "gpt-6.1-sol",
   "gpt-6-sol",
   "gpt-6-luna",
   "gpt-5.6-sol",
@@ -473,6 +493,7 @@ export const counterfactualModelIDs = [
   "claude-opus-4-6",
   "claude-opus-4-5",
   "claude-opus-4-1",
+  "claude-sonnet-5-5",
   "claude-sonnet-5",
   "claude-sonnet-4-6",
   "claude-sonnet-4-5",
@@ -502,7 +523,8 @@ export const counterfactualModelIDs = [
 function usesLongContextRates(model: string, inputTokens: number) {
   if (
     (model.startsWith("gpt-5.") || model === "gpt-5" ||
-      model.startsWith("gpt-5-") || model.startsWith("gpt-6-")) &&
+      model.startsWith("gpt-5-") || model.startsWith("gpt-6-") ||
+      model.startsWith("gpt-6.")) &&
     inputTokens >= LONG_CONTEXT_THRESHOLD
   ) return true;
   if (model.startsWith("grok-") && inputTokens >= GROK_LONG_CONTEXT_THRESHOLD) {

@@ -1,5 +1,6 @@
-import { strictEqual } from "node:assert/strict";
+import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import type { TokenUsage } from "../shared/sessionSchemas.ts";
+import { modelRateCard } from "../shared/modelPricing.ts";
 import { computeModelCallCost, estimateModelCacheMissCost } from "./pricing.ts";
 
 const timestamp = Date.parse("2026-07-15T00:00:00Z");
@@ -104,6 +105,7 @@ Deno.test("uses long-context rates for every priced token category", () => {
 
 Deno.test("prices GPT-6 Sol and Luna at their short and long context rates", () => {
   const models = [
+    ["gpt-6.1-sol", 14.6, 24.2],
     ["gpt-6-sol", 14.7, 24.4],
     ["gpt-6-luna", 0.735, 1.22],
   ] as const;
@@ -134,6 +136,23 @@ Deno.test("prices GPT-6 Sol and Luna at their short and long context rates", () 
       ),
       longCost,
     );
+  }
+});
+
+Deno.test("switches GPT-6.1 Sol rates at the long-context boundary", () => {
+  for (const model of ["gpt-6.1-sol", "openai/gpt-6.1-sol"]) {
+    deepStrictEqual(modelRateCard(model, timestamp, 271_999), {
+      input: 2,
+      cacheRead: 0.1,
+      cacheWrite: 2.5,
+      output: 10,
+    });
+    deepStrictEqual(modelRateCard(model, timestamp, 272_000), {
+      input: 4,
+      cacheRead: 0.2,
+      cacheWrite: 5,
+      output: 15,
+    });
   }
 });
 
@@ -250,6 +269,39 @@ Deno.test("uses Sol prices effective August 21 at 5 PM Eastern", () => {
     computeModelCallCost(longTokens, "gpt-5.6-sol", effectiveAt),
     5.94,
   );
+});
+
+Deno.test("prices Claude Sonnet 5.5 at its published rates through aliases", () => {
+  for (
+    const model of [
+      "claude-sonnet-5-5",
+      "anthropic/claude-sonnet-5.5",
+      "us.anthropic.claude-sonnet-5-5-v1:0",
+    ]
+  ) {
+    deepStrictEqual(modelRateCard(model, timestamp, 1_000_000), {
+      input: 2,
+      cacheWrite5m: 2.5,
+      cacheWrite1h: 4,
+      cacheRead: 0.2,
+      output: 10,
+    });
+    closeTo(
+      computeModelCallCost(
+        tokens({
+          uncachedInput: 1_000_000,
+          cacheRead: 1_000_000,
+          cacheWrite: 2_000_000,
+          cacheWrite5m: 1_000_000,
+          cacheWrite1h: 1_000_000,
+          output: 1_000_000,
+        }),
+        model,
+        timestamp,
+      ),
+      18.7,
+    );
+  }
 });
 
 Deno.test("prices Claude Opus 5.5 at its published rates", () => {
