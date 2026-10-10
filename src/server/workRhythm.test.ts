@@ -1,3 +1,4 @@
+import { test } from "vitest";
 import { deepStrictEqual, strictEqual } from "node:assert";
 import { workRhythmDataSchema } from "../shared/sessionSchemas.ts";
 import { summarizeWorkTime } from "../shared/workTime.ts";
@@ -62,7 +63,7 @@ function root(
   };
 }
 
-Deno.test("work time groups nearby prompts into distinct continuous blocks", () => {
+test("work time groups nearby prompts into distinct continuous blocks", () => {
   const first = utc("2026-07-01T09:00:00");
   const summary = summarizeWorkTime([
     { startedAt: first, executionEndAt: first },
@@ -74,7 +75,7 @@ Deno.test("work time groups nearby prompts into distinct continuous blocks", () 
   strictEqual(summary.blocks, 2);
 });
 
-Deno.test("work rhythm unions isolated, overlapping, duplicate, and touching turn windows globally", () => {
+test("work rhythm unions isolated, overlapping, duplicate, and touching turn windows globally", () => {
   const start = utc("2026-07-01T00:00:00");
   const end = utc("2026-07-02T00:00:00");
   const result = aggregateWorkRhythm(
@@ -106,7 +107,7 @@ Deno.test("work rhythm unions isolated, overlapping, duplicate, and touching tur
   workRhythmDataSchema.parse(result);
 });
 
-Deno.test("work rhythm summarizes root-session overlap and global work blocks", () => {
+test("work rhythm summarizes root-session overlap and global work blocks", () => {
   const start = utc("2026-07-01T00:00:00");
   const end = utc("2026-07-01T23:59:59");
   const at = utc("2026-07-01T10:00:00");
@@ -145,7 +146,7 @@ Deno.test("work rhythm summarizes root-session overlap and global work blocks", 
   });
 });
 
-Deno.test("work rhythm extends activity between prompts within the timeout", () => {
+test("work rhythm extends activity between prompts within the timeout", () => {
   const start = utc("2026-07-01T00:00:00");
   const end = utc("2026-07-01T23:59:59");
   const first = utc("2026-07-01T10:00:00");
@@ -187,7 +188,7 @@ Deno.test("work rhythm extends activity between prompts within the timeout", () 
   strictEqual(longerReview.estimatedActiveMinutes, 10);
 });
 
-Deno.test("work rhythm falls back to five minutes after the gap timeout", () => {
+test("work rhythm falls back to five minutes after the gap timeout", () => {
   const start = utc("2026-07-01T00:00:00");
   const end = utc("2026-07-01T23:59:59");
   const first = utc("2026-07-01T10:00:00");
@@ -212,7 +213,7 @@ Deno.test("work rhythm falls back to five minutes after the gap timeout", () => 
   strictEqual(result.estimatedActiveMinutes, 10);
 });
 
-Deno.test("work rhythm continuity depends on prompt gaps, not execution windows", () => {
+test("work rhythm continuity depends on prompt gaps, not execution windows", () => {
   const start = utc("2026-07-01T00:00:00");
   const end = utc("2026-07-01T23:59:59");
   const first = utc("2026-07-01T10:00:00");
@@ -254,7 +255,7 @@ Deno.test("work rhythm continuity depends on prompt gaps, not execution windows"
   strictEqual(immediate.estimatedActiveMinutes, 6);
 });
 
-Deno.test("work rhythm clips boundaries and splits merged activity across midnight and hours", () => {
+test("work rhythm clips boundaries and splits merged activity across midnight and hours", () => {
   const start = utc("2026-07-01T00:00:00");
   const end = utc("2026-07-02T00:03:00");
   const result = aggregateWorkRhythm(
@@ -277,7 +278,7 @@ Deno.test("work rhythm clips boundaries and splits merged activity across midnig
   strictEqual(result.hourlyActivity[0].activeDates, 2);
 });
 
-Deno.test("work rhythm includes inactive dates and complete weekday denominators", () => {
+test("work rhythm includes inactive dates and complete weekday denominators", () => {
   const start = utc("2026-07-06T00:00:00"); // Monday
   const end = utc("2026-07-19T23:59:59"); // two complete weeks
   const result = aggregateWorkRhythm(
@@ -305,7 +306,7 @@ Deno.test("work rhythm includes inactive dates and complete weekday denominators
   );
 });
 
-Deno.test("work rhythm has deterministic zero behavior and earlier peak-hour ties", () => {
+test("work rhythm has deterministic zero behavior and earlier peak-hour ties", () => {
   const start = utc("2026-07-01T00:00:00");
   const end = utc("2026-07-01T23:59:59");
   const empty = aggregateWorkRhythm([], start, end, "UTC");
@@ -325,7 +326,7 @@ Deno.test("work rhythm has deterministic zero behavior and earlier peak-hour tie
   strictEqual(tied.peakHour, 8);
 });
 
-Deno.test("work rhythm ranks top sessions by known spend, input, then public ID", () => {
+test("work rhythm ranks top sessions by known spend, input, then public ID", () => {
   const start = utc("2026-07-01T00:00:00");
   const end = utc("2026-07-01T23:59:59");
   const at = utc("2026-07-01T10:00:00");
@@ -360,7 +361,7 @@ Deno.test("work rhythm ranks top sessions by known spend, input, then public ID"
   strictEqual(result.days["2026-07-01"].topSessions[2].hasUnpricedSpend, true);
 });
 
-Deno.test("work rhythm ranges contain 30 or 90 local dates across DST", () => {
+test("work rhythm ranges contain 30 or 90 local dates across DST", () => {
   const now = Date.parse("2026-11-10T20:00:00Z");
   for (const rangeDays of [30, 90] as const) {
     const range = workRhythmRange(rangeDays, "America/Los_Angeles", now);
@@ -374,7 +375,7 @@ Deno.test("work rhythm ranges contain 30 or 90 local dates across DST", () => {
   }
 });
 
-Deno.test("work rhythm excludes subagent turns and unions root turns across harnesses", () => {
+test("work rhythm excludes subagent turns and unions root turns across harnesses", () => {
   const start = utc("2026-07-01T00:00:00");
   const end = utc("2026-07-01T23:59:59");
   const at = utc("2026-07-01T10:00:00");

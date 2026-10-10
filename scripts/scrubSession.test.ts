@@ -1,3 +1,6 @@
+import { test } from "vitest";
+import { link, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { temporaryDirectory } from "../src/test/temporaryDirectory.ts";
 import {
   deepStrictEqual,
   ok,
@@ -67,7 +70,7 @@ const pi = jsonl([
   },
 ]);
 
-Deno.test("scrubs Pi content while preserving links, paths, usage, and time gaps", () => {
+test("scrubs Pi content while preserving links, paths, usage, and time gaps", () => {
   const result = scrubSession("pi", pi, "example");
   ok(!result.jsonl.includes(secret));
   ok(result.omittedFields > 0);
@@ -92,7 +95,7 @@ Deno.test("scrubs Pi content while preserving links, paths, usage, and time gaps
   ok(!scrubSession("pi", pi, "another").jsonl.includes('"example-id-1"'));
 });
 
-Deno.test("scrubs batched edit arguments without retaining patches", () => {
+test("scrubs batched edit arguments without retaining patches", () => {
   const source = jsonl([
     { type: "session", timestamp: "2026-07-25T12:00:00Z" },
     {
@@ -125,7 +128,7 @@ Deno.test("scrubs batched edit arguments without retaining patches", () => {
   );
 });
 
-Deno.test("scrubs Codex outputs and metadata, retaining reasoning and numeric timing", () => {
+test("scrubs Codex outputs and metadata, retaining reasoning and numeric timing", () => {
   const source = jsonl([
     {
       type: "session_meta",
@@ -210,7 +213,7 @@ Deno.test("scrubs Codex outputs and metadata, retaining reasoning and numeric ti
   strictEqual(rows[5].payload.info.last_token_usage.input_tokens, 50000);
 });
 
-Deno.test("scrubs Pi compactions while retaining boundaries and summary usage", () => {
+test("scrubs Pi compactions while retaining boundaries and summary usage", () => {
   const source = jsonl([
     { type: "session", id: "root", timestamp: "2026-07-25T12:00:00Z" },
     { type: "thinking_level_change", thinkingLevel: "max" },
@@ -265,7 +268,7 @@ Deno.test("scrubs Pi compactions while retaining boundaries and summary usage", 
   );
 });
 
-Deno.test("preserves Pi clipboard-image detection without retaining paths", () => {
+test("preserves Pi clipboard-image detection without retaining paths", () => {
   const source = jsonl([
     { type: "session", timestamp: "2026-07-25T12:00:00Z" },
     {
@@ -290,7 +293,7 @@ Deno.test("preserves Pi clipboard-image detection without retaining paths", () =
   strictEqual(content[1].text, "Example session content.");
 });
 
-Deno.test("replaces images with a fixed synthetic PNG", () => {
+test("replaces images with a fixed synthetic PNG", () => {
   const source = jsonl([
     { type: "session", timestamp: "2026-07-25T12:00:00Z" },
     {
@@ -319,7 +322,7 @@ Deno.test("replaces images with a fixed synthetic PNG", () => {
   ok(atob(images[0].data).startsWith("\x89PNG"));
 });
 
-Deno.test("clipboard-image heuristic matches attachment paths, not prose", () => {
+test("clipboard-image heuristic matches attachment paths, not prose", () => {
   ok(isClipboardImageReference("Review /tmp/shot.png please"));
   ok(isClipboardImageReference('see ("/tmp/a.jpg")'));
   ok(!isClipboardImageReference("Example session content."));
@@ -330,12 +333,12 @@ Deno.test("clipboard-image heuristic matches attachment paths, not prose", () =>
   );
 });
 
-Deno.test("synthetic image is a fixed PNG placeholder", () => {
+test("synthetic image is a fixed PNG placeholder", () => {
   strictEqual(SYNTHETIC_IMAGE_MIME_TYPE, "image/png");
   ok(atob(SYNTHETIC_IMAGE_DATA).startsWith("\x89PNG"));
 });
 
-Deno.test("rejects unsupported shapes and malformed telemetry without echoing source", () => {
+test("rejects unsupported shapes and malformed telemetry without echoing source", () => {
   for (
     const input of [
       pi.replace('"type":"session"', '"type":"unknown"'),
@@ -358,7 +361,7 @@ Deno.test("rejects unsupported shapes and malformed telemetry without echoing so
   }
 });
 
-Deno.test("malformed JSON reports only the line number, not parser diagnostics", () => {
+test("malformed JSON reports only the line number, not parser diagnostics", () => {
   for (const harness of ["pi", "codex"] as const) {
     for (
       const invalid of ["PRIVATE_MARKER", '{"secret":PRIVATE_MARKER}', "[]"]
@@ -373,36 +376,37 @@ Deno.test("malformed JSON reports only the line number, not parser diagnostics",
   }
 });
 
-Deno.test("never overwrites source or existing output, including aliases", async () => {
-  const directory = await Deno.makeTempDir();
+test("never overwrites source or existing output, including aliases", async () => {
+  const directory = temporaryDirectory();
   try {
     const input = join(directory, "input.jsonl");
     const output = join(directory, "output.jsonl");
-    await Deno.writeTextFile(input, pi);
+    await writeFile(input, pi);
     await rejects(() => scrubFile("pi", input, input, "example"));
     await scrubFile("pi", input, output, "example");
     await rejects(() => scrubFile("pi", input, output, "example"));
     const alias = join(directory, "alias.jsonl");
-    await Deno.link(input, alias);
+    await link(input, alias);
     await rejects(() => scrubFile("pi", input, alias, "example"));
-    strictEqual(await Deno.readTextFile(input), pi);
+    strictEqual(await readFile(input, "utf8"), pi);
     const invalid = join(directory, "invalid.jsonl");
-    await Deno.writeTextFile(invalid, "not JSON");
+    await writeFile(invalid, "not JSON");
     const absent = join(directory, "absent.jsonl");
     await rejects(() => scrubFile("pi", invalid, absent, "example"));
-    await rejects(() => Deno.stat(absent), Deno.errors.NotFound);
+    await rejects(() => stat(absent), { code: "ENOENT" });
   } finally {
-    await Deno.remove(directory, { recursive: true });
+    await rm(directory, { recursive: true });
   }
 });
 
 for (const harness of ["pi", "codex"] as const) {
-  Deno.test(`${harness} fixture keeps imported analytics after scrubbing`, async () => {
+  test(`${harness} fixture keeps imported analytics after scrubbing`, async () => {
     const filename = harness === "pi"
       ? "haiku-thinking2-full1.jsonl"
       : "rollout-sol-terra-thinking1.jsonl";
-    const source = await Deno.readTextFile(
+    const source = await readFile(
       new URL(`../e2e/fixtures/${harness}/${filename}`, import.meta.url),
+      "utf8",
     );
     const normalize = harness === "pi"
       ? normalizePiSession

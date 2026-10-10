@@ -1,3 +1,4 @@
+import { test } from "vitest";
 import { deepStrictEqual, strictEqual } from "node:assert";
 import { sessionDistributionResponseSchema } from "../shared/sessionSchemas.ts";
 import type { StoredSessionDistributionRollup } from "./conversationRepository.ts";
@@ -27,7 +28,7 @@ function day(
   };
 }
 
-Deno.test("aggregates compact rollups into in-range session distributions", () => {
+test("aggregates compact rollups into in-range session distributions", () => {
   const start = new Date(2026, 6, 1).getTime();
   const end = new Date(2026, 6, 2, 23, 59).getTime();
   const roots: StoredSessionDistributionRollup[] = [{
@@ -137,7 +138,7 @@ Deno.test("aggregates compact rollups into in-range session distributions", () =
   ]);
 });
 
-Deno.test("keeps the root sample when token reuse is unavailable", () => {
+test("keeps the root sample when token reuse is unavailable", () => {
   const start = new Date(2026, 6, 1).getTime();
   const result = aggregateSessionDistributions(
     [{

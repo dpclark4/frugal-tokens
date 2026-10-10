@@ -1,7 +1,8 @@
+import { test } from "vitest";
 import { strictEqual } from "node:assert/strict";
 import { computeCacheWriteCost } from "./cacheWritePricing.ts";
 
-Deno.test("cache writes use reconciled duration rates before generic rates", () => {
+test("cache writes use reconciled duration rates before generic rates", () => {
   strictEqual(
     computeCacheWriteCost(
       { cacheWrite: 100, cacheWrite5m: 25, cacheWrite1h: 75 },
@@ -11,7 +12,7 @@ Deno.test("cache writes use reconciled duration rates before generic rates", () 
   );
 });
 
-Deno.test("cache writes fall back to generic rates with or without durations", () => {
+test("cache writes fall back to generic rates with or without durations", () => {
   for (const durations of [{}, { cacheWrite5m: 25, cacheWrite1h: 75 }]) {
     strictEqual(
       computeCacheWriteCost(
@@ -23,7 +24,7 @@ Deno.test("cache writes fall back to generic rates with or without durations", (
   }
 });
 
-Deno.test("only absent duration data permits the five-minute estimate", () => {
+test("only absent duration data permits the five-minute estimate", () => {
   const rates = { cacheWrite5m: 6.25, cacheWrite1h: 10 };
   strictEqual(
     computeCacheWriteCost({ cacheWrite: 100 }, rates),
@@ -43,7 +44,7 @@ Deno.test("only absent duration data permits the five-minute estimate", () => {
   }
 });
 
-Deno.test("cache writes need a rate only for nonzero writes", () => {
+test("cache writes need a rate only for nonzero writes", () => {
   strictEqual(computeCacheWriteCost({}, {}), 0);
   strictEqual(computeCacheWriteCost({ cacheWrite: 0 }, {}), 0);
   strictEqual(computeCacheWriteCost({ cacheWrite: 100 }, {}), undefined);

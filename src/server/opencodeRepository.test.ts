@@ -1,9 +1,12 @@
+import { test } from "vitest";
+import { rmSync } from "node:fs";
+import { temporaryDirectory } from "../test/temporaryDirectory.ts";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { OpenCodeRepository } from "./opencodeRepository.ts";
 
-Deno.test("removes empty turns without dropping reported cost", () => {
-  const path = Deno.makeTempFileSync({ suffix: ".db" });
+test("removes empty turns without dropping reported cost", () => {
+  const path = `${temporaryDirectory()}/archive.db`;
   const database = new DatabaseSync(path);
   database.exec(`
     CREATE TABLE session (
@@ -125,12 +128,12 @@ Deno.test("removes empty turns without dropping reported cost", () => {
     deepStrictEqual(repository.listUsageCalls(4), detailCalls);
   } finally {
     repository.close();
-    Deno.removeSync(path);
+    rmSync(path);
   }
 });
 
-Deno.test("excludes OpenCode synthetic tool traces from message content", () => {
-  const path = Deno.makeTempFileSync({ suffix: ".db" });
+test("excludes OpenCode synthetic tool traces from message content", () => {
+  const path = `${temporaryDirectory()}/archive.db`;
   const database = new DatabaseSync(path);
   database.exec(`
     CREATE TABLE session (
@@ -211,6 +214,6 @@ Deno.test("excludes OpenCode synthetic tool traces from message content", () => 
     }]);
   } finally {
     repository.close();
-    Deno.removeSync(path);
+    rmSync(path);
   }
 });

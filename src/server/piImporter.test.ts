@@ -1,3 +1,6 @@
+import { test } from "vitest";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { temporaryDirectory } from "../test/temporaryDirectory.ts";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { openArchiveDatabase } from "./database.ts";
 import { syncPiSessions } from "./piImporter.ts";
@@ -18,11 +21,11 @@ function transcript(prompt: string) {
 `.trim();
 }
 
-Deno.test("imports PI sessions directly from the configured directory", async () => {
-  const directory = Deno.makeTempDirSync();
+test("imports PI sessions directly from the configured directory", async () => {
+  const directory = temporaryDirectory();
   const sessions = `${directory}/sessions`;
-  Deno.mkdirSync(sessions);
-  Deno.writeTextFileSync(
+  mkdirSync(sessions);
+  writeFileSync(
     `${sessions}/root-session.jsonl`,
     transcript("Root session"),
   );
@@ -56,15 +59,15 @@ Deno.test("imports PI sessions directly from the configured directory", async ()
     );
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
-Deno.test("imports PI thinking levels for turns and model calls", async () => {
-  const directory = Deno.makeTempDirSync();
+test("imports PI thinking levels for turns and model calls", async () => {
+  const directory = temporaryDirectory();
   const sessions = `${directory}/sessions`;
-  Deno.mkdirSync(sessions);
-  Deno.writeTextFileSync(
+  mkdirSync(sessions);
+  writeFileSync(
     `${sessions}/thinking.jsonl`,
     `
 {"type":"session","version":3,"id":"thinking","timestamp":"2026-07-11T13:36:32.000Z","cwd":"/Users/test/project"}
@@ -131,15 +134,15 @@ Deno.test("imports PI thinking levels for turns and model calls", async () => {
     );
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
-Deno.test("applies a mid-call PI thinking change to the next model call", async () => {
-  const directory = Deno.makeTempDirSync();
+test("applies a mid-call PI thinking change to the next model call", async () => {
+  const directory = temporaryDirectory();
   const sessions = `${directory}/sessions`;
-  Deno.mkdirSync(sessions);
-  Deno.writeTextFileSync(
+  mkdirSync(sessions);
+  writeFileSync(
     `${sessions}/mid-call.jsonl`,
     `
 {"type":"session","version":3,"id":"mid-call","timestamp":"2026-07-11T13:36:32.000Z","cwd":"/Users/test/project"}
@@ -170,17 +173,17 @@ Deno.test("applies a mid-call PI thinking change to the next model call", async 
     );
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
-Deno.test("incrementally imports PI sessions and preserves the last good archive", async () => {
-  const directory = Deno.makeTempDirSync();
+test("incrementally imports PI sessions and preserves the last good archive", async () => {
+  const directory = temporaryDirectory();
   const sessions = `${directory}/sessions`;
   const project = `${sessions}/project`;
   const transcriptPath = `${project}/session.jsonl`;
-  Deno.mkdirSync(project, { recursive: true });
-  Deno.writeTextFileSync(transcriptPath, transcript("Initial prompt"));
+  mkdirSync(project, { recursive: true });
+  writeFileSync(transcriptPath, transcript("Initial prompt"));
 
   const db = openArchiveDatabase(`${directory}/archive.sqlite`);
   migrateTestDatabase(db);
@@ -245,7 +248,7 @@ Deno.test("incrementally imports PI sessions and preserves the last good archive
     const unchanged = await syncPiSessions(sessions, repository, conversations);
     strictEqual(unchanged.skipped, 1);
 
-    Deno.writeTextFileSync(
+    writeFileSync(
       transcriptPath,
       `${transcript("Broken replacement")}\n{`,
     );
@@ -256,7 +259,7 @@ Deno.test("incrementally imports PI sessions and preserves the last good archive
       "Initial prompt",
     );
 
-    Deno.removeSync(transcriptPath);
+    rmSync(transcriptPath);
     await syncPiSessions(sessions, repository, conversations);
     strictEqual(
       new SessionBrowserRepository(db).listSessions(1, 10, "pi").pagination
@@ -271,6 +274,6 @@ Deno.test("incrementally imports PI sessions and preserves the last good archive
     );
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });

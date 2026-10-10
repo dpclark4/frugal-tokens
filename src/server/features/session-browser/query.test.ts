@@ -1,7 +1,8 @@
+import { test } from "vitest";
 import { deepStrictEqual, match, strictEqual } from "node:assert/strict";
 import { parseSessionBrowserQuery } from "./query.ts";
 
-Deno.test("session browser query preserves default pagination and filters", () => {
+test("session browser query preserves default pagination and filters", () => {
   deepStrictEqual(parseSessionBrowserQuery({}), {
     value: {
       page: 1,
@@ -15,7 +16,7 @@ Deno.test("session browser query preserves default pagination and filters", () =
   });
 });
 
-Deno.test("session browser query preserves pagination coercion and bounds", () => {
+test("session browser query preserves pagination coercion and bounds", () => {
   for (
     const [page, pageSize, expectedPage, expectedPageSize] of [
       ["-2", "500", 1, 100],
@@ -31,7 +32,7 @@ Deno.test("session browser query preserves pagination coercion and bounds", () =
   }
 });
 
-Deno.test("session browser query preserves sort defaults and explicit direction", () => {
+test("session browser query preserves sort defaults and explicit direction", () => {
   for (
     const key of [
       "timestamp",
@@ -58,7 +59,7 @@ Deno.test("session browser query preserves sort defaults and explicit direction"
   );
 });
 
-Deno.test("session browser query parses harness and cache miss selections", () => {
+test("session browser query parses harness and cache miss selections", () => {
   const result = parseSessionBrowserQuery({
     harness: "pi",
     misses: "model-change",
@@ -77,7 +78,7 @@ Deno.test("session browser query parses harness and cache miss selections", () =
   );
 });
 
-Deno.test("session browser query parses and validates model selections", () => {
+test("session browser query parses and validates model selections", () => {
   deepStrictEqual(
     parseSessionBrowserQuery({}, ["a/b", "c", "a/b"]).value?.models,
     ["a/b", "c"],
@@ -96,7 +97,7 @@ Deno.test("session browser query parses and validates model selections", () => {
   }
 });
 
-Deno.test("session browser query validates and normalizes directory selections", () => {
+test("session browser query validates and normalizes directory selections", () => {
   deepStrictEqual(
     parseSessionBrowserQuery({}, [], [
       "/workspace/a",
@@ -115,7 +116,7 @@ Deno.test("session browser query validates and normalizes directory selections",
   }
 });
 
-Deno.test("session browser query rejects invalid filters and sorting", () => {
+test("session browser query rejects invalid filters and sorting", () => {
   for (const field of ["harness", "misses", "sortBy", "sortDirection"]) {
     const result = parseSessionBrowserQuery({ [field]: "invalid" });
     match(result.error ?? "", /^Invalid /);

@@ -1,19 +1,22 @@
+import { test } from "vitest";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { temporaryDirectory } from "../test/temporaryDirectory.ts";
 import { deepStrictEqual } from "node:assert/strict";
 import { ClaudeCodeRepository } from "./claudeCodeRepository.ts";
 import type { SessionDetail } from "../shared/sessionSchemas.ts";
 
 function repository(files: Record<string, string>) {
-  const directory = Deno.makeTempDirSync();
+  const directory = temporaryDirectory();
   for (const [relativePath, content] of Object.entries(files)) {
     const path = `${directory}/${relativePath}`;
     const parent = path.slice(0, path.lastIndexOf("/"));
-    Deno.mkdirSync(parent, { recursive: true });
-    Deno.writeTextFileSync(path, content.trim());
+    mkdirSync(parent, { recursive: true });
+    writeFileSync(path, content.trim());
   }
   return new ClaudeCodeRepository(directory);
 }
 
-Deno.test("normalizes model changes without creating command turns", () => {
+test("normalizes model changes without creating command turns", () => {
   const actual = repository({
     "model-switch.jsonl": `
 {"type":"user","uuid":"user-sonnet","timestamp":"2026-06-25T19:51:53.000Z","promptSource":"typed","origin":{"kind":"human"},"message":{"role":"user","content":"Start with Sonnet"}}
@@ -130,7 +133,7 @@ Deno.test("normalizes model changes without creating command turns", () => {
   deepStrictEqual(actual, expected);
 });
 
-Deno.test("orders models by their most recent call", () => {
+test("orders models by their most recent call", () => {
   const actual = repository({
     "model-return.jsonl": `
 {"type":"user","uuid":"user-1","timestamp":"2026-06-25T19:51:53.000Z","promptSource":"typed","origin":{"kind":"human"},"message":{"role":"user","content":"First"}}
@@ -145,7 +148,7 @@ Deno.test("orders models by their most recent call", () => {
   deepStrictEqual(actual?.models, ["model-b", "model-a"]);
 });
 
-Deno.test("normalizes an SDK prompt and deduplicates streamed usage", () => {
+test("normalizes an SDK prompt and deduplicates streamed usage", () => {
   const actual = repository({
     "sdk-session.jsonl": `
 {"type":"user","uuid":"sdk-user","timestamp":"2026-06-25T20:00:00.000Z","promptSource":"sdk","message":{"role":"user","content":"hi"}}
@@ -219,7 +222,7 @@ Deno.test("normalizes an SDK prompt and deduplicates streamed usage", () => {
   deepStrictEqual(actual, expected);
 });
 
-Deno.test("normalizes a linked subagent without folding child usage into parent", () => {
+test("normalizes a linked subagent without folding child usage into parent", () => {
   const actual = repository({
     "parent.jsonl": `
 {"type":"user","uuid":"parent-user","timestamp":"2026-06-25T21:00:00.000Z","promptSource":"typed","origin":{"kind":"human"},"message":{"role":"user","content":"Delegate this task"}}
@@ -395,7 +398,7 @@ Deno.test("normalizes a linked subagent without folding child usage into parent"
   deepStrictEqual(actual, expected);
 });
 
-Deno.test("prefers a user custom title over the generated ai-title", () => {
+test("prefers a user custom title over the generated ai-title", () => {
   const actual = repository({
     "custom.jsonl": `
 {"type":"user","uuid":"user","timestamp":"2026-07-05T00:00:00Z","promptSource":"typed","origin":{"kind":"human"},"message":{"role":"user","content":"fix it now"}}
@@ -414,7 +417,7 @@ Deno.test("prefers a user custom title over the generated ai-title", () => {
   deepStrictEqual(actual.getSession("generated")?.title, "Fix the leak");
 });
 
-Deno.test("lists sessions from every Claude Code project directory", () => {
+test("lists sessions from every Claude Code project directory", () => {
   const transcript = (prompt: string, timestamp: string) => `
 {"type":"user","uuid":"user","timestamp":"${timestamp}","promptSource":"typed","origin":{"kind":"human"},"message":{"role":"user","content":"${prompt}"}}
 {"type":"assistant","uuid":"assistant","timestamp":"${timestamp}","message":{"id":"call","role":"assistant","model":"claude-sonnet-4-5","stop_reason":"end_turn","content":[{"type":"text","text":"Done"}],"usage":{"input_tokens":1,"cache_read_input_tokens":0,"cache_creation_input_tokens":0,"output_tokens":1}}}

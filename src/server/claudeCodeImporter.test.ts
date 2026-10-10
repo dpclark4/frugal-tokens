@@ -1,3 +1,12 @@
+import { test } from "vitest";
+import {
+  mkdirSync,
+  renameSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
+import { temporaryDirectory } from "../test/temporaryDirectory.ts";
 import { deepStrictEqual, ok, strictEqual } from "node:assert/strict";
 import { syncClaudeCodeSessions } from "./claudeCodeImporter.ts";
 import { openArchiveDatabase } from "./database.ts";
@@ -7,12 +16,12 @@ import { ConversationRepository } from "./conversationRepository.ts";
 import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
 
 function write(path: string, content: string) {
-  Deno.mkdirSync(path.slice(0, path.lastIndexOf("/")), { recursive: true });
-  Deno.writeTextFileSync(path, content.trim());
+  mkdirSync(path.slice(0, path.lastIndexOf("/")), { recursive: true });
+  writeFileSync(path, content.trim());
 }
 
-Deno.test("isolates conflicting Claude session identities from unrelated imports", async () => {
-  const directory = Deno.makeTempDirSync();
+test("isolates conflicting Claude session identities from unrelated imports", async () => {
+  const directory = temporaryDirectory();
   const sessions = `${directory}/projects`;
   const sharedID = "00000000-0000-4000-8000-000000000091";
   const independentID = "00000000-0000-4000-8000-000000000092";
@@ -88,7 +97,7 @@ Deno.test("isolates conflicting Claude session identities from unrelated imports
       },
       "Unchanged retry must retain quarantine and skip the healthy session",
     );
-    Deno.removeSync(`${sessions}/project-b/${sharedID}.jsonl`);
+    rmSync(`${sessions}/project-b/${sharedID}.jsonl`);
     deepStrictEqual(
       await syncClaudeCodeSessions(sessions, repository, conversations),
       {
@@ -102,8 +111,8 @@ Deno.test("isolates conflicting Claude session identities from unrelated imports
 
     // Move the actual archive file after import. Its missing owner still holds
     // the identity; preserve its old conversation and continue unrelated work.
-    Deno.mkdirSync(`${sessions}/project-d`);
-    Deno.renameSync(
+    mkdirSync(`${sessions}/project-d`);
+    renameSync(
       `${sessions}/project-a/${sharedID}.jsonl`,
       `${sessions}/project-d/${sharedID}.jsonl`,
     );
@@ -136,12 +145,12 @@ Deno.test("isolates conflicting Claude session identities from unrelated imports
     ok(error?.includes('"availability":"missing"'));
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
-Deno.test("accumulates quarantine across independent Claude identity conflicts", async () => {
-  const directory = Deno.makeTempDirSync();
+test("accumulates quarantine across independent Claude identity conflicts", async () => {
+  const directory = temporaryDirectory();
   const sessions = `${directory}/projects`;
   const artifacts = [
     { path: "a/first.jsonl", identity: "first" },
@@ -215,12 +224,12 @@ Deno.test("accumulates quarantine across independent Claude identity conflicts",
     ok(new ConversationRepository(db).getSession("claude-code", "e/healthy"));
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
-Deno.test("records both Claude artifact paths when session identity insertion conflicts", async () => {
-  const directory = Deno.makeTempDirSync();
+test("records both Claude artifact paths when session identity insertion conflicts", async () => {
+  const directory = temporaryDirectory();
   const sessions = `${directory}/projects`;
   const identity = "00000000-0000-4000-8000-000000000093";
   const paths = [
@@ -298,12 +307,12 @@ Deno.test("records both Claude artifact paths when session identity insertion co
     );
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
-Deno.test("imports a Claude Code root and namespaced child tree", async () => {
-  const directory = Deno.makeTempDirSync();
+test("imports a Claude Code root and namespaced child tree", async () => {
+  const directory = temporaryDirectory();
   const sessions = `${directory}/projects`;
   const project = `${sessions}/project`;
   const longPrompt = "p".repeat(2_600);
@@ -467,12 +476,12 @@ Deno.test("imports a Claude Code root and namespaced child tree", async () => {
     );
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
-Deno.test("imports replayed Claude compaction checkpoints", async () => {
-  const directory = Deno.makeTempDirSync();
+test("imports replayed Claude compaction checkpoints", async () => {
+  const directory = temporaryDirectory();
   const sessions = `${directory}/projects`;
   const project = `${sessions}/project`;
   write(
@@ -534,12 +543,12 @@ Deno.test("imports replayed Claude compaction checkpoints", async () => {
     );
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
-Deno.test("projects Claude fork artifacts as one canonical conversation family", async () => {
-  const directory = Deno.makeTempDirSync();
+test("projects Claude fork artifacts as one canonical conversation family", async () => {
+  const directory = temporaryDirectory();
   const sessions = `${directory}/projects`;
   const project = `${sessions}/project`;
   const parent = "00000000-0000-4000-8000-000000000001";
@@ -646,12 +655,12 @@ ${
     );
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
-Deno.test("extends a copied Claude turn continued by a descendant", async () => {
-  const directory = Deno.makeTempDirSync();
+test("extends a copied Claude turn continued by a descendant", async () => {
+  const directory = temporaryDirectory();
   const sessions = `${directory}/projects`;
   const project = `${sessions}/project`;
   const parent = "00000000-0000-4000-8000-000000000011";
@@ -765,12 +774,12 @@ ${sharedCall.replace(`"sessionId":"${parent}"`, `"sessionId":"${child}"`)}
     );
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
-Deno.test("rejects extra content on a copied Claude call", async () => {
-  const directory = Deno.makeTempDirSync();
+test("rejects extra content on a copied Claude call", async () => {
+  const directory = temporaryDirectory();
   const sessions = `${directory}/projects`;
   const project = `${sessions}/project`;
   const parent = "00000000-0000-4000-8000-000000000015";
@@ -811,12 +820,12 @@ ${sharedCall.replace(`"sessionId":"${parent}"`, `"sessionId":"${child}"`)}
     strictEqual(result.failed, 2);
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
-Deno.test("rejects a copied Claude call whose content changed under the same IDs", async () => {
-  const directory = Deno.makeTempDirSync();
+test("rejects a copied Claude call whose content changed under the same IDs", async () => {
+  const directory = temporaryDirectory();
   const sessions = `${directory}/projects`;
   const project = `${sessions}/project`;
   const parent = "00000000-0000-4000-8000-000000000013";
@@ -860,12 +869,12 @@ ${
     strictEqual(result.failed, 2);
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
-Deno.test("Claude lineage changes rebuild both the prior and new families", async () => {
-  const directory = Deno.makeTempDirSync();
+test("Claude lineage changes rebuild both the prior and new families", async () => {
+  const directory = temporaryDirectory();
   const sessions = `${directory}/projects`;
   const project = `${sessions}/project`;
   const metadata = (id: string, origin: string) =>
@@ -910,7 +919,7 @@ Deno.test("Claude lineage changes rebuild both the prior and new families", asyn
 
     write(childPath, child("root-b"));
     const changedAt = new Date(Date.now() + 2_000);
-    Deno.utimeSync(childPath, changedAt, changedAt);
+    utimesSync(childPath, changedAt, changedAt);
     const moved = await syncClaudeCodeSessions(
       sessions,
       repository,
@@ -933,12 +942,12 @@ Deno.test("Claude lineage changes rebuild both the prior and new families", asyn
     );
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
-Deno.test("skips unchanged Claude trees and reimports index and agent metadata changes", async () => {
-  const directory = Deno.makeTempDirSync();
+test("skips unchanged Claude trees and reimports index and agent metadata changes", async () => {
+  const directory = temporaryDirectory();
   const sessions = `${directory}/projects`;
   const project = `${sessions}/project`;
   write(
@@ -1006,6 +1015,6 @@ Deno.test("skips unchanged Claude trees and reimports index and agent metadata c
     );
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });

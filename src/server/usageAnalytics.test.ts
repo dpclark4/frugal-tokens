@@ -1,3 +1,4 @@
+import { test } from "vitest";
 import { deepStrictEqual } from "node:assert/strict";
 import { aggregateUsage, aggregateUsageRollups } from "./usageAnalytics.ts";
 import type { UsageCall } from "./usage.ts";
@@ -28,7 +29,7 @@ function usageCall(
   };
 }
 
-Deno.test("aggregates daily and weekly session input percentiles", () => {
+test("aggregates daily and weekly session input percentiles", () => {
   const firstDay = new Date(2026, 6, 10).getTime();
   const secondDay = new Date(2026, 6, 11).getTime();
   const calls = [
@@ -68,7 +69,7 @@ Deno.test("aggregates daily and weekly session input percentiles", () => {
   ]);
 });
 
-Deno.test("aggregates initial input by day and harness", () => {
+test("aggregates initial input by day and harness", () => {
   const firstDay = new Date(2026, 6, 10).getTime();
   const secondDay = new Date(2026, 6, 11).getTime();
   const response = aggregateUsage([], undefined, "full", [
@@ -108,7 +109,7 @@ Deno.test("aggregates initial input by day and harness", () => {
   ]);
 });
 
-Deno.test("aggregates subagent adoption, calls, and cost share", () => {
+test("aggregates subagent adoption, calls, and cost share", () => {
   const startedAt = new Date(2026, 6, 10).getTime();
   const sessionStartedAt = new Date(2026, 6, 1).getTime();
   const rootCall = usageCall("with-child", startedAt, 100);
@@ -155,7 +156,7 @@ Deno.test("aggregates subagent adoption, calls, and cost share", () => {
   }]);
 });
 
-Deno.test("aggregates compact usage rollups and sparse subagent activity", () => {
+test("aggregates compact usage rollups and sparse subagent activity", () => {
   const firstDay = new Date(2026, 6, 10, 9).getTime();
   const secondDay = new Date(2026, 6, 11, 9).getTime();
   const sessionStartedAt = new Date(2026, 6, 1).getTime();
@@ -271,7 +272,7 @@ Deno.test("aggregates compact usage rollups and sparse subagent activity", () =>
   }]);
 });
 
-Deno.test("falls back to reported cost when a computed price is unavailable", () => {
+test("falls back to reported cost when a computed price is unavailable", () => {
   const startedAt = new Date(2026, 6, 10).getTime();
   const priced = usageCall("priced", startedAt, 100);
   priced.computedCost = 2;

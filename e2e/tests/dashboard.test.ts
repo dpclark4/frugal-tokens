@@ -1,3 +1,5 @@
+import { assertSnapshot } from "../support/snapshot.ts";
+import { afterAll, beforeAll, describe, test } from "vitest";
 import { deepStrictEqual, ok } from "node:assert/strict";
 import {
   activityOverviewResponseSchema,
@@ -11,8 +13,12 @@ import {
 import { getJson } from "../support/http.ts";
 import { startServer } from "../support/server.ts";
 
-Deno.test("dashboard endpoints aggregate imported sessions", async (t) => {
-  await using server = await startServer();
+describe("dashboard endpoints aggregate imported sessions", () => {
+  let server: Awaited<ReturnType<typeof startServer>>;
+  beforeAll(async () => {
+    server = await startServer();
+  });
+  afterAll(async () => await server?.[Symbol.asyncDispose]());
   const cases = [
     ["harnesses", "/api/harnesses", harnessesResponseSchema],
     ["usage", "/api/usage?range=30", usageResponseSchema],
@@ -50,20 +56,24 @@ Deno.test("dashboard endpoints aggregate imported sessions", async (t) => {
     ],
   ] as const;
   for (const [name, path, schema] of cases) {
-    await t.step(name, async (t) => {
+    test(name, async (t) => {
       const body = await getJson(server.url, path);
       schema.parse(body);
       if (name === "harnesses") {
         deepStrictEqual(body.harnesses, ["pi", "codex"]);
       }
       if (name === "session shape") ok(body.sampleSize > 0);
-      await t.assertSnapshot(body, { path: "../snapshots/dashboard.snap" });
+      await assertSnapshot(t, body, "dashboard.snap");
     });
   }
 });
 
-Deno.test("dashboard endpoints reject invalid filters", async (t) => {
-  await using server = await startServer();
+describe("dashboard endpoints reject invalid filters", () => {
+  let server: Awaited<ReturnType<typeof startServer>>;
+  beforeAll(async () => {
+    server = await startServer();
+  });
+  afterAll(async () => await server?.[Symbol.asyncDispose]());
   const paths = [
     ...[
       "usage",
@@ -86,11 +96,9 @@ Deno.test("dashboard endpoints reject invalid filters", async (t) => {
     "/api/performance?anthropic=invalid",
   ];
   for (const path of paths) {
-    await t.step(path, async (t) => {
+    test(path, async (t) => {
       const body = await getJson(server.url, path, 400);
-      await t.assertSnapshot(body, {
-        path: "../snapshots/dashboard-errors.snap",
-      });
+      await assertSnapshot(t, body, "dashboard-errors.snap");
     });
   }
 });

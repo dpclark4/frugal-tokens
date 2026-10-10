@@ -2,7 +2,8 @@
 
 ## Agreed scope
 
-- Node 26 for development and production; retain straightforward Node 24 compatibility.
+- Node 26 only for development and production; Node 24 was explicitly dropped
+  after its missing native `Temporal` support was confirmed.
 - pnpm 12.10.1, pinned in `package.json`, with a tracked lockfile.
 - TypeScript 7.0.2 for checking, tsx for execution, Vitest for tests.
 - Retain Vite, React, Hono, Oxlint, anti-slop rules, and `node:sqlite`.
@@ -49,16 +50,26 @@ scope or dropping compatibility.
   11 existing HTTP tests with 66 nested steps passed; no expectations changed.
 - Dependency declaration checking is skipped for existing Recharts declaration
   errors; application checking remains strict and includes Vite asset types.
-- Node 24 execution and CI/deployment integration remain for checkpoint 4.
+- CI/deployment integration remains for checkpoint 4; Node 24 was subsequently
+  evaluated and excluded by agreement at checkpoint 3.
 
-### 3. Tests — pending
+### 3. Tests — complete
 
-- Move existing unit and HTTP tests to Vitest without changing expected behavior.
-- Preserve snapshot contents and nested-case coverage.
-- Handle temporary storage, fixed time, subprocess termination, and cleanup.
-- Retain an automated startup regression check using only `.env`, not inherited
-  database variables, so missing environment propagation cannot be masked.
-- Run unit and HTTP suites separately before committing.
+- Migrated all existing unit and HTTP tests to Vitest 5.0.3, retaining
+  `node:assert` assertions and all fixture and snapshot files unchanged.
+- Converted 66 nested HTTP steps into collected Vitest cases with suite-level
+  server setup and teardown; the original coverage is now 71 HTTP cases.
+- Added temporary-directory cleanup and bounded subprocess shutdown; retained
+  the fixed clock, UTC timezone, isolated databases, and disabled external actions.
+- Added two startup regression tests using only `.env` and three snapshot
+  comparison tests; all 284 unit tests and 73 HTTP cases passed on Node 26.
+- Preserved `--update-snapshots`; verified explicit updates and subsequent
+  comparison in a disposable copy without touching repository snapshots.
+- TypeScript checking now includes tests, test support, and Vitest configuration.
+- Node 24.17.0 passed 251 unit tests and failed 33 because global `Temporal` is
+  absent; its HTTP suite was not run after this failure.
+- Decision: require Node 26, as explicitly approved, rather than add a Temporal
+  polyfill or rewrite date logic; package engines and Node types reflect Node 26.
 
 ### 4. Remaining tooling and integration — pending
 
@@ -67,7 +78,7 @@ scope or dropping compatibility.
   deployment command construction without publishing or changing hosted resources.
 - Preserve Railway health checks, mounted database paths, migration-before-start,
   Cloudflare Pages deployment, and versioned demo database publishing.
-- Verify tests, build, checks, and command behavior on Node 26 and Node 24.
+- Verify tests, build, checks, and command behavior on Node 26.
 - Leave Deno only in the formatting workflow.
 
 ## Risks to track
@@ -76,6 +87,8 @@ scope or dropping compatibility.
   `db:rollback` removes its history entry without restoring deleted legacy
   tables, so reapplying it fails; restoring the matching database/application
   backup is required, and this migration history is unchanged.
+- Node 24 does not enable `Temporal` by default; its V8 flag is experimental,
+  and Node 24 is no longer a supported runtime.
 - Node lacks Deno's `--allow-*` permission sandbox; isolate test subprocess
   environments and keep external actions disabled in tests.
 - Filesystem entry methods, errors, exclusive writes, and timestamps differ.

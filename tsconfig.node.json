@@ -28,5 +28,14 @@
     "scripts/dev.ts",
     "scripts/runDbmate.ts",
     "scripts/prepareDatabase.ts"
+  ],
+  "include": [
+    "src/**/*.test.ts",
+    "src/test/**/*.ts",
+    "scripts/**/*.test.ts",
+    "scripts/runHttpTests.ts",
+    "tools/**/*.test.ts",
+    "e2e/**/*.ts",
+    "vitest.config.ts"
   ]
 }

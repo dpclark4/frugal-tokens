@@ -1,3 +1,5 @@
+import { test } from "vitest";
+import { readdirSync, readFileSync } from "node:fs";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import {
   discoverCodexSessions,
@@ -34,11 +36,11 @@ function fixturePath(name: string) {
 }
 
 function artifacts(name: string): FixtureArtifact[] {
-  return [...Deno.readDirSync(fixturePath(name))]
-    .filter((entry) => entry.isFile && entry.name.endsWith(".jsonl"))
+  return [...readdirSync(fixturePath(name), { withFileTypes: true })]
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
     .map((entry) => {
       // SAFETY: These checked-in JSONL fixtures follow the FixtureRecord event contract.
-      const records = Deno.readTextFileSync(`${fixturePath(name)}${entry.name}`)
+      const records = readFileSync(`${fixturePath(name)}${entry.name}`, "utf8")
         .trim().split("\n").map((line) => JSON.parse(line) as FixtureRecord);
       const metadata = records.find((record) => record.type === "session_meta")
         ?.payload;
@@ -84,7 +86,7 @@ function turnEvidence(artifact: FixtureArtifact, turnID: string) {
   };
 }
 
-Deno.test("sanitized Codex sibling forks encode the branching contract", () => {
+test("sanitized Codex sibling forks encode the branching contract", () => {
   const fixture = artifacts("sibling-forks");
   strictEqual(fixture.length, 3);
   strictEqual(fixture.filter((artifact) => !artifact.parentID).length, 1);
@@ -126,12 +128,12 @@ Deno.test("sanitized Codex sibling forks encode the branching contract", () => {
   );
 });
 
-Deno.test("Codex artifacts normalize independently before family materialization", () => {
+test("Codex artifacts normalize independently before family materialization", () => {
   const candidates = discoverCodexSessions(fixturePath("sibling-forks"));
   const sessions = candidates.map((candidate) =>
     normalizeCodexSession(
       candidate,
-      Deno.readTextFileSync(candidate.path),
+      readFileSync(candidate.path, "utf8"),
     ).summary
   );
   strictEqual(sessions.length, 3);
@@ -145,7 +147,7 @@ Deno.test("Codex artifacts normalize independently before family materialization
   );
 });
 
-Deno.test("sanitized Codex nested forks preserve recursive ancestry", () => {
+test("sanitized Codex nested forks preserve recursive ancestry", () => {
   const fixture = artifacts("nested-fork");
   strictEqual(fixture.length, 3);
   const byID = new Map(fixture.map((artifact) => [artifact.id, artifact]));

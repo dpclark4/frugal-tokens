@@ -1,3 +1,4 @@
+import { test } from "vitest";
 import { deepStrictEqual, strictEqual } from "node:assert";
 import {
   activityOverviewResponseSchema,
@@ -35,7 +36,7 @@ function day(
   };
 }
 
-Deno.test("activity overview returns period totals and daily drill-down data", () => {
+test("activity overview returns period totals and daily drill-down data", () => {
   const first = new Date(2026, 6, 1, 12).getTime();
   const second = new Date(2026, 6, 2, 12).getTime();
   const outside = new Date(2026, 5, 30, 12).getTime();
@@ -161,7 +162,7 @@ Deno.test("activity overview returns period totals and daily drill-down data", (
   ]);
 });
 
-Deno.test("spend composition selects the union of top spend and token models", () => {
+test("spend composition selects the union of top spend and token models", () => {
   const at = new Date(2026, 6, 1, 12).getTime();
   const values = [
     ["claude-fable-5", 10, 1],

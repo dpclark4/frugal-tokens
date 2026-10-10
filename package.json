@@ -4,15 +4,15 @@
   "type": "module",
   "packageManager": "pnpm@12.10.1",
   "engines": {
-    "node": "^24.0.0 || ^26.0.0"
+    "node": "^26.0.0"
   },
   "scripts": {
     "setup": "deno task setup",
     "check": "tsc --project tsconfig.node.json --noEmit",
     "lint:oxlint": "oxlint .",
     "lint:oxlint:gate": "oxlint --config .oxlintrc.prek.json --quiet .",
-    "test": "deno task test",
-    "test:e2e": "deno task test:e2e",
+    "test": "vitest run --project unit",
+    "test:e2e": "node --import tsx scripts/runHttpTests.ts",
     "db:new": "node --import tsx scripts/runDbmate.ts new",
     "db:migrate": "node --import tsx scripts/prepareDatabase.ts && node --import tsx scripts/runDbmate.ts --no-dump-schema up",
     "db:rollback": "node --import tsx scripts/runDbmate.ts down",
@@ -44,7 +44,7 @@
   },
   "devDependencies": {
     "@oxlint/plugins": "1.79.0",
-    "@types/node": "24.19.2",
+    "@types/node": "26.6.5",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "6.0.3",
@@ -52,6 +52,7 @@
     "oxlint": "1.79.0",
     "typescript": "7.0.2",
     "vite": "8.1.4",
+    "vitest": "5.0.3",
     "wrangler": "4.112.0"
   }
 }

@@ -1,12 +1,14 @@
 # HTTP tests and fixtures
 
 ```sh
-deno task test:e2e
-deno task test:e2e --update-snapshots  # Review snapshot changes.
+pnpm test:e2e
+pnpm test:e2e --update-snapshots  # Review snapshot changes.
 ```
 
-`tests/` calls the real HTTP server; `snapshots/` holds response snapshots using
-Deno 2.9+'s built-in `t.assertSnapshot()` (no snapshot library).
+Vitest runs `tests/` against the real Node HTTP server. `snapshots/` retains the
+existing snapshot files; `support/snapshot.ts` compares their JSON values with
+`node:assert/strict` without rewriting expectations. Explicit updates change
+only differing or missing entries; normal runs fail on missing snapshots.
 `support/server.ts` reads `fixtures/{pi,codex}/` into fresh, migrated temporary
 SQLite storage. It waits for import and cleans up afterward. Personal session
 configuration, title generation, and periodic sync are disabled.
@@ -30,9 +32,12 @@ intentionally update snapshots.
   inputs.
 - Dashboard validation: invalid harnesses, ranges, timezones, and model/expand
   parameters; activity also covers a Pi-only 90-day non-UTC view and empty data.
+- Startup: production and watched API commands load database configuration
+  from an isolated `.env`, run migrations, and shut down their subprocesses.
 
 These are HTTP integration tests, not browser rendering/navigation tests. GitHub
-Actions runs `deno task test:e2e` in CI's separate **Run HTTP e2e tests** step.
+Actions' **Run HTTP e2e tests** step remains separate from unit tests; the
+transitional `deno task test:e2e` forwards to `pnpm test:e2e`.
 Snapshot updates generate expected responses; review them before accepting
 behavior changes. Normal test runs compare responses without rewriting
 snapshots.
@@ -45,7 +50,7 @@ snapshots.
 2. Scrub to a new file outside the repository:
 
    ```sh
-   deno run --allow-read --allow-write scripts/scrubSession.ts \
+   node --import tsx scripts/scrubSession.ts \
      --harness pi --input /path/to/original.jsonl \
      --output /tmp/new-scenario.jsonl --name new-scenario
    ```
@@ -60,7 +65,7 @@ snapshots.
    the scrubber and its synthetic tests when needed—never fall back to copying
    raw payloads.
 4. Compare relevant original/scrubbed import metrics locally. Give the fixture a
-   focused test; update snapshots intentionally and run `deno task test:e2e`.
+   focused test; update snapshots intentionally and run `pnpm test:e2e`.
    Adding fixtures changes the shared sessions list and its count assertions.
 
 Sanitization produces a review candidate, not a guarantee of safe publication.
@@ -90,4 +95,4 @@ retains the counts. Add a short scenario suffix if a name already exists; never
 overwrite a fixture.
 
 Scrubber tests:
-`deno test --allow-read --allow-write scripts/scrubSession.test.ts`.
+`pnpm test scripts/scrubSession.test.ts`.

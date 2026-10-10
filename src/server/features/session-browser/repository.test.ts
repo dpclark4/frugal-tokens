@@ -1,3 +1,4 @@
+import { test } from "vitest";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { SessionBrowserRepository } from "./repository.ts";
 import { ConversationWriteRepository } from "../../conversationWriteRepository.ts";
@@ -121,7 +122,7 @@ const sortKeyExpectedDescOrder = {
 // SAFETY: sortKeyExpectedDescOrder's keys are declared as exactly the
 // SessionSortKey enum members via the `satisfies` check above.
 for (const key of Object.keys(sortKeyExpectedDescOrder) as SessionSortKey[]) {
-  Deno.test(`sorts recent sessions by ${key} (descending)`, () => {
+  test(`sorts recent sessions by ${key} (descending)`, () => {
     const db = openArchiveDatabase(":memory:");
     migrateTestDatabase(db);
     const sources = new SourceArtifactRepository(db);
@@ -142,7 +143,7 @@ for (const key of Object.keys(sortKeyExpectedDescOrder) as SessionSortKey[]) {
   });
 }
 
-Deno.test("cache issue costs include every call before turn deduplication", () => {
+test("cache issue costs include every call before turn deduplication", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   const sources = new SourceArtifactRepository(db);
@@ -216,7 +217,7 @@ Deno.test("cache issue costs include every call before turn deduplication", () =
   }
 });
 
-Deno.test("flips to ascending order on request", () => {
+test("flips to ascending order on request", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   const sources = new SourceArtifactRepository(db);
@@ -236,7 +237,7 @@ Deno.test("flips to ascending order on request", () => {
   }
 });
 
-Deno.test("sorts cache misses by the same count the UI displays", () => {
+test("sorts cache misses by the same count the UI displays", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   const sources = new SourceArtifactRepository(db);
@@ -282,7 +283,7 @@ Deno.test("sorts cache misses by the same count the UI displays", () => {
   }
 });
 
-Deno.test("sorts session timestamps oldest first on request", () => {
+test("sorts session timestamps oldest first on request", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   const sources = new SourceArtifactRepository(db);
@@ -302,7 +303,7 @@ Deno.test("sorts session timestamps oldest first on request", () => {
   }
 });
 
-Deno.test("omitting sort reproduces the natural updated_at order", () => {
+test("omitting sort reproduces the natural updated_at order", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   const sources = new SourceArtifactRepository(db);
@@ -319,7 +320,7 @@ Deno.test("omitting sort reproduces the natural updated_at order", () => {
   }
 });
 
-Deno.test("directory options count eligible roots, group unknown paths, and respect harness", () => {
+test("directory options count eligible roots, group unknown paths, and respect harness", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   const sources = new SourceArtifactRepository(db);
@@ -430,7 +431,7 @@ Deno.test("directory options count eligible roots, group unknown paths, and resp
   }
 });
 
-Deno.test("directory options roll up Herdr worktrees per project and home", () => {
+test("directory options roll up Herdr worktrees per project and home", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   const sources = new SourceArtifactRepository(db);
@@ -538,7 +539,7 @@ Deno.test("directory options roll up Herdr worktrees per project and home", () =
   }
 });
 
-Deno.test("model options count distinct root sessions including switches and subagents", () => {
+test("model options count distinct root sessions including switches and subagents", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   const sources = new SourceArtifactRepository(db);

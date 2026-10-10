@@ -1,19 +1,22 @@
+import { test } from "vitest";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { temporaryDirectory } from "../test/temporaryDirectory.ts";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { normalizePiSession, PiRepository } from "./piRepository.ts";
 import type { SessionDetail } from "../shared/sessionSchemas.ts";
 
 function repository(files: Record<string, string>) {
-  const directory = Deno.makeTempDirSync();
+  const directory = temporaryDirectory();
   for (const [relativePath, content] of Object.entries(files)) {
     const path = `${directory}/${relativePath}`;
     const parent = path.slice(0, path.lastIndexOf("/"));
-    Deno.mkdirSync(parent, { recursive: true });
-    Deno.writeTextFileSync(path, content.trim());
+    mkdirSync(parent, { recursive: true });
+    writeFileSync(path, content.trim());
   }
   return new PiRepository(directory);
 }
 
-Deno.test("imports mixed PI content formats without counting system messages", () => {
+test("imports mixed PI content formats without counting system messages", () => {
   const entries = [
     { type: "session", version: 3, id: "mixed", cwd: "/project" },
     {
@@ -105,7 +108,7 @@ Deno.test("imports mixed PI content formats without counting system messages", (
   );
 });
 
-Deno.test("prefers the latest PI session name over the first prompt", () => {
+test("prefers the latest PI session name over the first prompt", () => {
   const actual = repository({
     "named.jsonl": `
 {"type":"session","version":3,"id":"named","timestamp":"2026-07-11T13:36:32.689Z","cwd":"/Users/test/project"}
@@ -118,7 +121,7 @@ Deno.test("prefers the latest PI session name over the first prompt", () => {
   strictEqual(actual?.title, "Build Python Robot Arena");
 });
 
-Deno.test("uses the first PI prompt after the session name is cleared", () => {
+test("uses the first PI prompt after the session name is cleared", () => {
   const actual = repository({
     "cleared.jsonl": `
 {"type":"session","version":3,"id":"cleared","timestamp":"2026-07-11T13:36:32.689Z","cwd":"/Users/test/project"}
@@ -131,7 +134,7 @@ Deno.test("uses the first PI prompt after the session name is cleared", () => {
   strictEqual(actual?.title, "Inspect sessions");
 });
 
-Deno.test("normalizes PI JSONL sessions with tool activity and reported cost", () => {
+test("normalizes PI JSONL sessions with tool activity and reported cost", () => {
   const actual = repository({
     "--Users-test-project--/2026-07-11T13-36-32-689Z_session.jsonl": `
 {"type":"session","version":3,"id":"session","timestamp":"2026-07-11T13:36:32.689Z","cwd":"/Users/test/project"}

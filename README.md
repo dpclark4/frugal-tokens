@@ -3,8 +3,8 @@
 A local, read-only view of token usage and reported cost in OpenCode, Claude
 Code, PI, Codex, and Cursor sessions.
 
-Requires Node 26 and pnpm 12.10.1. Deno 2.9.2 remains temporarily for tests,
-formatting, and unmigrated tooling; see the
+Requires Node 26 and pnpm 12.10.1. Deno 2.9.2 remains temporarily for
+formatting and unmigrated tooling; see the
 [migration checkpoints](docs/node-migration.md).
 
 ```sh

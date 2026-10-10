@@ -1,3 +1,6 @@
+import { test } from "vitest";
+import { rmSync } from "node:fs";
+import { temporaryDirectory } from "../test/temporaryDirectory.ts";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
@@ -40,8 +43,8 @@ function sourceDatabase(path: string) {
   return db;
 }
 
-Deno.test("incrementally imports OpenCode session trees", () => {
-  const directory = Deno.makeTempDirSync();
+test("incrementally imports OpenCode session trees", () => {
+  const directory = temporaryDirectory();
   const sourcePath = `${directory}/opencode.sqlite`;
   const source = sourceDatabase(sourcePath);
   const insertSession = source.prepare(`
@@ -426,6 +429,6 @@ Deno.test("incrementally imports OpenCode session trees", () => {
   } finally {
     source.close();
     archive.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });

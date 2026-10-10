@@ -1,8 +1,9 @@
+import { test } from "vitest";
 import { deepStrictEqual, strictEqual } from "node:assert";
 import { Hono } from "hono";
 import { createResponseCache } from "./responseCache.ts";
 
-Deno.test("caches GET responses by path and complete query string", async () => {
+test("caches GET responses by path and complete query string", async () => {
   const cache = createResponseCache();
   const app = new Hono();
   let calls = 0;
@@ -28,7 +29,7 @@ Deno.test("caches GET responses by path and complete query string", async () => 
   deepStrictEqual(await afterClear.json(), { calls: 3 });
 });
 
-Deno.test("does not cache a response that overlaps invalidation", async () => {
+test("does not cache a response that overlaps invalidation", async () => {
   const cache = createResponseCache();
   const app = new Hono();
   let calls = 0;

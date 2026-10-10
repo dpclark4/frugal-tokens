@@ -1,3 +1,6 @@
+import { test } from "vitest";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { temporaryDirectory } from "../test/temporaryDirectory.ts";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
 import {
@@ -12,10 +15,10 @@ import { openArchiveDatabase } from "./database.ts";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
 import { SourceArtifactRepository } from "./sourceArtifactRepository.ts";
 
-Deno.test("normalizes Cursor capture usage onto its matching request", () => {
-  const directory = Deno.makeTempDirSync();
+test("normalizes Cursor capture usage onto its matching request", () => {
+  const directory = temporaryDirectory();
   const capturePath = `${directory}/events.jsonl`;
-  Deno.writeTextFileSync(
+  writeFileSync(
     capturePath,
     [
       JSON.stringify({
@@ -168,8 +171,8 @@ function cursorStore(options: {
   messages: unknown[];
 }) {
   const path = `${options.directory}/${options.workspace}/${options.id}`;
-  Deno.mkdirSync(path, { recursive: true });
-  Deno.writeTextFileSync(
+  mkdirSync(path, { recursive: true });
+  writeFileSync(
     `${path}/meta.json`,
     JSON.stringify({
       schemaVersion: 1,
@@ -230,8 +233,8 @@ function cursorStore(options: {
   }
 }
 
-Deno.test("Cursor canonical synchronization preserves tree topology and last-good data", () => {
-  const directory = Deno.makeTempDirSync();
+test("Cursor canonical synchronization preserves tree topology and last-good data", () => {
+  const directory = temporaryDirectory();
   cursorStore({
     directory,
     workspace: "workspace",
@@ -267,7 +270,7 @@ Deno.test("Cursor canonical synchronization preserves tree topology and last-goo
   });
 
   const capturePath = `${directory}/events.jsonl`;
-  Deno.writeTextFileSync(
+  writeFileSync(
     capturePath,
     ["root-request", "child-request"].map((requestId) =>
       JSON.stringify({
@@ -349,6 +352,6 @@ Deno.test("Cursor canonical synchronization preserves tree topology and last-goo
     );
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });

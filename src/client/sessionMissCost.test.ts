@@ -1,7 +1,8 @@
+import { test } from "vitest";
 import { strictEqual } from "node:assert/strict";
 import { formatMissCost, sessionMissCost } from "./sessionMissCost.ts";
 
-Deno.test("session and subagent miss totals preserve sub-cent amounts and coverage", () => {
+test("session and subagent miss totals preserve sub-cent amounts and coverage", () => {
   for (
     const [cost, expected] of [
       [0, "$0.00"],
@@ -23,11 +24,11 @@ Deno.test("session and subagent miss totals preserve sub-cent amounts and covera
   }
 });
 
-Deno.test("miss cost omits calls without misses", () => {
+test("miss cost omits calls without misses", () => {
   strictEqual(sessionMissCost([{}]), undefined);
 });
 
-Deno.test("miss cost sums full and partial misses", () => {
+test("miss cost sums full and partial misses", () => {
   const result = sessionMissCost([
     { cacheAssessment: { status: "full-miss" }, cacheMissCost: 0.32 },
     { cacheAssessment: { status: "partial-hit" }, cacheMissCost: 0.01 },
@@ -35,7 +36,7 @@ Deno.test("miss cost sums full and partial misses", () => {
   strictEqual(result?.amount, "$0.33");
 });
 
-Deno.test("miss cost distinguishes tiny, zero, and unavailable prices", () => {
+test("miss cost distinguishes tiny, zero, and unavailable prices", () => {
   for (
     const [cost, amount] of [
       [0.001, "<$0.01"],
@@ -53,7 +54,7 @@ Deno.test("miss cost distinguishes tiny, zero, and unavailable prices", () => {
   }
 });
 
-Deno.test("miss cost marks incomplete totals and explains coverage", () => {
+test("miss cost marks incomplete totals and explains coverage", () => {
   const result = sessionMissCost([
     { cacheAssessment: { status: "full-miss" }, cacheMissCost: 0.33 },
     { cacheAssessment: { status: "partial-hit" } },

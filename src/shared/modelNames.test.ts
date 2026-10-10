@@ -1,6 +1,7 @@
+import { test } from "vitest";
 import { canonicalModelId, displayModelName } from "./modelNames.ts";
 
-Deno.test("formats known model IDs consistently", () => {
+test("formats known model IDs consistently", () => {
   const cases = {
     "claude-opus-5-5": "Claude Opus 5.5",
     "claude-opus-5": "Claude Opus 5",
@@ -46,13 +47,13 @@ Deno.test("formats known model IDs consistently", () => {
   }
 });
 
-Deno.test("formats unknown IDs without losing their identity", () => {
+test("formats unknown IDs without losing their identity", () => {
   if (displayModelName("gpt-9.1-future") !== "GPT 9.1 Future") {
     throw new Error("unknown model IDs should receive a readable fallback");
   }
 });
 
-Deno.test("formats Bedrock Anthropic IDs as their base model", () => {
+test("formats Bedrock Anthropic IDs as their base model", () => {
   const cases = {
     "anthropic.claude-opus-4-7": "Claude Opus 4.7",
     "us.anthropic.claude-opus-4-8": "Claude Opus 4.8",

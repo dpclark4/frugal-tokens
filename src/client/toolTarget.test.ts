@@ -1,7 +1,8 @@
+import { test } from "vitest";
 import { strictEqual as assertEquals } from "node:assert/strict";
 import { toolTarget } from "./toolTarget.ts";
 
-Deno.test("tool targets recognize Claude Code and Pi file arguments", () => {
+test("tool targets recognize Claude Code and Pi file arguments", () => {
   for (const key of ["file_path", "filePath", "path"]) {
     assertEquals(
       toolTarget(JSON.stringify({ [key]: "src/example.ts" })),
@@ -10,7 +11,7 @@ Deno.test("tool targets recognize Claude Code and Pi file arguments", () => {
   }
 });
 
-Deno.test("tool targets prefer descriptions and fall back to commands", () => {
+test("tool targets prefer descriptions and fall back to commands", () => {
   assertEquals(
     toolTarget('{"description":"Show changes","command":"git diff"}'),
     "Show changes",
@@ -21,7 +22,7 @@ Deno.test("tool targets prefer descriptions and fall back to commands", () => {
   );
 });
 
-Deno.test("missing and truncated structured arguments have no target", () => {
+test("missing and truncated structured arguments have no target", () => {
   for (
     const value of [
       undefined,
@@ -35,7 +36,7 @@ Deno.test("missing and truncated structured arguments have no target", () => {
   }
 });
 
-Deno.test("truncated edits retain complete file paths", () => {
+test("truncated edits retain complete file paths", () => {
   const input = JSON.stringify({
     replace_all: false,
     file_path: "src/NetworkedIdentityResolver.java",
@@ -48,7 +49,7 @@ Deno.test("truncated edits retain complete file paths", () => {
   );
 });
 
-Deno.test("truncated inputs respect escaping and nested field boundaries", () => {
+test("truncated inputs respect escaping and nested field boundaries", () => {
   const path = 'src/a,"quoted"\\file.ts';
   const input = JSON.stringify({
     metadata: { file_path: "not-the-target.ts", values: [1, 2] },
@@ -63,7 +64,7 @@ Deno.test("truncated inputs respect escaping and nested field boundaries", () =>
   assertEquals(toolTarget('{"file_path":"incomplete…'), undefined);
 });
 
-Deno.test("escaped quotes cannot turn string contents into field boundaries", () => {
+test("escaped quotes cannot turn string contents into field boundaries", () => {
   const input = JSON.stringify({
     file_path: 'src/a",b.ts',
     old_string: 'a quote " followed by commas, and braces }'.repeat(100),
@@ -71,7 +72,7 @@ Deno.test("escaped quotes cannot turn string contents into field boundaries", ()
   assertEquals(toolTarget(`${input.slice(0, 150)}…`), 'src/a",b.ts');
 });
 
-Deno.test("preview cutoff retains a complete final target field", () => {
+test("preview cutoff retains a complete final target field", () => {
   const empty = JSON.stringify({ old_string: "", file_path: "src/x.ts" });
   const input = JSON.stringify({
     old_string: "x".repeat(2049 - empty.length),
@@ -83,7 +84,7 @@ Deno.test("preview cutoff retains a complete final target field", () => {
   assertEquals(toolTarget('{"file_path":"src/x.ts"'), "src/x.ts");
 });
 
-Deno.test("closing a preview does not recover incomplete or nested-only targets", () => {
+test("closing a preview does not recover incomplete or nested-only targets", () => {
   assertEquals(toolTarget('{"metadata":{"file_path":"nested.ts"}'), undefined);
   assertEquals(toolTarget('{"metadata":{"file_path":"nested.ts"'), undefined);
   assertEquals(toolTarget('{"file_path":"src/x.ts'), undefined);
@@ -94,7 +95,7 @@ Deno.test("closing a preview does not recover incomplete or nested-only targets"
   );
 });
 
-Deno.test("plain text and JSON string targets remain readable", () => {
+test("plain text and JSON string targets remain readable", () => {
   assertEquals(toolTarget("git diff"), "git diff");
   assertEquals(toolTarget('"src/example.ts"'), "src/example.ts");
 });

@@ -1,3 +1,6 @@
+import { test } from "vitest";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { temporaryDirectory } from "../test/temporaryDirectory.ts";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { syncCodexSessions } from "./codexImporter.ts";
 import { openArchiveDatabase } from "./database.ts";
@@ -37,12 +40,12 @@ const transcript = `
 {"timestamp":"2026-07-11T14:00:15.000Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":100,"cached_input_tokens":50,"output_tokens":9,"reasoning_output_tokens":0}}}}
 `.trim();
 
-Deno.test("imports Codex sessions for SQLite reads", async () => {
-  const directory = Deno.makeTempDirSync();
+test("imports Codex sessions for SQLite reads", async () => {
+  const directory = temporaryDirectory();
   const sessions = `${directory}/sessions`;
   const rolloutDirectory = `${sessions}/2026/07/11`;
-  Deno.mkdirSync(rolloutDirectory, { recursive: true });
-  Deno.writeTextFileSync(
+  mkdirSync(rolloutDirectory, { recursive: true });
+  writeFileSync(
     `${rolloutDirectory}/rollout-session.jsonl`,
     transcript,
   );
@@ -209,6 +212,6 @@ Deno.test("imports Codex sessions for SQLite reads", async () => {
     );
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });

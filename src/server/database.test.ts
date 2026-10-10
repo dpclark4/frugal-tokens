@@ -1,3 +1,7 @@
+import { test } from "vitest";
+import { rmSync } from "node:fs";
+import { temporaryDirectory } from "../test/temporaryDirectory.ts";
+import process from "node:process";
 import { strictEqual } from "node:assert/strict";
 import { join } from "node:path";
 import {
@@ -8,8 +12,8 @@ import {
 } from "./database.ts";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
 
-Deno.test("expands and compacts home-relative paths", () => {
-  const home = Deno.env.get("HOME") || Deno.env.get("USERPROFILE");
+test("expands and compacts home-relative paths", () => {
+  const home = process.env.HOME || process.env.USERPROFILE;
   if (!home) throw new Error("Test requires a home directory");
   const expected = join(home, "data/archive.sqlite");
   strictEqual(expandHomePath("~/data/archive.sqlite"), expected);
@@ -27,8 +31,8 @@ Deno.test("expands and compacts home-relative paths", () => {
   );
 });
 
-Deno.test("opens an archive database with the required SQLite settings", () => {
-  const directory = Deno.makeTempDirSync();
+test("opens an archive database with the required SQLite settings", () => {
+  const directory = temporaryDirectory();
   const path = `${directory}/archive.sqlite`;
   try {
     const first = openArchiveDatabase(path);
@@ -63,6 +67,6 @@ Deno.test("opens an archive database with the required SQLite settings", () => {
     strictEqual(first.prepare("PRAGMA foreign_keys").get()!.foreign_keys, 1);
     first.close();
   } finally {
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });

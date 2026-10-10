@@ -1,3 +1,4 @@
+import { test } from "vitest";
 import { strictEqual } from "node:assert";
 import type {
   ModelCall,
@@ -50,7 +51,7 @@ const session: SessionDetail = {
   subagents: [],
 };
 
-Deno.test("Anthropic cost scenarios simulate the selected cache duration", () => {
+test("Anthropic cost scenarios simulate the selected cache duration", () => {
   const fiveMinutes = estimateSessionCostScenario(
     session,
     "claude-sonnet-4-5",
@@ -70,7 +71,7 @@ Deno.test("Anthropic cost scenarios simulate the selected cache duration", () =>
   strictEqual(oneHour.cost < fiveMinutes.cost, true);
 });
 
-Deno.test("an identical Anthropic 1-hour scenario preserves recorded billing", () => {
+test("an identical Anthropic 1-hour scenario preserves recorded billing", () => {
   const recordedTokens: TokenUsage = {
     uncachedInput: 2,
     cacheRead: 19_535,
@@ -112,7 +113,7 @@ Deno.test("an identical Anthropic 1-hour scenario preserves recorded billing", (
   strictEqual(estimate.cost, 0.306855);
 });
 
-Deno.test("a matching TTL preserves provider cache reads after a long gap", () => {
+test("a matching TTL preserves provider cache reads after a long gap", () => {
   const first = {
     ...call("first", 0, 0),
     provider: "anthropic",
@@ -161,7 +162,7 @@ Deno.test("a matching TTL preserves provider cache reads after a long gap", () =
   );
 });
 
-Deno.test("cost scenarios exclude delegated subagent calls", () => {
+test("cost scenarios exclude delegated subagent calls", () => {
   const rootOnly = estimateSessionCostScenario(
     session,
     "claude-sonnet-4-5",
