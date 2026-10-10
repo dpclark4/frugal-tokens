@@ -263,6 +263,27 @@ test("prices Sol full and partial misses with reported 5-minute writes", () => {
   }
 });
 
+test("Haiku cache-miss estimates switch only above 100k current context", () => {
+  for (const size of [99_999, 100_000, 100_001]) {
+    const result = estimateModelCacheMissCost(
+      tokens({ cacheRead: 99_000 }),
+      tokens({ uncachedInput: size }),
+      "claude-haiku-5-5",
+      Date.parse("2026-07-15T00:00:00Z"),
+    );
+    if (!result) throw new Error("Expected a priced estimate");
+
+    const inputRate = size > 100_000 ? 0.5 : 0.1;
+    const readRate = size > 100_000 ? 0.05 : 0.01;
+    closeTo(result.actualMissedCost, 99_000 * inputRate / 1_000_000);
+    closeTo(result.expectedReadCost, 99_000 * readRate / 1_000_000);
+    closeTo(
+      result.estimatedExtraCost,
+      99_000 * (inputRate - readRate) / 1_000_000,
+    );
+  }
+});
+
 test("uses short-context GPT rates below 272k", () => {
   const result = estimateModelCacheMissCost(
     tokens({ cacheRead: 229_000 }),
