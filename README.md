@@ -58,5 +58,4 @@ destructive migration is not SQL-reversible: restore the matching
 database/application backup rather than running rollback followed by migrate.
 
 See the [demo deployment guide](docs/demo-deployment.md) for hosted demo
-maintenance and [migration checkpoints](docs/node-migration.md) for the
-formatter follow-up.
+maintenance.

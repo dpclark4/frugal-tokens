@@ -10,7 +10,7 @@
     "setup": "prek install",
     "check": "tsc --noEmit",
     "lint": "oxlint src scripts e2e vite.config.ts vitest.config.ts",
-    "fmt": "deno fmt --no-config src/ scripts/ e2e/ package.json tsconfig.json vite.config.ts vitest.config.ts railpack.json railway.json index.html",
+    "fmt": "deno fmt --no-config src/ scripts/ e2e/ package.json tsconfig.json vite.config.ts vitest.config.ts railway.json index.html",
     "fmt:check": "pnpm fmt --check",
     "lint:oxlint": "oxlint .",
     "lint:oxlint:gate": "oxlint --config .oxlintrc.prek.json --quiet .",

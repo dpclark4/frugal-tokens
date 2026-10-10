@@ -16,11 +16,11 @@ The deployment tasks load `.env.demo`. The database creation task loads `.env`.
 source for demo database snapshots.
 
 The `demo-api` Railway service must mount the `demo-api-volume` volume at
-`/data`. Railpack uses the explicit Node provider in `railpack.json`, Node 26
-from `package.json`, and pinned pnpm. The API starts with `pnpm start:api`,
-which applies existing migrations before listening on `PORT`; Pages remains
-separate. Remove any hosting-side Deno command or runtime-version overrides
-before deploying. Sleep configuration and the API domain are managed in Railway.
+`/data`. Railpack detects Node from `package.json`, which specifies Node 26 and
+the pinned pnpm version. The API starts with `pnpm start:api`, which applies
+existing migrations before listening on `PORT`; Pages remains separate. Remove
+any hosting-side Deno command or runtime-version overrides before deploying.
+Sleep configuration and the API domain are managed in Railway.
 
 ## Deploy
 
