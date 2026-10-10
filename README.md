@@ -6,7 +6,21 @@ Code, PI, Codex, and Cursor sessions.
 Requires Node 26 and pnpm 12.10.1. Deno 2.9.2 is needed only for formatting.
 Node 24 is not supported because the application uses native `Temporal`.
 
+If you use a version manager, [fnm](https://github.com/Schniz/fnm) reads the
+repository's `.node-version`:
+
 ```sh
+fnm install
+fnm use
+```
+
+With [nvm](https://github.com/nvm-sh/nvm), use `nvm install 26` and `nvm use 26`
+instead. A version manager is optional; an existing Node 26 installation works.
+
+Install the pinned package manager, then start the app:
+
+```sh
+npm install --global pnpm@12.10.1
 pnpm install --frozen-lockfile
 cp .env.example .env
 pnpm build && pnpm start
@@ -36,7 +50,6 @@ pnpm test:e2e
 
 Use `pnpm run setup`, not pnpm's unrelated built-in `pnpm setup` command.
 `pnpm fmt` and `pnpm fmt:check` still use Deno; formatter migration is separate.
-No mise or fnm setup is required.
 
 Existing task names are preserved as pnpm scripts. Database commands (`db:new`,
 `db:migrate`, `db:rollback`, `db:status`) use the exported

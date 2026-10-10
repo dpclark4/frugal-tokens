@@ -41,14 +41,14 @@ jobs:
         run: |
           mapfile -t files < <(
             git diff --diff-filter=ACMR --name-only "$BASE_SHA"...HEAD -- \
-              'src/**' 'scripts/**' 'e2e/**' 'deno.json' 'package.json' \
+              'src/**' 'scripts/**' 'e2e/**' 'package.json' \
               'tsconfig.json' 'vite.config.ts' 'vitest.config.ts' \
               'railpack.json' 'railway.json' 'index.html'
           )
           if (( ${#files[@]} == 0 )); then
             echo "No Deno-formatted files changed."
           else
-            deno fmt --check "${files[@]}"
+            deno fmt --no-config --check "${files[@]}"
           fi
 
       - name: Run Oxlint

@@ -108,8 +108,9 @@ scope or dropping compatibility.
 - Node 26 checks passed: frozen install, TypeScript, Oxlint/anti-slop, Vite
   build, 284 unit tests, and 73 HTTP cases. Existing fixtures and snapshots are
   unchanged.
-- Removed the Deno lockfile and runtime/task configuration. Deno remains only
-  for formatting, exposed through `pnpm fmt` and `pnpm fmt:check`.
+- Removed the Deno lockfile and `deno.json`. Formatting paths now live in the
+  pnpm scripts; Deno remains only for `pnpm fmt`, `pnpm fmt:check`, and the
+  corresponding hook/CI checks, all using default formatting without a config.
 
 ## Risks to track
 
@@ -132,6 +133,5 @@ scope or dropping compatibility.
 ## Separate formatter follow-up — not part of this migration
 
 Choose and configure Oxfmt, review its formatting differences separately,
-replace Deno formatting in hooks and CI, and then remove Deno configuration and
-tooling. Do not combine the resulting formatting diff with runtime migration
-work.
+replace Deno formatting in scripts, hooks, and CI, and then remove Deno tooling.
+Do not combine the resulting formatting diff with runtime migration work.

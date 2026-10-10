@@ -12,7 +12,7 @@ hooks = [
     id = "deno-fmt",
     name = "deno fmt",
     language = "system",
-    entry = "deno fmt --check",
+    entry = "deno fmt --no-config --check",
     files = "\\.(ts|tsx|json)$",
     exclude = "^(\\.agents/|tools/oxlint/anti-slop/|tools/pi-cache-telemetry/)",
   },
