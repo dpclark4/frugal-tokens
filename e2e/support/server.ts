@@ -35,14 +35,11 @@ export async function startServer() {
       db.close();
     }
     const root = fileURLToPath(new URL("../../", import.meta.url));
-    child = new Deno.Command(Deno.execPath(), {
+    child = new Deno.Command("node", {
       cwd: root,
       args: [
-        "run",
-        "--allow-env",
-        `--allow-read=${root},${directory}`,
-        `--allow-write=${directory}`,
-        "--allow-net=0.0.0.0:0",
+        "--import",
+        "tsx",
         "e2e/support/main.ts",
       ],
       clearEnv: true,

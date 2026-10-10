@@ -1433,6 +1433,32 @@
       "npm:recharts@3.3.0",
       "npm:vite@8.1.4",
       "npm:zod@4.4.3"
-    ]
+    ],
+    "packageJson": {
+      "dependencies": [
+        "npm:@hono/node-server@2.1.4",
+        "npm:@oxlint/plugins@1.79.0",
+        "npm:@tanstack/react-router@1.170.17",
+        "npm:@types/node@24.19.2",
+        "npm:@types/react-dom@19.2.3",
+        "npm:@types/react@19.2.17",
+        "npm:@vitejs/plugin-react@6.0.3",
+        "npm:concurrently@10.0.3",
+        "npm:dbmate@2.34.1",
+        "npm:hono@4.12.29",
+        "npm:html-to-image@1.11.13",
+        "npm:lucide-react@1.25.0",
+        "npm:oxlint@1.79.0",
+        "npm:pretty-ms@9.3.0",
+        "npm:react-dom@19.2.7",
+        "npm:react@19.2.7",
+        "npm:recharts@3.3.0",
+        "npm:tsx@4.23.15",
+        "npm:typescript@7.0.2",
+        "npm:vite@8.1.4",
+        "npm:wrangler@4.112.0",
+        "npm:zod@4.4.3"
+      ]
+    }
   }
 }

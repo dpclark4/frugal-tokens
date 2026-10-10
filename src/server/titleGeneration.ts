@@ -1,3 +1,6 @@
+import { spawn } from "node:child_process";
+import { constants } from "node:os";
+import { text } from "node:stream/consumers";
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import { importedTitleNeedsGeneration } from "./sessionTitles.ts";
@@ -181,41 +184,47 @@ function normalizedTitle(value: string | undefined) {
 async function generateTitle(input: string) {
   const prompt =
     `Summarize the user's main request as a concise, natural title. Distinguish the request from background or pasted context, prioritizing the user's explicit question or instruction. Do not invent actions or outcomes. Preserve useful names. Return only the title.\n\n<user_input>\n${input}\n</user_input>`;
-  const command = new Deno.Command("codex", {
-    args: [
-      "exec",
-      "--model",
-      model,
-      "--config",
-      `model_reasoning_effort="${reasoningEffort}"`,
-      "--ephemeral",
-      "--ignore-user-config",
-      "--ignore-rules",
-      "--skip-git-repo-check",
-      "--sandbox",
-      "read-only",
-      "--color",
-      "never",
-      "--json",
-      prompt,
-    ],
-    stdout: "piped",
-    stderr: "piped",
-  });
-  const output = await command.output();
-  const stdout = new TextDecoder().decode(output.stdout);
-  const stderr = new TextDecoder().decode(output.stderr).trim();
+  const command = spawn("codex", [
+    "exec",
+    "--model",
+    model,
+    "--config",
+    `model_reasoning_effort="${reasoningEffort}"`,
+    "--ephemeral",
+    "--ignore-user-config",
+    "--ignore-rules",
+    "--skip-git-repo-check",
+    "--sandbox",
+    "read-only",
+    "--color",
+    "never",
+    "--json",
+    prompt,
+  ], { stdio: ["inherit", "pipe", "pipe"] });
+  const [code, stdout, errorOutput] = await Promise.all([
+    new Promise<number>((resolve, reject) => {
+      command.once("error", reject);
+      command.once(
+        "close",
+        (code, signal) =>
+          resolve(code ?? (signal ? 128 + constants.signals[signal] : 1)),
+      );
+    }),
+    text(command.stdout),
+    text(command.stderr),
+  ]);
+  const stderr = errorOutput.trim();
   const parsed = parseCodexOutput(stdout);
-  if (!output.success) {
+  if (code !== 0) {
     throw Object.assign(
-      new Error(stderr || `Codex exited with status ${output.code}`),
-      { exitCode: output.code, usage: parsed.usage },
+      new Error(stderr || `Codex exited with status ${code}`),
+      { exitCode: code, usage: parsed.usage },
     );
   }
   return {
     title: normalizedTitle(parsed.title),
     usage: parsed.usage,
-    exitCode: output.code,
+    exitCode: code,
   };
 }
 
@@ -273,7 +282,7 @@ async function generateCandidateTitle(db: DatabaseSync, candidate: Candidate) {
       } runtime=${formatTiming(Date.now() - startedAt)}`,
     );
   } catch (error) {
-    // SAFETY: Deno.Command failures extend Error with the captured exit and usage metadata.
+    // SAFETY: Subprocess failures extend Error with the captured exit and usage metadata.
     const detail = error as Error & { exitCode?: number; usage?: Usage };
     db.prepare(`
       UPDATE title_generation_runs

@@ -1,3 +1,4 @@
+import { readFileSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
 import {
   type ClaudeCodeSessionCandidate,
@@ -253,8 +254,8 @@ async function familyDigest(
 function readCandidateSnapshots(candidate: ClaudeCodeSessionCandidate) {
   const snapshots = new Map<string, Uint8Array>();
   for (const dependency of candidate.dependencies) {
-    const bytes = Deno.readFileSync(dependency.path);
-    const stat = Deno.statSync(dependency.path);
+    const bytes = readFileSync(dependency.path);
+    const stat = statSync(dependency.path);
     if (
       stat.size !== dependency.size ||
       (stat.mtime?.getTime() ?? 0) !== dependency.updatedAt
