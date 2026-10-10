@@ -118,7 +118,7 @@ const standard = {
     input: 2,
     cacheWrite5m: 2.5,
     cacheWrite1h: 4,
-    cacheRead: 0.2,
+    cacheRead: 0.1,
     output: 10,
   },
   "claude-sonnet-5": {
@@ -148,6 +148,13 @@ const standard = {
     cacheWrite1h: 6,
     cacheRead: 0.3,
     output: 15,
+  },
+  "claude-haiku-5-5": {
+    input: 0.1,
+    cacheWrite5m: 0.125,
+    cacheWrite1h: 0.2,
+    cacheRead: 0.01,
+    output: 0.5,
   },
   "claude-haiku-4-5": {
     input: 1,
@@ -299,6 +306,13 @@ const standard = {
 } satisfies ModelRateRegistry;
 
 const longContext = {
+  "claude-haiku-5-5": {
+    input: 0.5,
+    cacheWrite5m: 0.625,
+    cacheWrite1h: 1,
+    cacheRead: 0.05,
+    output: 2.5,
+  },
   "gpt-6-astra": {
     input: 20,
     cacheRead: 2,
@@ -450,6 +464,7 @@ const reducedLunaTerraLongContextRates = {
   },
 } satisfies ModelRateRegistry;
 
+const HAIKU_5_5_LONG_CONTEXT_THRESHOLD = 100_000;
 const LONG_CONTEXT_THRESHOLD = 272_000;
 const GROK_LONG_CONTEXT_THRESHOLD = 200_000;
 const MINIMAX_M3_LONG_CONTEXT_THRESHOLD = 512_000;
@@ -497,6 +512,7 @@ export const counterfactualModelIDs = [
   "claude-sonnet-5",
   "claude-sonnet-4-6",
   "claude-sonnet-4-5",
+  "claude-haiku-5-5",
   "claude-haiku-4-5",
   "claude-haiku-3-5",
   "gemini-3.8-flash",
@@ -521,6 +537,9 @@ export const counterfactualModelIDs = [
 ] as const;
 
 function usesLongContextRates(model: string, inputTokens: number) {
+  if (model === "claude-haiku-5-5") {
+    return inputTokens > HAIKU_5_5_LONG_CONTEXT_THRESHOLD;
+  }
   if (
     (model.startsWith("gpt-5.") || model === "gpt-5" ||
       model.startsWith("gpt-5-") || model.startsWith("gpt-6-") ||

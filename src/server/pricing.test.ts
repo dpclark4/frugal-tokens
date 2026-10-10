@@ -284,7 +284,7 @@ test("prices Claude Sonnet 5.5 at its published rates through aliases", () => {
       input: 2,
       cacheWrite5m: 2.5,
       cacheWrite1h: 4,
-      cacheRead: 0.2,
+      cacheRead: 0.1,
       output: 10,
     });
     closeTo(
@@ -300,7 +300,61 @@ test("prices Claude Sonnet 5.5 at its published rates through aliases", () => {
         model,
         timestamp,
       ),
-      18.7,
+      18.6,
+    );
+  }
+});
+
+test("prices Haiku 5.5 aliases with higher rates only above 100k", () => {
+  for (
+    const model of [
+      "claude-haiku-5-5",
+      "anthropic/claude-haiku-5.5",
+      "us.anthropic.claude-haiku-5-5-v1:0",
+    ]
+  ) {
+    const shortRates = {
+      input: 0.1,
+      cacheWrite5m: 0.125,
+      cacheWrite1h: 0.2,
+      cacheRead: 0.01,
+      output: 0.5,
+    };
+    deepStrictEqual(modelRateCard(model, timestamp, 99_999), shortRates);
+    deepStrictEqual(modelRateCard(model, timestamp, 100_000), shortRates);
+    deepStrictEqual(modelRateCard(model, timestamp, 100_001), {
+      input: 0.5,
+      cacheWrite5m: 0.625,
+      cacheWrite1h: 1,
+      cacheRead: 0.05,
+      output: 2.5,
+    });
+
+    const usage = tokens({
+      uncachedInput: 25_000,
+      cacheRead: 25_000,
+      cacheWrite: 50_000,
+      cacheWrite5m: 25_000,
+      cacheWrite1h: 25_000,
+      output: 1_000_000,
+    });
+    // Output does not count toward the threshold; both cache categories do.
+    closeTo(computeModelCallCost(usage, model, timestamp), 0.510875);
+    closeTo(
+      computeModelCallCost(
+        { ...usage, cacheRead: 25_001 },
+        model,
+        timestamp,
+      ),
+      2.55437505,
+    );
+    closeTo(
+      computeModelCallCost(
+        { ...usage, cacheWrite: 50_001, cacheWrite1h: 25_001 },
+        model,
+        timestamp,
+      ),
+      2.554376,
     );
   }
 });
