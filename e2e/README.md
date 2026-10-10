@@ -32,8 +32,6 @@ intentionally update snapshots.
   inputs.
 - Dashboard validation: invalid harnesses, ranges, timezones, and model/expand
   parameters; activity also covers a Pi-only 90-day non-UTC view and empty data.
-- Startup: production and watched API commands load database configuration from
-  an isolated `.env`, run migrations, and shut down their subprocesses.
 
 These are HTTP integration tests, not browser rendering/navigation tests. GitHub
 Actions runs `pnpm test:e2e` in its separate **Run HTTP e2e tests** step.
