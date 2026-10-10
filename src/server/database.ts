@@ -1,9 +1,13 @@
+import process from "node:process";
+import { mkdirSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { dirname, join } from "node:path";
 
 function homeDirectory() {
-  const home = Deno.env.get("HOME") || Deno.env.get("USERPROFILE");
-  if (!home) throw new Error("Cannot expand ~ because no home directory is set");
+  const home = process.env.HOME || process.env.USERPROFILE;
+  if (!home) {
+    throw new Error("Cannot expand ~ because no home directory is set");
+  }
   return home;
 }
 
@@ -34,7 +38,7 @@ export function sqlitePath(databaseURL: string) {
 }
 
 export function openArchiveDatabase(path: string) {
-  Deno.mkdirSync(dirname(path), { recursive: true });
+  mkdirSync(dirname(path), { recursive: true });
   const db = new DatabaseSync(path);
   try {
     db.exec("PRAGMA foreign_keys = ON");

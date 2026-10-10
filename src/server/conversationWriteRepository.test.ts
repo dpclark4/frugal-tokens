@@ -1,3 +1,4 @@
+import { test } from "vitest";
 import { strictEqual, throws } from "node:assert/strict";
 import { openArchiveDatabase } from "./database.ts";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
@@ -73,7 +74,7 @@ function linearImport(sourceID: number): LinearConversationImport {
   };
 }
 
-Deno.test("an authoritative imported title replaces a generated title", () => {
+test("an authoritative imported title replaces a generated title", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   const sources = new SourceArtifactRepository(db);
@@ -118,7 +119,7 @@ Deno.test("an authoritative imported title replaces a generated title", () => {
   }
 });
 
-Deno.test("linear conversation replacement is idempotent and transactional", () => {
+test("linear conversation replacement is idempotent and transactional", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   const sources = new SourceArtifactRepository(db);

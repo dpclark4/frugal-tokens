@@ -1,3 +1,8 @@
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { mkdirSync, rmSync, statSync } from "node:fs";
+import process from "node:process";
+import { text } from "node:stream/consumers";
 import { backup, DatabaseSync } from "node:sqlite";
 import { dirname, resolve } from "node:path";
 import { sqlitePath } from "../src/server/database.ts";
@@ -205,7 +210,7 @@ type Options = {
 
 function usage(): never {
   throw new Error(
-    "Usage: deno task demo:db:create -- --output <path-to-new-demo.sqlite>",
+    "Usage: pnpm demo:db:create -- --output <path-to-new-demo.sqlite>",
   );
 }
 
@@ -273,9 +278,12 @@ function createPathRedactor() {
 
 function removeIfExists(path: string) {
   try {
-    Deno.removeSync(path);
+    rmSync(path);
   } catch (error) {
-    if (!(error instanceof Deno.errors.NotFound)) throw error;
+    if (
+      !(error instanceof Error) || !("code" in error) ||
+      error.code !== "ENOENT"
+    ) throw error;
   }
 }
 
@@ -534,18 +542,18 @@ function redact(db: DatabaseSync) {
 }
 
 async function compact(path: string) {
-  // Deno's node:sqlite build disables SQLite ATTACH, which VACUUM uses
-  // internally. Run the locally installed SQLite CLI after closing the copy.
-  const result = await new Deno.Command("sqlite3", {
-    args: [path, "PRAGMA journal_mode = DELETE; VACUUM; PRAGMA optimize;"],
-    stdout: "piped",
-    stderr: "piped",
-  }).output();
-  if (!result.success) {
+  // Run the existing SQLite CLI compaction after closing the copy.
+  const child = spawn("sqlite3", [
+    path,
+    "PRAGMA journal_mode = DELETE; VACUUM; PRAGMA optimize;",
+  ], { stdio: ["ignore", "ignore", "pipe"] });
+  const [[code], stderr] = await Promise.all([
+    once(child, "close"),
+    text(child.stderr),
+  ]);
+  if (code !== 0) {
     throw new Error(
-      `Could not compact demo database: ${
-        new TextDecoder().decode(result.stderr).trim()
-      }`,
+      `Could not compact demo database: ${stderr.trim()}`,
     );
   }
 }
@@ -671,8 +679,8 @@ function audit(db: DatabaseSync) {
   }
 }
 
-const options = parseOptions(Deno.args);
-const databaseURL = Deno.env.get("FRUGAL_TOKENS_DATABASE_URL");
+const options = parseOptions(process.argv.slice(2));
+const databaseURL = process.env.FRUGAL_TOKENS_DATABASE_URL;
 if (!databaseURL) {
   throw new Error("FRUGAL_TOKENS_DATABASE_URL is not set");
 }
@@ -683,13 +691,16 @@ if (sourcePath === outputPath) {
   throw new Error("The demo output must not replace the source archive");
 }
 try {
-  Deno.statSync(outputPath);
+  statSync(outputPath);
   throw new Error(`Refusing to overwrite existing output: ${outputPath}`);
 } catch (error) {
-  if (!(error instanceof Deno.errors.NotFound)) throw error;
+  if (
+    !(error instanceof Error) || !("code" in error) ||
+    error.code !== "ENOENT"
+  ) throw error;
 }
 
-Deno.mkdirSync(dirname(outputPath), { recursive: true });
+mkdirSync(dirname(outputPath), { recursive: true });
 let outputCreated = false;
 try {
   const source = new DatabaseSync(sourcePath, { readOnly: true });
@@ -700,7 +711,7 @@ try {
     source.close();
   }
 
-  const copiedBytes = Deno.statSync(outputPath).size;
+  const copiedBytes = statSync(outputPath).size;
   const demo = new DatabaseSync(outputPath);
   let sessions = 0;
   let toolEvents = 0;
@@ -721,7 +732,7 @@ try {
   console.log("Copied SQLite database snapshot.");
   console.log(
     `Compacted from ${copiedBytes.toLocaleString()} to ${
-      Deno.statSync(outputPath).size.toLocaleString()
+      statSync(outputPath).size.toLocaleString()
     } bytes.`,
   );
   console.log(

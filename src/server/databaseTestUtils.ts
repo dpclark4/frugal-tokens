@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { DatabaseSync } from "node:sqlite";
 
 const migrations = [
@@ -20,7 +21,7 @@ const migrations = [
 
 export function migrateTestDatabase(db: DatabaseSync) {
   for (const migration of migrations) {
-    const sql = Deno.readTextFileSync(migration);
+    const sql = readFileSync(migration, "utf8");
     const up = sql.split("-- migrate:down", 1)[0].replace("-- migrate:up", "");
     db.exec(up);
   }

@@ -1,3 +1,4 @@
+import { test } from "vitest";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import type { TokenUsage } from "../shared/sessionSchemas.ts";
 import {
@@ -33,7 +34,7 @@ function closeTo(actual: number, expected: number) {
   strictEqual(Math.abs(actual - expected) < 1e-12, true);
 }
 
-Deno.test("estimates missed reusable tokens for a partial cache miss", () => {
+test("estimates missed reusable tokens for a partial cache miss", () => {
   const estimate = estimateCacheMissTokens(
     tokens({ uncachedInput: 2, cacheRead: 47_000, cacheWrite: 98 }),
     tokens({
@@ -60,7 +61,7 @@ Deno.test("estimates missed reusable tokens for a partial cache miss", () => {
   });
 });
 
-Deno.test("estimates a full uncached miss while excluding net-new context", () => {
+test("estimates a full uncached miss while excluding net-new context", () => {
   const estimate = estimateCacheMissTokens(
     tokens({ uncachedInput: 1_000, cacheRead: 99_800, cacheWrite: 100 }),
     tokens({ uncachedInput: 101_800, cacheRead: 0 }),
@@ -76,7 +77,7 @@ Deno.test("estimates a full uncached miss while excluding net-new context", () =
   });
 });
 
-Deno.test("caps expected reuse when the current context shrinks", () => {
+test("caps expected reuse when the current context shrinks", () => {
   const estimate = estimateCacheMissTokens(
     tokens({ cacheRead: 100 }),
     tokens({ uncachedInput: 30, cacheRead: 50 }),
@@ -86,7 +87,7 @@ Deno.test("caps expected reuse when the current context shrinks", () => {
   strictEqual(estimate.missedTokens, 30);
 });
 
-Deno.test("returns zero cost when there is no estimated miss", () => {
+test("returns zero cost when there is no estimated miss", () => {
   const result = estimateCacheMissCost(
     billing,
     tokens({ cacheRead: 100 }),
@@ -99,7 +100,7 @@ Deno.test("returns zero cost when there is no estimated miss", () => {
   strictEqual(result?.estimatedExtraCost, 0);
 });
 
-Deno.test("prices missed tokens at the observed weighted non-read rate", () => {
+test("prices missed tokens at the observed weighted non-read rate", () => {
   const result = estimateCacheMissCost(
     billing,
     tokens({ cacheRead: 100 }),
@@ -117,7 +118,7 @@ Deno.test("prices missed tokens at the observed weighted non-read rate", () => {
   );
 });
 
-Deno.test("preserves write duration data for shared pricing validation", () => {
+test("preserves write duration data for shared pricing validation", () => {
   const detailed = estimateCacheMissTokens(
     tokens({ cacheRead: 100 }),
     tokens({ cacheWrite: 100, cacheWrite5m: 25, cacheWrite1h: 75 }),
@@ -141,7 +142,7 @@ Deno.test("preserves write duration data for shared pricing validation", () => {
   });
 });
 
-Deno.test("prices OpenCode Opus misses consistently with total-call input cost", () => {
+test("prices OpenCode Opus misses consistently with total-call input cost", () => {
   const timestamp = Date.parse("2026-02-08T18:00:00Z");
   for (
     const [previousReusable, uncachedInput, cacheRead, cacheWrite] of [
@@ -174,7 +175,7 @@ Deno.test("prices OpenCode Opus misses consistently with total-call input cost",
   }
 });
 
-Deno.test("does not price observed categories with missing rates", () => {
+test("does not price observed categories with missing rates", () => {
   const estimate = estimateCacheMissTokens(
     tokens({ cacheRead: 100 }),
     tokens({ cacheWrite: 100 }),
@@ -186,7 +187,7 @@ Deno.test("does not price observed categories with missing rates", () => {
   );
 });
 
-Deno.test("falls back to generic rates for duration-specific writes", () => {
+test("falls back to generic rates for duration-specific writes", () => {
   for (
     const rates of [
       { input: 3, cacheRead: 0.3, cacheWrite: 4 },
@@ -203,7 +204,7 @@ Deno.test("falls back to generic rates for duration-specific writes", () => {
   }
 });
 
-Deno.test("prefers complete duration-specific rates over generic rates", () => {
+test("prefers complete duration-specific rates over generic rates", () => {
   const result = estimateCacheMissCost(
     billing,
     tokens({ cacheRead: 100 }),
@@ -213,7 +214,7 @@ Deno.test("prefers complete duration-specific rates over generic rates", () => {
   closeTo(result.actualMissedCost, (25 * 3.75 + 75 * 6) / 1_000_000);
 });
 
-Deno.test("keeps duration-specific writes unpriced without applicable rates", () => {
+test("keeps duration-specific writes unpriced without applicable rates", () => {
   for (const cacheWrite5m of [0, 100]) {
     strictEqual(
       estimateCacheMissCost(
@@ -230,7 +231,7 @@ Deno.test("keeps duration-specific writes unpriced without applicable rates", ()
   }
 });
 
-Deno.test("prices Sol full and partial misses with reported 5-minute writes", () => {
+test("prices Sol full and partial misses with reported 5-minute writes", () => {
   for (
     const [previousReusable, uncachedInput, cacheRead, cacheWrite] of [
       [83950, 3, 0, 86037],
@@ -262,7 +263,7 @@ Deno.test("prices Sol full and partial misses with reported 5-minute writes", ()
   }
 });
 
-Deno.test("uses short-context GPT rates below 272k", () => {
+test("uses short-context GPT rates below 272k", () => {
   const result = estimateModelCacheMissCost(
     tokens({ cacheRead: 229_000 }),
     tokens({ uncachedInput: 230_000 }),
@@ -276,7 +277,7 @@ Deno.test("uses short-context GPT rates below 272k", () => {
   closeTo(result.estimatedExtraCost, 229_000 * 4.5 / 1_000_000);
 });
 
-Deno.test("uses long-context GPT rates above 272k", () => {
+test("uses long-context GPT rates above 272k", () => {
   const result = estimateModelCacheMissCost(
     tokens({ cacheRead: 289_000 }),
     tokens({ uncachedInput: 290_000 }),
@@ -290,7 +291,7 @@ Deno.test("uses long-context GPT rates above 272k", () => {
   closeTo(result.estimatedExtraCost, 289_000 * 9 / 1_000_000);
 });
 
-Deno.test("switches cache-miss pricing at exactly 272k current context", () => {
+test("switches cache-miss pricing at exactly 272k current context", () => {
   const timestamp = Date.parse("2026-07-15T00:00:00Z");
   const before = tokens({ cacheRead: 271_000 });
   const below = estimateModelCacheMissCost(

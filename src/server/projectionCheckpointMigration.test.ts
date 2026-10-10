@@ -1,3 +1,5 @@
+import { test } from "vitest";
+import { readFileSync } from "node:fs";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { openArchiveDatabase } from "./database.ts";
 
@@ -20,11 +22,11 @@ const migrations = [
 ].map((name) => new URL(`../../db/migrations/${name}`, import.meta.url));
 
 function migrate(db: ReturnType<typeof openArchiveDatabase>, migration: URL) {
-  const sql = Deno.readTextFileSync(migration);
+  const sql = readFileSync(migration, "utf8");
   db.exec(sql.split("-- migrate:down", 1)[0].replace("-- migrate:up", ""));
 }
 
-Deno.test("cleanup migrations preserve canonical checkpoints and remove V1 tables", () => {
+test("cleanup migrations preserve canonical checkpoints and remove V1 tables", () => {
   const db = openArchiveDatabase(":memory:");
   try {
     for (const migration of migrations.slice(0, -2)) migrate(db, migration);

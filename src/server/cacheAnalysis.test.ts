@@ -1,3 +1,4 @@
+import { test } from "vitest";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import {
   analyzeCacheMisses,
@@ -54,7 +55,7 @@ function call(
   return result;
 }
 
-Deno.test("assesses cache retention from the preceding comparable call", () => {
+test("assesses cache retention from the preceding comparable call", () => {
   const baseline = call("baseline", 80_000, 20_000);
 
   deepStrictEqual(assessCache(undefined, baseline), {
@@ -86,7 +87,7 @@ Deno.test("assesses cache retention from the preceding comparable call", () => {
   });
 });
 
-Deno.test("detects exact linear cache losses without treating shrinkage as a miss", () => {
+test("detects exact linear cache losses without treating shrinkage as a miss", () => {
   const previous = call("previous", 90_000, undefined, "gpt-5.6", "openai");
   previous.tokens = {
     ...previous.tokens,
@@ -146,7 +147,7 @@ Deno.test("detects exact linear cache losses without treating shrinkage as a mis
   );
 });
 
-Deno.test("uses observed cache state instead of assuming uncached input becomes reusable", () => {
+test("uses observed cache state instead of assuming uncached input becomes reusable", () => {
   function openAICall(
     id: string,
     startedAt: number,
@@ -182,7 +183,7 @@ Deno.test("uses observed cache state instead of assuming uncached input becomes 
   strictEqual(misses[0].missedTokens, 5_120);
 });
 
-Deno.test("uses explicit branch predecessors instead of flattened order", () => {
+test("uses explicit branch predecessors instead of flattened order", () => {
   const root = call("root", 90_000, undefined, "gpt-5.6", "openai");
   root.startedAt = 1;
   const originalTail = call(
@@ -213,7 +214,7 @@ Deno.test("uses explicit branch predecessors instead of flattened order", () => 
   strictEqual(misses[1].missedTokens, 10_000);
 });
 
-Deno.test("treats a return to the initial cache-read floor as a full miss", () => {
+test("treats a return to the initial cache-read floor as a full miss", () => {
   const first = call("first", 10_000);
   const grown = call("grown", 15_000);
   const reset = call("reset", 10_000);
@@ -258,7 +259,7 @@ Deno.test("treats a return to the initial cache-read floor as a full miss", () =
   );
 });
 
-Deno.test("classifies mid-turn and cross-turn thinking changes", () => {
+test("classifies mid-turn and cross-turn thinking changes", () => {
   const first = call("first", 80_000, 20_000, undefined, undefined, "high");
   const midTurn = call(
     "mid-turn",
@@ -326,7 +327,7 @@ Deno.test("classifies mid-turn and cross-turn thinking changes", () => {
   ]);
 });
 
-Deno.test("prioritizes TTL over a simultaneous thinking change", () => {
+test("prioritizes TTL over a simultaneous thinking change", () => {
   const previous = call(
     "previous",
     80_000,
@@ -357,7 +358,7 @@ Deno.test("prioritizes TTL over a simultaneous thinking change", () => {
   strictEqual(actual.turns[0].cacheSummary?.ttlRelatedMisses, 1);
 });
 
-Deno.test("produces a database-ready miss record as a pure calculation", () => {
+test("produces a database-ready miss record as a pure calculation", () => {
   const previous = call(
     "previous",
     80_000,
@@ -397,7 +398,7 @@ Deno.test("produces a database-ready miss record as a pure calculation", () => {
   strictEqual(misses[0].actualMissedCost !== undefined, true);
 });
 
-Deno.test("does not count opaque zero-context usage as a cache miss", () => {
+test("does not count opaque zero-context usage as a cache miss", () => {
   const first = call("first", 80_000, 20_000);
   first.startedAt = 1;
   const opaque = call("opaque", 0);
@@ -435,7 +436,7 @@ Deno.test("does not count opaque zero-context usage as a cache miss", () => {
   strictEqual(actual.turns[0].cacheSummary?.notComparable, 1);
 });
 
-Deno.test("tracks an OpenAI full miss and observed cache recovery", () => {
+test("tracks an OpenAI full miss and observed cache recovery", () => {
   function openAICall(id: string, uncachedInput: number, cacheRead: number) {
     const value = call(id, cacheRead, undefined, "gpt-5.5", "openai");
     value.tokens = {
@@ -510,7 +511,7 @@ function session(
   };
 }
 
-Deno.test("summarizes turns and includes independently analyzed subagents", () => {
+test("summarizes turns and includes independently analyzed subagents", () => {
   const child = session("child", [
     call("child-first", 0, 10_000),
     call("child-second", 0, 10_100),
@@ -551,7 +552,7 @@ Deno.test("summarizes turns and includes independently analyzed subagents", () =
   ]);
 });
 
-Deno.test("tracks a partial miss after compaction without counting it as a miss", () => {
+test("tracks a partial miss after compaction without counting it as a miss", () => {
   const previous = call("previous", 80_000, 20_000);
   const compacted = call("compacted", 50_000);
   compacted.contextEventsBefore = [{
@@ -611,7 +612,7 @@ Deno.test("tracks a partial miss after compaction without counting it as a miss"
   }]);
 });
 
-Deno.test("attributes a Claude miss to an expired 5-minute write", () => {
+test("attributes a Claude miss to an expired 5-minute write", () => {
   const previous = call("previous", 80_000, 20_000);
   previous.startedAt = 0;
   previous.tokens.cacheWrite5m = 20_000;
@@ -639,7 +640,7 @@ Deno.test("attributes a Claude miss to an expired 5-minute write", () => {
   }]);
 });
 
-Deno.test("keeps a Claude miss unexpected before its 5-minute TTL", () => {
+test("keeps a Claude miss unexpected before its 5-minute TTL", () => {
   const previous = call("previous", 80_000, 20_000);
   previous.startedAt = 0;
   previous.tokens.cacheWrite5m = 20_000;
@@ -654,7 +655,7 @@ Deno.test("keeps a Claude miss unexpected before its 5-minute TTL", () => {
   strictEqual(actual.turns[0].cacheSummary?.unexpectedMisses, 1);
 });
 
-Deno.test("attributes a cross-turn Claude miss to an expired 1-hour write", () => {
+test("attributes a cross-turn Claude miss to an expired 1-hour write", () => {
   const previous = call("previous", 80_000, 20_000);
   previous.startedAt = 0;
   previous.tokens.cacheWrite5m = 0;
@@ -682,7 +683,7 @@ Deno.test("attributes a cross-turn Claude miss to an expired 1-hour write", () =
   }]);
 });
 
-Deno.test("uses a 1-hour TTL fallback for other providers", () => {
+test("uses a 1-hour TTL fallback for other providers", () => {
   const previous = call(
     "previous",
     80_000,
@@ -705,7 +706,7 @@ Deno.test("uses a 1-hour TTL fallback for other providers", () => {
   strictEqual(actual.turns[0].cacheSummary?.unexpectedMisses, 0);
 });
 
-Deno.test("records a recent model switch as a non-unexpected full miss", () => {
+test("records a recent model switch as a non-unexpected full miss", () => {
   const previous = call("terra", 80_000, undefined, "gpt-5.6-terra", "openai");
   previous.startedAt = 0;
   const switched = call("luna", 0, undefined, "gpt-5.6-luna", "openai");
@@ -736,7 +737,7 @@ Deno.test("records a recent model switch as a non-unexpected full miss", () => {
   }]);
 });
 
-Deno.test("records a provider switch on the same model as a cache-chain change", () => {
+test("records a provider switch on the same model as a cache-chain change", () => {
   const previous = call(
     "anthropic",
     80_000,
@@ -778,7 +779,7 @@ Deno.test("records a provider switch on the same model as a cache-chain change",
   }]);
 });
 
-Deno.test("attributes an expired model switch to TTL", () => {
+test("attributes an expired model switch to TTL", () => {
   const previous = call("terra", 80_000, undefined, "gpt-5.6-terra", "openai");
   previous.startedAt = 0;
   const switched = call("luna", 0, undefined, "gpt-5.6-luna", "openai");
@@ -805,7 +806,7 @@ Deno.test("attributes an expired model switch to TTL", () => {
   strictEqual(actual.turns[1].cacheSummary?.unexpectedMisses, 0);
 });
 
-Deno.test("attributes an expired miss to compaction before TTL", () => {
+test("attributes an expired miss to compaction before TTL", () => {
   const previous = call("previous", 80_000, 20_000);
   previous.startedAt = 0;
   previous.tokens.cacheWrite5m = 20_000;
@@ -823,7 +824,7 @@ Deno.test("attributes an expired miss to compaction before TTL", () => {
   strictEqual(actual.turns[0].cacheSummary?.ttlRelatedMisses, 0);
 });
 
-Deno.test("tracks a full miss after compaction without counting it as a miss", () => {
+test("tracks a full miss after compaction without counting it as a miss", () => {
   const previous = call("previous", 80_000, 20_000);
   const compacted = call("compacted", 5_000);
   compacted.contextEventsBefore = [{

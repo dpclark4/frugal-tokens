@@ -1,10 +1,11 @@
+import { test } from "vitest";
 import { deepStrictEqual, match, ok, strictEqual } from "node:assert/strict";
 import { sessionFilterOptionsSchema } from "../../src/shared/sessionBrowserSchemas.ts";
 import { sessionListResponseSchema } from "../../src/shared/sessionSchemas.ts";
 import { getJson } from "../support/http.ts";
 import { startServer } from "../support/server.ts";
 
-Deno.test("model options and multi-select filtering agree across harnesses and pages", async () => {
+test("model options and multi-select filtering agree across harnesses and pages", async () => {
   await using server = await startServer();
   for (const harness of ["all", "pi", "codex", "opencode"]) {
     const response = await fetch(

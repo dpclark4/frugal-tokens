@@ -1,3 +1,12 @@
+import { test } from "vitest";
+import {
+  mkdirSync,
+  rmSync,
+  statSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
+import { temporaryDirectory } from "../test/temporaryDirectory.ts";
 import { strictEqual } from "node:assert/strict";
 import { openArchiveDatabase } from "./database.ts";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
@@ -19,23 +28,23 @@ const emptyTokens = {
   processed: 0,
 };
 
-Deno.test("canonical file import skips unchanged artifacts and preserves last-good data", async () => {
-  const directory = Deno.makeTempDirSync();
+test("canonical file import skips unchanged artifacts and preserves last-good data", async () => {
+  const directory = temporaryDirectory();
   const sourceDirectory = `${directory}/sessions`;
   const sourcePath = `${sourceDirectory}/session.json`;
-  Deno.mkdirSync(sourceDirectory);
+  mkdirSync(sourceDirectory);
   let modifiedAtSeconds = 1_800_000_000;
   let parserVersion = "fixture-1";
   let failWrite = false;
 
   const writeSource = (content: string) => {
-    Deno.writeTextFileSync(sourcePath, content);
+    writeFileSync(sourcePath, content);
     modifiedAtSeconds++;
-    Deno.utimeSync(sourcePath, modifiedAtSeconds, modifiedAtSeconds);
+    utimesSync(sourcePath, modifiedAtSeconds, modifiedAtSeconds);
   };
   const discover = (): FileSessionCandidate[] => {
     try {
-      const stat = Deno.statSync(sourcePath);
+      const stat = statSync(sourcePath);
       return [{
         id: "session",
         path: sourcePath,
@@ -44,7 +53,9 @@ Deno.test("canonical file import skips unchanged artifacts and preserves last-go
         size: stat.size,
       }];
     } catch (error) {
-      if (error instanceof Deno.errors.NotFound) return [];
+      if (
+        error instanceof Error && "code" in error && error.code === "ENOENT"
+      ) return [];
       throw error;
     }
   };
@@ -123,7 +134,7 @@ Deno.test("canonical file import skips unchanged artifacts and preserves last-go
       "Must not replace last good",
     );
 
-    Deno.removeSync(sourcePath);
+    rmSync(sourcePath);
     strictEqual((await sync()).discovered, 0);
     strictEqual(
       db.prepare(
@@ -134,17 +145,17 @@ Deno.test("canonical file import skips unchanged artifacts and preserves last-go
     );
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
-Deno.test("family imports reload artifacts after metadata scanning", async () => {
-  const directory = Deno.makeTempDirSync();
+test("family imports reload artifacts after metadata scanning", async () => {
+  const directory = temporaryDirectory();
   const sourcePath = `${directory}/session.json`;
-  Deno.writeTextFileSync(sourcePath, '{"title":"Initial"}');
+  writeFileSync(sourcePath, '{"title":"Initial"}');
   const originalTime = new Date(Date.now() - 10_000);
-  Deno.utimeSync(sourcePath, originalTime, originalTime);
-  const stat = Deno.statSync(sourcePath);
+  utimesSync(sourcePath, originalTime, originalTime);
+  const stat = statSync(sourcePath);
   const candidate: FileSessionCandidate = {
     id: "session",
     path: sourcePath,
@@ -186,9 +197,9 @@ Deno.test("family imports reload artifacts after metadata scanning", async () =>
         metadata: () => {
           if (!changedAfterScan) {
             changedAfterScan = true;
-            Deno.writeTextFileSync(sourcePath, '{"title":"Changed"}');
+            writeFileSync(sourcePath, '{"title":"Changed"}');
             const changedAt = new Date(Date.now() + 2_000);
-            Deno.utimeSync(sourcePath, changedAt, changedAt);
+            utimesSync(sourcePath, changedAt, changedAt);
           }
           return { identities: [], lineage: [] };
         },
@@ -206,6 +217,6 @@ Deno.test("family imports reload artifacts after metadata scanning", async () =>
     );
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });

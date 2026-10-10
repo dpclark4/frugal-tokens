@@ -1,10 +1,11 @@
+import { test } from "vitest";
 import { deepStrictEqual, match, strictEqual } from "node:assert/strict";
 import { Hono } from "hono";
 import { expandHomePath } from "../../database.ts";
 import { sessionBrowserRoutes } from "./routes.ts";
 import type { SessionBrowserRepository } from "./repository.ts";
 
-Deno.test("session browser route preserves mounting, filters, pagination, and timing", async () => {
+test("session browser route preserves mounting, filters, pagination, and timing", async () => {
   let args: Parameters<SessionBrowserRepository["listSessions"]> | undefined;
   let enriched = false;
   const result = {
@@ -58,7 +59,7 @@ Deno.test("session browser route preserves mounting, filters, pagination, and ti
   );
 });
 
-Deno.test("filter options route returns models and directories, validates harness, and includes timing", async () => {
+test("filter options route returns models and directories, validates harness, and includes timing", async () => {
   const calls: Array<string | undefined> = [];
   const directoryCalls: Array<string | undefined> = [];
   const directories = [{ path: expandHomePath("~/project"), sessionCount: 4 }, {
@@ -123,7 +124,7 @@ Deno.test("filter options route returns models and directories, validates harnes
   deepStrictEqual(directoryCalls, [undefined, "pi"]);
 });
 
-Deno.test("session browser route rejects invalid queries before database access", async () => {
+test("session browser route rejects invalid queries before database access", async () => {
   const app = new Hono().route(
     "/api/sessions",
     sessionBrowserRoutes({

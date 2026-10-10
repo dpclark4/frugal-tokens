@@ -1,3 +1,4 @@
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { z } from "zod";
 import {
   type SessionDetail,
@@ -186,7 +187,7 @@ function readRecordsFromText(text: string, strict = false) {
 }
 
 function readRecords(path: string) {
-  return readRecordsFromText(Deno.readTextFileSync(path));
+  return readRecordsFromText(readFileSync(path, "utf8"));
 }
 
 function preview(value: string): ConversationContentImport {
@@ -1270,22 +1271,22 @@ function collectCodexSessions(
   prefix = "",
 ): CodexSessionCandidate[] {
   const files: CodexSessionCandidate[] = [];
-  for (const entry of Deno.readDirSync(directory)) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const path = `${directory}/${entry.name}`;
     const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
-    if (entry.isDirectory) {
+    if (entry.isDirectory()) {
       files.push(...collectCodexSessions(path, relative));
       continue;
     }
     if (
-      !entry.isFile ||
+      !entry.isFile() ||
       (!entry.name.startsWith("rollout-") &&
         !entry.name.startsWith("rollout_")) ||
       !entry.name.endsWith(".jsonl")
     ) {
       continue;
     }
-    const stat = Deno.statSync(path);
+    const stat = statSync(path);
     files.push({
       id: relative.slice(0, -6),
       path,

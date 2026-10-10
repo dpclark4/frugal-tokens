@@ -1,3 +1,4 @@
+import { type Dirent, readdirSync, readFileSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
@@ -182,7 +183,7 @@ function epochMilliseconds(
 function readJSONFile(path: string): JsonObject | undefined {
   try {
     const parsed = jsonObjectSchema.safeParse(
-      JSON.parse(Deno.readTextFileSync(path)),
+      JSON.parse(readFileSync(path, "utf8")),
     );
     return parsed.success ? parsed.data : undefined;
   } catch {
@@ -274,7 +275,7 @@ function readStoreMetaFromPath(path: string): CursorStoreMeta | undefined {
 
 function stat(path: string) {
   try {
-    const value = Deno.statSync(path);
+    const value = statSync(path);
     return {
       size: value.size,
       modifiedAt: value.mtime?.getTime() ?? 0,
@@ -305,7 +306,7 @@ export function readCursorCapture(path?: string): CursorCaptureIndex {
   let text: string;
   let revision: string;
   try {
-    const bytes = Deno.readFileSync(path);
+    const bytes = readFileSync(path);
     text = new TextDecoder().decode(bytes);
     revision = createHash("sha256").update(bytes).digest("hex");
   } catch {
@@ -551,24 +552,24 @@ export function discoverCursorSessions(
   captureRevision = "missing",
 ): CursorAgentCandidate[] {
   const candidates: CursorAgentCandidate[] = [];
-  let workspaces: Deno.DirEntry[];
+  let workspaces: Dirent[];
   try {
-    workspaces = [...Deno.readDirSync(directory)];
+    workspaces = [...readdirSync(directory, { withFileTypes: true })];
   } catch {
     return [];
   }
 
   for (const workspace of workspaces) {
-    if (!workspace.isDirectory) continue;
+    if (!workspace.isDirectory()) continue;
     const workspacePath = join(directory, workspace.name);
-    let agents: Deno.DirEntry[];
+    let agents: Dirent[];
     try {
-      agents = [...Deno.readDirSync(workspacePath)];
+      agents = [...readdirSync(workspacePath, { withFileTypes: true })];
     } catch {
       continue;
     }
     for (const agent of agents) {
-      if (!agent.isDirectory) continue;
+      if (!agent.isDirectory()) continue;
       const agentPath = join(workspacePath, agent.name);
       const storePath = join(agentPath, "store.db");
       const metaPath = join(agentPath, "meta.json");

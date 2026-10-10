@@ -1,3 +1,4 @@
+import { test } from "vitest";
 import { strictEqual } from "node:assert/strict";
 import { aggregatePerformance } from "./performanceAnalytics.ts";
 import type { UsageCall } from "./usage.ts";
@@ -31,7 +32,7 @@ function call(
   };
 }
 
-Deno.test("aggregates weekly session and turn cache miss rates by model", () => {
+test("aggregates weekly session and turn cache miss rates by model", () => {
   const start = new Date(2026, 2, 2).getTime();
   const end = new Date(2026, 2, 8, 23, 59).getTime();
   const result = aggregatePerformance(
@@ -68,7 +69,7 @@ Deno.test("aggregates weekly session and turn cache miss rates by model", () => 
   strictEqual(result.anthropic.sessions, 0);
 });
 
-Deno.test("buckets every partial and full cache loss", () => {
+test("buckets every partial and full cache loss", () => {
   const start = new Date(2026, 2, 2).getTime();
   const end = new Date(2026, 2, 8, 23, 59).getTime();
   const result = aggregatePerformance(
@@ -92,7 +93,7 @@ Deno.test("buckets every partial and full cache loss", () => {
   strictEqual(result.openai.weeks[0].reusableTokensAtRisk, 200);
 });
 
-Deno.test("limits context loss to reusable overlap", () => {
+test("limits context loss to reusable overlap", () => {
   const start = new Date(2026, 2, 2).getTime();
   const end = new Date(2026, 2, 8, 23, 59).getTime();
   const smallerContext = call("smaller", 2, start + 20, 20);
@@ -114,7 +115,7 @@ Deno.test("limits context loss to reusable overlap", () => {
   strictEqual(buckets[0].unretainedTokens, 30);
 });
 
-Deno.test("excludes model changes from unexpected miss rates and volume", () => {
+test("excludes model changes from unexpected miss rates and volume", () => {
   const start = new Date(2026, 2, 2).getTime();
   const end = new Date(2026, 2, 8, 23, 59).getTime();
   const switched = call("switched", 2, start + 20, 0);
@@ -137,7 +138,7 @@ Deno.test("excludes model changes from unexpected miss rates and volume", () => 
   strictEqual(buckets[0].requests, 1);
 });
 
-Deno.test("excludes zero-input calls from performance eligibility", () => {
+test("excludes zero-input calls from performance eligibility", () => {
   const start = new Date(2026, 2, 2).getTime();
   const empty = call("empty", 1, start + 10, 0);
   empty.tokens.uncachedInput = 0;

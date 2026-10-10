@@ -1,8 +1,9 @@
+import { test } from "vitest";
 import { deepStrictEqual, strictEqual } from "node:assert";
 import { DatabaseSync } from "node:sqlite";
 import { demoContextMetadataSql } from "./demoContextMetadata.ts";
 
-Deno.test("demo context metadata preserves compaction attribution without private content", () => {
+test("demo context metadata preserves compaction attribution without private content", () => {
   const db = new DatabaseSync(":memory:");
   try {
     db.exec("CREATE TABLE events (native_metadata_json TEXT)");

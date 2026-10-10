@@ -1,3 +1,4 @@
+import { test } from "vitest";
 import { deepStrictEqual, ok, strictEqual } from "node:assert";
 import type { SessionDetail, TokenUsage } from "../shared/sessionSchemas.ts";
 import { overviewResponseSchema } from "../shared/sessionSchemas.ts";
@@ -66,7 +67,7 @@ function session(
   };
 }
 
-Deno.test("aggregates active dates and inclusive subagent work", () => {
+test("aggregates active dates and inclusive subagent work", () => {
   const friday = new Date(2026, 6, 10, 9).getTime();
   const saturday = new Date(2026, 6, 11, 9).getTime();
   const child = session("child", [{
@@ -121,7 +122,7 @@ Deno.test("aggregates active dates and inclusive subagent work", () => {
   });
 });
 
-Deno.test("keeps overall efficiency token-weighted", () => {
+test("keeps overall efficiency token-weighted", () => {
   const startedAt = new Date(2026, 6, 10, 9).getTime();
   const result = aggregateOverview(
     [
@@ -148,7 +149,7 @@ Deno.test("keeps overall efficiency token-weighted", () => {
   ok(Math.abs(result.sessionProfile.efficiency!.median - 0.5) < 1e-10);
 });
 
-Deno.test("falls back to reported cost when a computed price is unavailable", () => {
+test("falls back to reported cost when a computed price is unavailable", () => {
   const startedAt = new Date(2026, 6, 10, 9).getTime();
   const result = aggregateOverview(
     [
@@ -170,7 +171,7 @@ Deno.test("falls back to reported cost when a computed price is unavailable", ()
   strictEqual(result.models[0].spend, 5);
 });
 
-Deno.test("keeps known spend when some calls are unpriced", () => {
+test("keeps known spend when some calls are unpriced", () => {
   const startedAt = new Date(2026, 6, 10, 9).getTime();
   const result = aggregateOverview(
     [
@@ -196,7 +197,7 @@ Deno.test("keeps known spend when some calls are unpriced", () => {
   strictEqual(result.sessionProfile.spend!.median, 2.5);
 });
 
-Deno.test("counts overlapping root sessions in rotation without double-counting subagents", () => {
+test("counts overlapping root sessions in rotation without double-counting subagents", () => {
   const day = new Date(2026, 6, 10).getTime();
   const rootStart = day + 9 * 3_600_000;
   const child = session("child", [{
@@ -233,20 +234,27 @@ Deno.test("counts overlapping root sessions in rotation without double-counting 
   });
 });
 
-Deno.test("uses buffered turn windows instead of a continuous session lifetime", () => {
+test("uses buffered turn windows instead of a continuous session lifetime", () => {
   const day = new Date(2026, 6, 10).getTime();
   const minute = 60_000;
   const result = aggregateOverview(
     [
-      session("long", [
-        6 * 60, 10 * 60, 10 * 60 + 1, 10 * 60 + 2, 10 * 60 + 10,
-        21 * 60,
-      ].map((offset) => ({
-        startedAt: day + offset * minute,
-        input: 100,
-        cacheRead: 0,
-        cost: 1,
-      }))),
+      session(
+        "long",
+        [
+          6 * 60,
+          10 * 60,
+          10 * 60 + 1,
+          10 * 60 + 2,
+          10 * 60 + 10,
+          21 * 60,
+        ].map((offset) => ({
+          startedAt: day + offset * minute,
+          input: 100,
+          cacheRead: 0,
+          cost: 1,
+        })),
+      ),
       session("morning-gap-a", [{
         startedAt: day + 7 * 60 * minute,
         input: 100,
@@ -280,7 +288,7 @@ Deno.test("uses buffered turn windows instead of a continuous session lifetime",
   strictEqual(result.activity.peakConcurrentSessions!.median, 2);
 });
 
-Deno.test("counts a one-turn session within another session's active window", () => {
+test("counts a one-turn session within another session's active window", () => {
   const day = new Date(2026, 6, 10).getTime();
   const minute = 60_000;
   const result = aggregateOverview(
@@ -314,7 +322,7 @@ Deno.test("counts a one-turn session within another session's active window", ()
   strictEqual(result.activity.peakConcurrentSessions!.median, 2);
 });
 
-Deno.test("buffers turns on both sides within a session's observed bounds", () => {
+test("buffers turns on both sides within a session's observed bounds", () => {
   const day = new Date(2026, 6, 10).getTime();
   const minute = 60_000;
   const result = aggregateOverview(
@@ -348,7 +356,7 @@ Deno.test("buffers turns on both sides within a session's observed bounds", () =
   strictEqual(result.activity.peakConcurrentSessions!.median, 2);
 });
 
-Deno.test("bounds rotation windows to observed activity while retaining tool execution", () => {
+test("bounds rotation windows to observed activity while retaining tool execution", () => {
   const day = new Date(2026, 6, 10).getTime();
   const startedAt = day + 9 * 3_600_000;
   const executing = session("executing", [{
@@ -387,7 +395,7 @@ Deno.test("bounds rotation windows to observed activity while retaining tool exe
   strictEqual(result.activity.peakConcurrentSessions!.median, 2);
 });
 
-Deno.test("does not create an active day from a cross-midnight activity window", () => {
+test("does not create an active day from a cross-midnight activity window", () => {
   const day = new Date(2026, 6, 10).getTime();
   const result = aggregateOverview(
     [

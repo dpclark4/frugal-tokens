@@ -1,3 +1,4 @@
+import { test } from "vitest";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { openArchiveDatabase } from "./database.ts";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
@@ -6,7 +7,7 @@ import {
   titleGenerationEligible,
 } from "./titleGeneration.ts";
 
-Deno.test("uses the session start time rather than import time for title fences", () => {
+test("uses the session start time rather than import time for title fences", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   try {
@@ -65,7 +66,7 @@ Deno.test("uses the session start time rather than import time for title fences"
   }
 });
 
-Deno.test("generates a title when the imported title is the first user prompt", () => {
+test("generates a title when the imported title is the first user prompt", () => {
   strictEqual(
     titleGenerationEligible({
       imported_title: "Inspect sessions and summarize the results",
@@ -75,7 +76,7 @@ Deno.test("generates a title when the imported title is the first user prompt", 
   );
 });
 
-Deno.test("does not generate over an authoritative imported title", () => {
+test("does not generate over an authoritative imported title", () => {
   strictEqual(
     titleGenerationEligible({
       imported_title: "Build Python Robot Arena",
@@ -85,7 +86,7 @@ Deno.test("does not generate over an authoritative imported title", () => {
   );
 });
 
-Deno.test("generates over known generic harness fallback titles", () => {
+test("generates over known generic harness fallback titles", () => {
   strictEqual(
     titleGenerationEligible({
       imported_title: "Pi session project",

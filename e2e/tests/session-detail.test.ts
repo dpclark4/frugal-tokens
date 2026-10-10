@@ -1,3 +1,5 @@
+import { assertSnapshot } from "../support/snapshot.ts";
+import { afterAll, beforeAll, describe, test } from "vitest";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import {
   costScenarioResponseSchema,
@@ -8,7 +10,7 @@ import { startServer } from "../support/server.ts";
 
 const sessionPath = "/api/sessions/astra-full1-partial2";
 
-Deno.test("Pi session detail includes full and partial cache misses", async (t) => {
+test("Pi session detail includes full and partial cache misses", async (t) => {
   await using server = await startServer();
   const body = await getJson(server.url, `${sessionPath}?harness=pi`);
   const session = sessionDetailSchema.parse(body);
@@ -28,13 +30,17 @@ Deno.test("Pi session detail includes full and partial cache misses", async (t) 
     ),
     2,
   );
-  await t.assertSnapshot(body, { path: "../snapshots/session-detail.snap" });
+  await assertSnapshot(t, body, "session-detail.snap");
 });
 
-Deno.test("Pi session cost scenarios", async (t) => {
-  await using server = await startServer();
+describe("Pi session cost scenarios", () => {
+  let server: Awaited<ReturnType<typeof startServer>>;
+  beforeAll(async () => {
+    server = await startServer();
+  });
+  afterAll(async () => await server?.[Symbol.asyncDispose]());
   for (const cacheTtl of ["5m", "1h"]) {
-    await t.step(cacheTtl, async (t) => {
+    test(cacheTtl, async (t) => {
       const body = await getJson(
         server.url,
         `${sessionPath}/cost-scenario?harness=pi&model=claude-sonnet-4-6&cacheTtl=${cacheTtl}`,
@@ -42,15 +48,17 @@ Deno.test("Pi session cost scenarios", async (t) => {
       const scenario = costScenarioResponseSchema.parse(body);
       strictEqual(scenario.model, "claude-sonnet-4-6");
       strictEqual(scenario.cacheTtl, cacheTtl);
-      await t.assertSnapshot(body, {
-        path: "../snapshots/session-cost-scenario.snap",
-      });
+      await assertSnapshot(t, body, "session-cost-scenario.snap");
     });
   }
 });
 
-Deno.test("session detail and cost scenario errors", async (t) => {
-  await using server = await startServer();
+describe("session detail and cost scenario errors", () => {
+  let server: Awaited<ReturnType<typeof startServer>>;
+  beforeAll(async () => {
+    server = await startServer();
+  });
+  afterAll(async () => await server?.[Symbol.asyncDispose]());
   const cases = [
     [`${sessionPath}?harness=invalid`, 400, "Invalid harness"],
     ["/api/sessions/missing?harness=pi", 404, "Session not found"],
@@ -78,7 +86,7 @@ Deno.test("session detail and cost scenario errors", async (t) => {
     ],
   ] as const;
   for (const [path, status, error] of cases) {
-    await t.step(path, async () => {
+    test(path, async () => {
       deepStrictEqual(await getJson(server.url, path, status), { error });
     });
   }

@@ -1,29 +1,37 @@
+import { spawn } from "node:child_process";
+import { childExitCode } from "./childExitCode.ts";
+import process from "node:process";
+import { fileURLToPath } from "node:url";
 import { sqlitePath } from "../src/server/database.ts";
 
-const databaseURL = Deno.env.get("FRUGAL_TOKENS_DATABASE_URL");
+const databaseURL = process.env.FRUGAL_TOKENS_DATABASE_URL;
 if (!databaseURL) {
   throw new Error("FRUGAL_TOKENS_DATABASE_URL is not set");
 }
 
 const environment = {
-  ...Deno.env.toObject(),
+  ...process.env,
   FRUGAL_TOKENS_DATABASE_URL: `sqlite:${sqlitePath(databaseURL)}`,
 };
-const result = await new Deno.Command(Deno.execPath(), {
-  args: [
-    "run",
-    "-A",
-    "npm:dbmate@^2.28.0",
-    "--migrations-dir",
-    "db/migrations",
-    "--env",
-    "FRUGAL_TOKENS_DATABASE_URL",
-    ...Deno.args,
-  ],
+const child = spawn(process.execPath, [
+  fileURLToPath(import.meta.resolve("dbmate/dist/cli.js")),
+  "--migrations-dir",
+  "db/migrations",
+  "--env",
+  "FRUGAL_TOKENS_DATABASE_URL",
+  ...process.argv.slice(2),
+], {
   env: environment,
-  stdin: "inherit",
-  stdout: "inherit",
-  stderr: "inherit",
-}).output();
+  stdio: "inherit",
+});
 
-if (!result.success) Deno.exit(result.code);
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.on(signal, () => child.kill(signal));
+}
+child.once("error", (error) => {
+  console.error(error.message);
+  process.exitCode = 1;
+});
+child.once("close", (code, signal) => {
+  process.exitCode = childExitCode(code, signal);
+});

@@ -1,0 +1,62 @@
+{
+  "name": "frugal-tokens",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.10.1",
+  "engines": {
+    "node": "^26.0.0"
+  },
+  "scripts": {
+    "setup": "prek install",
+    "check": "tsc --noEmit",
+    "lint": "oxlint src scripts e2e vite.config.ts vitest.config.ts",
+    "fmt": "deno fmt --no-config src/ scripts/ e2e/ package.json tsconfig.json vite.config.ts vitest.config.ts railway.json index.html",
+    "fmt:check": "pnpm fmt --check",
+    "lint:oxlint": "oxlint .",
+    "lint:oxlint:gate": "oxlint --config .oxlintrc.prek.json --quiet .",
+    "test": "vitest run --project unit",
+    "test:e2e": "node --import tsx scripts/runHttpTests.ts",
+    "db:new": "node --import tsx scripts/runDbmate.ts new",
+    "db:migrate": "node --import tsx scripts/prepareDatabase.ts && node --import tsx scripts/runDbmate.ts --no-dump-schema up",
+    "db:rollback": "node --import tsx scripts/runDbmate.ts down",
+    "db:status": "node --import tsx scripts/runDbmate.ts status",
+    "demo:db:create": "node --env-file-if-exists=.env --import tsx scripts/createDemoDatabase.ts",
+    "dev": "node --import tsx scripts/dev.ts",
+    "dev:server": "node --env-file-if-exists=.env --import tsx scripts/prepareDatabase.ts && node --env-file-if-exists=.env --import tsx scripts/runDbmate.ts --no-dump-schema up && tsx watch --include 'src/server/**' --include 'src/shared/**' --env-file-if-exists=.env src/server/main.ts",
+    "dev:client": "vite",
+    "build": "vite build",
+    "start": "export SERVE_STATIC=true && node --env-file-if-exists=.env --import tsx scripts/prepareDatabase.ts && node --env-file-if-exists=.env --import tsx scripts/runDbmate.ts --no-dump-schema up && node --env-file-if-exists=.env --import tsx src/server/main.ts",
+    "start:api": "pnpm db:migrate && node --import tsx src/server/main.ts",
+    "demo:deploy:frontend": "node --env-file-if-exists=.env.demo --import tsx scripts/deployDemoFrontend.ts",
+    "demo:deploy:backend": "node --env-file-if-exists=.env.demo --import tsx scripts/deployDemoBackend.ts",
+    "demo:deploy:data": "node --env-file-if-exists=.env.demo --import tsx scripts/deployDemoDatabase.ts"
+  },
+  "dependencies": {
+    "@hono/node-server": "2.1.4",
+    "@tanstack/react-router": "1.170.17",
+    "dbmate": "2.34.1",
+    "hono": "4.12.29",
+    "html-to-image": "1.11.13",
+    "lucide-react": "1.25.0",
+    "pretty-ms": "9.3.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "recharts": "3.3.0",
+    "tsx": "4.23.15",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@j178/prek": "0.5.5",
+    "@oxlint/plugins": "1.79.0",
+    "@types/node": "26.6.5",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.3",
+    "concurrently": "10.0.3",
+    "oxlint": "1.79.0",
+    "typescript": "7.0.2",
+    "vite": "8.1.4",
+    "vitest": "5.0.3",
+    "wrangler": "4.112.0"
+  }
+}

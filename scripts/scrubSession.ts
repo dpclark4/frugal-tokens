@@ -1,3 +1,5 @@
+import { readFile, writeFile } from "node:fs/promises";
+import process from "node:process";
 import { basename, resolve } from "node:path";
 import { z } from "zod";
 
@@ -993,18 +995,19 @@ export async function scrubFile(
   if (resolve(input) === resolve(output)) {
     throw new Error("Input and output must differ");
   }
-  const result = scrubSession(harness, await Deno.readTextFile(input), name);
-  // createNew also prevents overwriting the input via a symlink or hard link.
-  await Deno.writeTextFile(output, result.jsonl, { createNew: true });
+  const result = scrubSession(harness, await readFile(input, "utf8"), name);
+  // Exclusive creation also prevents overwriting the input via a symlink or hard link.
+  await writeFile(output, result.jsonl, { flag: "wx" });
   return result;
 }
 
 if (import.meta.main) {
+  const argv = process.argv.slice(2);
   try {
     const args = new Map<string, string>();
-    for (let i = 0; i < Deno.args.length; i += 2) {
-      const key = Deno.args[i];
-      const value = Deno.args[i + 1];
+    for (let i = 0; i < argv.length; i += 2) {
+      const key = argv[i];
+      const value = argv[i + 1];
       if (
         !["--harness", "--input", "--output", "--name"].includes(key) ||
         !value || args.has(key)
@@ -1030,6 +1033,6 @@ if (import.meta.main) {
     );
   } catch (error) {
     console.error(error instanceof Error ? error.message : "Scrubbing failed");
-    Deno.exitCode = 1;
+    process.exitCode = 1;
   }
 }

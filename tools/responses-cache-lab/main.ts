@@ -1,3 +1,6 @@
+import process from "node:process";
+import { readFile } from "node:fs/promises";
+import { text as readStdin } from "node:stream/consumers";
 import { postResponses } from "./client.ts";
 import { DEFAULT_MODEL, normalizeInput, parseScenario } from "./scenario.ts";
 import { createRunStore, defaultOutputDirectory, sha256 } from "./storage.ts";
@@ -199,7 +202,7 @@ function parseArgs(args: string[]): CliOptions {
 
 function usageText(): string {
   return `Usage:
-  deno run --env-file=.env --allow-env=OPENAI_API_KEY,OPENAI_BASE_URL,RESPONSES_CACHE_LAB_DIR,HOME --allow-read --allow-write --allow-net tools/responses-cache-lab/main.ts run --scenario scenarios/example.json
+  node --env-file=.env --import tsx tools/responses-cache-lab/main.ts run --scenario scenarios/example.json
 
 Options:
   --scenario PATH|-       Scenario JSON path, or read JSON from stdin with '-'.
@@ -223,11 +226,11 @@ async function readScenario(
 ): Promise<{ text: string; source: string }> {
   if (path === "-") {
     return {
-      text: await new Response(Deno.stdin.readable).text(),
+      text: await readStdin(process.stdin),
       source: "stdin",
     };
   }
-  return { text: await Deno.readTextFile(path), source: path };
+  return { text: await readFile(path, "utf8"), source: path };
 }
 
 function asString(value: unknown): string | null {
@@ -319,7 +322,7 @@ function responseOutput(payload: JsonValue | undefined): JsonValue[] {
 
 async function resolveCallInput(call: ScenarioCall): Promise<JsonValue[]> {
   if (call.inputFile !== undefined) {
-    const text = await Deno.readTextFile(call.inputFile);
+    const text = await readFile(call.inputFile, "utf8");
     return [{
       role: "user",
       content: [{ type: "input_text", text }],
@@ -474,7 +477,7 @@ async function run(
     parseScenario(scenarioSource.text, scenarioSource.source),
   );
   const baseUrl = normalizeBaseUrl(
-    options.baseUrl || Deno.env.get("OPENAI_BASE_URL") || DEFAULT_BASE_URL,
+    options.baseUrl || process.env.OPENAI_BASE_URL || DEFAULT_BASE_URL,
   );
   const manifest: RunManifest = {
     schemaVersion: 1,
@@ -493,7 +496,7 @@ async function run(
     options.outputDirectory || defaultOutputDirectory(),
     manifest,
   );
-  const apiKey = options.dryRun ? undefined : Deno.env.get("OPENAI_API_KEY");
+  const apiKey = options.dryRun ? undefined : process.env.OPENAI_API_KEY;
   if (!apiKey && !options.dryRun) {
     manifest.warnings.push(
       "OPENAI_API_KEY is not set; use --dry-run for offline validation",
@@ -716,13 +719,13 @@ async function main(args: string[]): Promise<void> {
 
 if (import.meta.main) {
   try {
-    await main(Deno.args);
+    await main(process.argv.slice(2));
   } catch (error) {
     console.error(
       `responses-cache-lab: ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
-    Deno.exit(1);
+    process.exit(1);
   }
 }

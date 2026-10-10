@@ -1,3 +1,4 @@
+import { test } from "vitest";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import type { TokenUsage } from "./sessionSchemas.ts";
 import { contextRange, contextSize } from "./contextMetrics.ts";
@@ -18,11 +19,11 @@ function tokens(
   };
 }
 
-Deno.test("context size includes every input-side token category", () => {
+test("context size includes every input-side token category", () => {
   strictEqual(contextSize(tokens(10, 20, 30)), 60);
 });
 
-Deno.test("context range ignores opaque zero-context usage records", () => {
+test("context range ignores opaque zero-context usage records", () => {
   const range = contextRange([
     { id: "real", startedAt: 10, tokens: tokens(100, 200) },
     { id: "opaque", startedAt: 20, tokens: tokens(0) },
@@ -35,12 +36,15 @@ Deno.test("context range ignores opaque zero-context usage records", () => {
     },
     { first: "real", latest: "real", peak: "real" },
   );
-  deepStrictEqual(contextRange([
-    { id: "opaque", startedAt: 20, tokens: tokens(0) },
-  ]), { first: undefined, latest: undefined, peak: undefined });
+  deepStrictEqual(
+    contextRange([
+      { id: "opaque", startedAt: 20, tokens: tokens(0) },
+    ]),
+    { first: undefined, latest: undefined, peak: undefined },
+  );
 });
 
-Deno.test("context range finds chronological endpoints and peak request", () => {
+test("context range finds chronological endpoints and peak request", () => {
   const calls = [
     { id: "latest", startedAt: 30, tokens: tokens(80) },
     { id: "first", startedAt: 10, tokens: tokens(100) },

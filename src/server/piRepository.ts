@@ -1,3 +1,4 @@
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { z } from "zod";
 import {
   type SessionDetail,
@@ -165,7 +166,7 @@ function readRecordsFromText(text: string, strict = false) {
 }
 
 function readRecords(path: string) {
-  return readRecordsFromText(Deno.readTextFileSync(path));
+  return readRecordsFromText(readFileSync(path, "utf8"));
 }
 
 function preview(value: string): ConversationContentImport {
@@ -730,10 +731,10 @@ export class PiRepository {
 
 export function discoverPiSessions(directory: string) {
   const files: PiSessionCandidate[] = [];
-  for (const project of Deno.readDirSync(directory)) {
-    if (project.isFile && project.name.endsWith(".jsonl")) {
+  for (const project of readdirSync(directory, { withFileTypes: true })) {
+    if (project.isFile() && project.name.endsWith(".jsonl")) {
       const path = `${directory}/${project.name}`;
-      const stat = Deno.statSync(path);
+      const stat = statSync(path);
       files.push({
         id: project.name.slice(0, -6),
         path,
@@ -743,12 +744,12 @@ export function discoverPiSessions(directory: string) {
       });
       continue;
     }
-    if (!project.isDirectory) continue;
+    if (!project.isDirectory()) continue;
     const projectPath = `${directory}/${project.name}`;
-    for (const entry of Deno.readDirSync(projectPath)) {
-      if (!entry.isFile || !entry.name.endsWith(".jsonl")) continue;
+    for (const entry of readdirSync(projectPath, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith(".jsonl")) continue;
       const path = `${projectPath}/${entry.name}`;
-      const stat = Deno.statSync(path);
+      const stat = statSync(path);
       files.push({
         id: `${project.name}/${entry.name.slice(0, -6)}`,
         path,

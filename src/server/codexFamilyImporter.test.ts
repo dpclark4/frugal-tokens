@@ -1,3 +1,14 @@
+import { test } from "vitest";
+import {
+  copyFileSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
+import { temporaryDirectory } from "../test/temporaryDirectory.ts";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { z } from "zod";
 import {
@@ -25,12 +36,14 @@ function count(db: ReturnType<typeof openArchiveDatabase>, table: string) {
 }
 
 function copyFixture(name: string, destination: string, files?: string[]) {
-  Deno.mkdirSync(destination, { recursive: true });
-  for (const entry of Deno.readDirSync(fixturePath(name))) {
-    if (!entry.isFile || (files !== undefined && !files.includes(entry.name))) {
+  mkdirSync(destination, { recursive: true });
+  for (const entry of readdirSync(fixturePath(name), { withFileTypes: true })) {
+    if (
+      !entry.isFile() || (files !== undefined && !files.includes(entry.name))
+    ) {
       continue;
     }
-    Deno.copyFileSync(
+    copyFileSync(
       `${fixturePath(name)}${entry.name}`,
       `${destination}/${entry.name}`,
     );
@@ -41,23 +54,23 @@ function rewriteFirstRecord(
   path: string,
   update: (record: JsonObject) => void,
 ) {
-  const lines = Deno.readTextFileSync(path).trim().split("\n");
+  const lines = readFileSync(path, "utf8").trim().split("\n");
   const first = parseJsonObject(lines[0]);
   update(first);
   lines[0] = JSON.stringify(first);
-  Deno.writeTextFileSync(path, `${lines.join("\n")}\n`);
+  writeFileSync(path, `${lines.join("\n")}\n`);
   const changedAt = new Date(Date.now() + 2_000);
-  Deno.utimeSync(path, changedAt, changedAt);
+  utimesSync(path, changedAt, changedAt);
 }
 
 function writeJsonl(path: string, records: unknown[]) {
-  Deno.writeTextFileSync(
+  writeFileSync(
     path,
     `${records.map((record) => JSON.stringify(record)).join("\n")}\n`,
   );
 }
 
-Deno.test("Codex sibling artifacts project one canonical conversation family", async () => {
+test("Codex sibling artifacts project one canonical conversation family", async () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   const sessions = new SourceArtifactRepository(db);
@@ -147,10 +160,10 @@ Deno.test("Codex sibling artifacts project one canonical conversation family", a
   }
 });
 
-Deno.test("Codex rewind with a queued prompt projects as one branched conversation", async () => {
-  const directory = Deno.makeTempDirSync();
+test("Codex rewind with a queued prompt projects as one branched conversation", async () => {
+  const directory = temporaryDirectory();
   const source = `${directory}/sessions`;
-  Deno.mkdirSync(source, { recursive: true });
+  mkdirSync(source, { recursive: true });
   const metadata = (id: string, forkedFrom?: string) => ({
     timestamp: "2026-08-06T23:00:00.000Z",
     type: "session_meta",
@@ -254,7 +267,7 @@ Deno.test("Codex rewind with a queued prompt projects as one branched conversati
   }
 });
 
-Deno.test("Codex nested artifacts resolve recursive branch ancestry", async () => {
+test("Codex nested artifacts resolve recursive branch ancestry", async () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   const sessions = new SourceArtifactRepository(db);
@@ -296,8 +309,8 @@ Deno.test("Codex nested artifacts resolve recursive branch ancestry", async () =
   }
 });
 
-Deno.test("Codex family rebuilds for late, missing, and reappearing parents", async () => {
-  const directory = Deno.makeTempDirSync();
+test("Codex family rebuilds for late, missing, and reappearing parents", async () => {
+  const directory = temporaryDirectory();
   const source = `${directory}/sessions`;
   copyFixture("nested-fork", source, ["rollout-child.jsonl"]);
   const db = openArchiveDatabase(`${directory}/archive.sqlite`);
@@ -348,7 +361,7 @@ Deno.test("Codex family rebuilds for late, missing, and reappearing parents", as
     );
 
     const rootPath = `${source}/rollout-root.jsonl`;
-    Deno.removeSync(rootPath);
+    rmSync(rootPath);
     const beforeMissing = db.prepare("SELECT id FROM conversations").get()!.id;
     const missing = await syncCodexSessions(source, sessions, conversations);
     strictEqual(missing.skipped, 1);
@@ -372,12 +385,12 @@ Deno.test("Codex family rebuilds for late, missing, and reappearing parents", as
     strictEqual(count(db, "conversation_model_calls"), 2);
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
-Deno.test("Codex parent append rebuilds the complete family once", async () => {
-  const directory = Deno.makeTempDirSync();
+test("Codex parent append rebuilds the complete family once", async () => {
+  const directory = temporaryDirectory();
   const source = `${directory}/sessions`;
   copyFixture("sibling-forks", source);
   const db = openArchiveDatabase(`${directory}/archive.sqlite`);
@@ -387,16 +400,16 @@ Deno.test("Codex parent append rebuilds the complete family once", async () => {
   try {
     await syncCodexSessions(source, sessions, conversations);
     const original = `${source}/rollout-original.jsonl`;
-    Deno.writeTextFileSync(
+    writeFileSync(
       original,
-      `${Deno.readTextFileSync(original).trim()}\n` +
+      `${readFileSync(original, "utf8").trim()}\n` +
         `{"timestamp":"2026-01-01T10:04:01.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-original-5","started_at":1767261841}}\n` +
         `{"timestamp":"2026-01-01T10:04:01.100Z","type":"response_item","payload":{"type":"message","id":"message-user-original-5","role":"user","content":[{"type":"input_text","text":"Original five"}]}}\n` +
         `{"timestamp":"2026-01-01T10:04:01.200Z","type":"response_item","payload":{"type":"message","id":"response-original-5","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"Original answer five"}]}}\n` +
         `{"timestamp":"2026-01-01T10:04:01.300Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":95,"cached_input_tokens":25,"output_tokens":9,"reasoning_output_tokens":0}}}}\n`,
     );
     const changedAt = new Date(Date.now() + 2_000);
-    Deno.utimeSync(original, changedAt, changedAt);
+    utimesSync(original, changedAt, changedAt);
     const result = await syncCodexSessions(source, sessions, conversations);
     strictEqual(result.imported, 3);
     strictEqual(count(db, "conversations"), 1);
@@ -405,12 +418,12 @@ Deno.test("Codex parent append rebuilds the complete family once", async () => {
     strictEqual(count(db, "artifact_model_call_occurrences"), 14);
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
-Deno.test("Codex new children rebuild only their connected family", async () => {
-  const directory = Deno.makeTempDirSync();
+test("Codex new children rebuild only their connected family", async () => {
+  const directory = temporaryDirectory();
   const source = `${directory}/sessions`;
   copyFixture("sibling-forks", source, ["rollout-original.jsonl"]);
   const db = openArchiveDatabase(`${directory}/archive.sqlite`);
@@ -440,14 +453,14 @@ Deno.test("Codex new children rebuild only their connected family", async () => 
     strictEqual(count(db, "artifact_model_call_occurrences"), 13);
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
-Deno.test("Codex lineage changes rebuild both the prior and new families", async () => {
-  const directory = Deno.makeTempDirSync();
+test("Codex lineage changes rebuild both the prior and new families", async () => {
+  const directory = temporaryDirectory();
   const source = `${directory}/sessions`;
-  Deno.mkdirSync(source);
+  mkdirSync(source);
   const sessionMeta = (id: string, parentID?: string) => ({
     timestamp: "2026-04-01T10:00:00.000Z",
     type: "session_meta",
@@ -484,7 +497,7 @@ Deno.test("Codex lineage changes rebuild both the prior and new families", async
 
     writeJsonl(childPath, [sessionMeta("child", "root-b")]);
     const changedAt = new Date(Date.now() + 2_000);
-    Deno.utimeSync(childPath, changedAt, changedAt);
+    utimesSync(childPath, changedAt, changedAt);
     const moved = await syncCodexSessions(source, sessions, conversations);
     strictEqual(moved.imported, 3);
     deepStrictEqual(
@@ -503,12 +516,12 @@ Deno.test("Codex lineage changes rebuild both the prior and new families", async
     );
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
-Deno.test("Codex ancestry cycle failure preserves the last good family", async () => {
-  const directory = Deno.makeTempDirSync();
+test("Codex ancestry cycle failure preserves the last good family", async () => {
+  const directory = temporaryDirectory();
   const source = `${directory}/sessions`;
   copyFixture("nested-fork", source, [
     "rollout-root.jsonl",
@@ -519,7 +532,7 @@ Deno.test("Codex ancestry cycle failure preserves the last good family", async (
   const sessions = new SourceArtifactRepository(db);
   const conversations = new ConversationWriteRepository(db);
   const rootPath = `${source}/rollout-root.jsonl`;
-  const originalRoot = Deno.readTextFileSync(rootPath);
+  const originalRoot = readFileSync(rootPath, "utf8");
   try {
     await syncCodexSessions(source, sessions, conversations);
     const conversationID = db.prepare("SELECT id FROM conversations").get()!.id;
@@ -537,20 +550,20 @@ Deno.test("Codex ancestry cycle failure preserves the last good family", async (
     strictEqual(count(db, "conversation_branches"), 2);
     strictEqual(count(db, "conversation_model_calls"), 2);
 
-    Deno.writeTextFileSync(rootPath, originalRoot);
+    writeFileSync(rootPath, originalRoot);
     const changedAt = new Date(Date.now() + 4_000);
-    Deno.utimeSync(rootPath, changedAt, changedAt);
+    utimesSync(rootPath, changedAt, changedAt);
     const recovered = await syncCodexSessions(source, sessions, conversations);
     strictEqual(recovered.imported, 2);
     strictEqual(count(db, "conversation_branches"), 2);
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
-Deno.test("Codex transactional replacement retains the prior canonical family", async () => {
-  const directory = Deno.makeTempDirSync();
+test("Codex transactional replacement retains the prior canonical family", async () => {
+  const directory = temporaryDirectory();
   const source = `${directory}/sessions`;
   copyFixture("nested-fork", source, [
     "rollout-root.jsonl",
@@ -564,7 +577,7 @@ Deno.test("Codex transactional replacement retains the prior canonical family", 
   try {
     await syncCodexSessions(source, sessions, conversations);
     const conversationID = db.prepare("SELECT id FROM conversations").get()!.id;
-    const records = Deno.readTextFileSync(childPath).trim().split("\n").map(
+    const records = readFileSync(childPath, "utf8").trim().split("\n").map(
       parseJsonObject,
     );
     const sharedResponse = records.find((record) => {
@@ -581,7 +594,7 @@ Deno.test("Codex transactional replacement retains the prior canonical family", 
     sharedResponse.payload = payload;
     writeJsonl(childPath, records);
     const changedAt = new Date(Date.now() + 2_000);
-    Deno.utimeSync(childPath, changedAt, changedAt);
+    utimesSync(childPath, changedAt, changedAt);
 
     const failed = await syncCodexSessions(source, sessions, conversations);
     strictEqual(failed.failed, 2);
@@ -594,14 +607,14 @@ Deno.test("Codex transactional replacement retains the prior canonical family", 
     strictEqual(count(db, "artifact_model_call_occurrences"), 3);
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
-Deno.test("Codex copies a complete multi-call tool turn without re-executing it", async () => {
-  const directory = Deno.makeTempDirSync();
+test("Codex copies a complete multi-call tool turn without re-executing it", async () => {
+  const directory = temporaryDirectory();
   const source = `${directory}/sessions`;
-  Deno.mkdirSync(source);
+  mkdirSync(source);
   const pathRecords = [
     {
       timestamp: "2026-03-01T10:00:00.100Z",
@@ -737,14 +750,14 @@ Deno.test("Codex copies a complete multi-call tool turn without re-executing it"
     );
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
-Deno.test("Codex does not deduplicate copied-looking calls without stable identity", async () => {
-  const directory = Deno.makeTempDirSync();
+test("Codex does not deduplicate copied-looking calls without stable identity", async () => {
+  const directory = temporaryDirectory();
   const source = `${directory}/sessions`;
-  Deno.mkdirSync(source);
+  mkdirSync(source);
   const pathRecords = [
     {
       timestamp: "2026-04-01T10:00:00.100Z",
@@ -829,14 +842,14 @@ Deno.test("Codex does not deduplicate copied-looking calls without stable identi
     );
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
-Deno.test("Codex imports compact fork history carried by agent messages", async () => {
-  const directory = Deno.makeTempDirSync();
+test("Codex imports compact fork history carried by agent messages", async () => {
+  const directory = temporaryDirectory();
   const source = `${directory}/sessions`;
-  Deno.mkdirSync(source);
+  mkdirSync(source);
   const timestamp = "2026-08-20T12:00:00.000Z";
   const tokenCount = (output: number) => ({
     timestamp,
@@ -962,14 +975,14 @@ Deno.test("Codex imports compact fork history carried by agent messages", async 
     strictEqual(count(db, "artifact_entry_occurrences"), 15);
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
-Deno.test("Codex projects a source artifact without provider session identity", async () => {
-  const directory = Deno.makeTempDirSync();
+test("Codex projects a source artifact without provider session identity", async () => {
+  const directory = temporaryDirectory();
   const source = `${directory}/sessions`;
-  Deno.mkdirSync(source);
+  mkdirSync(source);
   writeJsonl(`${source}/rollout-anonymous.jsonl`, [
     { type: "session_meta", payload: { cwd: "/workspace/project" } },
     {
@@ -1036,6 +1049,6 @@ Deno.test("Codex projects a source artifact without provider session identity", 
     );
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });

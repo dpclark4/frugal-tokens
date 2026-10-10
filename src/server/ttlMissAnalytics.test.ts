@@ -1,3 +1,4 @@
+import { test } from "vitest";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { aggregateTtlMisses } from "./ttlMissAnalytics.ts";
 import type {
@@ -87,7 +88,7 @@ function emptySubagents() {
   };
 }
 
-Deno.test("counts every root TTL miss in its elapsed-time bucket", () => {
+test("counts every root TTL miss in its elapsed-time bucket", () => {
   const calls = [
     call("affected", start),
     call("affected", start + 60 * MINUTE),
@@ -242,7 +243,7 @@ Deno.test("counts every root TTL miss in its elapsed-time bucket", () => {
   });
 });
 
-Deno.test("aggregates precomputed cache misses without reclassifying them", () => {
+test("aggregates precomputed cache misses without reclassifying them", () => {
   const stored: StoredCacheMiss = {
     harness: "claude-code",
     sessionID: "stored",
@@ -284,7 +285,7 @@ Deno.test("aggregates precomputed cache misses without reclassifying them", () =
   strictEqual(result.cacheMisses.unexpected.full.misses, 0);
 });
 
-Deno.test("counts each session once per TTL return-gap bucket", () => {
+test("counts each session once per TTL return-gap bucket", () => {
   const result = aggregateTtlMisses(
     [
       call("affected", start),
@@ -307,7 +308,7 @@ Deno.test("counts each session once per TTL return-gap bucket", () => {
   strictEqual(result.misses.eightHoursOrMoreSessions, 0);
 });
 
-Deno.test("counts a session once across other miss causes", () => {
+test("counts a session once across other miss causes", () => {
   const result = aggregateTtlMisses(
     [
       call("affected", start),
@@ -323,7 +324,7 @@ Deno.test("counts a session once across other miss causes", () => {
   strictEqual(result.cacheMisses.otherAffectedSessions, 1);
 });
 
-Deno.test("separates thinking-change misses from unexpected metrics", () => {
+test("separates thinking-change misses from unexpected metrics", () => {
   const result = aggregateTtlMisses(
     [
       call("thinking", start, { thinking: "high" }),
@@ -338,7 +339,7 @@ Deno.test("separates thinking-change misses from unexpected metrics", () => {
   strictEqual(result.cacheMisses.otherAffectedSessions, 1);
 });
 
-Deno.test("keeps a recent model-switch full miss out of unexpected metrics", () => {
+test("keeps a recent model-switch full miss out of unexpected metrics", () => {
   const result = aggregateTtlMisses(
     [
       call("switched", start, { model: "gpt-5.6-terra" }),
@@ -354,7 +355,7 @@ Deno.test("keeps a recent model-switch full miss out of unexpected metrics", () 
   strictEqual(result.cacheMisses.otherAffectedSessions, 1);
 });
 
-Deno.test("separates subagent misses and keeps compactions outside TTL", () => {
+test("separates subagent misses and keeps compactions outside TTL", () => {
   const calls = [
     call("root", start),
     call("root", start + 10 * MINUTE, { followsCompaction: true }),
@@ -507,7 +508,7 @@ Deno.test("separates subagent misses and keeps compactions outside TTL", () => {
   });
 });
 
-Deno.test("reports incomplete affected-session and miss pricing", () => {
+test("reports incomplete affected-session and miss pricing", () => {
   const result = aggregateTtlMisses(
     [
       call("unknown", start, { model: "unknown-model" }),
@@ -531,7 +532,7 @@ Deno.test("reports incomplete affected-session and miss pricing", () => {
   strictEqual(result.cacheMisses.full.unpriced, 1);
 });
 
-Deno.test("aggregates every subagent cause from stored summary rows", () => {
+test("aggregates every subagent cause from stored summary rows", () => {
   const aggregate = (
     overrides: Partial<StoredCacheMissAggregate>,
   ): StoredCacheMissAggregate => ({
@@ -594,7 +595,7 @@ Deno.test("aggregates every subagent cause from stored summary rows", () => {
   strictEqual(result.combined.unpriced, 1);
 });
 
-Deno.test("separates full and partial miss costs", () => {
+test("separates full and partial miss costs", () => {
   const before = call("mixed", start);
   before.tokens.cacheRead = 900;
   before.tokens.cacheWrite = 100;

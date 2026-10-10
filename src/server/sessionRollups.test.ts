@@ -1,3 +1,4 @@
+import { test } from "vitest";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import {
   overviewResponseSchema,
@@ -90,7 +91,7 @@ function sourceSession(options: {
   };
 }
 
-Deno.test("builds root, subagent, thinking, context, and overview rollups", () => {
+test("builds root, subagent, thinking, context, and overview rollups", () => {
   const firstDay = new Date(2026, 6, 10, 9).getTime();
   const secondDay = new Date(2026, 6, 11, 10).getTime();
   const largerTokens: TokenUsage = {

@@ -1,3 +1,4 @@
+import { type Dirent, readdirSync, readFileSync, statSync } from "node:fs";
 import { z } from "zod";
 import {
   type SessionDetail,
@@ -162,7 +163,7 @@ function addTokens(total: TokenUsage, usage: TokenUsage) {
 
 function readRecords(path: string) {
   const records: Record[] = [];
-  for (const line of Deno.readTextFileSync(path).split("\n")) {
+  for (const line of readFileSync(path, "utf8").split("\n")) {
     if (!line) continue;
     try {
       const result = recordSchema.safeParse(JSON.parse(line));
@@ -682,7 +683,7 @@ function decodeRecords(records: Record[]) {
 }
 
 function dependency(path: string, artifactPath: string): ClaudeCodeDependency {
-  const stat = Deno.statSync(path);
+  const stat = statSync(path);
   return {
     path,
     artifactPath,
@@ -698,7 +699,9 @@ function existingDependency(
   try {
     return dependency(path, artifactPath);
   } catch (error) {
-    if (error instanceof Deno.errors.NotFound) return undefined;
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return undefined;
+    }
     throw error;
   }
 }
@@ -709,16 +712,18 @@ function collectSubagentDependencies(
   dependencies: ClaudeCodeDependency[],
 ) {
   const subagents = `${transcriptPath.slice(0, -6)}/subagents`;
-  let entries: Deno.DirEntry[];
+  let entries: Dirent[];
   try {
-    entries = [...Deno.readDirSync(subagents)];
+    entries = [...readdirSync(subagents, { withFileTypes: true })];
   } catch (error) {
-    if (error instanceof Deno.errors.NotFound) return;
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return;
+    }
     throw error;
   }
   for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
     if (
-      !entry.isFile || !entry.name.startsWith("agent-") ||
+      !entry.isFile() || !entry.name.startsWith("agent-") ||
       !entry.name.endsWith(".jsonl")
     ) continue;
     const path = `${subagents}/${entry.name}`;
@@ -750,8 +755,8 @@ export function discoverClaudeCodeSessions(
   directory: string,
 ): ClaudeCodeSessionCandidate[] {
   const roots: Array<{ id: string; path: string; artifactPath: string }> = [];
-  for (const entry of Deno.readDirSync(directory)) {
-    if (entry.isFile && entry.name.endsWith(".jsonl")) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    if (entry.isFile() && entry.name.endsWith(".jsonl")) {
       roots.push({
         id: entry.name.slice(0, -6),
         path: `${directory}/${entry.name}`,
@@ -759,9 +764,13 @@ export function discoverClaudeCodeSessions(
       });
       continue;
     }
-    if (!entry.isDirectory) continue;
-    for (const session of Deno.readDirSync(`${directory}/${entry.name}`)) {
-      if (!session.isFile || !session.name.endsWith(".jsonl")) continue;
+    if (!entry.isDirectory()) continue;
+    for (
+      const session of readdirSync(`${directory}/${entry.name}`, {
+        withFileTypes: true,
+      })
+    ) {
+      if (!session.isFile() || !session.name.endsWith(".jsonl")) continue;
       roots.push({
         id: `${entry.name}/${session.name.slice(0, -6)}`,
         path: `${directory}/${entry.name}/${session.name}`,
@@ -943,8 +952,8 @@ export class ClaudeCodeRepository {
 
   constructor(private directory: string) {
     this.#loadIndex(directory);
-    for (const entry of Deno.readDirSync(directory)) {
-      if (!entry.isDirectory) continue;
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
       this.#loadIndex(`${directory}/${entry.name}`, `${entry.name}/`);
     }
   }
@@ -958,7 +967,7 @@ export class ClaudeCodeRepository {
           firstPrompt: z.string().optional(),
         })),
       }).parse(
-        JSON.parse(Deno.readTextFileSync(`${directory}/sessions-index.json`)),
+        JSON.parse(readFileSync(`${directory}/sessions-index.json`, "utf8")),
       );
       for (const entry of parsed.entries) {
         this.#index.set(`${idPrefix}${entry.sessionId}`, entry);
@@ -970,25 +979,25 @@ export class ClaudeCodeRepository {
 
   #files() {
     const files: Array<{ id: string; path: string; updatedAt: number }> = [];
-    for (const entry of Deno.readDirSync(this.directory)) {
-      if (entry.isFile && entry.name.endsWith(".jsonl")) {
+    for (const entry of readdirSync(this.directory, { withFileTypes: true })) {
+      if (entry.isFile() && entry.name.endsWith(".jsonl")) {
         const path = `${this.directory}/${entry.name}`;
         files.push({
           id: entry.name.slice(0, -6),
           path,
-          updatedAt: Deno.statSync(path).mtime?.getTime() ?? 0,
+          updatedAt: statSync(path).mtime?.getTime() ?? 0,
         });
         continue;
       }
-      if (!entry.isDirectory) continue;
+      if (!entry.isDirectory()) continue;
       const projectPath = `${this.directory}/${entry.name}`;
-      for (const session of Deno.readDirSync(projectPath)) {
-        if (!session.isFile || !session.name.endsWith(".jsonl")) continue;
+      for (const session of readdirSync(projectPath, { withFileTypes: true })) {
+        if (!session.isFile() || !session.name.endsWith(".jsonl")) continue;
         const path = `${projectPath}/${session.name}`;
         files.push({
           id: `${entry.name}/${session.name.slice(0, -6)}`,
           path,
-          updatedAt: Deno.statSync(path).mtime?.getTime() ?? 0,
+          updatedAt: statSync(path).mtime?.getTime() ?? 0,
         });
       }
     }
@@ -1107,9 +1116,9 @@ export class ClaudeCodeRepository {
     const subagentDirectory = `${path.slice(0, -6)}/subagents`;
     let subagents: SessionDetail[] = [];
     try {
-      subagents = [...Deno.readDirSync(subagentDirectory)]
+      subagents = [...readdirSync(subagentDirectory, { withFileTypes: true })]
         .filter((entry) =>
-          entry.isFile && entry.name.startsWith("agent-") &&
+          entry.isFile() && entry.name.startsWith("agent-") &&
           entry.name.endsWith(".jsonl")
         )
         .map((entry) => {
@@ -1119,8 +1128,9 @@ export class ClaudeCodeRepository {
           try {
             const meta = z.object({ description: z.string().optional() }).parse(
               JSON.parse(
-                Deno.readTextFileSync(
+                readFileSync(
                   `${subagentDirectory}/agent-${childID}.meta.json`,
+                  "utf8",
                 ),
               ),
             );
@@ -1129,13 +1139,16 @@ export class ClaudeCodeRepository {
           return this.#detail(
             childID,
             childPath,
-            Deno.statSync(childPath).mtime?.getTime() ?? updatedAt,
+            statSync(childPath).mtime?.getTime() ?? updatedAt,
             id,
             childTitle,
           );
         });
     } catch (error) {
-      if (!(error instanceof Deno.errors.NotFound)) throw error;
+      if (
+        !(error instanceof Error) || !("code" in error) ||
+        error.code !== "ENOENT"
+      ) throw error;
     }
     const detail = {
       ...summary,

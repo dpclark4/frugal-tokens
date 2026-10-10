@@ -1,3 +1,4 @@
+import { test } from "vitest";
 import { deepStrictEqual, strictEqual, throws } from "node:assert/strict";
 import { openArchiveDatabase } from "./database.ts";
 import { migrateTestDatabase } from "./databaseTestUtils.ts";
@@ -9,7 +10,7 @@ import {
 } from "./sessionRepricing.ts";
 import type { LinearConversationImport } from "./conversationImportTypes.ts";
 
-Deno.test("repricing summarizes batches above five sessions", () => {
+test("repricing summarizes batches above five sessions", () => {
   for (const count of [5, 6]) {
     const db = openArchiveDatabase(":memory:");
     migrateTestDatabase(db);
@@ -102,7 +103,7 @@ function session(
   };
 }
 
-Deno.test("reprices stored sessions and subagents, preserving unknown and zero prices", () => {
+test("reprices stored sessions and subagents, preserving unknown and zero prices", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   try {
@@ -167,7 +168,7 @@ Deno.test("reprices stored sessions and subagents, preserving unknown and zero p
   }
 });
 
-Deno.test("repairs missing OpenCode miss costs when calls are already priced", () => {
+test("repairs missing OpenCode miss costs when calls are already priced", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   try {
@@ -264,7 +265,7 @@ Deno.test("repairs missing OpenCode miss costs when calls are already priced", (
   }
 });
 
-Deno.test("fully repriced sessions leave the post-import candidate scan", () => {
+test("fully repriced sessions leave the post-import candidate scan", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   try {

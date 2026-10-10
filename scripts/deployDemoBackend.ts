@@ -1,25 +1,25 @@
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import process from "node:process";
 function required(name: string) {
-  const value = Deno.env.get(name);
+  const value = process.env[name];
   if (!value) throw new Error(`${name} is not set`);
   return value;
 }
 
 const service = required("DEPLOY_RAILWAY_SERVICE");
-const result = await new Deno.Command("railway", {
-  args: [
-    "up",
-    "--service",
-    service,
-    "--environment",
-    "production",
-    "--ci",
-    "-m",
-    "Deploy demo API",
-  ],
-  stdout: "inherit",
-  stderr: "inherit",
-}).output();
+const child = spawn("railway", [
+  "up",
+  "--service",
+  service,
+  "--environment",
+  "production",
+  "--ci",
+  "-m",
+  "Deploy demo API",
+], { stdio: ["ignore", "inherit", "inherit"] });
+const [code] = await once(child, "close");
 
-if (!result.success) {
+if (code !== 0) {
   throw new Error("railway up failed");
 }

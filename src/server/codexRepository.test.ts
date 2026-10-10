@@ -1,20 +1,23 @@
+import { test } from "vitest";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { temporaryDirectory } from "../test/temporaryDirectory.ts";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { CodexRepository, normalizeCodexSession } from "./codexRepository.ts";
 import { analyzeSessionCache } from "./cacheAnalysis.ts";
 import type { SessionDetail } from "../shared/sessionSchemas.ts";
 
 function repository(files: Record<string, string>) {
-  const directory = Deno.makeTempDirSync();
+  const directory = temporaryDirectory();
   for (const [relativePath, content] of Object.entries(files)) {
     const path = `${directory}/${relativePath}`;
     const parent = path.slice(0, path.lastIndexOf("/"));
-    Deno.mkdirSync(parent, { recursive: true });
-    Deno.writeTextFileSync(path, content.trim());
+    mkdirSync(parent, { recursive: true });
+    writeFileSync(path, content.trim());
   }
   return new CodexRepository(directory);
 }
 
-Deno.test("normalizes Codex JSONL sessions from token count events", () => {
+test("normalizes Codex JSONL sessions from token count events", () => {
   const actual = repository({
     "2026/07/11/rollout-2026-07-11T14-00-00-000Z.jsonl": `
 {"timestamp":"2026-07-11T14:00:00.000Z","type":"turn_context","payload":{"model":"gpt-5.6-luna"}}
@@ -125,7 +128,7 @@ Deno.test("normalizes Codex JSONL sessions from token count events", () => {
   deepStrictEqual(actual, expected);
 });
 
-Deno.test("starts a turn for each Codex user message within a task", () => {
+test("starts a turn for each Codex user message within a task", () => {
   const actual = repository({
     "2026/07/25/rollout-user-boundaries.jsonl": `
 {"timestamp":"2026-07-25T19:00:00.000Z","type":"turn_context","payload":{"model":"gpt-5.5","effort":"medium"}}
@@ -159,7 +162,7 @@ Deno.test("starts a turn for each Codex user message within a task", () => {
   deepStrictEqual(actual.turns.map((turn) => turn.calls.length), [1, 1, 1, 1]);
 });
 
-Deno.test("applies Codex reasoning settings to the turn that changes them", () => {
+test("applies Codex reasoning settings to the turn that changes them", () => {
   const actual = repository({
     "2026/07/25/rollout-thinking.jsonl": `
 {"timestamp":"2026-07-25T18:00:00.000Z","type":"event_msg","payload":{"type":"task_started"}}
@@ -185,7 +188,7 @@ Deno.test("applies Codex reasoning settings to the turn that changes them", () =
   );
 });
 
-Deno.test("ignores null Codex reasoning effort and falls back", () => {
+test("ignores null Codex reasoning effort and falls back", () => {
   const actual = repository({
     "2026/07/25/rollout-null-effort.jsonl": `
 {"timestamp":"2026-07-25T18:00:00.000Z","type":"event_msg","payload":{"type":"task_started"}}
@@ -210,7 +213,7 @@ Deno.test("ignores null Codex reasoning effort and falls back", () => {
   );
 });
 
-Deno.test("imports Codex sessions that report a null reasoning effort", () => {
+test("imports Codex sessions that report a null reasoning effort", () => {
   const text = `
 {"timestamp":"2026-07-25T18:00:00.000Z","type":"event_msg","payload":{"type":"task_started"}}
 {"timestamp":"2026-07-25T18:00:00.001Z","type":"turn_context","payload":{"model":"gpt-5.6-sol","collaboration_mode":{"mode":"default","settings":{"model":"gpt-5.6-sol","reasoning_effort":null,"developer_instructions":null}}}}
@@ -231,7 +234,7 @@ Deno.test("imports Codex sessions that report a null reasoning effort", () => {
   strictEqual(actual.summary.models[0], "gpt-5.6-sol");
 });
 
-Deno.test("infers Codex model-call timing around tool loops", () => {
+test("infers Codex model-call timing around tool loops", () => {
   const actual = repository({
     "2026/07/24/rollout-timing.jsonl": `
 {"timestamp":"2026-07-24T15:00:00.000Z","type":"event_msg","payload":{"type":"task_started","turn_id":"turn-1","started_at":1784905200,"model_context_window":258400}}
@@ -273,7 +276,7 @@ Deno.test("infers Codex model-call timing around tool loops", () => {
   );
 });
 
-Deno.test("does not invent zero-duration Codex calls without boundaries", () => {
+test("does not invent zero-duration Codex calls without boundaries", () => {
   const actual = repository({
     "2026/07/24/rollout-unknown-timing.jsonl": `
 {"timestamp":"2026-07-24T15:00:00.000Z","type":"event_msg","payload":{"type":"task_started"}}
@@ -289,7 +292,7 @@ Deno.test("does not invent zero-duration Codex calls without boundaries", () => 
   strictEqual(actual.turns[0].calls[0].completedAt, undefined);
 });
 
-Deno.test("prefers Codex user_message over startup instructions for titles", () => {
+test("prefers Codex user_message over startup instructions for titles", () => {
   const actual = repository({
     "2026/07/24/rollout-title.jsonl": `
 {"timestamp":"2026-07-24T15:18:02.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions for /Users/example/project"}]}}
@@ -303,7 +306,7 @@ Deno.test("prefers Codex user_message over startup instructions for titles", () 
   strictEqual(actual.title, "hi");
 });
 
-Deno.test("prefers completed Codex UserMessage over startup instructions for titles", () => {
+test("prefers completed Codex UserMessage over startup instructions for titles", () => {
   const actual = repository({
     "2026/08/22/rollout-completed-title.jsonl": `
 {"timestamp":"2026-08-22T16:29:49.489Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions for /Users/example/project"}]}}
@@ -316,7 +319,7 @@ Deno.test("prefers completed Codex UserMessage over startup instructions for tit
   strictEqual(actual.title, "Fix the importer");
 });
 
-Deno.test("normalizes exported Codex session arrays", () => {
+test("normalizes exported Codex session arrays", () => {
   const actual = repository({
     "rollout_exported.jsonl": JSON.stringify([
       {
@@ -362,7 +365,7 @@ Deno.test("normalizes exported Codex session arrays", () => {
   deepStrictEqual(actual?.tokens.processed, 7963);
 });
 
-Deno.test("counts Codex input images without retaining data URLs", () => {
+test("counts Codex input images without retaining data URLs", () => {
   const actual = repository({
     "2026/07/21/rollout-images.jsonl": `
 {"timestamp":"2026-07-21T17:57:30.000Z","type":"turn_context","payload":{"model":"gpt-5.6-terra"}}
@@ -375,7 +378,7 @@ Deno.test("counts Codex input images without retaining data URLs", () => {
   strictEqual(actual?.turns[0].calls[0].activity.images, 1);
 });
 
-Deno.test("imports standalone Codex compaction records and hides their opaque call", () => {
+test("imports standalone Codex compaction records and hides their opaque call", () => {
   const actual = repository({
     "2026/08/22/rollout-standalone-compaction.jsonl": `
 {"timestamp":"2026-08-22T17:04:50.000Z","type":"turn_context","payload":{"model":"gpt-5.6-sol"}}
@@ -438,7 +441,7 @@ Deno.test("imports standalone Codex compaction records and hides their opaque ca
   );
 });
 
-Deno.test("falls back to legacy Codex user-message records", () => {
+test("falls back to legacy Codex user-message records", () => {
   const actual = repository({
     "2026/02/05/rollout-legacy.jsonl": `
 {"timestamp":"2026-02-05T14:00:00.000Z","type":"event_msg","payload":{"type":"user_message","message":"Inspect legacy usage"}}
@@ -479,7 +482,7 @@ Deno.test("falls back to legacy Codex user-message records", () => {
   }]);
 });
 
-Deno.test("does not fall back for startup-only Codex transcripts", () => {
+test("does not fall back for startup-only Codex transcripts", () => {
   const actual = repository({
     "2026/02/05/rollout-startup.jsonl": `
 {"timestamp":"2026-02-05T14:00:00.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"# AGENTS.md instructions"}]}}
@@ -491,7 +494,7 @@ Deno.test("does not fall back for startup-only Codex transcripts", () => {
   strictEqual(actual.userTurns, 0);
 });
 
-Deno.test("lists Codex sessions recursively by latest transcript timestamp", () => {
+test("lists Codex sessions recursively by latest transcript timestamp", () => {
   const result = repository({
     "2026/07/10/rollout-old.jsonl": `
 {"timestamp":"2026-07-10T10:00:00.000Z","type":"turn_context","payload":{"model":"gpt-5.4"}}

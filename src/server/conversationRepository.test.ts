@@ -1,3 +1,12 @@
+import { test } from "vitest";
+import {
+  copyFileSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { temporaryDirectory } from "../test/temporaryDirectory.ts";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { ConversationRepository } from "./conversationRepository.ts";
 import { SessionBrowserRepository } from "./features/session-browser/repository.ts";
@@ -105,7 +114,7 @@ function linearSession(sourceID: number): LinearConversationImport {
   };
 }
 
-Deno.test("overview rollups return ordered root execution intervals", () => {
+test("overview rollups return ordered root execution intervals", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   const sources = new SourceArtifactRepository(db);
@@ -138,7 +147,7 @@ Deno.test("overview rollups return ordered root execution intervals", () => {
   }
 });
 
-Deno.test("lists recent sessions by last activity time", () => {
+test("lists recent sessions by last activity time", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   const sources = new SourceArtifactRepository(db);
@@ -186,7 +195,7 @@ Deno.test("lists recent sessions by last activity time", () => {
   }
 });
 
-Deno.test("conversation repository linearizes Codex branches without duplicating usage", async () => {
+test("conversation repository linearizes Codex branches without duplicating usage", async () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   const sources = new SourceArtifactRepository(db);
@@ -301,8 +310,8 @@ Deno.test("conversation repository linearizes Codex branches without duplicating
   }
 });
 
-Deno.test("attributes a cache-floor reset to an implicit Codex fork predecessor", async () => {
-  const directory = Deno.makeTempDirSync();
+test("attributes a cache-floor reset to an implicit Codex fork predecessor", async () => {
+  const directory = temporaryDirectory();
   const fixture = decodeURIComponent(
     new URL(
       "./fixtures/codex-branching/sibling-forks/",
@@ -310,25 +319,26 @@ Deno.test("attributes a cache-floor reset to an implicit Codex fork predecessor"
     ).pathname,
   );
   const source = `${directory}/sessions`;
-  Deno.mkdirSync(source);
+  mkdirSync(source);
   const rootPath = `${source}/rollout-original.jsonl`;
   const childPath = `${source}/rollout-fork-a.jsonl`;
-  Deno.copyFileSync(`${fixture}rollout-original.jsonl`, rootPath);
+  copyFileSync(`${fixture}rollout-original.jsonl`, rootPath);
 
-  const rootRecords = Deno.readTextFileSync(rootPath).trim().split("\n").map(
+  const rootRecords = readFileSync(rootPath, "utf8").trim().split("\n").map(
     (line) => JSON.parse(line),
   );
   const firstRootUsage = rootRecords.find((record) =>
     record.type === "event_msg" && record.payload?.type === "token_count"
   );
   firstRootUsage.payload.info.last_token_usage.cached_input_tokens = 10;
-  Deno.writeTextFileSync(
+  writeFileSync(
     rootPath,
     `${rootRecords.map((record) => JSON.stringify(record)).join("\n")}\n`,
   );
 
-  const allChildRecords = Deno.readTextFileSync(
+  const allChildRecords = readFileSync(
     `${fixture}rollout-fork-a.jsonl`,
+    "utf8",
   ).trim().split("\n").map((line) => JSON.parse(line));
   const firstUniqueTurn = allChildRecords.findIndex((record) =>
     record.type === "event_msg" && record.payload?.type === "task_started" &&
@@ -343,7 +353,7 @@ Deno.test("attributes a cache-floor reset to an implicit Codex fork predecessor"
     record.type === "event_msg" && record.payload?.type === "token_count"
   );
   firstChildUsage.payload.info.last_token_usage.cached_input_tokens = 10;
-  Deno.writeTextFileSync(
+  writeFileSync(
     childPath,
     `${childRecords.map((record) => JSON.stringify(record)).join("\n")}\n`,
   );
@@ -396,11 +406,11 @@ Deno.test("attributes a cache-floor reset to an implicit Codex fork predecessor"
     );
   } finally {
     db.close();
-    Deno.removeSync(directory, { recursive: true });
+    rmSync(directory, { recursive: true });
   }
 });
 
-Deno.test("session lists read cache issue reasons from normalized misses", () => {
+test("session lists read cache issue reasons from normalized misses", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   const sources = new SourceArtifactRepository(db);
@@ -459,7 +469,7 @@ Deno.test("session lists read cache issue reasons from normalized misses", () =>
   }
 });
 
-Deno.test("subagent usage preserves descendants, filters, pricing, and day grouping", () => {
+test("subagent usage preserves descendants, filters, pricing, and day grouping", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   const sources = new SourceArtifactRepository(db);
@@ -536,7 +546,7 @@ Deno.test("subagent usage preserves descendants, filters, pricing, and day group
   }
 });
 
-Deno.test("conversation repository keeps subagent launches separate from branches", () => {
+test("conversation repository keeps subagent launches separate from branches", () => {
   const db = openArchiveDatabase(":memory:");
   migrateTestDatabase(db);
   const sources = new SourceArtifactRepository(db);

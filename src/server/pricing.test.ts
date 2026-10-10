@@ -1,3 +1,4 @@
+import { test } from "vitest";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import type { TokenUsage } from "../shared/sessionSchemas.ts";
 import { modelRateCard } from "../shared/modelPricing.ts";
@@ -24,7 +25,7 @@ function closeTo(actual: number | undefined, expected: number) {
   );
 }
 
-Deno.test("free model markers have zero cost regardless of case or token coverage", () => {
+test("free model markers have zero cost regardless of case or token coverage", () => {
   for (
     const model of [
       "muse-spark-1.3-contributor-free",
@@ -67,7 +68,7 @@ Deno.test("free model markers have zero cost regardless of case or token coverag
   }
 });
 
-Deno.test("switches GPT pricing at the long-context boundary", () => {
+test("switches GPT pricing at the long-context boundary", () => {
   closeTo(
     computeModelCallCost(
       tokens({ uncachedInput: 271_999 }),
@@ -86,7 +87,7 @@ Deno.test("switches GPT pricing at the long-context boundary", () => {
   );
 });
 
-Deno.test("uses long-context rates for every priced token category", () => {
+test("uses long-context rates for every priced token category", () => {
   closeTo(
     computeModelCallCost(
       tokens({
@@ -103,7 +104,7 @@ Deno.test("uses long-context rates for every priced token category", () => {
   );
 });
 
-Deno.test("prices GPT-6 Sol and Luna at their short and long context rates", () => {
+test("prices GPT-6 Sol and Luna at their short and long context rates", () => {
   const models = [
     ["gpt-6.1-sol", 14.6, 24.2],
     ["gpt-6-sol", 14.7, 24.4],
@@ -139,7 +140,7 @@ Deno.test("prices GPT-6 Sol and Luna at their short and long context rates", () 
   }
 });
 
-Deno.test("switches GPT-6.1 Sol rates at the long-context boundary", () => {
+test("switches GPT-6.1 Sol rates at the long-context boundary", () => {
   for (const model of ["gpt-6.1-sol", "openai/gpt-6.1-sol"]) {
     deepStrictEqual(modelRateCard(model, timestamp, 271_999), {
       input: 2,
@@ -156,7 +157,7 @@ Deno.test("switches GPT-6.1 Sol rates at the long-context boundary", () => {
   }
 });
 
-Deno.test("prices GPT-6 Astra at its short and long context rates", () => {
+test("prices GPT-6 Astra at its short and long context rates", () => {
   closeTo(
     computeModelCallCost(
       tokens({
@@ -185,7 +186,7 @@ Deno.test("prices GPT-6 Astra at its short and long context rates", () => {
   );
 });
 
-Deno.test("uses the published long-context model rates", () => {
+test("uses the published long-context model rates", () => {
   const expected = new Map([
     ["gpt-5.6-sol", 55],
     ["gpt-5.6-terra", 27.5],
@@ -207,7 +208,7 @@ Deno.test("uses the published long-context model rates", () => {
   }
 });
 
-Deno.test("uses Luna and Terra prices effective July 30 at 4 PM Eastern", () => {
+test("uses Luna and Terra prices effective July 30 at 4 PM Eastern", () => {
   const before = Date.parse("2026-07-30T19:59:59.999Z");
   const effectiveAt = Date.parse("2026-07-30T20:00:00Z");
   const cases = [
@@ -243,7 +244,7 @@ Deno.test("uses Luna and Terra prices effective July 30 at 4 PM Eastern", () => 
   }
 });
 
-Deno.test("uses Sol prices effective August 21 at 5 PM Eastern", () => {
+test("uses Sol prices effective August 21 at 5 PM Eastern", () => {
   const before = Date.parse("2026-08-21T20:59:59.999Z");
   const effectiveAt = Date.parse("2026-08-21T21:00:00Z");
   const shortTokens = tokens({
@@ -271,7 +272,7 @@ Deno.test("uses Sol prices effective August 21 at 5 PM Eastern", () => {
   );
 });
 
-Deno.test("prices Claude Sonnet 5.5 at its published rates through aliases", () => {
+test("prices Claude Sonnet 5.5 at its published rates through aliases", () => {
   for (
     const model of [
       "claude-sonnet-5-5",
@@ -304,7 +305,7 @@ Deno.test("prices Claude Sonnet 5.5 at its published rates through aliases", () 
   }
 });
 
-Deno.test("prices Claude Opus 5.5 at its published rates", () => {
+test("prices Claude Opus 5.5 at its published rates", () => {
   closeTo(
     computeModelCallCost(
       tokens({
@@ -322,7 +323,7 @@ Deno.test("prices Claude Opus 5.5 at its published rates", () => {
   );
 });
 
-Deno.test("prices Claude Opus 5 at its published rates", () => {
+test("prices Claude Opus 5 at its published rates", () => {
   closeTo(
     computeModelCallCost(
       tokens({
@@ -340,7 +341,7 @@ Deno.test("prices Claude Opus 5 at its published rates", () => {
   );
 });
 
-Deno.test("prices Claude Fable and Mythos 5.1 at published rates", () => {
+test("prices Claude Fable and Mythos 5.1 at published rates", () => {
   for (const model of ["claude-fable-5-1", "claude-mythos-5.1"]) {
     closeTo(
       computeModelCallCost(
@@ -360,7 +361,7 @@ Deno.test("prices Claude Fable and Mythos 5.1 at published rates", () => {
   }
 });
 
-Deno.test("prices Gemini Flash models before and after the 2027 rate change", () => {
+test("prices Gemini Flash models before and after the 2027 rate change", () => {
   const before = Date.parse("2026-12-31T23:59:59.999Z");
   const effectiveAt = Date.parse("2027-01-01T00:00:00Z");
   for (const model of ["gemini-3.8-flash", "google/gemini-3.7-flash"]) {
@@ -374,7 +375,7 @@ Deno.test("prices Gemini Flash models before and after the 2027 rate change", ()
   }
 });
 
-Deno.test("normalizes OpenRouter Anthropic model IDs for pricing", () => {
+test("normalizes OpenRouter Anthropic model IDs for pricing", () => {
   closeTo(
     computeModelCallCost(
       tokens({
@@ -412,7 +413,7 @@ Deno.test("normalizes OpenRouter Anthropic model IDs for pricing", () => {
   );
 });
 
-Deno.test("prices GLM 5.2 through provider aliases", () => {
+test("prices GLM 5.2 through provider aliases", () => {
   for (const model of ["glm-5.2", "z-ai/glm-5.2"]) {
     closeTo(
       computeModelCallCost(
@@ -429,7 +430,7 @@ Deno.test("prices GLM 5.2 through provider aliases", () => {
   }
 });
 
-Deno.test("prices GLM 5, 5.1, and 5.3 at published rates", () => {
+test("prices GLM 5, 5.1, and 5.3 at published rates", () => {
   closeTo(
     computeModelCallCost(
       tokens({
@@ -468,7 +469,7 @@ Deno.test("prices GLM 5, 5.1, and 5.3 at published rates", () => {
   );
 });
 
-Deno.test("prices missing GPT 5 family models at OpenAI rates", () => {
+test("prices missing GPT 5 family models at OpenAI rates", () => {
   const expected = new Map([
     ["gpt-5.2", 1.5925],
     ["gpt-5.1", 1.1375],
@@ -488,7 +489,7 @@ Deno.test("prices missing GPT 5 family models at OpenAI rates", () => {
   }
 });
 
-Deno.test("prices Kimi K2 and MiniMax models at published rates", () => {
+test("prices Kimi K2 and MiniMax models at published rates", () => {
   closeTo(
     computeModelCallCost(
       tokens({
@@ -570,7 +571,7 @@ Deno.test("prices Kimi K2 and MiniMax models at published rates", () => {
   );
 });
 
-Deno.test("prices Grok Build and Muse Spark at published rates", () => {
+test("prices Grok Build and Muse Spark at published rates", () => {
   closeTo(
     computeModelCallCost(
       tokens({ uncachedInput: 199_999 }),
@@ -601,7 +602,7 @@ Deno.test("prices Grok Build and Muse Spark at published rates", () => {
   );
 });
 
-Deno.test("prices Muse Spark 1.3 variants at their distinct published rates", () => {
+test("prices Muse Spark 1.3 variants at their distinct published rates", () => {
   const cases = [
     { model: "muse-spark-1.3", input: 1.25, cached: 0.15, output: 4.25 },
     {
@@ -645,7 +646,7 @@ Deno.test("prices Muse Spark 1.3 variants at their distinct published rates", ()
   }
 });
 
-Deno.test("keeps Claude Sonnet 5 at its published $2/$10 rates", () => {
+test("keeps Claude Sonnet 5 at its published $2/$10 rates", () => {
   for (
     const at of [
       Date.parse("2026-08-31T23:59:59.999Z"),
@@ -663,7 +664,7 @@ Deno.test("keeps Claude Sonnet 5 at its published $2/$10 rates", () => {
   }
 });
 
-Deno.test("prices Grok 4.5 and 4.6 at the 200k long-context boundary", () => {
+test("prices Grok 4.5 and 4.6 at the 200k long-context boundary", () => {
   closeTo(
     computeModelCallCost(
       tokens({ uncachedInput: 199_999 }),
@@ -714,7 +715,7 @@ Deno.test("prices Grok 4.5 and 4.6 at the 200k long-context boundary", () => {
   );
 });
 
-Deno.test("prices Kimi K3 cache hits, misses, writes, and output", () => {
+test("prices Kimi K3 cache hits, misses, writes, and output", () => {
   closeTo(
     computeModelCallCost(
       tokens({
@@ -730,7 +731,7 @@ Deno.test("prices Kimi K3 cache hits, misses, writes, and output", () => {
   );
 });
 
-Deno.test("prices Codex models at their published rates", () => {
+test("prices Codex models at their published rates", () => {
   const expected = new Map([
     ["gpt-5.3-codex", 15.925],
     ["gpt-5.2-codex", 15.925],
@@ -755,7 +756,7 @@ Deno.test("prices Codex models at their published rates", () => {
   }
 });
 
-Deno.test("uses the published Codex rates for long contexts", () => {
+test("uses the published Codex rates for long contexts", () => {
   closeTo(
     computeModelCallCost(
       tokens({ uncachedInput: 272_000 }),
@@ -766,7 +767,7 @@ Deno.test("uses the published Codex rates for long contexts", () => {
   );
 });
 
-Deno.test("leaves models without long-context rates unpriced", () => {
+test("leaves models without long-context rates unpriced", () => {
   for (
     const model of ["gpt-5.4-mini", "gpt-5.4-nano", "gpt-5.2", "gpt-5-nano"]
   ) {
@@ -781,7 +782,7 @@ Deno.test("leaves models without long-context rates unpriced", () => {
   }
 });
 
-Deno.test("leaves aggregate-only usage unpriced", () => {
+test("leaves aggregate-only usage unpriced", () => {
   strictEqual(
     computeModelCallCost(
       tokens({ processed: 7_963 }),
@@ -792,7 +793,7 @@ Deno.test("leaves aggregate-only usage unpriced", () => {
   );
 });
 
-Deno.test("prices each call from its own effective context size", () => {
+test("prices each call from its own effective context size", () => {
   closeTo(
     computeModelCallCost(
       tokens({ uncachedInput: 300_000 }),

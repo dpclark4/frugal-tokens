@@ -1,3 +1,6 @@
+import { readdir, readFile } from "node:fs/promises";
+import { assertSnapshot } from "../support/snapshot.ts";
+import { test } from "vitest";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -13,25 +16,30 @@ async function expectedSessionIDs() {
   const root = fileURLToPath(new URL("../../", import.meta.url));
   const piIDs: string[] = [];
   for await (
-    const entry of Deno.readDir(join(root, "e2e/fixtures/pi"))
+    const entry of await readdir(join(root, "e2e/fixtures/pi"), {
+      withFileTypes: true,
+    })
   ) {
-    if (entry.isFile && entry.name.endsWith(".jsonl")) {
+    if (entry.isFile() && entry.name.endsWith(".jsonl")) {
       // Pi API IDs fall back to the fixture filename.
       piIDs.push(entry.name.slice(0, -".jsonl".length));
     }
   }
   const codexIDs: string[] = [];
   for await (
-    const entry of Deno.readDir(join(root, "e2e/fixtures/codex"))
+    const entry of await readdir(join(root, "e2e/fixtures/codex"), {
+      withFileTypes: true,
+    })
   ) {
     if (
-      !entry.isFile || !entry.name.endsWith(".jsonl") ||
+      !entry.isFile() || !entry.name.endsWith(".jsonl") ||
       (!entry.name.startsWith("rollout-") &&
         !entry.name.startsWith("rollout_"))
     ) continue;
     // Codex API IDs come from transcript session_meta payloads, not filenames.
-    const text = await Deno.readTextFile(
+    const text = await readFile(
       join(root, "e2e/fixtures/codex", entry.name),
+      "utf8",
     );
     let id: string | undefined;
     for (const line of text.split("\n")) {
@@ -50,7 +58,7 @@ async function expectedSessionIDs() {
   return { piIDs, codexIDs };
 }
 
-Deno.test("sessions table lists imported Pi and Codex sessions", async (t) => {
+test("sessions table lists imported Pi and Codex sessions", async (t) => {
   const { piIDs, codexIDs } = await expectedSessionIDs();
   await using server = await startServer();
   const response = await fetch(
@@ -71,7 +79,5 @@ Deno.test("sessions table lists imported Pi and Codex sessions", async (t) => {
     new Set(body.items.map((item: { id: string }) => item.id)),
     new Set([...piIDs, ...codexIDs]),
   );
-  await t.assertSnapshot(body, {
-    path: "../snapshots/sessions-list.snap",
-  });
+  await assertSnapshot(t, body, "sessions-list.snap");
 });

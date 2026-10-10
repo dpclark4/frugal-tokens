@@ -1,10 +1,17 @@
+import { test } from "vitest";
 import { deepStrictEqual, strictEqual } from "node:assert";
 import { aggregateToolCalls, toolGroupName } from "./toolCallAnalytics.ts";
 
-Deno.test("toolGroupName expands shell tools across harness formats", () => {
-  strictEqual(toolGroupName("bash", '{"command":"mkdir output"}', true), "bash mkdir");
+test("toolGroupName expands shell tools across harness formats", () => {
+  strictEqual(
+    toolGroupName("bash", '{"command":"mkdir output"}', true),
+    "bash mkdir",
+  );
   strictEqual(toolGroupName("Bash", "deno task check", true), "bash deno");
-  strictEqual(toolGroupName("bash", '{"command":"mkdir output"}', false), "bash");
+  strictEqual(
+    toolGroupName("bash", '{"command":"mkdir output"}', false),
+    "bash",
+  );
   strictEqual(
     toolGroupName(
       "exec -> exec_command",
@@ -16,34 +23,40 @@ Deno.test("toolGroupName expands shell tools across harness formats", () => {
   strictEqual(toolGroupName("read", '{"path":"README.md"}', true), "read");
 });
 
-Deno.test("aggregateToolCalls calculates event-weighted runtime distributions", () => {
-  const result = aggregateToolCalls([
-    {
-      modelCallID: 1,
-      name: "read",
-      startedAt: 100,
-      completedAt: 200,
-      modelStartedAt: 0,
-      modelCompletedAt: 1_000,
-    },
-    {
-      modelCallID: 1,
-      name: "read",
-      startedAt: 200,
-      completedAt: 500,
-      modelStartedAt: 0,
-      modelCompletedAt: 1_000,
-    },
-    {
-      modelCallID: 2,
-      name: "bash",
-      inputPreview: '{"command":"mkdir output"}',
-      startedAt: 300,
-      completedAt: 500,
-      modelStartedAt: 0,
-      modelCompletedAt: 2_000,
-    },
-  ], 30, 0, 3_000, true);
+test("aggregateToolCalls calculates event-weighted runtime distributions", () => {
+  const result = aggregateToolCalls(
+    [
+      {
+        modelCallID: 1,
+        name: "read",
+        startedAt: 100,
+        completedAt: 200,
+        modelStartedAt: 0,
+        modelCompletedAt: 1_000,
+      },
+      {
+        modelCallID: 1,
+        name: "read",
+        startedAt: 200,
+        completedAt: 500,
+        modelStartedAt: 0,
+        modelCompletedAt: 1_000,
+      },
+      {
+        modelCallID: 2,
+        name: "bash",
+        inputPreview: '{"command":"mkdir output"}',
+        startedAt: 300,
+        completedAt: 500,
+        modelStartedAt: 0,
+        modelCompletedAt: 2_000,
+      },
+    ],
+    30,
+    0,
+    3_000,
+    true,
+  );
 
   strictEqual(result.tools[0].tool, "read");
   strictEqual(result.tools[0].count, 2);

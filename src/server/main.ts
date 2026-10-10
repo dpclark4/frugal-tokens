@@ -1,7 +1,14 @@
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { statSync } from "node:fs";
+import { realpath, stat } from "node:fs/promises";
+import process from "node:process";
+import { text } from "node:stream/consumers";
 import { type Context, Hono } from "hono";
 import { join, relative, resolve } from "node:path";
 import { cors } from "hono/cors";
-import { serveStatic } from "hono/deno";
+import { serve } from "@hono/node-server";
+import { serveStatic } from "@hono/node-server/serve-static";
 import { createMiddleware } from "hono/factory";
 import { createResponseCache } from "./responseCache.ts";
 import { formatTiming } from "./timing.ts";
@@ -54,15 +61,15 @@ function configuredPath<T>(
   type: "file" | "directory",
   create: (path: string) => T,
 ): T | undefined {
-  const configured = Deno.env.get(variable);
+  const configured = process.env[variable];
   if (!configured) {
     console.warn(`[config] ${harness} disabled: ${variable} is not set`);
     return undefined;
   }
   const path = expandHomePath(configured);
   try {
-    const stat = Deno.statSync(path);
-    if (type === "file" ? !stat.isFile : !stat.isDirectory) {
+    const stat = statSync(path);
+    if (type === "file" ? !stat.isFile() : !stat.isDirectory()) {
       console.warn(`[config] ${harness} disabled: ${path} is not a ${type}`);
       return undefined;
     }
@@ -107,9 +114,9 @@ const cursorDirectory = configuredPath(
   (path) => path,
 );
 const cursorCapturePath = (() => {
-  const explicit = Deno.env.get("CURSOR_SSE_CAPTURE_PATH");
+  const explicit = process.env.CURSOR_SSE_CAPTURE_PATH;
   if (explicit) return expandHomePath(explicit);
-  const configuredDirectory = Deno.env.get("CURSOR_SSE_CAPTURE_DIR");
+  const configuredDirectory = process.env.CURSOR_SSE_CAPTURE_DIR;
   if (configuredDirectory) {
     return join(expandHomePath(configuredDirectory), "events.jsonl");
   }
@@ -117,13 +124,13 @@ const cursorCapturePath = (() => {
     "~/.local/share/frugal-tokens/cursor-capture/events.jsonl",
   );
   try {
-    if (Deno.statSync(persistent).isFile) return persistent;
+    if (statSync(persistent).isFile()) return persistent;
   } catch {
     // Fall back to the capture addon's historical location.
   }
   return "/tmp/frugal-tokens-cursor-sse/events.jsonl";
 })();
-const archiveURL = Deno.env.get("FRUGAL_TOKENS_DATABASE_URL");
+const archiveURL = process.env.FRUGAL_TOKENS_DATABASE_URL;
 if (!archiveURL) {
   throw new Error("FRUGAL_TOKENS_DATABASE_URL is required");
 }
@@ -172,7 +179,7 @@ function dashboardRange(value: string): 30 | 90 | undefined {
 }
 
 const syncIntervalSeconds = (() => {
-  const value = Deno.env.get("FRUGAL_TOKENS_SYNC_INTERVAL_SECONDS");
+  const value = process.env.FRUGAL_TOKENS_SYNC_INTERVAL_SECONDS;
   if (value === undefined || value === "0") return undefined;
   if (!/^[1-9]\d*$/.test(value)) {
     throw new Error(
@@ -317,7 +324,7 @@ async function syncSourcesPeriodically(intervalSeconds: number) {
     }
   }
 }
-const serveStaticAssets = Deno.env.get("SERVE_STATIC") === "true";
+const serveStaticAssets = process.env.SERVE_STATIC === "true";
 type AppEnv = {
   Bindings: {
     remoteAddress?: string;
@@ -904,7 +911,7 @@ app.post("/api/sessions/:id/open-in-ghostty", async (context) => {
   ) {
     return context.json({ error: "Ghostty can only be opened locally" }, 403);
   }
-  if (Deno.build.os !== "darwin") {
+  if (process.platform !== "darwin") {
     return context.json(
       { error: "Opening Ghostty is only supported on macOS" },
       501,
@@ -926,10 +933,10 @@ app.post("/api/sessions/:id/open-in-ghostty", async (context) => {
   }
 
   try {
-    const workingDirectory = await Deno.realPath(
+    const workingDirectory = await realpath(
       expandHomePath(session.workingDirectory),
     );
-    if (!(await Deno.stat(workingDirectory)).isDirectory) {
+    if (!(await stat(workingDirectory)).isDirectory()) {
       return context.json(
         { error: "Session working directory is unavailable" },
         409,
@@ -963,8 +970,8 @@ app.post("/api/sessions/:id/open-in-ghostty", async (context) => {
       if (piDirectory === undefined || !session.sourcePath) {
         return context.json({ error: "Pi session files are unavailable" }, 404);
       }
-      const sessionRoot = await Deno.realPath(piDirectory);
-      const sessionPath = await Deno.realPath(
+      const sessionRoot = await realpath(piDirectory);
+      const sessionPath = await realpath(
         resolve(sessionRoot, session.sourcePath),
       );
       const pathFromRoot = relative(sessionRoot, sessionPath);
@@ -974,40 +981,41 @@ app.post("/api/sessions/:id/open-in-ghostty", async (context) => {
       ) {
         return context.json({ error: "Invalid Pi session path" }, 400);
       }
-      if (!(await Deno.stat(sessionPath)).isFile) {
+      if (!(await stat(sessionPath)).isFile()) {
         return context.json({ error: "Pi session file is unavailable" }, 404);
       }
       sessionCommand = ["pi", "--session", sessionPath];
     }
 
-    const command = new Deno.Command("open", {
-      args: [
-        "-na",
-        "Ghostty.app",
-        "--args",
-        `--working-directory=${workingDirectory}`,
-        "--window-save-state=never",
-        "--quit-after-last-window-closed=true",
-        "-e",
-        ...sessionCommand,
-      ],
-      stdout: "null",
-      stderr: "piped",
-    });
-    const result = await command.output();
-    if (!result.success) {
-      const detail = new TextDecoder().decode(result.stderr).trim();
+    const command = spawn("open", [
+      "-na",
+      "Ghostty.app",
+      "--args",
+      `--working-directory=${workingDirectory}`,
+      "--window-save-state=never",
+      "--quit-after-last-window-closed=true",
+      "-e",
+      ...sessionCommand,
+    ], { stdio: ["inherit", "ignore", "pipe"] });
+    const [[code], stderr] = await Promise.all([
+      once(command, "close"),
+      text(command.stderr),
+    ]);
+    if (code !== 0) {
+      const detail = stderr.trim();
       throw new Error(detail || "Ghostty could not be opened");
     }
     return context.json({ status: "opened" });
   } catch (error) {
-    const message = error instanceof Deno.errors.NotFound
-      ? "Session file, working directory, or Ghostty is unavailable"
-      : error instanceof Deno.errors.PermissionDenied
-      ? "The server is not allowed to launch Ghostty"
-      : error instanceof Error
-      ? error.message
-      : "Ghostty could not be opened";
+    const message =
+      error instanceof Error && "code" in error && error.code === "ENOENT"
+        ? "Session file, working directory, or Ghostty is unavailable"
+        : error instanceof Error && "code" in error &&
+            (error.code === "EACCES" || error.code === "EPERM")
+        ? "The server is not allowed to launch Ghostty"
+        : error instanceof Error
+        ? error.message
+        : "Ghostty could not be opened";
     return context.json({ error: message }, 500);
   }
 });
@@ -1022,15 +1030,16 @@ if (serveStaticAssets) {
   app.get("*", serveStatic({ root: "./dist", path: "index.html" }));
 }
 
-const port = Number.parseInt(Deno.env.get("PORT") ?? "9000", 10);
-Deno.serve(
+const port = Number.parseInt(process.env.PORT ?? "9000", 10);
+serve(
   {
     port,
-    onListen: ({ port }) =>
-      console.log(`Frugal Tokens API listening on http://localhost:${port}`),
+    hostname: "0.0.0.0",
+    fetch: (request, info) =>
+      app.fetch(request, { remoteAddress: info.incoming.socket.remoteAddress }),
   },
-  (request, info) =>
-    app.fetch(request, { remoteAddress: info.remoteAddr.hostname }),
+  ({ port }) =>
+    console.log(`Frugal Tokens API listening on http://localhost:${port}`),
 );
 await syncSourcesOnce();
 if (syncIntervalSeconds !== undefined) {

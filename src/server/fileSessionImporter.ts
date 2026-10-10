@@ -1,3 +1,4 @@
+import { readFileSync, statSync } from "node:fs";
 import type {
   ConversationContextEventImport,
   ConversationTurnImport,
@@ -225,8 +226,8 @@ export async function syncFileSessions(options: {
   const metadataErrors = new Map<string, ArtifactImportFailure>();
 
   const readObservation = async (candidate: FileSessionCandidate) => {
-    const bytes = Deno.readFileSync(candidate.path);
-    const afterRead = Deno.statSync(candidate.path);
+    const bytes = readFileSync(candidate.path);
+    const afterRead = statSync(candidate.path);
     const modifiedAt = afterRead.mtime?.getTime() ?? 0;
     if (
       afterRead.size !== candidate.size || modifiedAt !== candidate.updatedAt

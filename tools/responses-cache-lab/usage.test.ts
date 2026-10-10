@@ -1,3 +1,4 @@
+import { test } from "vitest";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import { extractUsageShape } from "./usage.ts";
 
@@ -5,7 +6,7 @@ function response(usage: unknown) {
   return { id: "resp_fixture", status: "completed", usage };
 }
 
-Deno.test("extracts a nonzero cached token count", () => {
+test("extracts a nonzero cached token count", () => {
   const shape = extractUsageShape(response({
     input_tokens: 200,
     output_tokens: 20,
@@ -18,7 +19,7 @@ Deno.test("extracts a nonzero cached token count", () => {
   deepStrictEqual(shape.inputTokensDetailsKeys, ["cached_tokens"]);
 });
 
-Deno.test("keeps explicit zero distinct from omitted cache metadata", () => {
+test("keeps explicit zero distinct from omitted cache metadata", () => {
   const explicitZero = extractUsageShape(response({
     input_tokens: 200,
     input_tokens_details: { cached_tokens: 0 },
@@ -40,7 +41,7 @@ Deno.test("keeps explicit zero distinct from omitted cache metadata", () => {
   strictEqual(cachedKeyOmitted.cachedTokens.state, "missing");
 });
 
-Deno.test("reports missing usage separately", () => {
+test("reports missing usage separately", () => {
   const shape = extractUsageShape({ id: "resp_fixture", status: "completed" });
 
   strictEqual(shape.classification, "usage-missing");
@@ -48,7 +49,7 @@ Deno.test("reports missing usage separately", () => {
   strictEqual(shape.cachedTokens.state, "missing");
 });
 
-Deno.test("reports malformed cache fields without normalizing them", () => {
+test("reports malformed cache fields without normalizing them", () => {
   const shape = extractUsageShape(response({
     input_tokens: 200,
     input_tokens_details: {

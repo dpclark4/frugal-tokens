@@ -23,13 +23,17 @@ jobs:
         with:
           deno-version: v2.9.2
 
-      - name: Cache Deno dependencies
-        uses: actions/cache@v4
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
         with:
-          path: ~/.cache/deno
-          key: deno-${{ runner.os }}-${{ hashFiles('deno.lock', 'deno.json', 'deno.jsonc') }}
-          restore-keys: |
-            deno-${{ runner.os }}-
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
 
       - name: Check formatting
         env:
@@ -37,28 +41,30 @@ jobs:
         run: |
           mapfile -t files < <(
             git diff --diff-filter=ACMR --name-only "$BASE_SHA"...HEAD -- \
-              'src/**' 'scripts/**' 'e2e/**' 'deno.json' 'vite.config.ts' 'index.html'
+              'src/**' 'scripts/**' 'e2e/**' 'package.json' \
+              'tsconfig.json' 'vite.config.ts' 'vitest.config.ts' \
+              'railway.json' 'index.html'
           )
           if (( ${#files[@]} == 0 )); then
             echo "No Deno-formatted files changed."
           else
-            deno fmt --check "${files[@]}"
+            deno fmt --no-config --check "${files[@]}"
           fi
 
-      - name: Run Deno lint
-        run: deno lint src scripts e2e vite.config.ts
+      - name: Run Oxlint
+        run: pnpm lint
 
       - name: Run anti-slop gate
-        run: deno task lint:oxlint:gate
+        run: pnpm lint:oxlint:gate
 
       - name: Run type check
-        run: deno task check
+        run: pnpm check
 
       - name: Run tests
-        run: deno task test --parallel --reporter=dot
+        run: pnpm test
 
       - name: Run HTTP e2e tests
-        run: deno task test:e2e
+        run: pnpm test:e2e
 
       - name: Build application
-        run: deno task build
+        run: pnpm build

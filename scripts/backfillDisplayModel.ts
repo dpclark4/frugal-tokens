@@ -1,7 +1,8 @@
+import process from "node:process";
 import { openArchiveDatabase, sqlitePath } from "../src/server/database.ts";
 import { displayModelName } from "../src/shared/modelNames.ts";
 
-const databaseURL = Deno.env.get("FRUGAL_TOKENS_DATABASE_URL");
+const databaseURL = process.env.FRUGAL_TOKENS_DATABASE_URL;
 if (!databaseURL) {
   throw new Error("FRUGAL_TOKENS_DATABASE_URL is not set");
 }
