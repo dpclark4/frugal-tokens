@@ -1,3 +1,5 @@
+import process from "node:process";
+import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { isAbsolute, join, relative } from "node:path";
 import type { RunManifest } from "./types.ts";
@@ -6,25 +8,25 @@ const DEFAULT_DIRECTORY =
   "~/.local/share/frugal-tokens/diagnostics/responses-cache-lab";
 
 function homeDirectory(): string {
-  return Deno.env.get("HOME") || Deno.env.get("USERPROFILE") || ".";
+  return process.env.HOME || process.env.USERPROFILE || ".";
 }
 
 export function resolvePath(value: string): string {
   if (value === "~") return homeDirectory();
   if (value.startsWith("~/")) return join(homeDirectory(), value.slice(2));
-  return isAbsolute(value) ? value : join(Deno.cwd(), value);
+  return isAbsolute(value) ? value : join(process.cwd(), value);
 }
 
 export function defaultOutputDirectory(): string {
   return resolvePath(
-    Deno.env.get("RESPONSES_CACHE_LAB_DIR") || DEFAULT_DIRECTORY,
+    process.env.RESPONSES_CACHE_LAB_DIR || DEFAULT_DIRECTORY,
   );
 }
 
 async function ensurePrivateDirectory(path: string): Promise<void> {
-  await Deno.mkdir(path, { recursive: true, mode: 0o700 });
+  await mkdir(path, { recursive: true, mode: 0o700 });
   try {
-    await Deno.chmod(path, 0o700);
+    await chmod(path, 0o700);
   } catch {
     // chmod is unavailable on some filesystems; mkdir mode still applies there.
   }
@@ -34,16 +36,15 @@ async function writePrivateFile(
   path: string,
   data: string | Uint8Array,
 ): Promise<void> {
-  await Deno.writeFile(
+  await writeFile(
     path,
     typeof data === "string" ? new TextEncoder().encode(data) : data,
     {
-      create: true,
       mode: 0o600,
     },
   );
   try {
-    await Deno.chmod(path, 0o600);
+    await chmod(path, 0o600);
   } catch {
     // chmod is unavailable on some filesystems; write mode still applies there.
   }

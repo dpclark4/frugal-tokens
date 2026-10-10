@@ -1,5 +1,8 @@
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import process from "node:process";
 function required(name: string) {
-  const value = Deno.env.get(name);
+  const value = process.env[name];
   if (!value) throw new Error(`${name} is not set`);
   return value;
 }
@@ -7,30 +10,28 @@ function required(name: string) {
 async function run(
   command: string,
   args: string[],
-  environment: Record<string, string>,
+  environment: NodeJS.ProcessEnv,
 ) {
-  const result = await new Deno.Command(command, {
-    args,
-    env: environment,
-    stdout: "inherit",
-    stderr: "inherit",
-  }).output();
-  if (!result.success) {
+  const child = spawn(command, args, {
+    env: { ...process.env, ...environment },
+    stdio: ["ignore", "inherit", "inherit"],
+  });
+  const [code] = await once(child, "close");
+  if (code !== 0) {
     throw new Error(`${command} ${args[0] ?? ""} failed`);
   }
 }
 
 const environment = {
-  ...Deno.env.toObject(),
+  ...process.env,
   VITE_API_BASE_URL: required("DEPLOY_API_BASE_URL"),
 };
 const project = required("DEPLOY_PAGES_PROJECT");
 
-await run(Deno.execPath(), ["task", "build"], environment);
-await run(Deno.execPath(), [
-  "run",
-  "-A",
-  "npm:wrangler@4",
+await run("pnpm", ["build"], environment);
+await run("pnpm", [
+  "exec",
+  "wrangler",
   "pages",
   "deploy",
   "dist",

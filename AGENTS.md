@@ -9,9 +9,9 @@ Conserve tool calls and tokens during implementation.
 - Run relevant verification once, after the requested work appears complete.
 - Prefer the smallest targeted verification that provides useful confidence.
 - Batch independent verification commands when possible.
-- Run Deno tests with `--reporter=dot` by default to minimize captured output.
-  If tests fail, rerun only the failing file or test with `--reporter=pretty`
-  when detailed diagnostics are needed.
+- Run Vitest tests with the configured dot reporter by default to minimize
+  captured output. If tests fail, rerun only the failing file or test with
+  `--reporter=verbose` when detailed diagnostics are needed.
 - Run intermediate verification only when needed to diagnose an error or guide
   the implementation.
 - Do not run Git commands unless the user requests Git work, repository state is

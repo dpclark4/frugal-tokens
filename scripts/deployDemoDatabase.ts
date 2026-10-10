@@ -1,10 +1,15 @@
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import process from "node:process";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sqlitePath } from "../src/server/database.ts";
 
 const environment = "production";
 
 function required(name: string) {
-  const value = Deno.env.get(name);
+  const value = process.env[name];
   if (!value) throw new Error(`${name} is not set`);
   return value;
 }
@@ -12,15 +17,14 @@ function required(name: string) {
 async function run(
   command: string,
   args: string[],
-  environmentVariables?: Record<string, string>,
+  environmentVariables?: NodeJS.ProcessEnv,
 ) {
-  const result = await new Deno.Command(command, {
-    args,
-    env: environmentVariables,
-    stdout: "inherit",
-    stderr: "inherit",
-  }).output();
-  if (!result.success) {
+  const child = spawn(command, args, {
+    env: { ...process.env, ...environmentVariables },
+    stdio: ["ignore", "inherit", "inherit"],
+  });
+  const [code] = await once(child, "close");
+  if (code !== 0) {
     throw new Error(`${command} ${args[0] ?? ""} failed`);
   }
 }
@@ -28,7 +32,7 @@ async function run(
 const service = required("DEPLOY_RAILWAY_SERVICE");
 const volume = required("DEPLOY_RAILWAY_VOLUME");
 const sourceDatabase = required("FRUGAL_TOKENS_DATABASE_URL");
-const temporaryDirectory = await Deno.makeTempDir({ prefix: "frugal-tokens-demo-" });
+const temporaryDirectory = await mkdtemp(join(tmpdir(), "frugal-tokens-demo-"));
 const snapshot = join(temporaryDirectory, "archive.sqlite");
 // Upload a new file rather than overwriting the database open in the running
 // service. The previous file remains available if this deployment fails.
@@ -36,12 +40,9 @@ const remoteDatabase = `/demo-archive-${crypto.randomUUID()}.sqlite`;
 const remoteDatabaseURL = `sqlite:/data${remoteDatabase}`;
 
 try {
-  await run(Deno.execPath(), [
-    "run",
-    "--allow-env=FRUGAL_TOKENS_DATABASE_URL,HOME,USERPROFILE",
-    "--allow-read",
-    "--allow-write",
-    "--allow-run=sqlite3",
+  await run(process.execPath, [
+    "--import",
+    "tsx",
     "scripts/createDemoDatabase.ts",
     "--output",
     snapshot,
@@ -85,5 +86,5 @@ try {
 
   console.log(`Published ${remoteDatabaseURL}.`);
 } finally {
-  await Deno.remove(temporaryDirectory, { recursive: true });
+  await rm(temporaryDirectory, { recursive: true });
 }

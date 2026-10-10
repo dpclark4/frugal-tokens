@@ -21,21 +21,14 @@
       "vite/client"
     ]
   },
-  "files": [
-    "src/server/main.ts",
-    "src/client/main.tsx",
-    "vite.config.ts",
-    "scripts/dev.ts",
-    "scripts/runDbmate.ts",
-    "scripts/prepareDatabase.ts"
-  ],
+
   "include": [
-    "src/**/*.test.ts",
-    "src/test/**/*.ts",
-    "scripts/**/*.test.ts",
-    "scripts/runHttpTests.ts",
-    "tools/**/*.test.ts",
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "scripts/**/*.ts",
     "e2e/**/*.ts",
+    "tools/responses-cache-lab/**/*.ts",
+    "vite.config.ts",
     "vitest.config.ts"
   ]
 }

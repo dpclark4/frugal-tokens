@@ -1,71 +1,17 @@
 {
-  "nodeModulesDir": "manual",
-  "minimumDependencyAge": 0,
-  "imports": {
-    "@oxlint/plugins": "npm:@oxlint/plugins@1.79.0",
-    "@tanstack/react-router": "npm:@tanstack/react-router@1.170.17",
-    "@vitejs/plugin-react": "npm:@vitejs/plugin-react@6.0.3",
-    "hono": "npm:hono@4.12.29",
-    "hono/cors": "npm:hono@4.12.29/cors",
-    "hono/deno": "npm:hono@4.12.29/deno",
-    "html-to-image": "npm:html-to-image@1.11.13",
-    "lucide-react": "npm:lucide-react@1.25.0",
-    "oxlint": "npm:oxlint@1.79.0",
-    "pretty-ms": "npm:pretty-ms@9.3.0",
-    "react": "npm:react@19.2.7",
-    "react/jsx-runtime": "npm:react@19.2.7/jsx-runtime",
-    "react/jsx-dev-runtime": "npm:react@19.2.7/jsx-dev-runtime",
-    "react-dom": "npm:react-dom@19.2.7",
-    "react-dom/client": "npm:react-dom@19.2.7/client",
-    "recharts": "npm:recharts@3.3.0",
-    "vite": "npm:vite@8.1.4",
-    "zod": "npm:zod@4.4.3"
-  },
-  "compilerOptions": {
-    "lib": [
-      "deno.ns",
-      "DOM",
-      "DOM.Iterable",
-      "ESNext"
-    ],
-    "jsx": "react-jsx",
-    "jsxImportSource": "react",
-    "strict": true,
-    "types": [
-      "npm:@types/react@19.2.17",
-      "npm:@types/react-dom@19.2.3"
-    ]
-  },
   "fmt": {
     "include": [
       "src/",
       "scripts/",
       "e2e/",
       "deno.json",
+      "package.json",
+      "tsconfig.json",
       "vite.config.ts",
+      "vitest.config.ts",
+      "railpack.json",
+      "railway.json",
       "index.html"
     ]
-  },
-  "tasks": {
-    "setup": "deno install -g -A npm:@j178/prek && prek install",
-    "check": "pnpm check",
-    "lint:oxlint": "pnpm lint:oxlint",
-    "lint:oxlint:gate": "pnpm lint:oxlint:gate",
-    "test": "pnpm test",
-    "test:e2e": "pnpm test:e2e",
-    "db:new": "pnpm db:new",
-    "db:migrate": "pnpm db:migrate",
-    "db:rollback": "pnpm db:rollback",
-    "db:status": "pnpm db:status",
-    "demo:db:create": "deno run --env-file=.env --allow-env=FRUGAL_TOKENS_DATABASE_URL,HOME,USERPROFILE --allow-read --allow-write --allow-run=sqlite3 scripts/createDemoDatabase.ts",
-    "dev": "pnpm dev",
-    "dev:server": "pnpm dev:server",
-    "dev:client": "pnpm dev:client",
-    "build": "pnpm build",
-    "start": "pnpm start",
-    "start:api": "pnpm start:api",
-    "demo:deploy:frontend": "deno run --env-file=.env.demo --allow-env --allow-run=deno scripts/deployDemoFrontend.ts",
-    "demo:deploy:backend": "deno run --env-file=.env.demo --allow-env=DEPLOY_RAILWAY_SERVICE --allow-run=railway scripts/deployDemoBackend.ts",
-    "demo:deploy:data": "deno run --env-file=.env.demo --allow-env=DEPLOY_RAILWAY_SERVICE,DEPLOY_RAILWAY_VOLUME,FRUGAL_TOKENS_DATABASE_URL,HOME,USERPROFILE --allow-read --allow-write --allow-run scripts/deployDemoDatabase.ts"
   }
 }

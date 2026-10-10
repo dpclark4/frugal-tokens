@@ -11,13 +11,11 @@ again.
 
 ## Run
 
-The repository's `.env` can be loaded by Deno. The key is read only from the
+The repository's `.env` can be loaded by Node. The key is read only from the
 environment and is never accepted as a command-line argument:
 
 ```bash
-deno run --env-file=.env \
-  --allow-env=OPENAI_API_KEY,OPENAI_BASE_URL,RESPONSES_CACHE_LAB_DIR,HOME,USERPROFILE \
-  --allow-read --allow-write --allow-net \
+node --env-file=.env --import tsx \
   tools/responses-cache-lab/main.ts run \
   --scenario tools/responses-cache-lab/scenarios/text-warm-follow-up.json
 ```
@@ -46,8 +44,7 @@ Useful options:
 For example, a driver can provide a new experiment without writing a file:
 
 ```bash
-printf '%s' "$SCENARIO_JSON" | deno run --env-file=.env \
-  --allow-env=OPENAI_API_KEY,HOME --allow-read --allow-write --allow-net \
+printf '%s' "$SCENARIO_JSON" | node --env-file=.env --import tsx \
   tools/responses-cache-lab/main.ts run --scenario - --format json
 ```
 
@@ -153,8 +150,8 @@ Supported effort values are `none`, `minimal`, `low`, `medium`, `high`, and
 settings:
 
 ```bash
-deno run --env-file=.env --allow-env=OPENAI_API_KEY,HOME \
-  --allow-read --allow-write --allow-net tools/responses-cache-lab/main.ts run \
+node --env-file=.env --import tsx \
+  tools/responses-cache-lab/main.ts run \
   --scenario tools/responses-cache-lab/scenarios/full-replay.json \
   --reasoning-effort high
 ```
@@ -296,7 +293,7 @@ erase the cost or ambiguity of the earlier call.
 The usage extractor has fixture-level tests and does not require network access:
 
 ```bash
-deno test --allow-read tools/responses-cache-lab/usage.test.ts
+pnpm test tools/responses-cache-lab/usage.test.ts
 ```
 
 The tests cover nonzero, explicit zero, omitted details, omitted cached-token

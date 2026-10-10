@@ -1,3 +1,4 @@
+engineStrict: true
 allowBuilds:
   esbuild: true
   sharp: true

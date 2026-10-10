@@ -32,12 +32,11 @@ intentionally update snapshots.
   inputs.
 - Dashboard validation: invalid harnesses, ranges, timezones, and model/expand
   parameters; activity also covers a Pi-only 90-day non-UTC view and empty data.
-- Startup: production and watched API commands load database configuration
-  from an isolated `.env`, run migrations, and shut down their subprocesses.
+- Startup: production and watched API commands load database configuration from
+  an isolated `.env`, run migrations, and shut down their subprocesses.
 
 These are HTTP integration tests, not browser rendering/navigation tests. GitHub
-Actions' **Run HTTP e2e tests** step remains separate from unit tests; the
-transitional `deno task test:e2e` forwards to `pnpm test:e2e`.
+Actions runs `pnpm test:e2e` in its separate **Run HTTP e2e tests** step.
 Snapshot updates generate expected responses; review them before accepting
 behavior changes. Normal test runs compare responses without rewriting
 snapshots.
@@ -65,8 +64,8 @@ snapshots.
    the scrubber and its synthetic tests when needed—never fall back to copying
    raw payloads.
 4. Compare relevant original/scrubbed import metrics locally. Give the fixture a
-   focused test; update snapshots intentionally and run `pnpm test:e2e`.
-   Adding fixtures changes the shared sessions list and its count assertions.
+   focused test; update snapshots intentionally and run `pnpm test:e2e`. Adding
+   fixtures changes the shared sessions list and its count assertions.
 
 Sanitization produces a review candidate, not a guarantee of safe publication.
 Never commit originals or raw snapshots. Recorded tokens need not match the
@@ -94,5 +93,4 @@ are disjoint; do not add `unexpectedMisses` again. Verify the scrubbed fixture
 retains the counts. Add a short scenario suffix if a name already exists; never
 overwrite a fixture.
 
-Scrubber tests:
-`pnpm test scripts/scrubSession.test.ts`.
+Scrubber tests: `pnpm test scripts/scrubSession.test.ts`.
