@@ -76,7 +76,7 @@ export async function getUsage(range: number | "all", harness: string) {
 }
 
 export async function getActivityOverview(
-  range: 30 | 90,
+  range: 30 | 90 | "all",
   harness: string,
 ) {
   const query = new URLSearchParams({
@@ -90,7 +90,7 @@ export async function getActivityOverview(
 }
 
 export async function getWorkRhythm(
-  range: 30 | 90,
+  range: 30 | 90 | "all",
   harness: string,
 ) {
   const query = new URLSearchParams({
@@ -104,7 +104,7 @@ export async function getWorkRhythm(
 }
 
 export async function getSessionDistributions(
-  range: 30 | 90,
+  range: 30 | 90 | "all",
   harness: string,
 ) {
   return sessionDistributionResponseSchema.parse(

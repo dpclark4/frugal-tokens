@@ -19,6 +19,39 @@ describe("dashboard endpoints aggregate imported sessions", () => {
     server = await startServer();
   });
   afterAll(async () => await server?.[Symbol.asyncDispose]());
+  test("all time includes full history across dashboard endpoints", async () => {
+    const overview = activityOverviewResponseSchema.parse(
+      await getJson(
+        server.url,
+        "/api/activity-overview?range=all&harness=pi&timeZone=UTC",
+      ),
+    );
+    const rhythm = workRhythmOverviewResponseSchema.parse(
+      await getJson(
+        server.url,
+        "/api/work-rhythm?range=all&harness=pi&timeZone=UTC",
+      ),
+    );
+    const distributions = sessionDistributionResponseSchema.parse(
+      await getJson(
+        server.url,
+        "/api/session-shape?range=all&harness=pi",
+      ),
+    );
+    ok(overview.spendComposition.days.length > 0);
+    ok(overview.startDate > "1970-01-01");
+    deepStrictEqual(rhythm.workRhythm.range.start, overview.startDate);
+    deepStrictEqual(distributions.rangeDays, "all");
+    ok(distributions.sampleSize > 0);
+    const empty = workRhythmOverviewResponseSchema.parse(
+      await getJson(
+        server.url,
+        "/api/work-rhythm?range=all&harness=opencode&timeZone=UTC",
+      ),
+    );
+    deepStrictEqual(empty.workRhythm.range.start, empty.workRhythm.range.end);
+  });
+
   const cases = [
     ["harnesses", "/api/harnesses", harnessesResponseSchema],
     ["usage", "/api/usage?range=30", usageResponseSchema],

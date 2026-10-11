@@ -115,7 +115,10 @@ const newRoute = createRoute({
       .catch(
         "all",
       ),
-    range: z.coerce.number().pipe(z.union([z.literal(30), z.literal(90)]))
+    range: z.union([
+      z.literal("all"),
+      z.coerce.number().pipe(z.union([z.literal(30), z.literal(90)])),
+    ])
       .catch(30),
     date: z.iso.date().optional().catch(undefined),
     misses: z.string().optional(),

@@ -261,6 +261,18 @@
   font-variant-numeric: tabular-nums;
 }
 
+.composition-tooltip-other {
+  margin-top: 3px;
+  padding-top: 6px;
+  border-top: 1px solid var(--tooltip-rule);
+}
+
+.composition-tooltip-other-model > span {
+  grid-column: 2;
+  padding-left: 6px;
+  color: var(--tooltip-muted);
+}
+
 .composition-tooltip small {
   min-width: 55px;
   color: var(--tooltip-muted);

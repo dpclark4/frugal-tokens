@@ -3,7 +3,22 @@ import { deepStrictEqual, strictEqual } from "node:assert";
 import { workRhythmDataSchema } from "../shared/sessionSchemas.ts";
 import { summarizeWorkTime } from "../shared/workTime.ts";
 import type { StoredOverviewRollup } from "./overviewAnalytics.ts";
-import { aggregateWorkRhythm, workRhythmRange } from "./workRhythm.ts";
+import {
+  aggregateWorkRhythm,
+  allTimeStart,
+  workRhythmRange,
+} from "./workRhythm.ts";
+
+test("all time starts at the earliest observed local day, or today when empty", () => {
+  const end = Date.parse("2026-07-02T12:00:00Z");
+  const roots = [root("old", [Date.parse("2025-01-01T02:00:00Z")])];
+  strictEqual(workRhythmRange("all", "America/Los_Angeles", end).start, 0);
+  strictEqual(
+    allTimeStart(roots, end, "America/Los_Angeles"),
+    Date.parse("2024-12-31T08:00:00Z"),
+  );
+  strictEqual(allTimeStart([], end, "UTC"), Date.parse("2026-07-02T00:00:00Z"));
+});
 
 const minute = 60_000;
 const utc = (value: string) => new Date(`${value}Z`).getTime();

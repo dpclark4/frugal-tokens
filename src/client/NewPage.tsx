@@ -109,12 +109,12 @@ export function NewPage() {
   const search = route.useSearch();
   const navigate = route.useNavigate();
   const [loadedOverview, setLoadedOverview] = useState<{
-    range: 30 | 90;
+    range: 30 | 90 | "all";
     harness: string;
     data: ActivityOverviewResponse;
   }>();
   const [loadedWorkRhythm, setLoadedWorkRhythm] = useState<{
-    range: 30 | 90;
+    range: 30 | 90 | "all";
     harness: string;
     data: WorkRhythmOverviewResponse;
   }>();
@@ -128,12 +128,12 @@ export function NewPage() {
     "idle",
   );
   const [loadedSessionDistributions, setLoadedSessionDistributions] = useState<{
-    range: 30 | 90;
+    range: 30 | 90 | "all";
     harness: string;
     data: SessionDistributionResponse;
   }>();
   const [loadedCacheMisses, setLoadedCacheMisses] = useState<{
-    range: 30 | 90;
+    range: 30 | 90 | "all";
     harness: string;
     data: TtlMissMetrics;
   }>();
@@ -418,6 +418,7 @@ export function NewPage() {
               >
                 <SpendComposition
                   data={data.spendComposition}
+                  weekly={search.range === "all"}
                   highlightedDates={highlightedSpendDates}
                 />
               </Suspense>

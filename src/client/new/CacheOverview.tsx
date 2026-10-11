@@ -5,7 +5,7 @@ import { currency, decimal, integer } from "./formatters.ts";
 import "./CacheOverview.css";
 
 type CacheOverviewProps = {
-  range: 30 | 90;
+  range: 30 | 90 | "all";
   harness: string;
   onDataChange?: (data: TtlMissMetrics | undefined) => void;
 };
