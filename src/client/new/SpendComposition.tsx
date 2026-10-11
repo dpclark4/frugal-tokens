@@ -1,12 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import {
   Bar,
   CartesianGrid,
   ComposedChart,
-  ReferenceArea,
-  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
+  usePlotArea,
   XAxis,
   YAxis,
 } from "recharts";
@@ -24,6 +23,7 @@ import {
   compositionBuckets,
 } from "./compositionBuckets.ts";
 import { compositionScale } from "./compositionScale.ts";
+import type { SpendHighlight } from "./spendHighlight.ts";
 import "./SpendComposition.css";
 
 type Metric = "spend" | "tokens";
@@ -294,12 +294,55 @@ export function CompositionTooltip({ active, payload, data, metric }: {
   );
 }
 
+function CompositionHighlights({ rows, ceiling, highlight }: {
+  rows: ChartRow[];
+  ceiling: number;
+  highlight: SpendHighlight;
+}) {
+  const dates = useSyncExternalStore(
+    highlight.subscribe,
+    highlight.getSnapshot,
+    highlight.getSnapshot,
+  );
+  const area = usePlotArea();
+  if (!area || !dates || rows.length === 0) return null;
+  const selected = rows.filter((row) =>
+    dates.some((date) => date >= row.date && date <= row.source.endDate)
+  );
+  if (selected.length === 0) return null;
+  const width = area.width / rows.length;
+  return (
+    <g className="composition-highlight-overlay" pointerEvents="none">
+      <rect
+        x={area.x + selected[0].index * width}
+        y={area.y}
+        width={(selected[selected.length - 1].index - selected[0].index + 1) *
+          width}
+        height={area.height}
+        fill="#0f7169"
+        fillOpacity={0.08}
+      />
+      {selected.map((row) => (
+        <line
+          key={row.date}
+          x1={area.x + (row.index + 0.5) * width}
+          x2={area.x + (row.index + 0.5) * width}
+          y1={area.y}
+          y2={area.y + area.height * (1 - row.total / ceiling)}
+          stroke="#0f7169"
+          strokeDasharray="4 4"
+        />
+      ))}
+    </g>
+  );
+}
+
 function CompositionChart(
-  { data, metric, highlightedDates, weekly }: {
+  { data, metric, highlight, weekly }: {
     weekly: boolean;
     data: SpendCompositionData;
     metric: Metric;
-    highlightedDates?: string[];
+    highlight: SpendHighlight;
   },
 ) {
   const series = useMemo(() => [
@@ -335,12 +378,6 @@ function CompositionChart(
       }),
     [data, metric, weekly],
   );
-  const highlightedRows = rows.filter((row) =>
-    (highlightedDates ?? []).some((date) =>
-      date >= row.date && date <= row.source.endDate
-    )
-  )
-    .toSorted((a, b) => a.index - b.index);
   const maxTotal = Math.max(0, ...rows.map((row) => row.total));
   const { ceiling: highlightCeiling, ticks: volumeTicks } = compositionScale(
     maxTotal,
@@ -427,42 +464,21 @@ function CompositionChart(
               isAnimationActive={false}
             />
           ))}
-          {highlightedRows.length > 0 && (
-            <ReferenceArea
-              yAxisId="volume"
-              x1={highlightedRows[0].index - 0.5}
-              x2={highlightedRows[highlightedRows.length - 1].index + 0.5}
-              y1={0}
-              y2={highlightCeiling}
-              fill="#0f7169"
-              fillOpacity={0.08}
-              stroke="none"
-              ifOverflow="visible"
-            />
-          )}
-          {highlightedRows.map((row) => (
-            <ReferenceLine
-              key={row.date}
-              yAxisId="volume"
-              segment={[
-                { x: row.index, y: highlightCeiling },
-                { x: row.index, y: row.total },
-              ]}
-              stroke="#0f7169"
-              strokeDasharray="4 4"
-              ifOverflow="visible"
-            />
-          ))}
+          <CompositionHighlights
+            rows={rows}
+            ceiling={highlightCeiling}
+            highlight={highlight}
+          />
         </ComposedChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
-export function SpendComposition({ data, highlightedDates, weekly = false }: {
+export function SpendComposition({ data, highlight, weekly = false }: {
   weekly?: boolean;
   data: SpendCompositionData;
-  highlightedDates?: string[];
+  highlight: SpendHighlight;
 }) {
   const [metric, setMetric] = useState<Metric>("spend");
   const empty = data.models.length === 0;
@@ -521,7 +537,7 @@ export function SpendComposition({ data, highlightedDates, weekly = false }: {
                 weekly={weekly}
                 data={data}
                 metric={metric}
-                highlightedDates={highlightedDates}
+                highlight={highlight}
               />
             </div>
           </div>

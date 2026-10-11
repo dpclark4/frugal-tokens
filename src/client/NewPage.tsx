@@ -16,6 +16,7 @@ import {
   type ScreenshotState,
 } from "./new/OverviewToolbar.tsx";
 import { UsageOverview } from "./new/UsageOverview.tsx";
+import { createSpendHighlight } from "./new/spendHighlight.ts";
 import { SessionDistributions } from "./new/SessionShape.tsx";
 import { CacheOverview } from "./new/CacheOverview.tsx";
 import { RecentSessions } from "./new/RecentSessions.tsx";
@@ -137,9 +138,7 @@ export function NewPage() {
     harness: string;
     data: TtlMissMetrics;
   }>();
-  const [highlightedSpendDates, setHighlightedSpendDates] = useState<
-    string[]
-  >();
+  const [spendHighlight] = useState(createSpendHighlight);
   const screenshotRef = useRef<HTMLDivElement>(null);
   const pendingScrollYRef = useRef<number | undefined>(undefined);
   const refreshScrollYRef = useRef<number | undefined>(
@@ -419,7 +418,7 @@ export function NewPage() {
                 <SpendComposition
                   data={data.spendComposition}
                   weekly={search.range === "all"}
-                  highlightedDates={highlightedSpendDates}
+                  highlight={spendHighlight}
                 />
               </Suspense>
             )
@@ -458,7 +457,7 @@ export function NewPage() {
                 >
                   <SessionDiagnostics
                     data={workRhythmData.sessionDiagnostics}
-                    onHighlightDates={setHighlightedSpendDates}
+                    onHighlightDates={spendHighlight.set}
                   />
                 </Suspense>
               )

@@ -1,13 +1,19 @@
 import { useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import {
+  memo,
+  startTransition,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import {
   CartesianGrid,
   Label,
   ReferenceLine,
   ResponsiveContainer,
-  Scatter,
   ScatterChart,
-  Tooltip,
+  usePlotArea,
   XAxis,
   YAxis,
 } from "recharts";
@@ -15,6 +21,7 @@ import type { WorkRhythmOverviewResponse } from "../../shared/sessionSchemas.ts"
 import { harnessName } from "../harness.ts";
 import { compact, currency, dashboardChartLabelSize } from "./formatters.ts";
 import { saveOverviewReturnScroll } from "./overviewReturnScroll.ts";
+import { hoverIntent } from "./hoverIntent.ts";
 import "./SessionDiagnostics.css";
 
 type SessionDiagnosticsData = WorkRhythmOverviewResponse["sessionDiagnostics"];
@@ -25,11 +32,7 @@ type ChartPoint = SessionPoint & {
   highestValueLabel?: string;
   highlighted: boolean;
 };
-type SessionDotGeometryProps = {
-  cx?: number;
-  cy?: number;
-  payload?: ChartPoint;
-};
+type LocatedPoint = { session: ChartPoint; x: number; y: number };
 
 const chartMono = '"SFMono-Regular", Consolas, monospace';
 const decimal = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
@@ -71,15 +74,7 @@ function formatMetric(metric: Metric, value: number) {
   return metric === "spend" ? currency.format(value) : compact.format(value);
 }
 
-function SessionTooltip({
-  active,
-  payload,
-}: {
-  active?: boolean;
-  payload?: Array<{ payload?: ChartPoint }>;
-}) {
-  const session = payload?.[0]?.payload;
-  if (!active || !session) return null;
+function SessionTooltip({ session }: { session: ChartPoint }) {
   return (
     <div className="tooltip-surface usage-tooltip session-diagnostics-tooltip">
       <p>{session.title}</p>
@@ -124,17 +119,16 @@ function SessionTooltip({
   );
 }
 
-function SessionDot({
-  cx,
-  cy,
-  payload,
+const SessionDot = memo(function SessionDot({
+  point,
   onOpen,
-  onHoverChange,
-}: SessionDotGeometryProps & {
+  hover,
+}: {
+  point: LocatedPoint;
   onOpen: (session: ChartPoint) => void;
-  onHoverChange: (session: ChartPoint, hovering: boolean) => void;
+  hover: ReturnType<typeof hoverIntent<LocatedPoint>>;
 }) {
-  if (cx === undefined || cy === undefined || !payload) return <g />;
+  const { session: payload, x: cx, y: cy } = point;
   const canOpen = payload.harness !== undefined;
   const open = () => {
     if (canOpen) onOpen(payload);
@@ -145,14 +139,15 @@ function SessionDot({
         payload.highlighted ? " is-highlighted" : ""
       }${canOpen ? " is-linked" : ""}`}
       role={canOpen ? "link" : undefined}
-      tabIndex={canOpen ? 0 : undefined}
-      aria-label={canOpen ? `Open ${payload.title}` : undefined}
+      tabIndex={0}
+      aria-label={canOpen ? `Open ${payload.title}` : payload.title}
       onClick={open}
-      onMouseEnter={() => onHoverChange(payload, true)}
-      onMouseLeave={() => onHoverChange(payload, false)}
-      onFocus={() => onHoverChange(payload, true)}
-      onBlur={() => onHoverChange(payload, false)}
+      onPointerEnter={() => hover.enter(point)}
+      onPointerLeave={hover.leave}
+      onFocus={() => hover.enter(point, true)}
+      onBlur={hover.leave}
       onKeyDown={(event) => {
+        if (event.key === "Escape") hover.leave();
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           open();
@@ -189,9 +184,97 @@ function SessionDot({
       )}
     </g>
   );
-}
+});
 
-export function SessionDiagnostics({
+// Recharts owns axes/layout only. Its Scatter/Tooltip hover subscriptions rebuild
+// every symbol on active-index changes; this layer keeps the dots static.
+const SessionPoints = memo(function SessionPoints({
+  points,
+  maxActive,
+  maxY,
+  onOpen,
+  onHighlightDates,
+}: {
+  points: ChartPoint[];
+  maxActive: number;
+  maxY: number;
+  onOpen: (session: ChartPoint) => void;
+  onHighlightDates?: (dates: string[] | undefined) => void;
+}) {
+  const area = usePlotArea();
+  const [active, setActive] = useState<LocatedPoint>();
+  const hover = useMemo(() => hoverIntent<LocatedPoint>(setActive), []);
+  useEffect(() => {
+    hover.leave();
+    return hover.cancel;
+  }, [hover, points, area]);
+  useEffect(() => {
+    startTransition(() => onHighlightDates?.(active?.session.dates));
+    return () => {
+      startTransition(() => onHighlightDates?.(undefined));
+    };
+  }, [active, onHighlightDates]);
+  const dots = useMemo(() => {
+    if (!area) return null;
+    return points.map((session) => (
+      <SessionDot
+        key={`${session.harness ?? "unknown"}:${session.id}`}
+        point={{
+          session,
+          x: area.x + session.estimatedActiveMinutes / maxActive * area.width,
+          y: area.y + area.height - session.plotValue / maxY * area.height,
+        }}
+        onOpen={onOpen}
+        hover={hover}
+      />
+    ));
+  }, [area, points, maxActive, maxY, onOpen, hover]);
+  if (!area) return null;
+  const tooltipWidth = Math.min(300, area.width);
+  const tooltipX = active
+    ? Math.max(
+      area.x,
+      Math.min(active.x + 12, area.x + area.width - tooltipWidth),
+    )
+    : 0;
+  const tooltipY = active
+    ? Math.max(0, Math.min(active.y + 12, area.y + area.height - 260))
+    : 0;
+  return (
+    <g>
+      {dots}
+      {active && (
+        <g pointerEvents="none">
+          <path
+            d={`M ${area.x} ${active.y} H ${
+              area.x + area.width
+            } M ${active.x} ${area.y} V ${area.y + area.height}`}
+            fill="none"
+            stroke="#aeb8b4"
+            strokeDasharray="2 4"
+          />
+          <circle
+            cx={active.x}
+            cy={active.y}
+            r={5}
+            fill="none"
+            stroke="#235f59"
+          />
+          <foreignObject
+            x={tooltipX}
+            y={tooltipY}
+            width={tooltipWidth}
+            height={260}
+          >
+            <SessionTooltip session={active.session} />
+          </foreignObject>
+        </g>
+      )}
+    </g>
+  );
+});
+
+export const SessionDiagnostics = memo(function SessionDiagnostics({
   data,
   onHighlightDates,
 }: {
@@ -201,41 +284,42 @@ export function SessionDiagnostics({
   const navigate = useNavigate();
   const [metric, setMetric] = useState<Metric>("spend");
   const sessions = data.sessions;
-  const medianActive = median(
-    sessions.map((session) => session.estimatedActiveMinutes),
-  );
-  const medianY = median(
-    sessions.map((session) => metricValue(metric, session)),
-  );
-  const highestValueKeys = new Set(
-    sessions.toSorted((a, b) => metricValue(metric, b) - metricValue(metric, a))
-      .slice(0, 3).map((session) =>
-        `${session.harness ?? "unknown"}:${session.id}`
-      ),
-  );
-  const points: ChartPoint[] = sessions.map((session) => {
-    const key = `${session.harness ?? "unknown"}:${session.id}`;
-    const highlighted = highestValueKeys.has(key);
-    const value = metricValue(metric, session);
-    const point: ChartPoint = {
-      ...session,
-      plotValue: scaleValue(metric, value),
-      highlighted,
-    };
-    if (highlighted) {
-      point.highestValueLabel = `${formatMetric(metric, value)}${
-        metric === "spend" && session.hasUnpricedSpend ? "+" : ""
-      }`;
-    }
-    return point;
-  });
+  const { medianActive, medianY, points } = useMemo(() => {
+    const medianActive = median(
+      sessions.map((session) => session.estimatedActiveMinutes),
+    );
+    const medianY = median(
+      sessions.map((session) => metricValue(metric, session)),
+    );
+    const highestValueKeys = new Set(
+      sessions.toSorted((a, b) =>
+        metricValue(metric, b) - metricValue(metric, a)
+      )
+        .slice(0, 3).map((session) =>
+          `${session.harness ?? "unknown"}:${session.id}`
+        ),
+    );
+    const points: ChartPoint[] = sessions.map((session) => {
+      const key = `${session.harness ?? "unknown"}:${session.id}`;
+      const highlighted = highestValueKeys.has(key);
+      const value = metricValue(metric, session);
+      const point: ChartPoint = {
+        ...session,
+        plotValue: scaleValue(metric, value),
+        highlighted,
+      };
+      if (highlighted) {
+        point.highestValueLabel = `${formatMetric(metric, value)}${
+          metric === "spend" && session.hasUnpricedSpend ? "+" : ""
+        }`;
+      }
+      return point;
+    });
+    return { medianActive, medianY, points };
+  }, [sessions, metric]);
   const metricLabel = metric === "spend" ? "Spend" : "Processed input";
 
-  function setHover(session: ChartPoint, hovering: boolean) {
-    onHighlightDates?.(hovering ? session.dates : undefined);
-  }
-
-  function openSession(session: ChartPoint) {
+  const openSession = useCallback((session: ChartPoint) => {
     if (!session.harness) return;
     saveOverviewReturnScroll();
     navigate({
@@ -249,17 +333,13 @@ export function SessionDiagnostics({
         thinking: "recorded",
       },
     });
-  }
+  }, [navigate]);
 
-  const scatterDotProps = {
-    "shape": (geometry: SessionDotGeometryProps) => (
-      <SessionDot
-        {...geometry}
-        onOpen={openSession}
-        onHoverChange={setHover}
-      />
-    ),
-  };
+  const maxActive = Math.max(
+    5,
+    ...points.map((point) => point.estimatedActiveMinutes),
+  );
+  const maxY = Math.max(1, ...points.map((point) => point.plotValue));
 
   return (
     <section
@@ -313,7 +393,8 @@ export function SessionDiagnostics({
                   type="number"
                   dataKey="estimatedActiveMinutes"
                   name="Estimated active time"
-                  domain={[0, (maximum: number) => Math.max(5, maximum)]}
+                  domain={[0, maxActive]}
+                  allowDataOverflow
                   tickFormatter={duration}
                   tickLine={false}
                   axisLine={false}
@@ -339,7 +420,8 @@ export function SessionDiagnostics({
                   type="number"
                   dataKey="plotValue"
                   name={metricLabel}
-                  domain={[0, (maximum: number) => Math.max(1, maximum)]}
+                  domain={[0, maxY]}
+                  allowDataOverflow
                   tickFormatter={(value: number) =>
                     formatMetric(metric, unscaleValue(metric, value))}
                   tickLine={false}
@@ -391,23 +473,13 @@ export function SessionDiagnostics({
                     fontSize: 9,
                   }}
                 />
-                <Tooltip
-                  isAnimationActive={false}
-                  cursor={{ stroke: "#aeb8b4", strokeDasharray: "2 4" }}
-                  content={(props) => (
-                    <SessionTooltip
-                      active={props.active}
-                      payload={
-                        /* SAFETY: Recharts wraps rows from this chart data in tooltip payload entries. */
-                        props.payload as Array<{ payload?: ChartPoint }>
-                      }
-                    />
-                  )}
-                />
-                <Scatter
-                  data={points}
-                  {...scatterDotProps}
-                  isAnimationActive={false}
+                <SessionPoints
+                  key={metric}
+                  points={points}
+                  maxActive={maxActive}
+                  maxY={maxY}
+                  onOpen={openSession}
+                  onHighlightDates={onHighlightDates}
                 />
               </ScatterChart>
             </ResponsiveContainer>
@@ -415,4 +487,4 @@ export function SessionDiagnostics({
       </div>
     </section>
   );
-}
+});
