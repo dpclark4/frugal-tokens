@@ -987,7 +987,7 @@ export const sessionDistributionMetricKeySchema = z.enum([
 ]);
 
 export const sessionDistributionResponseSchema = z.object({
-  rangeDays: z.union([z.literal(30), z.literal(90)]),
+  rangeDays: z.union([z.literal(30), z.literal(90), z.literal("all")]),
   sampleSize: z.number().int().nonnegative(),
   unpricedSessions: z.number().int().nonnegative(),
   multiDaySessions: z.number().int().nonnegative(),

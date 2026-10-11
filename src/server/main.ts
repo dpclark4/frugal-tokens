@@ -38,7 +38,7 @@ import {
   aggregateActivityOverview,
   aggregateWorkRhythmOverview,
 } from "./activityOverview.ts";
-import { workRhythmRange } from "./workRhythm.ts";
+import { allTimeStart, workRhythmRange } from "./workRhythm.ts";
 import { aggregateSessionDistributions } from "./sessionShapeAnalytics.ts";
 import { expandHomePath, openArchiveDatabase, sqlitePath } from "./database.ts";
 import { SourceArtifactRepository } from "./sourceArtifactRepository.ts";
@@ -167,8 +167,10 @@ function toolCallRange(value: string): 7 | 30 | 90 | undefined {
   }
 }
 
-function dashboardRange(value: string): 30 | 90 | undefined {
+function dashboardRange(value: string): 30 | 90 | "all" | undefined {
   switch (value) {
+    case "all":
+      return "all";
     case "30":
       return 30;
     case "90":
@@ -516,10 +518,13 @@ app.get("/api/session-shape", (context) => {
   const rangeParam = context.req.query("range") ?? "30";
   const range = dashboardRange(rangeParam);
   if (range === undefined) {
-    return context.json({ error: "Invalid range; expected 30 or 90" }, 400);
+    return context.json(
+      { error: "Invalid range; expected 30, 90, or all" },
+      400,
+    );
   }
   const end = Date.now();
-  const start = new Date(
+  const start = range === "all" ? 0 : new Date(
     new Date(end).setHours(0, 0, 0, 0) - (range - 1) * 86_400_000,
   ).getTime();
   const selectedHarness = harnessSelection(harness);
@@ -563,7 +568,10 @@ app.get("/api/activity-overview", (context) => {
   const rangeParam = context.req.query("range") ?? "30";
   const range = dashboardRange(rangeParam);
   if (range === undefined) {
-    return context.json({ error: "Invalid range; expected 30 or 90" }, 400);
+    return context.json(
+      { error: "Invalid range; expected 30, 90, or all" },
+      400,
+    );
   }
   const timeZone = context.req.query("timeZone") ??
     Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -573,7 +581,8 @@ app.get("/api/activity-overview", (context) => {
   } catch {
     return context.json({ error: "Invalid IANA timezone" }, 400);
   }
-  const { start, end } = boundaries;
+  let { start } = boundaries;
+  const { end } = boundaries;
   const selectedHarness = harnessSelection(harness);
   const databaseTimings = new Map<string, number>();
   const loadStartedAt = performance.now();
@@ -585,6 +594,9 @@ app.get("/api/activity-overview", (context) => {
       recordTiming: (name, duration) => databaseTimings.set(name, duration),
     },
   );
+  if (range === "all") {
+    start = allTimeStart(loaded, end, timeZone);
+  }
   const loadDuration = performance.now() - loadStartedAt;
   const cacheMissStartedAt = performance.now();
   const spendAtMissCalls = sumCacheMissCost(
@@ -643,7 +655,10 @@ app.get("/api/work-rhythm", (context) => {
   const rangeParam = context.req.query("range") ?? "30";
   const range = dashboardRange(rangeParam);
   if (range === undefined) {
-    return context.json({ error: "Invalid range; expected 30 or 90" }, 400);
+    return context.json(
+      { error: "Invalid range; expected 30, 90, or all" },
+      400,
+    );
   }
   const timeZone = context.req.query("timeZone") ??
     Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -653,7 +668,8 @@ app.get("/api/work-rhythm", (context) => {
   } catch {
     return context.json({ error: "Invalid IANA timezone" }, 400);
   }
-  const { start, end } = boundaries;
+  let { start } = boundaries;
+  const { end } = boundaries;
   const selectedHarness = harnessSelection(harness);
   const databaseTimings = new Map<string, number>();
   const databaseStartedAt = performance.now();
@@ -665,6 +681,9 @@ app.get("/api/work-rhythm", (context) => {
       recordTiming: (name, duration) => databaseTimings.set(name, duration),
     },
   );
+  if (range === "all") {
+    start = allTimeStart(loaded, end, timeZone);
+  }
   const databaseDuration = performance.now() - databaseStartedAt;
   const aggregationTimings = new Map<string, number>();
   const aggregationStartedAt = performance.now();

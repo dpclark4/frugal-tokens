@@ -29,7 +29,7 @@ export function aggregateSessionDistributions(
   roots: StoredSessionDistributionRollup[],
   start: number,
   end: number,
-  rangeDays: 30 | 90,
+  rangeDays: 30 | 90 | "all",
 ): SessionDistributionResponse {
   const costs: number[] = [];
   const inputs: number[] = [];

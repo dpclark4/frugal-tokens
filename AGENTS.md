@@ -112,6 +112,21 @@ the semantic custom properties defined on `.new-page` in
 - Responsive rules may reduce hero metrics or rearrange content, but should not
   create new typography roles or reduce labels below the micro size.
 
+## Pull Request Descriptions
+
+Write for a human reviewer in concise, natural language, not as an agent activity
+log or a checklist of completed tasks.
+
+- Explain what changed and its user-facing or technical impact.
+- Include the why or backstory only when it is established and useful; do not
+  invent motivation or history to fill a section.
+- Mention considerations, tradeoffs, or follow-up work only when relevant; omit
+  empty sections and statements that there are none.
+- Prefer a short summary and a few focused bullets over a rigid template or a
+  file-by-file inventory.
+- Omit routine verification claims such as "ran tests" and boilerplate test
+  plans; disclose failures or meaningful confidence gaps when they exist.
+
 ## Commit Messages
 
 When asked to commit, use a concise imperative title followed by a factual

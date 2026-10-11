@@ -100,7 +100,8 @@
 }
 
 .session-diagnostics-tooltip {
-  min-width: 245px;
+  width: 100%;
+  min-width: 0;
   max-width: 300px;
   padding: 10px 12px;
 }

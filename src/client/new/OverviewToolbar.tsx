@@ -4,7 +4,7 @@ import type { SessionSummary } from "../../shared/sessionSchemas.ts";
 import { HarnessOptions } from "../HarnessOptions.tsx";
 import "./OverviewToolbar.css";
 
-export type OverviewRange = 30 | 90;
+export type OverviewRange = 30 | 90 | "all";
 export type OverviewHarness =
   | "all"
   | "claude-code"
@@ -93,13 +93,16 @@ export function OverviewToolbar({
           value={range}
           onChange={(event) =>
             onRangeChange(
-              /* SAFETY: The range select renders only 30 and 90. */ Number(
-                event.target.value,
-              ) as OverviewRange,
+              event.target.value === "all"
+                ? "all"
+                : event.target.value === "90"
+                ? 90
+                : 30,
             )}
         >
           <option value={30}>30D</option>
           <option value={90}>90D</option>
+          <option value="all">All</option>
         </select>
       </label>
       <label className="new-harness-control">

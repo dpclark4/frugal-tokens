@@ -1,12 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
 import {
   Bar,
   CartesianGrid,
   ComposedChart,
-  ReferenceArea,
-  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
+  usePlotArea,
   XAxis,
   YAxis,
 } from "recharts";
@@ -18,11 +17,17 @@ import {
   dashboardChartFont,
   dashboardChartLabelSize,
 } from "./formatters.ts";
-import { minorModelColor, modelColor, otherModelColor } from "./modelColors.ts";
+import { modelColor, otherModelColor } from "./modelColors.ts";
+import {
+  type CompositionBucket,
+  compositionBuckets,
+} from "./compositionBuckets.ts";
+import { compositionScale } from "./compositionScale.ts";
+import type { SpendHighlight } from "./spendHighlight.ts";
 import "./SpendComposition.css";
 
 type Metric = "spend" | "tokens";
-type CompositionDay = SpendCompositionData["days"][number];
+type CompositionDay = CompositionBucket;
 type ChartRow = {
   index: number;
   date: string;
@@ -34,6 +39,11 @@ type ChartRow = {
 const shortDate = new Intl.DateTimeFormat(undefined, {
   month: "short",
   day: "numeric",
+});
+const weekDates = new Intl.DateTimeFormat(undefined, {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
 });
 const longDate = new Intl.DateTimeFormat(undefined, {
   weekday: "long",
@@ -167,7 +177,7 @@ function ModelTable({ data }: { data: SpendCompositionData }) {
   );
 }
 
-function CompositionTooltip({ active, payload, data, metric }: {
+export function CompositionTooltip({ active, payload, data, metric }: {
   active?: boolean;
   payload?: Array<{ payload?: ChartRow }>;
   data: SpendCompositionData;
@@ -175,19 +185,24 @@ function CompositionTooltip({ active, payload, data, metric }: {
 }) {
   const day = payload?.[0]?.payload?.source;
   if (!active || !day) return null;
-  const values = [
-    ...data.models.map((model) => ({
-      model,
-      value: day.models.find((item) => item.model === model.model),
-    })),
-    ...day.otherModels.map((model) => ({ model, value: model })),
-  ].filter(({ value }) =>
+  const values = data.models.map((model) => ({
+    model,
+    value: day.models.find((item) => item.model === model.model),
+  })).filter(({ value }) =>
     (value?.spend ?? 0) > 0 || (value?.processedInput ?? 0) > 0
   ).toSorted((a, b) =>
     metric === "spend"
       ? (b.value?.spend ?? 0) - (a.value?.spend ?? 0)
       : (b.value?.processedInput ?? 0) - (a.value?.processedInput ?? 0)
   );
+  const otherModels = day.otherModels.filter((model) =>
+    model.spend > 0 || model.processedInput > 0
+  ).toSorted((a, b) =>
+    metric === "spend" ? b.spend - a.spend : b.processedInput - a.processedInput
+  );
+  const otherRate = day.otherProcessedInput === 0
+    ? undefined
+    : day.otherSpend / day.otherProcessedInput * 1_000_000;
   const totalSpend = day.models.reduce(
     (sum, model) => sum + model.spend,
     day.otherSpend,
@@ -203,7 +218,14 @@ function CompositionTooltip({ active, payload, data, metric }: {
   return (
     <div className="tooltip-surface composition-tooltip">
       <header>
-        <strong>{longDate.format(parseDate(day.date))}</strong>
+        <strong>
+          {day.date === day.endDate
+            ? longDate.format(parseDate(day.date))
+            : weekDates.formatRange(
+              parseDate(day.date),
+              parseDate(day.endDate),
+            )}
+        </strong>
         <span>
           {metric === "spend"
             ? currency.format(totalSpend)
@@ -220,9 +242,7 @@ function CompositionTooltip({ active, payload, data, metric }: {
           <div key={model.model}>
             <i
               style={{
-                backgroundColor: model.provider === "other"
-                  ? minorModelColor(model.model)
-                  : modelColor(model),
+                backgroundColor: modelColor(model),
               }}
               aria-hidden="true"
             />
@@ -236,15 +256,93 @@ function CompositionTooltip({ active, payload, data, metric }: {
           </div>
         );
       })}
+      {(day.otherSpend > 0 || day.otherProcessedInput > 0) && (
+        <>
+          <div className="composition-tooltip-other">
+            <i
+              style={{ backgroundColor: otherModelColor }}
+              aria-hidden="true"
+            />
+            <span>Other</span>
+            <strong>
+              {metric === "spend"
+                ? currency.format(day.otherSpend)
+                : compact.format(day.otherProcessedInput)}
+            </strong>
+            <small>{formatRate(otherRate)}/1M</small>
+          </div>
+          {otherModels.map((model) => (
+            <div className="composition-tooltip-other-model" key={model.model}>
+              <span>{displayModelName(model.model)}</span>
+              <strong>
+                {metric === "spend"
+                  ? currency.format(model.spend)
+                  : compact.format(model.processedInput)}
+              </strong>
+              <small>
+                {formatRate(
+                  model.processedInput === 0
+                    ? undefined
+                    : model.spend / model.processedInput * 1_000_000,
+                )}/1M
+              </small>
+            </div>
+          ))}
+        </>
+      )}
     </div>
   );
 }
 
+function CompositionHighlights({ rows, ceiling, highlight }: {
+  rows: ChartRow[];
+  ceiling: number;
+  highlight: SpendHighlight;
+}) {
+  const dates = useSyncExternalStore(
+    highlight.subscribe,
+    highlight.getSnapshot,
+    highlight.getSnapshot,
+  );
+  const area = usePlotArea();
+  if (!area || !dates || rows.length === 0) return null;
+  const selected = rows.filter((row) =>
+    dates.some((date) => date >= row.date && date <= row.source.endDate)
+  );
+  if (selected.length === 0) return null;
+  const width = area.width / rows.length;
+  return (
+    <g className="composition-highlight-overlay" pointerEvents="none">
+      <rect
+        x={area.x + selected[0].index * width}
+        y={area.y}
+        width={(selected[selected.length - 1].index - selected[0].index + 1) *
+          width}
+        height={area.height}
+        fill="#0f7169"
+        fillOpacity={0.08}
+      />
+      {selected.map((row) => (
+        <line
+          key={row.date}
+          x1={area.x + (row.index + 0.5) * width}
+          x2={area.x + (row.index + 0.5) * width}
+          y1={area.y}
+          y2={area.y + area.height * (1 - row.total / ceiling)}
+          stroke="#0f7169"
+          strokeDasharray="4 4"
+        />
+      ))}
+    </g>
+  );
+}
+
 function CompositionChart(
-  { data, metric, highlightedDates }: {
+  { data, metric, highlight, weekly }: {
+    weekly: boolean;
     data: SpendCompositionData;
     metric: Metric;
-    highlightedDates?: string[];
+    highlight: SpendHighlight;
   },
 ) {
   const series = useMemo(() => [
@@ -257,31 +355,33 @@ function CompositionChart(
       ? [{ key: "other", model: undefined, color: otherModelColor }]
       : []),
   ], [data]);
-  const rows = useMemo(() =>
-    data.days.map((day, index) => {
-      const values: Record<string, number> = {};
-      data.models.forEach((model, index) => {
-        const value = day.models.find((item) => item.model === model.model);
-        values[`model${index}`] = metric === "spend"
-          ? value?.spend ?? 0
-          : value?.processedInput ?? 0;
-      });
-      if (data.other) {
-        values.other = metric === "spend"
-          ? day.otherSpend
-          : day.otherProcessedInput;
-      }
-      const total = Object.values(values).reduce(
-        (sum, value) => sum + value,
-        0,
-      );
-      return { index, date: day.date, source: day, total, ...values };
-    }), [data, metric]);
-  const highlightedRows = (highlightedDates ?? [])
-    .flatMap((date) => rows.find((row) => row.date === date) ?? [])
-    .toSorted((a, b) => a.index - b.index);
+  const rows = useMemo(
+    () =>
+      compositionBuckets(data.days, weekly).map((day, index) => {
+        const values: Record<string, number> = {};
+        data.models.forEach((model, index) => {
+          const value = day.models.find((item) => item.model === model.model);
+          values[`model${index}`] = metric === "spend"
+            ? value?.spend ?? 0
+            : value?.processedInput ?? 0;
+        });
+        if (data.other) {
+          values.other = metric === "spend"
+            ? day.otherSpend
+            : day.otherProcessedInput;
+        }
+        const total = Object.values(values).reduce(
+          (sum, value) => sum + value,
+          0,
+        );
+        return { index, date: day.date, source: day, total, ...values };
+      }),
+    [data, metric, weekly],
+  );
   const maxTotal = Math.max(0, ...rows.map((row) => row.total));
-  const highlightCeiling = maxTotal === 0 ? 1 : maxTotal * 1.06;
+  const { ceiling: highlightCeiling, ticks: volumeTicks } = compositionScale(
+    maxTotal,
+  );
 
   return (
     <div
@@ -289,12 +389,12 @@ function CompositionChart(
       role="img"
       aria-label={`${
         metric === "spend" ? "Spend" : "Processed input tokens"
-      } by day, stacked by model.`}
+      } by ${weekly ? "week" : "day"}, stacked by model.`}
     >
       <ResponsiveContainer width="100%" height="100%">
         <ComposedChart
           data={rows}
-          margin={{ top: 10, right: 4, bottom: 2, left: 0 }}
+          margin={{ top: 10, right: 28, bottom: 2, left: 0 }}
           barCategoryGap="18%"
         >
           <CartesianGrid
@@ -325,7 +425,8 @@ function CompositionChart(
           <YAxis
             yAxisId="volume"
             width={48}
-            domain={[0, () => highlightCeiling]}
+            domain={[0, highlightCeiling]}
+            ticks={volumeTicks}
             tickFormatter={(value) =>
               metric === "spend"
                 ? `$${compact.format(Number(value))}`
@@ -363,41 +464,21 @@ function CompositionChart(
               isAnimationActive={false}
             />
           ))}
-          {highlightedRows.length > 0 && (
-            <ReferenceArea
-              yAxisId="volume"
-              x1={highlightedRows[0].index - 0.5}
-              x2={highlightedRows[highlightedRows.length - 1].index + 0.5}
-              y1={0}
-              y2={highlightCeiling}
-              fill="#0f7169"
-              fillOpacity={0.08}
-              stroke="none"
-              ifOverflow="visible"
-            />
-          )}
-          {highlightedRows.map((row) => (
-            <ReferenceLine
-              key={row.date}
-              yAxisId="volume"
-              segment={[
-                { x: row.index, y: highlightCeiling },
-                { x: row.index, y: row.total },
-              ]}
-              stroke="#0f7169"
-              strokeDasharray="4 4"
-              ifOverflow="visible"
-            />
-          ))}
+          <CompositionHighlights
+            rows={rows}
+            ceiling={highlightCeiling}
+            highlight={highlight}
+          />
         </ComposedChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
-export function SpendComposition({ data, highlightedDates }: {
+export function SpendComposition({ data, highlight, weekly = false }: {
+  weekly?: boolean;
   data: SpendCompositionData;
-  highlightedDates?: string[];
+  highlight: SpendHighlight;
 }) {
   const [metric, setMetric] = useState<Metric>("spend");
   const empty = data.models.length === 0;
@@ -453,9 +534,10 @@ export function SpendComposition({ data, highlightedDates }: {
             </header>
             <div className="composition-trend">
               <CompositionChart
+                weekly={weekly}
                 data={data}
                 metric={metric}
-                highlightedDates={highlightedDates}
+                highlight={highlight}
               />
             </div>
           </div>

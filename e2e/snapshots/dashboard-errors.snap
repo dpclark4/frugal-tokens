@@ -50,19 +50,19 @@ snapshot[`dashboard endpoints reject invalid filters > /api/tool-calls?harness=i
 
 snapshot[`dashboard endpoints reject invalid filters > /api/activity-overview?range=invalid 1`] = `
 {
-  error: "Invalid range; expected 30 or 90",
+  error: "Invalid range; expected 30, 90, or all",
 }
 `;
 
 snapshot[`dashboard endpoints reject invalid filters > /api/work-rhythm?range=invalid 1`] = `
 {
-  error: "Invalid range; expected 30 or 90",
+  error: "Invalid range; expected 30, 90, or all",
 }
 `;
 
 snapshot[`dashboard endpoints reject invalid filters > /api/session-shape?range=invalid 1`] = `
 {
-  error: "Invalid range; expected 30 or 90",
+  error: "Invalid range; expected 30, 90, or all",
 }
 `;
 

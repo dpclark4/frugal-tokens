@@ -149,16 +149,39 @@ function intensity(
   return levels[Math.min(3, Math.floor(lower * 4 / nonzero.length))];
 }
 
+export function allTimeStart(
+  roots: StoredOverviewRollup[],
+  end: number,
+  timeZone: string,
+) {
+  let earliest = end;
+  for (const root of roots) {
+    for (const day of root.overview.days) {
+      earliest = Math.min(earliest, day.firstTurnAt);
+    }
+    for (const interval of root.rootExecutionIntervals ?? []) {
+      earliest = Math.min(earliest, interval.startedAt);
+    }
+  }
+  const date = Temporal.Instant.fromEpochMilliseconds(earliest)
+    .toZonedDateTimeISO(timeZone).toPlainDate();
+  return zonedAt(date, timeZone).epochMilliseconds;
+}
+
 export function workRhythmRange(
-  rangeDays: 30 | 90,
+  rangeDays: 30 | 90 | "all",
   timeZone: string,
   now = Date.now(),
 ) {
   const endDate = Temporal.Instant.fromEpochMilliseconds(now)
     .toZonedDateTimeISO(timeZone).toPlainDate();
-  const startDate = endDate.subtract({ days: rangeDays - 1 });
+  const startDate = endDate.subtract({
+    days: rangeDays === "all" ? 0 : rangeDays - 1,
+  });
   return {
-    start: zonedAt(startDate, timeZone).epochMilliseconds,
+    start: rangeDays === "all"
+      ? 0
+      : zonedAt(startDate, timeZone).epochMilliseconds,
     end: now,
   };
 }

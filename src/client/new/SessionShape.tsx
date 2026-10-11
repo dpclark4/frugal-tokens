@@ -18,7 +18,7 @@ type DistributionMetric = SessionDistributionResponse["metrics"][number];
 type MetricKey = DistributionMetric["key"];
 
 type SessionDistributionsProps = {
-  range: 30 | 90;
+  range: 30 | 90 | "all";
   harness: string;
   onDataChange?: (data: SessionDistributionResponse | undefined) => void;
 };

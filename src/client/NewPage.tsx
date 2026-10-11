@@ -16,6 +16,7 @@ import {
   type ScreenshotState,
 } from "./new/OverviewToolbar.tsx";
 import { UsageOverview } from "./new/UsageOverview.tsx";
+import { createSpendHighlight } from "./new/spendHighlight.ts";
 import { SessionDistributions } from "./new/SessionShape.tsx";
 import { CacheOverview } from "./new/CacheOverview.tsx";
 import { RecentSessions } from "./new/RecentSessions.tsx";
@@ -109,12 +110,12 @@ export function NewPage() {
   const search = route.useSearch();
   const navigate = route.useNavigate();
   const [loadedOverview, setLoadedOverview] = useState<{
-    range: 30 | 90;
+    range: 30 | 90 | "all";
     harness: string;
     data: ActivityOverviewResponse;
   }>();
   const [loadedWorkRhythm, setLoadedWorkRhythm] = useState<{
-    range: 30 | 90;
+    range: 30 | 90 | "all";
     harness: string;
     data: WorkRhythmOverviewResponse;
   }>();
@@ -128,18 +129,16 @@ export function NewPage() {
     "idle",
   );
   const [loadedSessionDistributions, setLoadedSessionDistributions] = useState<{
-    range: 30 | 90;
+    range: 30 | 90 | "all";
     harness: string;
     data: SessionDistributionResponse;
   }>();
   const [loadedCacheMisses, setLoadedCacheMisses] = useState<{
-    range: 30 | 90;
+    range: 30 | 90 | "all";
     harness: string;
     data: TtlMissMetrics;
   }>();
-  const [highlightedSpendDates, setHighlightedSpendDates] = useState<
-    string[]
-  >();
+  const [spendHighlight] = useState(createSpendHighlight);
   const screenshotRef = useRef<HTMLDivElement>(null);
   const pendingScrollYRef = useRef<number | undefined>(undefined);
   const refreshScrollYRef = useRef<number | undefined>(
@@ -418,7 +417,8 @@ export function NewPage() {
               >
                 <SpendComposition
                   data={data.spendComposition}
-                  highlightedDates={highlightedSpendDates}
+                  weekly={search.range === "all"}
+                  highlight={spendHighlight}
                 />
               </Suspense>
             )
@@ -457,7 +457,7 @@ export function NewPage() {
                 >
                   <SessionDiagnostics
                     data={workRhythmData.sessionDiagnostics}
-                    onHighlightDates={setHighlightedSpendDates}
+                    onHighlightDates={spendHighlight.set}
                   />
                 </Suspense>
               )
