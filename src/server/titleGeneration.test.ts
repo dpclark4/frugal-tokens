@@ -61,6 +61,15 @@ test("uses the session start time rather than import time for title fences", () 
       ),
       [sourceSessionID],
     );
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      db.prepare(`
+        INSERT INTO title_generation_runs (
+          source_session_id, started_at, status, model, reasoning_effort,
+          input_characters
+        ) VALUES (?, ?, 'failed', 'test', 'low', 10)
+      `).run(sourceSessionID, attempt);
+    }
+    deepStrictEqual(titleGenerationCandidates(db, "backfill"), []);
   } finally {
     db.close();
   }

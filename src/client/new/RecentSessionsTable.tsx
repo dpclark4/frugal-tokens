@@ -651,6 +651,7 @@ export function RecentSessionsTable({
             className="recent-sessions-refresh"
             onClick={() => void onRefresh()}
             disabled={refreshing}
+            aria-busy={refreshing}
             aria-label={refreshing ? "Refreshing sessions" : "Refresh sessions"}
             title="Import changed sessions and reload"
           >

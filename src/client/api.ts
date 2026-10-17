@@ -45,7 +45,20 @@ async function getJson(path: string) {
 }
 
 export async function syncSessions() {
-  const response = await fetch(`${apiBaseUrl}/api/sync`, { method: "POST" });
+  let response: Response;
+  try {
+    response = await fetch(`${apiBaseUrl}/api/sync`, {
+      method: "POST",
+      signal: AbortSignal.timeout(120_000),
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "TimeoutError") {
+      throw new Error(
+        "Refresh timed out. The server may still be processing; check server logs.",
+      );
+    }
+    throw error;
+  }
   if (!response.ok) throw new Error(`Request failed (${response.status})`);
 }
 
