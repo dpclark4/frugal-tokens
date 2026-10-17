@@ -1,6 +1,4 @@
-import { spawn } from "node:child_process";
-import { constants } from "node:os";
-import { text } from "node:stream/consumers";
+import { runTitleProcess } from "./titleProcess.ts";
 import type { DatabaseSync } from "node:sqlite";
 import { z } from "zod";
 import { importedTitleNeedsGeneration } from "./sessionTitles.ts";
@@ -11,7 +9,8 @@ const enabledAtKey = "generate_session_titles_enabled_at";
 const model = "gpt-5.6-luna";
 const reasoningEffort = "low";
 const backfillTarget = 25;
-const generationBatchSize = 10;
+const generationBatchSize = 2;
+const maxTitleAttempts = 3;
 
 type Candidate = {
   id: number;
@@ -97,6 +96,8 @@ export function titleGenerationCandidates(
     )
     JOIN source_sessions ss ON ss.id = branch.source_session_id
     WHERE ss.generated_title IS NULL
+      AND (SELECT COUNT(*) FROM title_generation_runs run
+        WHERE run.source_session_id = ss.id) < ${maxTitleAttempts}
       AND so.harness IN ('pi', 'claude-code', 'codex', 'opencode')
       AND c.started_at ${comparison} ?
       AND NOT EXISTS (
@@ -184,7 +185,7 @@ function normalizedTitle(value: string | undefined) {
 async function generateTitle(input: string) {
   const prompt =
     `Summarize the user's main request as a concise, natural title. Distinguish the request from background or pasted context, prioritizing the user's explicit question or instruction. Do not invent actions or outcomes. Preserve useful names. Return only the title.\n\n<user_input>\n${input}\n</user_input>`;
-  const command = spawn("codex", [
+  const { code, stdout, stderr } = await runTitleProcess("codex", [
     "exec",
     "--model",
     model,
@@ -200,20 +201,7 @@ async function generateTitle(input: string) {
     "never",
     "--json",
     prompt,
-  ], { stdio: ["inherit", "pipe", "pipe"] });
-  const [code, stdout, errorOutput] = await Promise.all([
-    new Promise<number>((resolve, reject) => {
-      command.once("error", reject);
-      command.once(
-        "close",
-        (code, signal) =>
-          resolve(code ?? (signal ? 128 + constants.signals[signal] : 1)),
-      );
-    }),
-    text(command.stdout),
-    text(command.stderr),
   ]);
-  const stderr = errorOutput.trim();
   const parsed = parseCodexOutput(stdout);
   if (code !== 0) {
     throw Object.assign(
@@ -249,6 +237,16 @@ async function generateCandidateTitle(db: DatabaseSync, candidate: Candidate) {
     ) as { id: number }).id,
   );
 
+  console.info(
+    `[generate titles] harness=${candidate.harness} sourceSession=${candidate.id} status=started timeout=60s`,
+  );
+  const heartbeat = setInterval(() => {
+    console.info(
+      `[generate titles] sourceSession=${candidate.id} status=running runtime=${
+        formatTiming(Date.now() - startedAt)
+      }`,
+    );
+  }, 15_000);
   try {
     const result = await generateTitle(candidate.input);
     db.exec("BEGIN IMMEDIATE");
@@ -281,6 +279,7 @@ async function generateCandidateTitle(db: DatabaseSync, candidate: Candidate) {
         JSON.stringify(result.title)
       } runtime=${formatTiming(Date.now() - startedAt)}`,
     );
+    return true;
   } catch (error) {
     // SAFETY: Subprocess failures extend Error with the captured exit and usage metadata.
     const detail = error as Error & { exitCode?: number; usage?: Usage };
@@ -303,6 +302,9 @@ async function generateCandidateTitle(db: DatabaseSync, candidate: Candidate) {
         formatTiming(Date.now() - startedAt)
       } error=${detail.message}`,
     );
+    return false;
+  } finally {
+    clearInterval(heartbeat);
   }
 }
 
@@ -324,12 +326,19 @@ export async function generateMissingSessionTitles(db: DatabaseSync) {
     ...titleGenerationCandidates(db, "new").filter(titleGenerationEligible),
   ];
 
+  console.info(`[generate titles] queued=${candidates.length}`);
   for (let index = 0; index < candidates.length; index += generationBatchSize) {
     if (!titleGenerationEnabled(db)) break;
-    await Promise.all(
+    const results = await Promise.all(
       candidates.slice(index, index + generationBatchSize).map((candidate) =>
         generateCandidateTitle(db, candidate)
       ),
     );
+    if (results.includes(false)) {
+      console.warn(
+        "[generate titles] stopping batch after failure; retry on a later sync (maximum 3 attempts per session)",
+      );
+      break;
+    }
   }
 }

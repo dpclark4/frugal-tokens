@@ -701,6 +701,22 @@
   opacity: .45;
 }
 
+@keyframes recent-sessions-refresh-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.recent-sessions-refresh[aria-busy="true"] svg {
+  animation: recent-sessions-refresh-spin 1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recent-sessions-refresh[aria-busy="true"] svg {
+    animation: none;
+  }
+}
+
 .recent-sessions-dialog-backdrop {
   position: fixed;
   z-index: 100;

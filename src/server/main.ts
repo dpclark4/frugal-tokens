@@ -46,6 +46,7 @@ import { ConversationRepository } from "./conversationRepository.ts";
 import { ConversationWriteRepository } from "./conversationWriteRepository.ts";
 import { syncPiSessions } from "./piImporter.ts";
 import { syncCodexSessions } from "./codexImporter.ts";
+import { createTitleWorker } from "./titleWorker.ts";
 import { syncClaudeCodeSessions } from "./claudeCodeImporter.ts";
 import { syncOpenCodeSessions } from "./openCodeImporter.ts";
 import { syncCursorAgentSessions } from "./cursorAgentRepository.ts";
@@ -198,6 +199,13 @@ const syncIntervalSeconds = (() => {
 })();
 
 const apiResponseCache = createResponseCache();
+const startTitleWorker = createTitleWorker(async () => {
+  try {
+    await generateMissingSessionTitles(archiveDatabase);
+  } finally {
+    apiResponseCache.clear();
+  }
+});
 
 type SyncResult = {
   discovered: number;
@@ -212,6 +220,7 @@ async function runSync(
   sync: () => SyncResult | Promise<SyncResult>,
 ) {
   const startedAt = performance.now();
+  console.info(`[sync] harness=${harness} status=started`);
   const result = await sync();
   const phases = result.timings
     ? ` ${
@@ -286,8 +295,9 @@ async function syncSources() {
         ),
     );
   }
+  console.info("[sync] repricing started");
   repriceUnpricedSessions(archiveDatabase);
-  await generateMissingSessionTitles(archiveDatabase);
+  void startTitleWorker();
   console.info(
     `[sync] complete duration=${formatTiming(performance.now() - startedAt)}`,
   );
@@ -295,7 +305,10 @@ async function syncSources() {
 
 let activeSourceSync: Promise<void> | undefined;
 function syncSourcesOnce() {
-  if (activeSourceSync !== undefined) return activeSourceSync;
+  if (activeSourceSync !== undefined) {
+    console.info("[sync] joining active import");
+    return activeSourceSync;
+  }
   const running = syncSources().then(() => {
     apiResponseCache.clear();
   }).finally(() => {
