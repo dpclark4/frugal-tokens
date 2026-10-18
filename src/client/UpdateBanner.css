@@ -1,0 +1,68 @@
+.update-banner {
+  background: transparent;
+  color: var(--ink);
+  font: 12px/1.6 var(--mono);
+}
+
+.update-banner-inner {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 12px;
+  width: min(1600px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 6px 12px;
+  border-radius: 0 0 6px 6px;
+  background: #e1ebe3;
+}
+
+.update-banner-symbol {
+  color: var(--green);
+  margin-right: 8px;
+}
+
+.update-banner-message {
+  grid-column: 2;
+  justify-self: center;
+  padding: 6px 0;
+  text-align: center;
+}
+
+.update-banner a {
+  display: inline-block;
+  margin-left: 8px;
+  color: inherit;
+  text-underline-offset: 3px;
+}
+
+.update-banner button {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.update-banner button:hover {
+  background: var(--surface-3);
+}
+
+.update-banner a:focus-visible,
+.update-banner button:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+
+@media (max-width: 600px) {
+  .update-banner-inner {
+    width: calc(100% - 24px);
+    gap: 8px;
+  }
+}

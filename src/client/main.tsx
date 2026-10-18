@@ -18,6 +18,7 @@ import {
   sessionModelSelectionSchema,
 } from "../shared/sessionBrowserSchemas.ts";
 import { NewPage } from "./NewPage.tsx";
+import { UpdateBanner } from "./UpdateBanner.tsx";
 import "./styles.css";
 
 const SessionsPage = lazy(() =>
@@ -89,9 +90,12 @@ function AppError({ error, reset }: { error: unknown; reset: () => void }) {
 
 const rootRoute = createRootRoute({
   component: () => (
-    <Suspense fallback={<main>Loading…</main>}>
-      <Outlet />
-    </Suspense>
+    <>
+      <UpdateBanner />
+      <Suspense fallback={<main>Loading…</main>}>
+        <Outlet />
+      </Suspense>
+    </>
   ),
   errorComponent: AppError,
 });
