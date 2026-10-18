@@ -11,6 +11,7 @@ import { serve } from "@hono/node-server";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { createMiddleware } from "hono/factory";
 import { createResponseCache } from "./responseCache.ts";
+import { createUpdateChecker } from "./updateCheck.ts";
 import { formatTiming } from "./timing.ts";
 import { getRequestIp } from "./requestIp.ts";
 import { priceSessionDetail } from "./pricing.ts";
@@ -365,6 +366,12 @@ const logApiRequest = createMiddleware(async (context, next) => {
 app.use("/api/*", logApiRequest);
 
 app.get("/health", (context) => context.json({ status: "ok" }));
+
+const checkUpdate = createUpdateChecker();
+app.get("/api/update-status", async (context) => {
+  context.header("Cache-Control", "no-store");
+  return context.json(await checkUpdate(context.req.query("commit") ?? ""));
+});
 
 app.post("/api/sync", async (context) => {
   await syncSourcesOnce();

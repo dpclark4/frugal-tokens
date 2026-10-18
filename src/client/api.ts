@@ -44,6 +44,10 @@ async function getJson(path: string) {
   return response.json();
 }
 
+export async function getUpdateStatus(commit: string) {
+  return getJson(`/api/update-status?commit=${encodeURIComponent(commit)}`);
+}
+
 export async function syncSessions() {
   let response: Response;
   try {
