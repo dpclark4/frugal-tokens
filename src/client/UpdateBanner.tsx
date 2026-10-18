@@ -13,6 +13,8 @@ export function UpdateBanner() {
     preview ? "preview" : null,
   );
 
+  const [possibleUpdate, setPossibleUpdate] = useState(false);
+
   useEffect(() => {
     if (preview) return;
     let cancelled = false;
@@ -28,7 +30,9 @@ export function UpdateBanner() {
           await getUpdateStatus(currentCommit),
         );
         if (
-          cancelled || result.status !== "available" || !result.latestCommit
+          cancelled ||
+          (result.status !== "available" && result.status !== "possible") ||
+          !result.latestCommit
         ) return;
         let dismissed = false;
         try {
@@ -37,7 +41,10 @@ export function UpdateBanner() {
         } catch {
           // Storage may be unavailable; dismissal still works in memory.
         }
-        if (!dismissed) setAvailableCommit(result.latestCommit);
+        if (!dismissed) {
+          setPossibleUpdate(result.status === "possible");
+          setAvailableCommit(result.latestCommit);
+        }
       } catch {
         // Offline and failed checks must never interrupt the app.
       }
@@ -67,7 +74,9 @@ export function UpdateBanner() {
         <span className="update-banner-message">
           <span className="update-banner-symbol" aria-hidden="true">[↑]</span>
           {" "}
-          Updates available. Pull the latest changes.{" "}
+          {possibleUpdate
+            ? "An update may be available."
+            : "Updates available. Pull the latest changes."}{" "}
           <a
             href="https://github.com/dpclark4/frugal-tokens"
             target="_blank"
