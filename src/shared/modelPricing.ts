@@ -30,6 +30,13 @@ function registeredRate(registry: ModelRateRegistry, model: string) {
 }
 
 const standard = {
+  "claude-fable-5-2": {
+    input: 8,
+    cacheWrite5m: 10,
+    cacheWrite1h: 16,
+    cacheRead: 0.2,
+    output: 40,
+  },
   "claude-fable-5": {
     input: 10,
     cacheWrite5m: 12.5,
@@ -170,12 +177,22 @@ const standard = {
     cacheRead: 0.08,
     output: 4,
   },
+  "gemini-4-argon": {
+    input: 2,
+    cacheRead: 0.1,
+    output: 10,
+  },
   "gemini-3.8-flash": {
     input: 0.75,
     cacheRead: 0.075,
     output: 3.75,
   },
   "gemini-3.7-flash": {
+    input: 0.75,
+    cacheRead: 0.075,
+    output: 3.75,
+  },
+  "gemini-3.6-flash": {
     input: 0.75,
     cacheRead: 0.075,
     output: 3.75,
@@ -256,6 +273,12 @@ const standard = {
     cacheWrite: 2.5,
     output: 10,
   },
+  "gpt-6.1-terra": {
+    input: 1,
+    cacheRead: 0.05,
+    cacheWrite: 1.25,
+    output: 5,
+  },
   "gpt-6-sol": {
     input: 2,
     cacheRead: 0.2,
@@ -324,6 +347,12 @@ const longContext = {
     cacheRead: 0.2,
     cacheWrite: 5,
     output: 15,
+  },
+  "gpt-6.1-terra": {
+    input: 2,
+    cacheRead: 0.1,
+    cacheWrite: 2.5,
+    output: 7.5,
   },
   "gpt-6-sol": {
     input: 4,
@@ -421,6 +450,14 @@ const reducedSolLongContextRates = {
   },
 } satisfies ModelRateRegistry;
 
+const geminiArgonFutureRates = {
+  "gemini-4-argon": {
+    input: 4,
+    cacheRead: 0.2,
+    output: 20,
+  },
+} satisfies ModelRateRegistry;
+
 const geminiFutureRates = {
   "gemini-3.8-flash": {
     input: 1.5,
@@ -428,6 +465,11 @@ const geminiFutureRates = {
     output: 7.5,
   },
   "gemini-3.7-flash": {
+    input: 1.5,
+    cacheRead: 0.15,
+    output: 7.5,
+  },
+  "gemini-3.6-flash": {
     input: 1.5,
     cacheRead: 0.15,
     output: 7.5,
@@ -468,6 +510,7 @@ const HAIKU_5_5_LONG_CONTEXT_THRESHOLD = 100_000;
 const LONG_CONTEXT_THRESHOLD = 272_000;
 const GROK_LONG_CONTEXT_THRESHOLD = 200_000;
 const MINIMAX_M3_LONG_CONTEXT_THRESHOLD = 512_000;
+const GEMINI_ARGON_PRICE_CUT = Date.parse("2026-12-01T00:00:00Z");
 const GEMINI_PRICE_CUT = Date.parse("2027-01-01T00:00:00Z");
 const OPENAI_LUNA_TERRA_PRICE_CUT = Date.parse("2026-07-30T20:00:00Z");
 const OPENAI_SOL_PRICE_CUT = Date.parse("2026-08-21T21:00:00Z");
@@ -475,6 +518,7 @@ const OPENAI_SOL_PRICE_CUT = Date.parse("2026-08-21T21:00:00Z");
 export const counterfactualModelIDs = [
   "gpt-6-astra",
   "gpt-6.1-sol",
+  "gpt-6.1-terra",
   "gpt-6-sol",
   "gpt-6-luna",
   "gpt-5.6-sol",
@@ -497,6 +541,7 @@ export const counterfactualModelIDs = [
   "gpt-5-codex",
   "gpt-5-mini",
   "gpt-5-nano",
+  "claude-fable-5-2",
   "claude-fable-5",
   "claude-fable-5-1",
   "claude-mythos-5",
@@ -515,8 +560,10 @@ export const counterfactualModelIDs = [
   "claude-haiku-5-5",
   "claude-haiku-4-5",
   "claude-haiku-3-5",
+  "gemini-4-argon",
   "gemini-3.8-flash",
   "gemini-3.7-flash",
+  "gemini-3.6-flash",
   "grok-4-6",
   "grok-4-5",
   "grok-build-0.1",
@@ -573,6 +620,10 @@ export function modelRateCard(
     provider?.toLowerCase() === "cursor" ? cursorPricingModel(model) : model,
   );
   const long = usesLongContextRates(normalized, inputTokens);
+  if (timestamp >= GEMINI_ARGON_PRICE_CUT) {
+    const futureRates = registeredRate(geminiArgonFutureRates, normalized);
+    if (futureRates) return futureRates;
+  }
   if (timestamp >= GEMINI_PRICE_CUT) {
     const futureRates = registeredRate(geminiFutureRates, normalized);
     if (futureRates) return futureRates;

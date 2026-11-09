@@ -104,9 +104,10 @@ test("uses long-context rates for every priced token category", () => {
   );
 });
 
-test("prices GPT-6 Sol and Luna at their short and long context rates", () => {
+test("prices GPT-6 Sol, Terra, and Luna at their short and long context rates", () => {
   const models = [
     ["gpt-6.1-sol", 14.6, 24.2],
+    ["gpt-6.1-terra", 7.3, 12.1],
     ["gpt-6-sol", 14.7, 24.4],
     ["gpt-6-luna", 0.735, 1.22],
   ] as const;
@@ -395,6 +396,26 @@ test("prices Claude Opus 5 at its published rates", () => {
   );
 });
 
+test("prices Claude Fable 5.2 at published rates", () => {
+  for (const model of ["claude-fable-5-2", "anthropic/claude-fable-5.2"]) {
+    closeTo(
+      computeModelCallCost(
+        tokens({
+          uncachedInput: 1_000_000,
+          cacheRead: 1_000_000,
+          cacheWrite: 2_000_000,
+          cacheWrite5m: 1_000_000,
+          cacheWrite1h: 1_000_000,
+          output: 1_000_000,
+        }),
+        model,
+        timestamp,
+      ),
+      74.2,
+    );
+  }
+});
+
 test("prices Claude Fable and Mythos 5.1 at published rates", () => {
   for (const model of ["claude-fable-5-1", "claude-mythos-5.1"]) {
     closeTo(
@@ -415,10 +436,30 @@ test("prices Claude Fable and Mythos 5.1 at published rates", () => {
   }
 });
 
+test("prices Gemini 4 Argon before and after the December 2026 rate change", () => {
+  const before = Date.parse("2026-11-30T23:59:59.999Z");
+  const effectiveAt = Date.parse("2026-12-01T00:00:00Z");
+  for (const model of ["gemini-4-argon", "google/gemini-4-argon"]) {
+    const usage = tokens({
+      uncachedInput: 1_000_000,
+      cacheRead: 1_000_000,
+      output: 1_000_000,
+    });
+    closeTo(computeModelCallCost(usage, model, before), 12.1);
+    closeTo(computeModelCallCost(usage, model, effectiveAt), 24.2);
+  }
+});
+
 test("prices Gemini Flash models before and after the 2027 rate change", () => {
   const before = Date.parse("2026-12-31T23:59:59.999Z");
   const effectiveAt = Date.parse("2027-01-01T00:00:00Z");
-  for (const model of ["gemini-3.8-flash", "google/gemini-3.7-flash"]) {
+  for (
+    const model of [
+      "gemini-3.8-flash",
+      "google/gemini-3.7-flash",
+      "gemini-3.6-flash",
+    ]
+  ) {
     const usage = tokens({
       uncachedInput: 1_000_000,
       cacheRead: 1_000_000,
