@@ -5,6 +5,7 @@ test("formats known model IDs consistently", () => {
   const cases = {
     "claude-opus-5-5": "Claude Opus 5.5",
     "claude-opus-5": "Claude Opus 5",
+    "claude-fable-5.2": "Claude Fable 5.2",
     "claude-fable-5.1": "Claude Fable 5.1",
     "claude-mythos-5-1": "Claude Mythos 5.1",
     "claude-sonnet-5-5": "Claude Sonnet 5.5",
@@ -19,6 +20,8 @@ test("formats known model IDs consistently", () => {
     "gpt-6-astra": "GPT 6 Astra",
     "gpt-6.1-sol": "GPT 6.1 Sol",
     "openai/gpt-6.1-sol": "GPT 6.1 Sol",
+    "gpt-6.1-terra": "GPT 6.1 Terra",
+    "openai/gpt-6.1-terra": "GPT 6.1 Terra",
     "gpt-6-sol": "GPT 6 Sol",
     "gpt-6-luna": "GPT 6 Luna",
     "gpt-5.6-terra": "GPT 5.6 Terra",
@@ -35,8 +38,11 @@ test("formats known model IDs consistently", () => {
     "meta/muse-spark-1.3": "Muse Spark 1.3",
     "muse-spark-1.3-contributor": "Muse Spark 1.3 Contributor",
     "meta/muse-spark-1.3-contributor": "Muse Spark 1.3 Contributor",
+    "gemini-4-argon": "Gemini 4 Argon",
+    "google/gemini-4-argon": "Gemini 4 Argon",
     "gemini-3.8-flash": "Gemini 3.8 Flash",
     "google/gemini-3.7-flash": "Gemini 3.7 Flash",
+    "gemini-3.6-flash": "Gemini 3.6 Flash",
   };
 
   for (const [model, expected] of Object.entries(cases)) {
