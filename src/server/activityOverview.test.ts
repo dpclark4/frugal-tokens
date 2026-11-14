@@ -162,6 +162,75 @@ test("activity overview returns period totals and daily drill-down data", () => 
   ]);
 });
 
+test("model session medians combine days, split models, and exclude missing pricing", () => {
+  const at = new Date(2026, 6, 1, 12).getTime();
+  const model = (name: string, cost: number, unpriced = false) => ({
+    model: name,
+    cost,
+    input: 100,
+    cacheRead: 0,
+    hasPricedCost: true,
+    hasUnpricedCost: unpriced,
+  });
+  const roots: StoredOverviewRollup[] = [
+    {
+      rootSessionID: 1,
+      overview: {
+        days: [
+          day("2026-07-01", at, 200, 0, 102, false, [
+            model("astra", 2),
+            model("fable", 100),
+          ]),
+          day("2026-07-02", at + 86_400_000, 100, 0, 4, false, [
+            model("astra", 4),
+          ]),
+          day("2026-07-03", at + 172_800_000, 100, 0, 999, false, [
+            model("astra", 999),
+          ]),
+        ],
+        executionIntervals: [],
+      },
+    },
+    ...[0, 10, 50].map((cost, index) => ({
+      rootSessionID: index + 2,
+      overview: {
+        days: [
+          day("2026-07-01", at, 100, 0, cost, false, [
+            model("astra", cost, cost === 50),
+          ]),
+        ],
+        executionIntervals: [],
+      },
+    })),
+  ];
+  const result =
+    aggregateActivityOverview(roots, at, at + 86_400_000).spendComposition;
+  deepStrictEqual(result.models.find((m) => m.model === "astra")?.sessionCost, {
+    median: 6,
+    sessions: 3,
+    excludedSessions: 1,
+  });
+  deepStrictEqual(result.models.find((m) => m.model === "fable")?.sessionCost, {
+    median: 100,
+    sessions: 1,
+    excludedSessions: 0,
+  });
+  const even = aggregateActivityOverview(roots.slice(0, 2), at, at + 86_400_000)
+    .spendComposition;
+  strictEqual(
+    even.models.find((m) => m.model === "astra")?.sessionCost?.median,
+    3,
+  );
+  const unknown =
+    aggregateActivityOverview(roots.slice(-1), at, at).spendComposition;
+  deepStrictEqual(unknown.models[0].sessionCost, {
+    median: undefined,
+    sessions: 0,
+    excludedSessions: 1,
+  });
+  spendCompositionSchema.parse(result);
+});
+
 test("spend composition selects the union of top spend and token models", () => {
   const at = new Date(2026, 6, 1, 12).getTime();
   const values = [

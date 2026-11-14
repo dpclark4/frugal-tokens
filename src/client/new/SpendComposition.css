@@ -76,8 +76,8 @@
 .composition-table-header,
 .composition-models li {
   display: grid;
-  grid-template-columns: minmax(130px, 1.15fr) minmax(92px, .82fr) minmax(92px,
-    .82fr) 86px;
+  grid-template-columns: minmax(0, 1.6fr) minmax(60px, 1fr) minmax(60px,
+    1fr) 90px 80px;
   gap: 12px;
   align-items: center;
 }
@@ -97,7 +97,8 @@
   padding-left: 4px;
 }
 
-.composition-table-header span:last-child {
+.composition-rate-heading,
+.composition-median-heading {
   text-align: right;
 }
 
@@ -166,12 +167,26 @@
   white-space: nowrap;
 }
 
+.composition-median,
 .composition-rate {
   color: #34413d;
   font: 650 var(--dashboard-type-table) var(--mono);
   font-variant-numeric: tabular-nums;
   text-align: right;
   white-space: nowrap;
+}
+
+.composition-median-tooltip {
+  position: fixed;
+  z-index: 1000;
+  box-sizing: border-box;
+  width: 260px;
+  max-width: calc(100vw - 16px);
+  padding: 8px 10px;
+  pointer-events: none;
+  white-space: normal;
+  text-align: left;
+  font-weight: normal;
 }
 
 .composition-other-row .composition-model-name strong {
@@ -301,10 +316,12 @@
   }
   .composition-ranking {
     padding-inline: 10px;
+    overflow-x: auto;
   }
   .composition-table-header,
   .composition-models li {
-    grid-template-columns: minmax(92px, 1fr) 62px 58px 48px;
+    grid-template-columns: minmax(130px, 1fr) 62px 58px 60px 88px;
+    min-width: 440px;
     gap: 5px;
   }
   .composition-rate-heading > span,
@@ -327,17 +344,5 @@
   }
   .composition-trend {
     min-height: 340px;
-  }
-}
-
-@media (max-width: 340px) {
-  .composition-table-header,
-  .composition-models li {
-    grid-template-columns: minmax(88px, 1fr) minmax(61px, .75fr) minmax(61px,
-      .75fr);
-  }
-  .composition-table-header .composition-rate-heading,
-  .composition-rate {
-    display: none;
   }
 }
