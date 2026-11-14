@@ -32,6 +32,8 @@ test("formats known model IDs consistently", () => {
     "moonshotai/kimi-k3": "Kimi K3",
     "kimi-k2.7-code": "Kimi K2.7 Code",
     "minimax/minimax-m3": "MiniMax M3",
+    "deepseek/deepseek-v4.1-flash-1017": "DeepSeek V4.1 Flash 1017",
+    "deepseek-v4.1-flash-1017": "DeepSeek V4.1 Flash 1017",
     "grok-build-0.1": "Grok Build 0.1",
     "muse-spark-1.2": "Muse Spark 1.2",
     "muse-spark-1.3": "Muse Spark 1.3",

@@ -547,6 +547,11 @@ const spendCompositionModelSchema = z.object({
   spend: z.number().nonnegative(),
   processedInput: z.number().int().nonnegative(),
   effectiveCostPerMillion: z.number().nonnegative().optional(),
+  sessionCost: z.object({
+    median: z.number().nonnegative().optional(),
+    sessions: z.number().int().nonnegative(),
+    excludedSessions: z.number().int().nonnegative(),
+  }).optional(),
   spendRank: z.number().int().positive(),
   tokenRank: z.number().int().positive(),
   selectedBySpend: z.boolean(),

@@ -74,7 +74,7 @@ function withoutProviderPrefix(model: string) {
   // "us.anthropic.claude-opus-4-7". Keep the model portion for display and
   // grouping without changing the persisted ID.
   return normalized.replace(
-    /^.*?(?=(?:claude|gemini|gpt|grok|kimi|glm|minimax|muse)-)/,
+    /^.*?(?=(?:claude|gemini|gpt|grok|kimi|glm|minimax|muse|deepseek)-)/,
     "",
   );
 }

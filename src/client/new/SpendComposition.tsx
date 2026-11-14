@@ -103,6 +103,9 @@ function ModelTable({ data }: { data: SpendCompositionData }) {
         <span className="composition-rate-heading">
           $/1M<span>processed</span>
         </span>
+        <span className="composition-median-heading">
+          Median $<br />/session
+        </span>
       </div>
       <ol className="composition-models">
         {data.models.map((model) => {
@@ -140,6 +143,19 @@ function ModelTable({ data }: { data: SpendCompositionData }) {
               >
                 {formatRate(model.effectiveCostPerMillion)}
               </span>
+              <span className="composition-median" tabIndex={0}>
+                {formatRate(model.sessionCost?.median)}
+                <span
+                  className="tooltip-surface composition-median-tooltip"
+                  role="tooltip"
+                >
+                  This model’s spend per session in the selected period.{" "}
+                  {model.sessionCost?.sessions ?? 0} fully priced sessions;{" "}
+                  {model.sessionCost?.excludedSessions ?? 0}{" "}
+                  excluded for missing pricing.{" "}
+                  Not adjusted for task size or difficulty.
+                </span>
+              </span>
             </li>
           );
         })}
@@ -170,6 +186,7 @@ function ModelTable({ data }: { data: SpendCompositionData }) {
                   : data.other.spend / data.other.processedInput * 1_000_000,
               )}
             </span>
+            <span className="composition-median">—</span>
           </li>
         )}
       </ol>

@@ -56,6 +56,7 @@ function spendComposition(
   days: Map<string, DayBucket>,
   start: number,
   end: number,
+  sessionCosts: Map<string, { costs: number[]; excluded: number }>,
 ) {
   const allModels = new Map<string, ModelBucket>();
   for (const day of days.values()) {
@@ -117,6 +118,20 @@ function spendComposition(
       ...modelMetadata(model.model),
       spend: model.spend,
       processedInput: model.input,
+      sessionCost: (() => {
+        const sample = sessionCosts.get(model.model)!;
+        const sorted = sample.costs.toSorted((a, b) => a - b);
+        const middle = Math.floor(sorted.length / 2);
+        return {
+          median: sorted.length === 0
+            ? undefined
+            : sorted.length % 2 === 0
+            ? (sorted[middle - 1] + sorted[middle]) / 2
+            : sorted[middle],
+          sessions: sorted.length,
+          excludedSessions: sample.excluded,
+        };
+      })(),
       effectiveCostPerMillion: model.input === 0
         ? undefined
         : model.spend / model.input * 1_000_000,
@@ -226,12 +241,13 @@ function sessionDiagnostics(
     const session:
       WorkRhythmOverviewResponse["sessionDiagnostics"]["sessions"][number] = {
         id: root.sessionID ?? String(root.rootSessionID),
-        dates: days.map((day) => day.date),
+        dates: days.map((day) =>
+          day.date
+        ),
         title: root.title ?? `Session ${root.rootSessionID}`,
         primaryModel,
         estimatedActiveMinutes: intervals.reduce(
-          (sum, interval) =>
-            sum + interval.end - interval.start,
+          (sum, interval) => sum + interval.end - interval.start,
           0,
         ) / 60_000,
         observedSessionMinutes: Math.max(
@@ -278,6 +294,7 @@ export function aggregateActivityOverview(
   const activityIntervals: Interval[] = [];
   const inactivityBuffer = ACTIVITY_INACTIVITY_MINUTES * 60_000;
   const rootSessionSpend: number[] = [];
+  const sessionCosts = new Map<string, { costs: number[]; excluded: number }>();
   let subagentSpend = 0;
   let sessions = 0;
 
@@ -287,6 +304,26 @@ export function aggregateActivityOverview(
     );
     if (rangedDays.length === 0) continue;
     sessions++;
+    const sessionModels = new Map<
+      string,
+      { cost: number; unpriced: boolean; priced: boolean }
+    >();
+    for (const day of rangedDays) {
+      for (const model of day.models) {
+        const total = sessionModels.get(model.model) ??
+          { cost: 0, unpriced: false, priced: false };
+        total.cost += model.cost;
+        total.unpriced ||= model.hasUnpricedCost;
+        total.priced ||= model.hasPricedCost;
+        sessionModels.set(model.model, total);
+      }
+    }
+    for (const [model, total] of sessionModels) {
+      const sample = sessionCosts.get(model) ?? { costs: [], excluded: 0 };
+      if (total.unpriced || !total.priced) sample.excluded++;
+      else sample.costs.push(total.cost);
+      sessionCosts.set(model, sample);
+    }
     if (rangedDays.some((day) => day.hasPricedCost)) {
       rootSessionSpend.push(
         rangedDays.reduce((sum, day) => sum + day.cost, 0),
@@ -378,7 +415,7 @@ export function aggregateActivityOverview(
   );
   const composition = measured(
     "spend-composition",
-    () => spendComposition(days, start, end),
+    () => spendComposition(days, start, end, sessionCosts),
   );
   const responseDays = measured(
     "daily-response",
