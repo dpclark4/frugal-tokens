@@ -97,7 +97,8 @@
   padding-left: 4px;
 }
 
-.composition-table-header span:last-child {
+.composition-rate-heading,
+.composition-median-heading {
   text-align: right;
 }
 
@@ -175,25 +176,17 @@
   white-space: nowrap;
 }
 
-.composition-median {
-  position: relative;
-}
-
 .composition-median-tooltip {
-  display: none;
-  position: absolute;
-  z-index: 5;
-  right: 0;
-  bottom: calc(100% + 6px);
-  width: 240px;
+  position: fixed;
+  z-index: 1000;
+  box-sizing: border-box;
+  width: 260px;
+  max-width: calc(100vw - 16px);
+  padding: 8px 10px;
+  pointer-events: none;
   white-space: normal;
   text-align: left;
   font-weight: normal;
-}
-
-.composition-median:hover .composition-median-tooltip,
-.composition-median:focus .composition-median-tooltip {
-  display: block;
 }
 
 .composition-other-row .composition-model-name strong {

@@ -1,4 +1,5 @@
-import { useMemo, useState, useSyncExternalStore } from "react";
+import { useId, useMemo, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import {
   Bar,
   CartesianGrid,
@@ -84,6 +85,57 @@ function BarValue({ value, maximum, formatted, color }: {
   );
 }
 
+function MedianSessionCost({ sample }: {
+  sample: SpendCompositionData["models"][number]["sessionCost"];
+}) {
+  const id = useId();
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const visible = anchor && (hovered || focused);
+  return (
+    <span
+      className="composition-median"
+      tabIndex={0}
+      aria-describedby={visible ? id : undefined}
+      onMouseEnter={(event) => {
+        setAnchor(event.currentTarget.getBoundingClientRect());
+        setHovered(true);
+      }}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={(event) => {
+        setAnchor(event.currentTarget.getBoundingClientRect());
+        setFocused(true);
+      }}
+      onBlur={() => setFocused(false)}
+    >
+      {formatRate(sample?.median)}
+      {visible && createPortal(
+        <span
+          id={id}
+          className="tooltip-surface composition-median-tooltip"
+          role="tooltip"
+          style={{
+            left: Math.max(
+              8,
+              Math.min(anchor.right - 260, window.innerWidth - 268),
+            ),
+            ...(anchor.bottom + 120 < window.innerHeight
+              ? { top: anchor.bottom + 6 }
+              : { bottom: window.innerHeight - anchor.top + 6 }),
+          }}
+        >
+          This model’s spend per session in the selected period.{" "}
+          {sample?.sessions ?? 0} fully priced sessions;{" "}
+          {sample?.excludedSessions ?? 0} excluded for missing pricing.{" "}
+          Not adjusted for task size or difficulty.
+        </span>,
+        document.body,
+      )}
+    </span>
+  );
+}
+
 function ModelTable({ data }: { data: SpendCompositionData }) {
   const maxSpend = Math.max(
     data.other?.spend ?? 0,
@@ -143,19 +195,7 @@ function ModelTable({ data }: { data: SpendCompositionData }) {
               >
                 {formatRate(model.effectiveCostPerMillion)}
               </span>
-              <span className="composition-median" tabIndex={0}>
-                {formatRate(model.sessionCost?.median)}
-                <span
-                  className="tooltip-surface composition-median-tooltip"
-                  role="tooltip"
-                >
-                  This model’s spend per session in the selected period.{" "}
-                  {model.sessionCost?.sessions ?? 0} fully priced sessions;{" "}
-                  {model.sessionCost?.excludedSessions ?? 0}{" "}
-                  excluded for missing pricing.{" "}
-                  Not adjusted for task size or difficulty.
-                </span>
-              </span>
+              <MedianSessionCost sample={model.sessionCost} />
             </li>
           );
         })}
