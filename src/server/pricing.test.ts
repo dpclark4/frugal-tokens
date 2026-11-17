@@ -1,7 +1,10 @@
 import { test } from "vitest";
 import { deepStrictEqual, strictEqual } from "node:assert/strict";
 import type { TokenUsage } from "../shared/sessionSchemas.ts";
-import { modelRateCard } from "../shared/modelPricing.ts";
+import {
+  counterfactualModelIDs,
+  modelRateCard,
+} from "../shared/modelPricing.ts";
 import { computeModelCallCost, estimateModelCacheMissCost } from "./pricing.ts";
 
 const timestamp = Date.parse("2026-07-15T00:00:00Z");
@@ -138,6 +141,39 @@ test("prices GPT-6 Sol, Terra, and Luna at their short and long context rates", 
       ),
       longCost,
     );
+  }
+});
+
+test("prices GPT-6.2 models at their published standard short-context rates", () => {
+  const models = [
+    ["gpt-6.2-astra", { input: 8, cacheRead: 0.4, cacheWrite: 10, output: 40 }],
+    ["gpt-6.2-sol", { input: 2, cacheRead: 0.1, cacheWrite: 2.5, output: 10 }],
+  ] as const;
+  for (const [model, rates] of models) {
+    strictEqual(counterfactualModelIDs.includes(model), true);
+    for (const id of [model, `openai/${model}`]) {
+      deepStrictEqual(modelRateCard(id, timestamp, 271_999), rates);
+      closeTo(
+        computeModelCallCost(
+          tokens({
+            uncachedInput: 1_000,
+            cacheRead: 1_000,
+            cacheWrite: 1_000,
+            output: 800,
+            reasoning: 200,
+          }),
+          id,
+          timestamp,
+        ),
+        (rates.input + rates.cacheRead + rates.cacheWrite + rates.output) /
+          1_000,
+      );
+      strictEqual(modelRateCard(id, timestamp, 272_000), undefined);
+      strictEqual(
+        computeModelCallCost(tokens({ uncachedInput: 272_000 }), id, timestamp),
+        undefined,
+      );
+    }
   }
 });
 

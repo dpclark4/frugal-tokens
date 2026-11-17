@@ -22,6 +22,8 @@ const modelDisplayNames = new Map<string, string>([
   ["gemini-3.8-flash", "Gemini 3.8 Flash"],
   ["gemini-3.7-flash", "Gemini 3.7 Flash"],
   ["gemini-3.6-flash", "Gemini 3.6 Flash"],
+  ["gpt-6.2-astra", "GPT 6.2 Astra"],
+  ["gpt-6.2-sol", "GPT 6.2 Sol"],
   ["gpt-6-astra", "GPT 6 Astra"],
   ["gpt-6.1-sol", "GPT 6.1 Sol"],
   ["gpt-6.1-terra", "GPT 6.1 Terra"],
