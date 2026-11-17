@@ -165,7 +165,8 @@ test("prices GPT-6.2 models at their published standard short-context rates", ()
           id,
           timestamp,
         ),
-        (rates.input + rates.cacheRead + rates.cacheWrite + rates.output) / 1_000,
+        (rates.input + rates.cacheRead + rates.cacheWrite + rates.output) /
+          1_000,
       );
       strictEqual(modelRateCard(id, timestamp, 272_000), undefined);
       strictEqual(
