@@ -261,6 +261,18 @@ const standard = {
   "muse-spark-1.3-contributor": { input: 0.1, cacheRead: 0.002, output: 0.2 },
   "muse-spark-1.3": { input: 1.25, cacheRead: 0.15, output: 4.25 },
   "muse-spark-1.2": { input: 1.25, cacheRead: 0.15, output: 4.25 },
+  "gpt-6.2-astra": {
+    input: 8,
+    cacheRead: 0.4,
+    cacheWrite: 10,
+    output: 40,
+  },
+  "gpt-6.2-sol": {
+    input: 2,
+    cacheRead: 0.1,
+    cacheWrite: 2.5,
+    output: 10,
+  },
   "gpt-6-astra": {
     input: 10,
     cacheRead: 1,
@@ -516,6 +528,8 @@ const OPENAI_LUNA_TERRA_PRICE_CUT = Date.parse("2026-07-30T20:00:00Z");
 const OPENAI_SOL_PRICE_CUT = Date.parse("2026-08-21T21:00:00Z");
 
 export const counterfactualModelIDs = [
+  "gpt-6.2-astra",
+  "gpt-6.2-sol",
   "gpt-6-astra",
   "gpt-6.1-sol",
   "gpt-6.1-terra",
