@@ -441,10 +441,10 @@
 }
 
 .recent-session-usage-layout {
-  display: flex;
+  display: grid;
   min-width: 0;
+  grid-template-columns: 28px minmax(0, 1fr);
   align-items: center;
-  justify-content: center;
   gap: 7px;
 }
 
