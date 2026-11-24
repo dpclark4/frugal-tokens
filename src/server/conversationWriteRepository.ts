@@ -53,7 +53,7 @@ function computedConversationCost(value: LinearConversationImport) {
   const calls = value.session.turns.flatMap((turn) => turn.calls);
   if (calls.length === 0) return undefined;
   const costs = calls.map((call) =>
-    computeModelCallCost(call.tokens, call.model, call.startedAt)
+    computeModelCallCost(call.tokens, call.model, call.startedAt, call.provider)
   );
   if (costs.some((cost) => cost === undefined)) return undefined;
   return costs.reduce<number>((sum, cost) => sum + cost!, 0);
@@ -970,6 +970,7 @@ export class ConversationWriteRepository {
                   call.tokens,
                   call.model,
                   call.startedAt,
+                  call.provider,
                 ) ?? null,
                 ...tokenValues(call.tokens),
                 call.activity.finishReason ?? null,
@@ -1518,7 +1519,12 @@ export class ConversationWriteRepository {
       for (const call of uniqueCalls) addTokenUsage(totalTokens, call.tokens);
       const reportedCosts = uniqueCalls.map((call) => call.reportedCost);
       const computedCosts = uniqueCalls.map((call) =>
-        computeModelCallCost(call.tokens, call.model, call.startedAt)
+        computeModelCallCost(
+          call.tokens,
+          call.model,
+          call.startedAt,
+          call.provider,
+        )
       );
       const reportedCost = reportedCosts.length > 0 &&
           reportedCosts.every((cost) => cost !== undefined)
@@ -1777,6 +1783,7 @@ export class ConversationWriteRepository {
                 call.tokens,
                 call.model,
                 call.startedAt,
+                call.provider,
               ) ?? null,
               ...tokenValues(call.tokens),
               call.activity.finishReason ?? null,

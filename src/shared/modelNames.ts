@@ -18,7 +18,12 @@ const modelDisplayNames = new Map<string, string>([
   ["claude-haiku-5-5", "Claude Haiku 5.5"],
   ["claude-haiku-4-5", "Claude Haiku 4.5"],
   ["claude-haiku-3-5", "Claude Haiku 3.5"],
+  ["gemini-4-carbon", "Gemini 4 Carbon"],
+  ["gemini-4-neon", "Gemini 4 Neon"],
+  ["gemini-4-hydrogen", "Gemini 4 Hydrogen"],
   ["gemini-4-argon", "Gemini 4 Argon"],
+  ["gemini-3.1-pro", "Gemini 3.1 Pro"],
+  ["gemini-3.1-pro-preview", "Gemini 3.1 Pro Preview"],
   ["gemini-3.8-flash", "Gemini 3.8 Flash"],
   ["gemini-3.7-flash", "Gemini 3.7 Flash"],
   ["gemini-3.6-flash", "Gemini 3.6 Flash"],
@@ -89,6 +94,13 @@ function withoutReleaseSuffix(model: string) {
     .replace(/-v\d+(?::\d+)?$/, "");
 }
 
+/** Group Gemini window variants without changing unrelated provider IDs. */
+export function modelGroupingId(model: string) {
+  return /^gemini-/i.test(model)
+    ? model.replace(/@\d+(?:\.\d+)?[km]$/i, "")
+    : model;
+}
+
 function withoutVersionSeparator(model: string) {
   // Some provider aliases use "4.7" where Anthropic IDs use "4-7".
   return model.replace(
@@ -100,7 +112,7 @@ function withoutVersionSeparator(model: string) {
 /** Normalize provider aliases without changing the persisted model ID. */
 export function canonicalModelId(model: string) {
   return withoutVersionSeparator(
-    withoutReleaseSuffix(withoutProviderPrefix(model)),
+    withoutReleaseSuffix(modelGroupingId(withoutProviderPrefix(model))),
   );
 }
 

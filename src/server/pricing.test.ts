@@ -486,6 +486,79 @@ test("prices Gemini 4 Argon before and after the December 2026 rate change", () 
   }
 });
 
+test("prices Gemini 4 Carbon before and after the December 2026 rate change", () => {
+  const usage = tokens({
+    uncachedInput: 1_000_000,
+    cacheRead: 1_000_000,
+    output: 1_000_000,
+  });
+  closeTo(
+    computeModelCallCost(
+      usage,
+      "gemini-4-carbon",
+      Date.parse("2026-11-30T23:59:59.999Z"),
+    ),
+    12.1,
+  );
+  closeTo(
+    computeModelCallCost(
+      usage,
+      "gemini-4-carbon",
+      Date.parse("2026-12-01T00:00:00Z"),
+    ),
+    24.2,
+  );
+});
+
+test("prices Gemini 4 Neon and Hydrogen at flat published rates", () => {
+  const usage = tokens({
+    uncachedInput: 1_000_000,
+    cacheRead: 1_000_000,
+    output: 1_000_000,
+  });
+  const later = Date.parse("2027-02-01T00:00:00Z");
+  for (const at of [timestamp, later]) {
+    closeTo(computeModelCallCost(usage, "gemini-4-neon", at), 18.15);
+    closeTo(computeModelCallCost(usage, "gemini-4-hydrogen", at), 9.075);
+  }
+  closeTo(
+    computeModelCallCost(
+      tokens({ uncachedInput: 900_000 }),
+      "gemini-4-neon",
+      timestamp,
+    ),
+    2.7,
+  );
+});
+
+test("prices Gemini 3.1 Pro above 200k prompts at long-context rates", () => {
+  for (const model of ["gemini-3.1-pro", "gemini-3.1-pro-preview"]) {
+    closeTo(
+      computeModelCallCost(
+        tokens({ uncachedInput: 200_000 }),
+        model,
+        timestamp,
+      ),
+      0.4,
+    );
+    closeTo(
+      computeModelCallCost(
+        tokens({ uncachedInput: 200_001, output: 1_000_000 }),
+        model,
+        timestamp,
+      ),
+      200_001 * 4 / 1_000_000 + 18,
+    );
+  }
+});
+
+test("ignores Cursor context selections that do not change the rate", () => {
+  const usage = tokens({ uncachedInput: 1_000_000, output: 100_000 });
+  for (const model of ["gemini-4-neon@300k", "gemini-4-neon@1m"]) {
+    closeTo(computeModelCallCost(usage, model, timestamp, "cursor"), 4.5);
+  }
+});
+
 test("prices Gemini Flash models before and after the 2027 rate change", () => {
   const before = Date.parse("2026-12-31T23:59:59.999Z");
   const effectiveAt = Date.parse("2027-01-01T00:00:00Z");

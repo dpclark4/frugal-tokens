@@ -177,10 +177,35 @@ const standard = {
     cacheRead: 0.08,
     output: 4,
   },
+  "gemini-4-carbon": {
+    input: 2,
+    cacheRead: 0.1,
+    output: 10,
+  },
+  "gemini-4-neon": {
+    input: 3,
+    cacheRead: 0.15,
+    output: 15,
+  },
+  "gemini-4-hydrogen": {
+    input: 1.5,
+    cacheRead: 0.075,
+    output: 7.5,
+  },
   "gemini-4-argon": {
     input: 2,
     cacheRead: 0.1,
     output: 10,
+  },
+  "gemini-3.1-pro": {
+    input: 2,
+    cacheRead: 0.2,
+    output: 12,
+  },
+  "gemini-3.1-pro-preview": {
+    input: 2,
+    cacheRead: 0.2,
+    output: 12,
   },
   "gemini-3.8-flash": {
     input: 0.75,
@@ -406,6 +431,16 @@ const longContext = {
   "gpt-5.5-pro": { input: 60, cacheRead: 0, output: 270 },
   "gpt-5.4": { input: 5, cacheRead: 0.5, output: 22.5 },
   "gpt-5.4-pro": { input: 60, cacheRead: 0, output: 270 },
+  "gemini-3.1-pro": {
+    input: 4,
+    cacheRead: 0.4,
+    output: 18,
+  },
+  "gemini-3.1-pro-preview": {
+    input: 4,
+    cacheRead: 0.4,
+    output: 18,
+  },
   "grok-4-6": {
     input: 4,
     cacheWrite5m: 0,
@@ -462,7 +497,12 @@ const reducedSolLongContextRates = {
   },
 } satisfies ModelRateRegistry;
 
-const geminiArgonFutureRates = {
+const geminiDecemberFutureRates = {
+  "gemini-4-carbon": {
+    input: 4,
+    cacheRead: 0.2,
+    output: 20,
+  },
   "gemini-4-argon": {
     input: 4,
     cacheRead: 0.2,
@@ -522,7 +562,8 @@ const HAIKU_5_5_LONG_CONTEXT_THRESHOLD = 100_000;
 const LONG_CONTEXT_THRESHOLD = 272_000;
 const GROK_LONG_CONTEXT_THRESHOLD = 200_000;
 const MINIMAX_M3_LONG_CONTEXT_THRESHOLD = 512_000;
-const GEMINI_ARGON_PRICE_CUT = Date.parse("2026-12-01T00:00:00Z");
+const GEMINI_PRO_LONG_CONTEXT_THRESHOLD = 200_000;
+const GEMINI_DECEMBER_PRICE_CHANGE = Date.parse("2026-12-01T00:00:00Z");
 const GEMINI_PRICE_CUT = Date.parse("2027-01-01T00:00:00Z");
 const OPENAI_LUNA_TERRA_PRICE_CUT = Date.parse("2026-07-30T20:00:00Z");
 const OPENAI_SOL_PRICE_CUT = Date.parse("2026-08-21T21:00:00Z");
@@ -574,7 +615,11 @@ export const counterfactualModelIDs = [
   "claude-haiku-5-5",
   "claude-haiku-4-5",
   "claude-haiku-3-5",
+  "gemini-4-carbon",
+  "gemini-4-neon",
+  "gemini-4-hydrogen",
   "gemini-4-argon",
+  "gemini-3.1-pro",
   "gemini-3.8-flash",
   "gemini-3.7-flash",
   "gemini-3.6-flash",
@@ -610,6 +655,9 @@ function usesLongContextRates(model: string, inputTokens: number) {
   if (model.startsWith("grok-") && inputTokens >= GROK_LONG_CONTEXT_THRESHOLD) {
     return true;
   }
+  if (model.startsWith("gemini-3.1-pro")) {
+    return inputTokens > GEMINI_PRO_LONG_CONTEXT_THRESHOLD;
+  }
   return model === "minimax-m3" &&
     inputTokens >= MINIMAX_M3_LONG_CONTEXT_THRESHOLD;
 }
@@ -634,8 +682,8 @@ export function modelRateCard(
     provider?.toLowerCase() === "cursor" ? cursorPricingModel(model) : model,
   );
   const long = usesLongContextRates(normalized, inputTokens);
-  if (timestamp >= GEMINI_ARGON_PRICE_CUT) {
-    const futureRates = registeredRate(geminiArgonFutureRates, normalized);
+  if (timestamp >= GEMINI_DECEMBER_PRICE_CHANGE) {
+    const futureRates = registeredRate(geminiDecemberFutureRates, normalized);
     if (futureRates) return futureRates;
   }
   if (timestamp >= GEMINI_PRICE_CUT) {

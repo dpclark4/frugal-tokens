@@ -178,14 +178,14 @@ test("model session medians combine days, split models, and exclude missing pric
       overview: {
         days: [
           day("2026-07-01", at, 200, 0, 102, false, [
-            model("astra", 2),
+            model("gemini-4-neon@300k", 2),
             model("fable", 100),
           ]),
           day("2026-07-02", at + 86_400_000, 100, 0, 4, false, [
-            model("astra", 4),
+            model("gemini-4-neon@1m", 4),
           ]),
           day("2026-07-03", at + 172_800_000, 100, 0, 999, false, [
-            model("astra", 999),
+            model("gemini-4-neon@1m", 999),
           ]),
         ],
         executionIntervals: [],
@@ -196,7 +196,7 @@ test("model session medians combine days, split models, and exclude missing pric
       overview: {
         days: [
           day("2026-07-01", at, 100, 0, cost, false, [
-            model("astra", cost, cost === 50),
+            model("gemini-4-neon@1m", cost, cost === 50),
           ]),
         ],
         executionIntervals: [],
@@ -205,11 +205,14 @@ test("model session medians combine days, split models, and exclude missing pric
   ];
   const result =
     aggregateActivityOverview(roots, at, at + 86_400_000).spendComposition;
-  deepStrictEqual(result.models.find((m) => m.model === "astra")?.sessionCost, {
-    median: 6,
-    sessions: 3,
-    excludedSessions: 1,
-  });
+  deepStrictEqual(result.models.map(({ model }) => model).sort(), [
+    "fable",
+    "gemini-4-neon",
+  ]);
+  deepStrictEqual(
+    result.models.find((m) => m.model === "gemini-4-neon")?.sessionCost,
+    { median: 6, sessions: 3, excludedSessions: 1 },
+  );
   deepStrictEqual(result.models.find((m) => m.model === "fable")?.sessionCost, {
     median: 100,
     sessions: 1,
@@ -218,7 +221,7 @@ test("model session medians combine days, split models, and exclude missing pric
   const even = aggregateActivityOverview(roots.slice(0, 2), at, at + 86_400_000)
     .spendComposition;
   strictEqual(
-    even.models.find((m) => m.model === "astra")?.sessionCost?.median,
+    even.models.find((m) => m.model === "gemini-4-neon")?.sessionCost?.median,
     3,
   );
   const unknown =
