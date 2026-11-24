@@ -568,8 +568,18 @@ test("model options count distinct root sessions including switches and subagent
     root.session.turns[0].calls.push(
       { ...first, id: "repeat", callWithinTurn: 2 },
       { ...first, id: "switch", model: "gpt-5.6-sol", callWithinTurn: 3 },
-      { ...first, id: "neon-small", model: "gemini-4-neon@300k", callWithinTurn: 4 },
-      { ...first, id: "neon-large", model: "gemini-4-neon@1m", callWithinTurn: 5 },
+      {
+        ...first,
+        id: "neon-small",
+        model: "gemini-4-neon@300k",
+        callWithinTurn: 4,
+      },
+      {
+        ...first,
+        id: "neon-large",
+        model: "gemini-4-neon@1m",
+        callWithinTurn: 5,
+      },
     );
     const child = sortFixtureSession(sourceID, {
       ...sortFixtureValues[1],

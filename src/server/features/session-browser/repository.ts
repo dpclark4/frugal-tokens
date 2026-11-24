@@ -71,8 +71,10 @@ function missPredicates(filters: SessionMissFilter[]) {
 
 export class SessionBrowserRepository {
   constructor(private db: DatabaseSync) {
-    db.function("session_model_group", { deterministic: true }, (model) =>
-      typeof model === "string" ? modelGroupingId(model) : null
+    db.function(
+      "session_model_group",
+      { deterministic: true },
+      (model) => typeof model === "string" ? modelGroupingId(model) : null,
     );
   }
 

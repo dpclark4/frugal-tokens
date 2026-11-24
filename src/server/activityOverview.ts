@@ -384,7 +384,9 @@ export function aggregateActivityOverview(
         id: root.rootSessionID,
         title: root.title ?? `Session ${root.rootSessionID}`,
         harness: root.harness,
-        models: [...new Set(day.models.map(({ model }) => modelGroupingId(model)))],
+        models: [
+          ...new Set(day.models.map(({ model }) => modelGroupingId(model))),
+        ],
         turns: day.turns,
         processedInput: day.input,
         spend: day.cost,

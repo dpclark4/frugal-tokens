@@ -1519,7 +1519,12 @@ export class ConversationWriteRepository {
       for (const call of uniqueCalls) addTokenUsage(totalTokens, call.tokens);
       const reportedCosts = uniqueCalls.map((call) => call.reportedCost);
       const computedCosts = uniqueCalls.map((call) =>
-        computeModelCallCost(call.tokens, call.model, call.startedAt, call.provider)
+        computeModelCallCost(
+          call.tokens,
+          call.model,
+          call.startedAt,
+          call.provider,
+        )
       );
       const reportedCost = reportedCosts.length > 0 &&
           reportedCosts.every((cost) => cost !== undefined)
