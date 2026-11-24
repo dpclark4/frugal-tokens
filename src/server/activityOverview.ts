@@ -5,6 +5,7 @@ import type {
 import type { StoredOverviewRollup } from "./overviewAnalytics.ts";
 import { aggregateWorkRhythm } from "./workRhythm.ts";
 import { modelMetadata } from "../shared/modelMetadata.ts";
+import { modelGroupingId } from "../shared/modelNames.ts";
 import {
   estimatedWorkIntervals,
   mergeWorkIntervals,
@@ -228,10 +229,11 @@ function sessionDiagnostics(
     const models = new Map<string, { input: number; spend: number }>();
     for (const day of days) {
       for (const model of day.models) {
-        const total = models.get(model.model) ?? { input: 0, spend: 0 };
+        const id = modelGroupingId(model.model);
+        const total = models.get(id) ?? { input: 0, spend: 0 };
         total.input += model.input;
         total.spend += model.cost;
-        models.set(model.model, total);
+        models.set(id, total);
       }
     }
     const primaryModel = [...models.entries()].toSorted(([, a], [, b]) =>
@@ -310,12 +312,13 @@ export function aggregateActivityOverview(
     >();
     for (const day of rangedDays) {
       for (const model of day.models) {
-        const total = sessionModels.get(model.model) ??
+        const id = modelGroupingId(model.model);
+        const total = sessionModels.get(id) ??
           { cost: 0, unpriced: false, priced: false };
         total.cost += model.cost;
         total.unpriced ||= model.hasUnpricedCost;
         total.priced ||= model.hasPricedCost;
-        sessionModels.set(model.model, total);
+        sessionModels.set(id, total);
       }
     }
     for (const [model, total] of sessionModels) {
@@ -364,8 +367,9 @@ export function aggregateActivityOverview(
       bucket.turns += day.turns;
 
       for (const model of day.models) {
-        const modelBucket = bucket.models.get(model.model) ?? {
-          model: model.model,
+        const id = modelGroupingId(model.model);
+        const modelBucket = bucket.models.get(id) ?? {
+          model: id,
           input: 0,
           spend: 0,
           hasUnpricedCost: false,
@@ -373,14 +377,14 @@ export function aggregateActivityOverview(
         modelBucket.input += model.input;
         modelBucket.spend += model.cost;
         modelBucket.hasUnpricedCost ||= model.hasUnpricedCost;
-        bucket.models.set(model.model, modelBucket);
+        bucket.models.set(id, modelBucket);
       }
 
       bucket.topSessions.push({
         id: root.rootSessionID,
         title: root.title ?? `Session ${root.rootSessionID}`,
         harness: root.harness,
-        models: day.models.map((model) => model.model),
+        models: [...new Set(day.models.map(({ model }) => modelGroupingId(model)))],
         turns: day.turns,
         processedInput: day.input,
         spend: day.cost,

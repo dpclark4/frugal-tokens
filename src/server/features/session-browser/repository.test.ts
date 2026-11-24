@@ -568,6 +568,8 @@ test("model options count distinct root sessions including switches and subagent
     root.session.turns[0].calls.push(
       { ...first, id: "repeat", callWithinTurn: 2 },
       { ...first, id: "switch", model: "gpt-5.6-sol", callWithinTurn: 3 },
+      { ...first, id: "neon-small", model: "gemini-4-neon@300k", callWithinTurn: 4 },
+      { ...first, id: "neon-large", model: "gemini-4-neon@1m", callWithinTurn: 5 },
     );
     const child = sortFixtureSession(sourceID, {
       ...sortFixtureValues[1],
@@ -591,16 +593,18 @@ test("model options count distinct root sessions including switches and subagent
     deepStrictEqual(browser.listModels(), [
       { id: "gpt-5.6-sol", sessionCount: 3 },
       { id: "child-only", sessionCount: 1 },
+      { id: "gemini-4-neon", sessionCount: 1 },
       { id: "gpt-5.6-luna", sessionCount: 1 },
     ]);
     deepStrictEqual(browser.listModels("pi"), [
       { id: "gpt-5.6-sol", sessionCount: 2 },
       { id: "child-only", sessionCount: 1 },
+      { id: "gemini-4-neon", sessionCount: 1 },
       { id: "gpt-5.6-luna", sessionCount: 1 },
     ]);
     deepStrictEqual(browser.listModels("opencode"), []);
     const all = browser.listSessions(1, 100, "pi");
-    for (const model of ["child-only", "gpt-5.6-luna"]) {
+    for (const model of ["child-only", "gemini-4-neon", "gpt-5.6-luna"]) {
       const filtered = browser.listSessions(
         1,
         100,

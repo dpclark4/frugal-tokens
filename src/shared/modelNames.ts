@@ -37,7 +37,6 @@ const modelDisplayNames = new Map<string, string>([
   ["gpt-5.6-terra", "GPT 5.6 Terra"],
   ["gpt-5.6-sol", "GPT 5.6 Sol"],
   ["gpt-5.6-luna", "GPT 5.6 Luna"],
-  ["grok-4-7", "Grok 4.7"],
   ["grok-4-6", "Grok 4.6"],
   ["grok-4-5", "Grok 4.5"],
   ["kimi-k3", "Kimi K3"],
@@ -95,10 +94,11 @@ function withoutReleaseSuffix(model: string) {
     .replace(/-v\d+(?::\d+)?$/, "");
 }
 
-function withoutContextSelection(model: string) {
-  // Cursor appends the selected context window, e.g. "gemini-4-neon@300k".
-  // The window is a request setting, not a distinct model.
-  return model.replace(/@\d+(?:\.\d+)?[km]$/, "");
+/** Group Gemini window variants without changing unrelated provider IDs. */
+export function modelGroupingId(model: string) {
+  return /^gemini-/i.test(model)
+    ? model.replace(/@\d+(?:\.\d+)?[km]$/i, "")
+    : model;
 }
 
 function withoutVersionSeparator(model: string) {
@@ -112,7 +112,7 @@ function withoutVersionSeparator(model: string) {
 /** Normalize provider aliases without changing the persisted model ID. */
 export function canonicalModelId(model: string) {
   return withoutVersionSeparator(
-    withoutReleaseSuffix(withoutContextSelection(withoutProviderPrefix(model))),
+    withoutReleaseSuffix(modelGroupingId(withoutProviderPrefix(model))),
   );
 }
 

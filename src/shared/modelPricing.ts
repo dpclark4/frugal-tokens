@@ -222,20 +222,6 @@ const standard = {
     cacheRead: 0.075,
     output: 3.75,
   },
-  "grok-4-7": {
-    input: 2,
-    cacheWrite5m: 0,
-    cacheWrite1h: 0,
-    cacheRead: 0.5,
-    output: 6,
-  },
-  "grok-4.7": {
-    input: 2,
-    cacheWrite5m: 0,
-    cacheWrite1h: 0,
-    cacheRead: 0.5,
-    output: 6,
-  },
   "grok-4-6": {
     input: 2,
     cacheWrite5m: 0,
@@ -455,20 +441,6 @@ const longContext = {
     cacheRead: 0.4,
     output: 18,
   },
-  "grok-4-7": {
-    input: 4,
-    cacheWrite5m: 0,
-    cacheWrite1h: 0,
-    cacheRead: 1,
-    output: 12,
-  },
-  "grok-4.7": {
-    input: 4,
-    cacheWrite5m: 0,
-    cacheWrite1h: 0,
-    cacheRead: 1,
-    output: 12,
-  },
   "grok-4-6": {
     input: 4,
     cacheWrite5m: 0,
@@ -591,11 +563,6 @@ const LONG_CONTEXT_THRESHOLD = 272_000;
 const GROK_LONG_CONTEXT_THRESHOLD = 200_000;
 const MINIMAX_M3_LONG_CONTEXT_THRESHOLD = 512_000;
 const GEMINI_PRO_LONG_CONTEXT_THRESHOLD = 200_000;
-// Cursor bills these context-window selections as a separate, higher tier.
-const cursorLongContextSelections = new Map([
-  ["grok-4.7", 500_000],
-  ["grok-4-7", 500_000],
-]);
 const GEMINI_DECEMBER_PRICE_CHANGE = Date.parse("2026-12-01T00:00:00Z");
 const GEMINI_PRICE_CUT = Date.parse("2027-01-01T00:00:00Z");
 const OPENAI_LUNA_TERRA_PRICE_CUT = Date.parse("2026-07-30T20:00:00Z");
@@ -656,7 +623,6 @@ export const counterfactualModelIDs = [
   "gemini-3.8-flash",
   "gemini-3.7-flash",
   "gemini-3.6-flash",
-  "grok-4-7",
   "grok-4-6",
   "grok-4-5",
   "grok-build-0.1",
@@ -705,19 +671,6 @@ function cursorPricingModel(model: string) {
   );
 }
 
-function cursorContextSelection(model: string) {
-  const match = /@(\d+(?:\.\d+)?)([km])$/i.exec(model);
-  if (!match) return undefined;
-  const scale = match[2].toLowerCase() === "m" ? 1_000_000 : 1_000;
-  return Number(match[1]) * scale;
-}
-
-function selectsCursorLongContextTier(model: string, normalized: string) {
-  const tier = cursorLongContextSelections.get(normalized);
-  const selection = cursorContextSelection(model);
-  return tier !== undefined && selection !== undefined && selection >= tier;
-}
-
 export function modelRateCard(
   model: string,
   timestamp: number,
@@ -725,12 +678,10 @@ export function modelRateCard(
   provider?: string,
 ) {
   if (/(?:^|[^a-z0-9])free(?:$|[^a-z0-9])/i.test(model)) return freeRates;
-  const isCursor = provider?.toLowerCase() === "cursor";
   const normalized = canonicalModelId(
-    isCursor ? cursorPricingModel(model) : model,
+    provider?.toLowerCase() === "cursor" ? cursorPricingModel(model) : model,
   );
-  const long = usesLongContextRates(normalized, inputTokens) ||
-    (isCursor && selectsCursorLongContextTier(model, normalized));
+  const long = usesLongContextRates(normalized, inputTokens);
   if (timestamp >= GEMINI_DECEMBER_PRICE_CHANGE) {
     const futureRates = registeredRate(geminiDecemberFutureRates, normalized);
     if (futureRates) return futureRates;

@@ -559,18 +559,6 @@ test("ignores Cursor context selections that do not change the rate", () => {
   }
 });
 
-test("prices Cursor's Grok 4.7 500k selection at its higher tier", () => {
-  const usage = tokens({ uncachedInput: 10_000, output: 1_000 });
-  closeTo(
-    computeModelCallCost(usage, "grok-4.7", timestamp, "cursor"),
-    0.026,
-  );
-  closeTo(
-    computeModelCallCost(usage, "grok-4.7@500k", timestamp, "cursor"),
-    0.052,
-  );
-});
-
 test("prices Gemini Flash models before and after the 2027 rate change", () => {
   const before = Date.parse("2026-12-31T23:59:59.999Z");
   const effectiveAt = Date.parse("2027-01-01T00:00:00Z");

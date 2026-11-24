@@ -55,7 +55,7 @@ test("formats known model IDs consistently", () => {
     "gemini-4-carbon": "Gemini 4 Carbon",
     "gemini-4-hydrogen": "Gemini 4 Hydrogen",
     "gemini-3.1-pro": "Gemini 3.1 Pro",
-    "grok-4.7@500k": "Grok 4.7",
+    "grok-4.7@500k": "Grok 4.7@500k",
   };
 
   for (const [model, expected] of Object.entries(cases)) {

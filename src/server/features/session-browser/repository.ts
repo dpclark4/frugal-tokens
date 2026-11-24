@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import { modelGroupingId } from "../../../shared/modelNames.ts";
 import {
   type CacheIssue,
   sessionListItemSchema,
@@ -69,7 +70,11 @@ function missPredicates(filters: SessionMissFilter[]) {
 }
 
 export class SessionBrowserRepository {
-  constructor(private db: DatabaseSync) {}
+  constructor(private db: DatabaseSync) {
+    db.function("session_model_group", { deterministic: true }, (model) =>
+      typeof model === "string" ? modelGroupingId(model) : null
+    );
+  }
 
   listDirectories(harness?: Harness): SessionDirectoryOption[] {
     // Directory attribution uses the root's recorded working directory, not its descendants'.
@@ -117,7 +122,7 @@ export class SessionBrowserRepository {
     // SAFETY: The static SQL projection and migrated schema define this row contract.
     const rows = this.db.prepare(`
       ${sessionTree}
-      SELECT call.model AS id, COUNT(DISTINCT c.id) AS sessionCount
+      SELECT session_model_group(call.model) AS id, COUNT(DISTINCT c.id) AS sessionCount
       FROM conversations c
       JOIN sources so ON so.id = c.source_id
       JOIN conversation_rollups cr ON cr.conversation_id = c.id
@@ -127,8 +132,8 @@ export class SessionBrowserRepository {
         AND (cr.uncached_input_tokens > 0 OR cr.cache_read_tokens > 0 OR
           COALESCE(cr.cache_write_tokens, 0) > 0)
         AND call.model <> ''
-      GROUP BY call.model
-      ORDER BY sessionCount DESC, call.model COLLATE NOCASE, call.model
+      GROUP BY session_model_group(call.model)
+      ORDER BY sessionCount DESC, id COLLATE NOCASE, id
     `).all(harness ?? null, harness ?? null) as SessionModelOption[];
     return rows.map(({ id, sessionCount }) => ({ id, sessionCount }));
   }
@@ -202,7 +207,7 @@ export class SessionBrowserRepository {
     const modelClause = models.length === 0 ? "" : ` AND EXISTS (
       SELECT 1 FROM tree
       JOIN conversation_model_calls call ON call.conversation_id = tree.conversation_id
-      WHERE tree.root_id = c.id AND call.model IN (${
+      WHERE tree.root_id = c.id AND session_model_group(call.model) IN (${
       models.map(() => "?").join(", ")
     })
     )`;
@@ -222,7 +227,7 @@ export class SessionBrowserRepository {
     return {
       cte: predicates.length > 0 || models.length > 0 ? sessionTree : "",
       clause: missClause + modelClause + directoryClause,
-      params: [...models, ...directoryParams],
+      params: [...models.map(modelGroupingId), ...directoryParams],
     };
   }
 
