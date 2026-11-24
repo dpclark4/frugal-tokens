@@ -49,6 +49,13 @@ test("formats known model IDs consistently", () => {
     "gemini-3.8-flash": "Gemini 3.8 Flash",
     "google/gemini-3.7-flash": "Gemini 3.7 Flash",
     "gemini-3.6-flash": "Gemini 3.6 Flash",
+    "gemini-4-neon": "Gemini 4 Neon",
+    "gemini-4-neon@300k": "Gemini 4 Neon",
+    "gemini-4-neon@1m": "Gemini 4 Neon",
+    "gemini-4-carbon": "Gemini 4 Carbon",
+    "gemini-4-hydrogen": "Gemini 4 Hydrogen",
+    "gemini-3.1-pro": "Gemini 3.1 Pro",
+    "grok-4.7@500k": "Grok 4.7",
   };
 
   for (const [model, expected] of Object.entries(cases)) {

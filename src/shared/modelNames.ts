@@ -18,7 +18,12 @@ const modelDisplayNames = new Map<string, string>([
   ["claude-haiku-5-5", "Claude Haiku 5.5"],
   ["claude-haiku-4-5", "Claude Haiku 4.5"],
   ["claude-haiku-3-5", "Claude Haiku 3.5"],
+  ["gemini-4-carbon", "Gemini 4 Carbon"],
+  ["gemini-4-neon", "Gemini 4 Neon"],
+  ["gemini-4-hydrogen", "Gemini 4 Hydrogen"],
   ["gemini-4-argon", "Gemini 4 Argon"],
+  ["gemini-3.1-pro", "Gemini 3.1 Pro"],
+  ["gemini-3.1-pro-preview", "Gemini 3.1 Pro Preview"],
   ["gemini-3.8-flash", "Gemini 3.8 Flash"],
   ["gemini-3.7-flash", "Gemini 3.7 Flash"],
   ["gemini-3.6-flash", "Gemini 3.6 Flash"],
@@ -32,6 +37,7 @@ const modelDisplayNames = new Map<string, string>([
   ["gpt-5.6-terra", "GPT 5.6 Terra"],
   ["gpt-5.6-sol", "GPT 5.6 Sol"],
   ["gpt-5.6-luna", "GPT 5.6 Luna"],
+  ["grok-4-7", "Grok 4.7"],
   ["grok-4-6", "Grok 4.6"],
   ["grok-4-5", "Grok 4.5"],
   ["kimi-k3", "Kimi K3"],
@@ -89,6 +95,12 @@ function withoutReleaseSuffix(model: string) {
     .replace(/-v\d+(?::\d+)?$/, "");
 }
 
+function withoutContextSelection(model: string) {
+  // Cursor appends the selected context window, e.g. "gemini-4-neon@300k".
+  // The window is a request setting, not a distinct model.
+  return model.replace(/@\d+(?:\.\d+)?[km]$/, "");
+}
+
 function withoutVersionSeparator(model: string) {
   // Some provider aliases use "4.7" where Anthropic IDs use "4-7".
   return model.replace(
@@ -100,7 +112,7 @@ function withoutVersionSeparator(model: string) {
 /** Normalize provider aliases without changing the persisted model ID. */
 export function canonicalModelId(model: string) {
   return withoutVersionSeparator(
-    withoutReleaseSuffix(withoutProviderPrefix(model)),
+    withoutReleaseSuffix(withoutContextSelection(withoutProviderPrefix(model))),
   );
 }
 
