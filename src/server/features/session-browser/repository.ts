@@ -1,4 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
+import { z } from "zod";
 import { modelGroupingId } from "../../../shared/modelNames.ts";
 import {
   type CacheIssue,
@@ -25,6 +26,7 @@ import {
 } from "../../../shared/sessionBrowserSchemas.ts";
 
 type Harness = SessionSummary["harness"];
+const modelIDSchema = z.string();
 
 const sessionTree = `
   WITH RECURSIVE tree(conversation_id, root_id) AS (
@@ -74,7 +76,7 @@ export class SessionBrowserRepository {
     db.function(
       "session_model_group",
       { deterministic: true },
-      (model) => typeof model === "string" ? modelGroupingId(model) : null,
+      (model) => modelGroupingId(modelIDSchema.parse(model)),
     );
   }
 
