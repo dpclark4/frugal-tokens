@@ -239,7 +239,7 @@
 
 .recent-sessions-table th {
   height: 28px;
-  padding: 3px 10px 0;
+  padding: 3px 12px 0;
   color: #6d7874;
   font: 600 var(--dashboard-type-label)/1 var(--mono);
   letter-spacing: .07em;
@@ -247,10 +247,15 @@
   text-transform: uppercase;
 }
 
-.recent-sessions-table th:nth-child(n + 2):not(:last-child) {
+.recent-sessions-table th:nth-child(4) {
+  padding-left: 47px;
+}
+
+.recent-sessions-table th.recent-session-cache-heading {
   text-align: center;
 }
 
+.recent-sessions-table th:nth-child(5),
 .recent-sessions-table th:last-child {
   text-align: right;
 }
@@ -269,10 +274,11 @@
   cursor: pointer;
 }
 
-.recent-sessions-table th:nth-child(n + 2):not(:last-child) .recent-sessions-sort-button {
+.recent-sessions-table th.recent-session-cache-heading .recent-sessions-sort-button {
   justify-content: center;
 }
 
+.recent-sessions-table th:nth-child(5) .recent-sessions-sort-button,
 .recent-sessions-table th:last-child .recent-sessions-sort-button {
   justify-content: flex-end;
 }
@@ -426,9 +432,12 @@
   filter: brightness(0);
 }
 
-.recent-session-activity-cell,
+.recent-session-activity-cell {
+  text-align: left;
+}
+
 .recent-session-output-cell {
-  text-align: center;
+  text-align: right;
 }
 
 .recent-sessions-table th.recent-session-cache-heading:nth-child(6) {
@@ -441,10 +450,10 @@
 }
 
 .recent-session-usage-layout {
-  display: flex;
+  display: grid;
   min-width: 0;
+  grid-template-columns: 28px minmax(0, 1fr);
   align-items: center;
-  justify-content: center;
   gap: 7px;
 }
 
